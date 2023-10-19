@@ -1,20 +1,20 @@
-SRCFILE = user_manual
-MANUAL_FILES = user_manual.tex Introduction.tex
-LATEX_FLAGS=-interaction=nonstopmode
+# Minimal makefile for Sphinx documentation
+#
 
-all: user_manual.pdf
+# You can set these variables from the command line, and also
+# from the environment for the first two.
+SPHINXOPTS    ?=
+SPHINXBUILD   ?= sphinx-build
+SOURCEDIR     = .
+BUILDDIR      = _build
 
-user_manual.pdf: $(MANUAL_FILES) ../version.tex
-	pdflatex $(LATEX_FLAGS) $(SRCFILE).tex
-	bibtex $(SRCFILE)
-	pdflatex $(LATEX_FLAGS) $(SRCFILE).tex
-	pdflatex $(LATEX_FLAGS) $(SRCFILE).tex
+# Put it first so that "make" without argument is like "make help".
+help:
+	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-.PHONY: clean
+.PHONY: help Makefile
 
-clean:
-	@rm -f *~ *.aux *.bbl *.blg *.log *.out *.toc *.lot *.lof $(SRCFILE).pdf
-
-#creating version file
-../version.tex : $(MANUAL_FILES)
-	git log -1 --format="%H %an %aD"  .. > ../version.tex
+# Catch-all target: route all unknown targets to Sphinx using the new
+# "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
+%: Makefile
+	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
