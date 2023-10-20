@@ -214,11 +214,11 @@ class RuleBasedMatcher(object):
           logger.warning('keyword "{}" cannot be accepted, valid keys for the keywords are "{}"'.format(key, ','.join(list(self._causalKeywords.keys()))))
 
   def addEntityPattern(self, name, patternList):
-    """
-      Add entity pattern, to extend doc.ents, similar function to self.extendEnt
-      @ In, name, str, the name for the entity pattern.
-      @ In, patternList, list, the pattern list, for example:
-        {"label": "GPE", "pattern": [{"LOWER": "san"}, {"LOWER": "francisco"}]}
+    """Add entity pattern, to extend doc.ents, similar function to self.extendEnt
+
+    :param name: str, the name for the entity pattern.
+    :param patternList: list, the pattern list, for example:
+      {"label": "GPE", "pattern": [{"LOWER": "san"}, {"LOWER": "francisco"}]}
     """
     if not self.nlp.has_pipe('entity_ruler'):
       self.nlp.add_pipe('entity_ruler', before='mergePhrase')
@@ -414,11 +414,12 @@ class RuleBasedMatcher(object):
     return customEnts
 
   def getHealthStatusForPobj(self, ent, include=False):
-    """
-      Get the status for ent root pos_ 'pobj'
-      @ In, ent, Span, the span of entity
-      @ In, include, bool, ent will be included in returned status if True
-      @ Out, healthStatus, Span or Token, the identified status
+    """Get the status for ent root pos ``pobj``
+
+    :param ent: Span, the span of entity
+    :param include: bool, ent will be included in returned status if True
+
+    :returns: Span or Token, the identified health status
     """
     healthStatus = None
     if isinstance(ent, Token):
@@ -1544,12 +1545,9 @@ class RuleBasedMatcher(object):
   # @staticmethod
   def collectSents(self, doc):
     """
-      collect data of matched sentences that can be used for visualization
-      @ In, matcher, spacy.Matcher, the spacy matcher instance
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-      @ In, i, int, index of the current match (matches[i])
-      @ In, matches, List[Tuple[int, int, int]], a list of (match_id, start, end) tuples, describing the matches. A
-        match tuple describes a span doc[start:end]
+    collect data of matched sentences that can be used for visualization
+
+    :param doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     matchedSents = []
     matchedSentsForVis = []
