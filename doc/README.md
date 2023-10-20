@@ -9,3 +9,11 @@ Digital Analytics, Causal Knowledge Acquisition and Reasoning
 - cd _build/html
 - python3 -m http.server
 - open your brower to: http://localhost:8000
+
+# Use following to generate all docs for given folder
+
+.. autosummary::
+   :toctree: autosummary
+   :recursive:
+
+    dackar.nlp

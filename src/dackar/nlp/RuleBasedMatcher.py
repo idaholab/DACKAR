@@ -219,6 +219,12 @@ class RuleBasedMatcher(object):
     :param name: str, the name for the entity pattern.
     :param patternList: list, the pattern list, for example:
       {"label": "GPE", "pattern": [{"LOWER": "san"}, {"LOWER": "francisco"}]}
+
+    Arg:
+      a: para a
+      b: param b
+
+
     """
     if not self.nlp.has_pipe('entity_ruler'):
       self.nlp.add_pipe('entity_ruler', before='mergePhrase')

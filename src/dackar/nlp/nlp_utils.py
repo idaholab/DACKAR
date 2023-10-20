@@ -165,12 +165,12 @@ def generatePatternList(entList, label, id, nlp, attr="LOWER"):
 ###############
 def extendEnt(matcher, doc, i, matches):
   """
-    Extend the doc's entity
-    @ In, matcher, spacy.Matcher, the spacy matcher instance
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ In, i, int, index of the current match (matches[i])
-    @ In, matches, List[Tuple[int, int, int]], a list of (match_id, start, end) tuples, describing
-      the matches. A match tuple describes a span doc[start:end]
+  Extend the doc's entity
+  @ In, matcher, spacy.Matcher, the spacy matcher instance
+  @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+  @ In, i, int, index of the current match (matches[i])
+  @ In, matches, List[Tuple[int, int, int]], a list of (match_id, start, end) tuples, describing
+  the matches. A match tuple describes a span doc[start:end]
   """
   id, start, end = matches[i]
   ent = Span(doc, start, end, label=id)
