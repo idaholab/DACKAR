@@ -8,6 +8,11 @@ Created on March, 2022
 
 import logging
 import spacy
+import os
+import sys
+
+cwd = os.path.dirname(__file__)
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, ))
 
 from .utils.nlp.CreatePatterns import CreatePatterns
 from .pipelines.ConjectureEntity import ConjectureEntity
