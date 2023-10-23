@@ -8,13 +8,14 @@ Created on March, 2022
 
 import logging
 import spacy
-from nlp.CreatePatterns import CreatePatterns
-from nlp.ConjectureEntity import ConjectureEntity
-from nlp.GeneralEntity import GeneralEntity
-from nlp.TemporalAttributeEntity import TemporalAttributeEntity
-from nlp.TemporalRelationEntity import TemporalRelationEntity
-from nlp.LocationEntity import LocationEntity
-from nlp.UnitEntity import UnitEntity
+
+from .utils.nlp.CreatePatterns import CreatePatterns
+from .pipelines.ConjectureEntity import ConjectureEntity
+from .pipelines.GeneralEntity import GeneralEntity
+from .pipelines.TemporalAttributeEntity import TemporalAttributeEntity
+from .pipelines.TemporalRelationEntity import TemporalRelationEntity
+from .pipelines.LocationEntity import LocationEntity
+from .pipelines.UnitEntity import UnitEntity
 # sr2mlPath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 # sys.path.append(sr2mlPath)
 
