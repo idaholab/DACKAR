@@ -1,13 +1,13 @@
 # modified from https://github.com/nihitsaxena95/sentence-similarity-wordnet-sementic/blob/master/SentenceSimilarity.py
 # Method proposed by: https://arxiv.org/pdf/1802.05667.pdf
 
-import nltk
 from pywsd.lesk import simple_lesk
 import numpy as np
 from nltk.corpus import wordnet, wordnet_ic
-import simUtils
-
 import logging
+
+from . import simUtils
+
 log_format = "%(asctime)s %(message)s"
 logging.basicConfig(
     filename="sentence_similarity_computing.log",

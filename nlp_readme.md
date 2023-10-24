@@ -27,3 +27,9 @@
 See https://github.com/explosion/spaCy/issues/12659
 Installing typing_extensions<4.6
 pip install typing_extensions==4.5.*
+
+
+# Download nltk data
+See https://www.nltk.org/data.html
+
+- python -m nltk.downloader all

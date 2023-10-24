@@ -1,4 +1,11 @@
-from SentenceSimilarity import SentenceSimilarity
+import os
+import sys
+
+cwd = os.path.dirname(__file__)
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
+sys.path.append(frameworkDir)
+
+from dackar.similarity.SentenceSimilarity import SentenceSimilarity
 
 
 

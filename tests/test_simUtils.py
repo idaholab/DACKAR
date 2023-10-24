@@ -1,5 +1,11 @@
-import simUtils
+import os
+import sys
 
+cwd = os.path.dirname(__file__)
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
+sys.path.append(frameworkDir)
+
+from dackar.similarity import simUtils
 
 bankSents = ['I went to the bank to deposit my money',
 'The river bank was full of dead fishes']

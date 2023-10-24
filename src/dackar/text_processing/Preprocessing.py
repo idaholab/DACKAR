@@ -14,11 +14,12 @@ from spacy.vocab import Vocab
 from contextualSpellCheck.contextualSpellCheck import ContextualSpellCheck
 import autocorrect
 import itertools
-from .similarity.simUtils import wordsSimilarity
 from nltk.corpus import wordnet as wn
 import os
 import numpy as np
 import pandas as pd
+
+from ..similarity.simUtils import wordsSimilarity
 
 # list of available preprocessors in textacy.preprocessing.normalize
 textacyNormalize = ['bullet_points',
