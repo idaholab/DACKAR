@@ -1,11 +1,16 @@
-import simUtils
-from SentenceSimilarity import SentenceSimilarity
-import pandas as pd
 import os
+import sys
+import pandas as pd
 
-currentPath = os.path.dirname(os.path.abspath(__file__))
-wordPairsFile = os.path.join(currentPath, "benchmark", "noun_pairs.csv")
-sentencePairsFile = os.path.join(currentPath, "benchmark", "Li2006_sim_sents.csv")
+cwd = os.path.dirname(__file__)
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
+sys.path.append(frameworkDir)
+
+from dackar.similarity import simUtils
+from dackar.similarity.SentenceSimilarity import SentenceSimilarity
+
+wordPairsFile = os.path.join(cwd, os.pardir, "data", "similarity_benchmark", "noun_pairs.csv")
+sentencePairsFile = os.path.join(cwd, os.pardir, "data", "similarity_benchmark", "Li2006_sim_sents.csv")
 
 fromFile = True
 if fromFile:
