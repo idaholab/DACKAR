@@ -28,6 +28,8 @@ See https://github.com/explosion/spaCy/issues/12659
 Installing typing_extensions<4.6
 pip install typing_extensions==4.5.*
 
+other issue: https://stackoverflow.com/questions/2464568/can-someone-explain-what-exactly-this-error-means-typeerror-issubclass-arg-1
+
 
 # Required Libraries for Similarity Analysis
 ### Download nltk data
@@ -42,3 +44,7 @@ numpy, pandas, nltk, pywsd, jupyter
 conda create -n similarity_libs -c  conda-forge numpy pandas nltk
 conda activate similarity_libs
 pip install -U pywsd
+
+# Preprocessing:
+
+pip install contextualSpellCheck

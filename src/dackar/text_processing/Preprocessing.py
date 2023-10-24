@@ -198,7 +198,7 @@ class SpellChecker(object):
     if self.checker == 'autocorrect':
       self.speller = autocorrect.Speller()
       self.includedWords = []
-      file2open = os.path.join(os.path.dirname(__file__) , 'data' , 'ac_additional_words.txt')
+      file2open = os.path.join(os.path.dirname(__file__) , os.pardir, os.pardir, os.pardir, 'data' , 'ac_additional_words.txt')
       with open(file2open, 'r') as file:
         tmp = file.readlines()
       self.addedWords = list({x.replace('\n', '') for x in tmp})
