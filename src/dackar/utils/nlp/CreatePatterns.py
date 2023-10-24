@@ -1,7 +1,8 @@
 import logging
 import spacy
 import pandas as pd
-from nlp.nlp_utils import generatePatternList
+
+from .nlp_utils import generatePatternList
 
 
 class CreatePatterns(object):

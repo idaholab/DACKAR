@@ -1,6 +1,7 @@
 from spacy.language import Language
 import pandas as pd
-from nlp.nlp_utils import generatePatternList
+
+from ..utils.nlp.nlp_utils import generatePatternList
 # from .config import nlpConfig
 
 import logging

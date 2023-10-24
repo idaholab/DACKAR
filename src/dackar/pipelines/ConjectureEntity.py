@@ -1,5 +1,6 @@
 from spacy.language import Language
-from .CreatePatterns import CreatePatterns
+
+from ..utils.nlp.CreatePatterns import CreatePatterns
 # from .config import nlpConfig
 
 import logging

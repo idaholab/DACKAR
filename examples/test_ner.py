@@ -12,15 +12,16 @@ import os
 import sys
 
 cwd = os.path.dirname(__file__)
-frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, ))
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
+sys.path.append(frameworkDir)
 
-from .utils.nlp.CreatePatterns import CreatePatterns
-from .pipelines.ConjectureEntity import ConjectureEntity
-from .pipelines.GeneralEntity import GeneralEntity
-from .pipelines.TemporalAttributeEntity import TemporalAttributeEntity
-from .pipelines.TemporalRelationEntity import TemporalRelationEntity
-from .pipelines.LocationEntity import LocationEntity
-from .pipelines.UnitEntity import UnitEntity
+from dackar.utils.nlp.CreatePatterns import CreatePatterns
+from dackar.pipelines.ConjectureEntity import ConjectureEntity
+from dackar.pipelines.GeneralEntity import GeneralEntity
+from dackar.pipelines.TemporalAttributeEntity import TemporalAttributeEntity
+from dackar.pipelines.TemporalRelationEntity import TemporalRelationEntity
+from dackar.pipelines.LocationEntity import LocationEntity
+from dackar.pipelines.UnitEntity import UnitEntity
 # sr2mlPath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 # sys.path.append(sr2mlPath)
 
