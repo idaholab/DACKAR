@@ -9,19 +9,21 @@ Created on March, 2022
 import logging
 import spacy
 import pandas as pd
-
-from nlp.RuleBasedMatcher import RuleBasedMatcher
-from nlp import config
-from nlp.nlp_utils import generatePatternList
-
 import os
 import sys
+
+cwd = os.path.dirname(__file__)
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
+sys.path.append(frameworkDir)
+
+from dackar.workflows.RuleBasedMatcher import RuleBasedMatcher
+from dackar import config
+from dackar.utils.nlp.nlp_utils import generatePatternList
+
 import argparse
-# sr2mlPath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-# sys.path.append(sr2mlPath)
 
 # OPL parser to generate object and process lists
-from utils.nlpUtils.OPLparser import OPMobject
+from dackar.utils.opm.OPLparser import OPMobject
 
 
 # logging.basicConfig(format='%(asctime)s %(name)-20s %(levelname)-8s %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.ERROR)

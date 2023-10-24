@@ -5,6 +5,8 @@ Created on March, 2022
 
 @author: wangc, mandd
 """
+import logging
+import os
 import pandas as pd
 import re
 import copy
@@ -15,27 +17,22 @@ from spacy.tokens import Span
 from spacy import displacy
 from spacy.matcher import PhraseMatcher
 from spacy.matcher import DependencyMatcher
+from spacy.util import filter_spans
 from collections import deque
 # filter_spans is used to resolve the overlap issue in entities
 # It gives primacy to longer spans (entities)
-from spacy.util import filter_spans
-from .nlp_utils import displayNER, resetPipeline, printDepTree
-from .nlp_utils import extendEnt
+
+from ..utils.nlp.nlp_utils import displayNER, resetPipeline, printDepTree
+from ..utils.nlp.nlp_utils import extendEnt
 ## import pipelines
-from .CustomPipelineComponents import normEntities
-from .CustomPipelineComponents import initCoref
-from .CustomPipelineComponents import aliasResolver
-from .CustomPipelineComponents import anaphorCoref
-from .CustomPipelineComponents import anaphorEntCoref
-from .CustomPipelineComponents import mergePhrase
-from .CustomPipelineComponents import pysbdSentenceBoundaries
-
-from .config import nlpConfig
-
-
-import logging
-import os
-
+from ..pipelines.CustomPipelineComponents import normEntities
+from ..pipelines.CustomPipelineComponents import initCoref
+from ..pipelines.CustomPipelineComponents import aliasResolver
+from ..pipelines.CustomPipelineComponents import anaphorCoref
+from ..pipelines.CustomPipelineComponents import anaphorEntCoref
+from ..pipelines.CustomPipelineComponents import mergePhrase
+from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
+from ..config import nlpConfig
 
 logger = logging.getLogger(__name__)
 

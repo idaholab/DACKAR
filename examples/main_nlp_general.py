@@ -7,11 +7,17 @@ Created on March, 2022
 """
 
 import logging
-from nlp.RuleBasedMatcher import RuleBasedMatcher
 import spacy
+import os
+import sys
 
-from nlp.SimpleEntityMatcher import SimpleEntityMatcher
-from nlp.PhraseEntityMatcher import PhraseEntityMatcher
+cwd = os.path.dirname(__file__)
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
+sys.path.append(frameworkDir)
+
+from dackar.pipelines.SimpleEntityMatcher import SimpleEntityMatcher
+from dackar.pipelines.PhraseEntityMatcher import PhraseEntityMatcher
+from dackar.workflows.RuleBasedMatcher import RuleBasedMatcher
 
 logging.basicConfig(format='%(asctime)s %(name)-20s %(levelname)-8s %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.DEBUG)
 # To enable the logging to both file and console, the logger for the main should be the root,

@@ -2,7 +2,6 @@ from spacy.language import Language
 import pandas as pd
 
 from ..utils.nlp.nlp_utils import generatePatternList
-# from .config import nlpConfig
 
 import logging
 logger = logging.getLogger(__name__)
