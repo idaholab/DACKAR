@@ -29,7 +29,16 @@ Installing typing_extensions<4.6
 pip install typing_extensions==4.5.*
 
 
-# Download nltk data
+# Required Libraries for Similarity Analysis
+### Download nltk data
 See https://www.nltk.org/data.html
 
 - python -m nltk.downloader all
+
+### Required libraries:
+
+numpy, pandas, nltk, pywsd, jupyter
+
+conda create -n similarity_libs -c  conda-forge numpy pandas nltk
+conda activate similarity_libs
+pip install -U pywsd
