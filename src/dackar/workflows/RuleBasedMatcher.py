@@ -77,10 +77,14 @@ class RuleBasedMatcher(object):
   def __init__(self, nlp, entLabel='SSC', causalKeywordLabel='causal', *args, **kwargs):
     """
       Construct
-      @ In, nlp, spacy.Language object, contains all components and data needed to process text
-      @ In, args, list, positional arguments
-      @ In, kwargs, dict, keyword arguments
-      @ Out, None
+
+      Args:
+        nlp: spacy.Language object, contains all components and data needed to process text
+        args: list, positional arguments
+        kwargs: dict, keyword arguments
+
+      Returns:
+        None
     """
     self.type = self.__class__.__name__
     self.name = self.__class__.__name__
@@ -158,8 +162,12 @@ class RuleBasedMatcher(object):
   def getKeywords(self, filename, columnNames=None):
     """
       Get the keywords from given file
-      @ In, filename, str, the file name to read the keywords
-      @ Out, kw, dict, dictionary contains the keywords
+
+      Args:
+        filename: str, the file name to read the keywords
+
+      Returns:
+        kw: dict, dictionary contains the keywords
     """
     kw = {}
     if columnNames is not None:
@@ -174,8 +182,12 @@ class RuleBasedMatcher(object):
   def extractLemma(self, varList):
     """
       Lammatize the variable list
-      @ In, varList, list, list of variables
-      @ Out, lemmaList, list, list of lammatized variables
+
+      Args:
+        varList: list, list of variables
+
+      Returns:
+        lemmaList: list, list of lammatized variables
     """
     lemmaList = []
     for var in varList:
@@ -186,8 +198,10 @@ class RuleBasedMatcher(object):
   def addKeywords(self, keywords, ktype):
     """
       Method to update self._causalKeywords or self._statusKeywords
-      @ In, keywords, dict, keywords that will be add to self._causalKeywords or self._statusKeywords
-      @ In, ktype, string, either 'status' or 'causal'
+
+      Args:
+        keywords: dict, keywords that will be add to self._causalKeywords or self._statusKeywords
+        ktype: string, either 'status' or 'causal'
     """
     if type(keywords) != dict:
       raise IOError('"addCausalKeywords" method can only accept dictionary, but got {}'.format(type(keywords)))
@@ -211,17 +225,13 @@ class RuleBasedMatcher(object):
           logger.warning('keyword "{}" cannot be accepted, valid keys for the keywords are "{}"'.format(key, ','.join(list(self._causalKeywords.keys()))))
 
   def addEntityPattern(self, name, patternList):
-    """Add entity pattern, to extend doc.ents, similar function to self.extendEnt
+    """
+      Add entity pattern, to extend doc.ents, similar function to self.extendEnt
 
-    :param name: str, the name for the entity pattern.
-    :param patternList: list, the pattern list, for example:
-      {"label": "GPE", "pattern": [{"LOWER": "san"}, {"LOWER": "francisco"}]}
-
-    Arg:
-      a: para a
-      b: param b
-
-
+      Args:
+        name: str, the name for the entity pattern.
+        patternList: list, the pattern list, for example:
+        {"label": "GPE", "pattern": [{"LOWER": "san"}, {"LOWER": "francisco"}]}
     """
     if not self.nlp.has_pipe('entity_ruler'):
       self.nlp.add_pipe('entity_ruler', before='mergePhrase')
@@ -245,8 +255,12 @@ class RuleBasedMatcher(object):
   def __call__(self, text):
     """
       Find all token sequences matching the supplied pattern
-      @ In, text, string, the text that need to be processed
-      @ Out, None
+
+      Args:
+        text: string, the text that need to be processed
+
+      Returns:
+        None
     """
     # Merging Entity Tokens
     # We need to consider how to do this, I sugguest to first conduct rule based NER, then collect
@@ -319,8 +333,12 @@ class RuleBasedMatcher(object):
   def visualize(self):
     """
       Visualize the processed document
-      @ In, None
-      @ Out, None
+
+      Args:
+        None
+
+      Returns:
+        None
     """
     if self._visualizeMatchedSents:
       # Serve visualization of sentences containing match with displaCy
@@ -337,8 +355,12 @@ class RuleBasedMatcher(object):
   def isPassive(self, token):
     """
       Check the passiveness of the token
-      @ In, token, spacy.tokens.Token, the token of the doc
-      @ Out, isPassive, True, if the token is passive
+
+      Args:
+        token: spacy.tokens.Token, the token of the doc
+
+      Returns:
+        isPassive: True, if the token is passive
     """
     if token.dep_.endswith('pass'): # noun
       return True
@@ -350,8 +372,12 @@ class RuleBasedMatcher(object):
   def isConjecture(self, token):
     """
       Check the conjecture of the token
-      @ In, token, spacy.tokens.Token, the token of the doc, the token should be the root of the Doc
-      @ Out, isConjecture, True, if the token/sentence indicates conjecture
+
+      Args:
+        token: spacy.tokens.Token, the token of the doc, the token should be the root of the Doc
+
+      Returns:
+        isConjecture: True, if the token/sentence indicates conjecture
     """
     for left in token.lefts: # Check modal auxiliary verb: can, could, may, might, must, shall, should, will, would
       if left.dep_.startswith('aux') and left.tag_ in ['MD']:
@@ -368,8 +394,12 @@ class RuleBasedMatcher(object):
   def isNegation(self, token):
     """
       Check negation status of given token
-      @ In, token, spacy.tokens.Token, token from spacy.tokens.doc.Doc
-      @ Out, (neg, text), tuple, the negation status and the token text
+
+      Args:
+        token: spacy.tokens.Token, token from spacy.tokens.doc.Doc
+
+      Returns:
+        (neg, text): tuple, the negation status and the token text
     """
     neg = False
     text = ''
@@ -395,8 +425,12 @@ class RuleBasedMatcher(object):
   def findVerb(self, doc):
     """
       Find the first verb in the doc
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-      @ Out, token, spacy.tokens.Token, the token that has VERB pos
+
+      Args:
+        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+      Returns:
+        token: spacy.tokens.Token, the token that has VERB pos
     """
     for token in doc:
       if token.pos_ == 'VERB':
@@ -407,9 +441,13 @@ class RuleBasedMatcher(object):
   def getCustomEnts(self, ents, labels):
     """
       Get the custom entities
-      @ In, ents, list, all entities from the processed doc
-      @ In, labels, list, list of labels to be used to get the custom entities out of "ents"
-      @ Out, customEnts, list, the customEnts associates with the "labels"
+
+      Args:
+        ents: list, all entities from the processed doc
+        labels: list, list of labels to be used to get the custom entities out of "ents"
+
+      Returns:
+        customEnts: list, the customEnts associates with the "labels"
     """
     customEnts = [ent for ent in ents if ent.label_ in labels]
     if len(customEnts) == 0:
@@ -419,10 +457,12 @@ class RuleBasedMatcher(object):
   def getHealthStatusForPobj(self, ent, include=False):
     """Get the status for ent root pos ``pobj``
 
-    :param ent: Span, the span of entity
-    :param include: bool, ent will be included in returned status if True
+      Args:
+        ent: Span, the span of entity
+        include: bool, ent will be included in returned status if True
 
-    :returns: Span or Token, the identified health status
+      returns:
+        Span or Token, the identified health status
     """
     healthStatus = None
     if isinstance(ent, Token):
@@ -481,11 +521,15 @@ class RuleBasedMatcher(object):
   def getPhrase(self, ent, start, end, include=False):
     """
       Get the phrase for ent with all left children
-      @ In, ent, Span, the ent to amend with all left children
-      @ In, start, int, the start index of ent
-      @ In, end, int, the end index of ent
-      @ In, include, bool, include ent in the returned expression if True
-      @ Out, healthStatus, Span or Token, the identified status
+
+      Args:
+        ent: Span, the ent to amend with all left children
+        start: int, the start index of ent
+        end: int, the end index of ent
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+        healthStatus: Span or Token, the identified status
     """
     leftInd = list(ent.lefts)[0].i
     if not include:
@@ -497,11 +541,15 @@ class RuleBasedMatcher(object):
   def getAmod(self, ent, start, end, include = False):
     """
       Get amod tokens for ent
-      @ In, ent, Span, the ent to amend with all left children
-      @ In, start, int, the start index of ent
-      @ In, end, int, the end index of ent
-      @ In, include, bool, include ent in the returned expression if True
-      @ Out, healthStatus, Span or Token, the identified status
+
+      Args:
+        ent: Span, the ent to amend with all left children
+        start: int, the start index of ent
+        end: int, the end index of ent
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+        healthStatus: Span or Token, the identified status
     """
     healthStatus = None
     deps = [tk.dep_ in ['amod'] for tk in ent.lefts]
@@ -519,8 +567,12 @@ class RuleBasedMatcher(object):
   def getAmodOnly(self, ent):
     """
       Get amod tokens texts for ent
-      @ In, ent, Span, the ent to amend with all left children
-      @ Out, amod, list, the list of amods for ent
+
+      Args:
+        ent: Span, the ent to amend with all left children
+
+      Returns:
+        amod: list, the list of amods for ent
     """
     amod = [tk.text for tk in ent.lefts if tk.dep_ in ['amod']]
     return amod
@@ -528,8 +580,12 @@ class RuleBasedMatcher(object):
   def getCompoundOnly(self, headEnt, ent):
     """
       Get the compounds for headEnt except ent
-      @ In, headEnt, Span, the head entity to ent
-      @ Out, compDes, list, the list of compounds for head ent
+
+      Args:
+        headEnt: Span, the head entity to ent
+
+      Returns:
+        compDes: list, the list of compounds for head ent
     """
     compDes = []
     comp = [tk for tk in headEnt.lefts if tk.dep_ in ['compound'] and tk not in ent]
@@ -543,8 +599,12 @@ class RuleBasedMatcher(object):
   def getNbor(self, token):
     """
       Method to get the nbor from token, return None if nbor is not exist
-      @ In, token, Token, the provided Token to request nbor
-      @ Out, nbor, Token, the requested nbor
+
+      Args:
+        token: Token, the provided Token to request nbor
+
+      Returns:
+        nbor: Token, the requested nbor
     """
     nbor = None
     if token is None:
@@ -558,13 +618,17 @@ class RuleBasedMatcher(object):
   def getHealthStatusForSubj(self, ent, entHS, sent, causalStatus, predSynonyms, include=False):
     """
       Get the status for nsubj/nsubjpass ent
-      @ In, ent, Span, the nsubj/nsubjpass ent that will be used to search status
-      @ In, entHS, Span, the entHS that the status will be associated with
-      @ In, sent, Span, the sent that includes the ent, entHS and status
-      @ In, causalStatus, bool, the causal status for the ent
-      @ In, predSynonyms, list, predicate synonyms
-      @ In, include, bool, include ent in the returned expression if True
-      @ Out, healthStatus, Span or Token, the identified status
+
+      Args:
+        ent: Span, the nsubj/nsubjpass ent that will be used to search status
+        entHS: Span, the entHS that the status will be associated with
+        sent: Span, the sent that includes the ent, entHS and status
+        causalStatus: bool, the causal status for the ent
+        predSynonyms: list, predicate synonyms
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+        healthStatus: Span or Token, the identified status
     """
     healthStatus = None
     neg = False
@@ -636,13 +700,17 @@ class RuleBasedMatcher(object):
   def getHealthStatusForObj(self, ent, entHS, sent, causalStatus, predSynonyms, include=False):
     """
       Get the status for pobj/dobj ent
-      @ In, ent, Span, the pobj/dobj ent that will be used to search status
-      @ In, entHS, Span, the entHS that the status will be associated with
-      @ In, sent, Span, the sent that includes the ent, entHS and status
-      @ In, causalStatus, bool, the causal status for the ent
-      @ In, predSynonyms, list, predicate synonyms
-      @ In, include, bool, include ent in the returned expression if True
-      @ Out, healthStatus, Span or Token, the identified status
+
+      Args:
+        ent: Span, the pobj/dobj ent that will be used to search status
+        entHS: Span, the entHS that the status will be associated with
+        sent: Span, the sent that includes the ent, entHS and status
+        causalStatus: bool, the causal status for the ent
+        predSynonyms: list, predicate synonyms
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+        healthStatus: Span or Token, the identified status
     """
     healthStatus = None
     neg = False
@@ -708,8 +776,12 @@ class RuleBasedMatcher(object):
   def validSent(self, sent):
     """
       Check if the sentence has valid structure, either contains subject or object
-      @ In, sent, Span, sentence from user provided text
-      @ Out, valid, bool, False if the sentence has no subject and object.
+
+      Args:
+        sent: Span, sentence from user provided text
+
+      Returns:
+        valid: bool, False if the sentence has no subject and object.
     """
     foundSubj = False
     foundObj = False
@@ -727,9 +799,11 @@ class RuleBasedMatcher(object):
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
     """
       Extract health status and relation
-      @ In, matchedSents, list, the matched sentences
-      @ In, predSynonyms, list, predicate synonyms
-      @ In, exclPrepos, list, exclude the prepositions
+
+      Args:
+        matchedSents: list, the matched sentences
+        predSynonyms: list, predicate synonyms
+        exclPrepos: list, exclude the prepositions
     """
     #  first search degradation keywords,
     #  if pobj, then if head.head
@@ -996,9 +1070,13 @@ class RuleBasedMatcher(object):
       Find closest subject in predicates left subtree or
       predicates parent's left subtree (recursive).
       Has a filter on organizations.
-      @ In, pred, spacy.tokens.Token, the predicate token
-      @ In, passive, bool, True if passive
-      @ Out, subj, spacy.tokens.Token, the token that represent subject
+
+      Args:
+        pred: spacy.tokens.Token, the predicate token
+        passive: bool, True if passive
+
+      Returns:
+        subj: spacy.tokens.Token, the token that represent subject
     """
     for left in pred.lefts:
       if passive: # if pred is passive, search for passive subject
@@ -1017,8 +1095,10 @@ class RuleBasedMatcher(object):
       Find closest object in predicates right subtree.
       Skip prepositional objects if the preposition is in exclude list.
       Has a filter on organizations.
-      @ In, pred, spacy.tokens.Token, the predicate token
-      @ In, exclPrepos, list, list of the excluded prepositions
+
+      Args:
+        pred: spacy.tokens.Token, the predicate token
+        exclPrepos: list, list of the excluded prepositions
     """
     for right in pred.rights:
       obj = self.findHealthStatus(right, deps)
@@ -1033,8 +1113,10 @@ class RuleBasedMatcher(object):
       Find
       Skip prepositional objects if the preposition is in exclude list.
       Has a filter on organizations.
-      @ In, pred, spacy.tokens.Token, the predicate token
-      @ In, exclPrepos, list, list of the excluded prepositions
+
+      Args:
+        pred: spacy.tokens.Token, the predicate token
+        exclPrepos: list, list of the excluded prepositions
     """
     for right in pred.rights:
       pos = right.pos_
@@ -1050,9 +1132,13 @@ class RuleBasedMatcher(object):
       dependency list by breadth first search.
       Search stops after first dependency match if firstDepOnly
       (used for subject search - do not "jump" over subjects)
-      @ In, root, spacy.tokens.Token, the root token
-      @ In, deps, list, the dependency list
-      @ Out, child, token, the token represents the health status
+
+      Args:
+        root: spacy.tokens.Token, the root token
+        deps: list, the dependency list
+
+      Returns:
+        child: token, the token represents the health status
     """
     toVisit = deque([root]) # queue for bfs
     while len(toVisit) > 0:
@@ -1077,8 +1163,13 @@ class RuleBasedMatcher(object):
 
   def isValidCausalEnts(self, ent):
     """
-      @ In, ent, list, list of entities
-      @ Out, valid, bool, valid cansual ent if True
+    Check the entity if it belongs to the valid causal entities
+
+      Args:
+        ent: list, list of entities
+
+      Returns:
+        valid: bool, valid cansual ent if True
     """
     valid = False
     validDep = ['nsubj', 'nsubjpass', 'nsubj:pass', 'pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
@@ -1092,9 +1183,13 @@ class RuleBasedMatcher(object):
   def getIndex(self, ent, entList):
     """
       Get index for ent in entList
-      @ In, ent, Span, ent that is used to get index
-      @ In, entList, list, list of entities
-      @ Out, idx, int, the index for ent
+
+      Args:
+        ent: Span, ent that is used to get index
+        entList: list, list of entities
+
+      Returns:
+        idx: int, the index for ent
     """
     idx = -1
     for i, e in enumerate(entList):
@@ -1109,10 +1204,14 @@ class RuleBasedMatcher(object):
   def getSSCEnt(self, entList, index, direction='left'):
     """
       Get the closest group of SSC entities
-      @ In, entList, list, list of entities
-      @ In, index, int, the start location of entity
-      @ In, direction, str, 'left' or 'right', the search direction
-      @ Out, ent,
+
+      Args:
+        entList: list, list of entities
+        index: int, the start location of entity
+        direction: str, 'left' or 'right', the search direction
+
+      Returns:
+        ent: the closest group of SSC entities
     """
     ent = None
     if direction.lower() == 'left':
@@ -1132,8 +1231,12 @@ class RuleBasedMatcher(object):
 
   def extractRelDep(self, matchedSents):
     """
-      @ In, matchedSents, list, the list of matched sentences
-      @ Out, (subject tuple, predicate, object tuple), generator, the extracted causal relation
+
+      Args:
+        matchedSents: list, the list of matched sentences
+
+      Returns:
+        (subject tuple, predicate, object tuple): generator, the extracted causal relation
     """
     allCauseEffectPairs = []
     for sent in matchedSents:
@@ -1309,13 +1412,17 @@ class RuleBasedMatcher(object):
   def identifyCauseEffectForNsuj(self, cRoot, cEntsIndex, causalEnts, orderedEnts, validRightSSCEnts, reverse=False):
     """
       Identify the cause effect pairs for nsubj
-      @ In, cRoot, Token, the root of causal entity
-      @ In, cEntsIndex, int, the index for the causal entity
-      @ In, causalEnts, list, the list of causal entities
-      @ In, orderedEnts, list, the entities ordered by their locations in the Doc
-      @ In, validRightSSCEnts, list, the valid list of entities on the right of given causal entity
-      @ In, reverse, bool, reverse the cause effect relation if True
-      @ Out, cause effect pairs, tuple, (causeList, effectList, skipCEnts)
+
+      Args:
+        cRoot: Token, the root of causal entity
+        cEntsIndex: int, the index for the causal entity
+        causalEnts: list, the list of causal entities
+        orderedEnts: list, the entities ordered by their locations in the Doc
+        validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+        reverse: bool, reverse the cause effect relation if True
+
+      Returns:
+        cause effect pairs, tuple, (causeList, effectList, skipCEnts)
     """
     causeList = None
     effectList = None
@@ -1354,11 +1461,15 @@ class RuleBasedMatcher(object):
   def identifyCauseEffectForAttr(self, cRoot, validLeftSSCEnts, validRightSSCEnts, reverse=False):
     """
       Identify the cause effect pairs for attr
-      @ In, cRoot, Token, the root of causal entity
-      @ In, validLeftSSCEnts, list, the valid list of entities on the left of given causal entity
-      @ In, validRightSSCEnts, list, the valid list of entities on the right of given causal entity
-      @ In, reverse, bool, reverse the cause effect relation if True
-      @ Out, cause effect pairs, tuple, (causeList, effectList)
+
+      Args:
+        cRoot: Token, the root of causal entity
+        validLeftSSCEnts: list, the valid list of entities on the left of given causal entity
+        validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+        reverse: bool, reverse the cause effect relation if True
+
+      Returns:
+        cause effect pairs, tuple, (causeList, effectList)
     """
     causeList = None
     effectList = None
@@ -1379,12 +1490,16 @@ class RuleBasedMatcher(object):
   def identifyCauseEffectForClauseModifier(self, cRoot, rootCause, validLeftSSCEnts, validRightSSCEnts, reverse=False):
     """
       Identify the cause effect pairs for clause modifier
-      @ In, cRoot, Token, the root of causal entity
-      @ In, rootCause, tuple,
-      @ In, validLeftSSCEnts, list, the valid list of entities on the left of given causal entity
-      @ In, validRightSSCEnts, list, the valid list of entities on the right of given causal entity
-      @ In, reverse, bool, reverse the cause effect relation if True
-      @ Out, cause effect pairs, tuple, (causeList, effectList)
+
+      Args:
+        cRoot: Token, the root of causal entity
+        rootCause: tuple,
+        validLeftSSCEnts: list, the valid list of entities on the left of given causal entity
+        validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+        reverse: bool, reverse the cause effect relation if True
+
+      Returns:
+        cause effect pairs, tuple, (causeList, effectList)
     """
     causeList = None
     effectList = None
@@ -1416,9 +1531,13 @@ class RuleBasedMatcher(object):
   def splitEntsFollowingNounCausal(self, cRoot, validRightSSCEnts):
     """
       Spit the entities into cause, effect
-      @ In, cRoot, Token, the root of causal entity
-      @ In, validRightSSCEnts, list, the valid list of entities on the right of given causal entity
-      @ Out, cause effect pairs, tuple, (cause, effect)
+
+      Args:
+        cRoot: Token, the root of causal entity
+        validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+
+      Returns:
+        cause effect pairs, tuple, (cause, effect)
     """
     cause = []
     effect = []
@@ -1439,9 +1558,13 @@ class RuleBasedMatcher(object):
   def getRightSSCEnts(self, cEnt, orderedEnts):
     """
       Get the SSC ents on the right of causal entity
-      @ In, cEnt, Span, causal entity
-      @ In, orderedEnts, list, the entities ordered by their locations in the Doc
-      @ Out, selEnts, list, list of SSC entities
+
+      Args:
+        cEnt: Span, causal entity
+        orderedEnts: list, the entities ordered by their locations in the Doc
+
+      Returns:
+        selEnts: list, list of SSC entities
     """
     cIdx = self.getIndex(cEnt, orderedEnts)
     maxInd = len(orderedEnts)-1
@@ -1461,9 +1584,13 @@ class RuleBasedMatcher(object):
   def getLeftSSCEnts(self, cEnt, orderedEnts):
     """
       Get the SSC ents on the left of causal entity
-      @ In, cEnt, Span, causal entity
-      @ In, orderedEnts, list, the entities ordered by their locations in the Doc
-      @ Out, selEnts, list, list of SSC entities
+
+      Args:
+        cEnt: Span, causal entity
+        orderedEnts: list, the entities ordered by their locations in the Doc
+
+      Returns:
+        selEnts: list, list of SSC entities
     """
     cIdx = self.getIndex(cEnt, orderedEnts)
     maxInd = len(orderedEnts)-1
@@ -1483,9 +1610,13 @@ class RuleBasedMatcher(object):
   def selectValidEnts(self, ents, cEnt):
     """
       Select the valide ents that are within subtree of causal entity
-      @ In, ents, list, the list of entities
-      @ In, cEnt, Span, causal entity
-      @ Out, validEnts, list, list of valid entities
+
+      Args:
+        ents: list, the list of entities
+        cEnt: Span, causal entity
+
+      Returns:
+        validEnts: list, list of valid entities
     """
     if ents is None:
       return None
@@ -1505,11 +1636,15 @@ class RuleBasedMatcher(object):
   def collectExtactedCausals(self, cause, effect, causalKeyword, sent, conjecture=None):
     """
       Collect the extracted causal relations
-      @ In, cause, list, list of causes
-      @ In, effect, list, list of effects
-      @ In, causalKeyword, str, causal keyword
-      @ In, sent, spacy.tokens.Span, sentence with identified causal relations
-      @ Out, None
+
+      Args:
+        cause: list, list of causes
+        effect: list, list of effects
+        causalKeyword: str, causal keyword
+        sent: spacy.tokens.Span, sentence with identified causal relations
+
+      Returns:
+        None
     """
     root = sent.root
     if conjecture is None:
@@ -1524,8 +1659,12 @@ class RuleBasedMatcher(object):
   def getConjuncts(self, entList):
     """
       Get a list of conjuncts from entity list
-      @ In, entList, list, list of entities
-      @ Out, conjunctList, list, list of conjuncts
+
+      Args:
+        entList: list, list of entities
+
+      Returns:
+        conjunctList: list, list of conjuncts
     """
     ent = entList[0]
     conjunctList = []
@@ -1550,7 +1689,8 @@ class RuleBasedMatcher(object):
     """
     collect data of matched sentences that can be used for visualization
 
-    :param doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+      Args:
+        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     matchedSents = []
     matchedSentsForVis = []
@@ -1579,10 +1719,14 @@ class RuleBasedMatcher(object):
   def extract(self, sents, predSynonyms=[], exclPrepos=[]):
     """
       General extraction method
-      @ In, sents, list, the list of sentences
-      @ In, predSynonyms, list, the list of predicate synonyms
-      @ In, exclPrepos, list, the list of exlcuded prepositions
-      @ Out, (subject tuple, predicate, object tuple), generator, the extracted causal relation
+
+      Args:
+        sents: list, the list of sentences
+        predSynonyms: list, the list of predicate synonyms
+        exclPrepos: list, the list of exlcuded prepositions
+
+      Returns:
+        (subject tuple, predicate, object tuple): generator, the extracted causal relation
     """
     for sent in sents:
       root = sent.root
@@ -1614,9 +1758,13 @@ class RuleBasedMatcher(object):
       entType and dependency list by breadth first search.
       Search stops after first dependency match if firstDepOnly
       (used for subject search - do not "jump" over subjects)
-      @ In, root, spacy.tokens.Token, the root token
-      @ In, deps, list, list of dependency
-      @ Out, child, spacy.tokens.Token, the matched token
+
+      Args:
+        root: spacy.tokens.Token, the root token
+        deps: list, list of dependency
+
+      Returns:
+        child: spacy.tokens.Token, the matched token
     """
     toVisit = deque([root]) # queue for bfs
     while len(toVisit) > 0:
@@ -1640,9 +1788,13 @@ class RuleBasedMatcher(object):
       Find closest subject in predicates left subtree or
       predicates parent's left subtree (recursive).
       Has a filter on organizations.
-      @ In, pred, spacy.tokens.Token, the predicate token
-      @ In, passive, bool, True if the predicate token is passive
-      @ Out, subj, spacy.tokens.Token, the token that represents subject
+
+      Args:
+        pred: spacy.tokens.Token, the predicate token
+        passive: bool, True if the predicate token is passive
+
+      Returns:
+        subj: spacy.tokens.Token, the token that represents subject
     """
     for left in pred.lefts:
       if passive: # if pred is passive, search for passive subject
@@ -1661,9 +1813,13 @@ class RuleBasedMatcher(object):
       Find closest object in predicates right subtree.
       Skip prepositional objects if the preposition is in exclude list.
       Has a filter on organizations.
-      @ In, pred, spacy.tokens.Token, the predicate token
-      @ In, exclPrepos, list, the list of prepositions that will be excluded
-      @ Out, obj, spacy.tokens.Token,, the token that represents the object
+
+      Args:
+        pred: spacy.tokens.Token, the predicate token
+        exclPrepos: list, the list of prepositions that will be excluded
+
+      Returns:
+        obj: spacy.tokens.Token,, the token that represents the object
     """
     for right in pred.rights:
       obj = self.bfs(right, deps)
@@ -1675,8 +1831,12 @@ class RuleBasedMatcher(object):
 
   def isValidKeyword(self, var, keywords):
     """
-      @ In, var, token
-      @ In, keywords, list/dict
+
+      Args:
+        var: token
+        keywords: list/dict
+
+      Returns: True if the var is a valid among the keywords
     """
     if isinstance(keywords, dict):
       for _, vals in keywords.items():
