@@ -34,5 +34,3 @@ from dackar.utils.nlp import nlp_utils
 from dackar.utils.nlp.CreatePatterns import CreatePatterns
 from dackar.utils.opm.OPLparser import OPMobject
 
-logger = logging.getLogger("dackar")
-logger.setLevel(logging.INFO)
