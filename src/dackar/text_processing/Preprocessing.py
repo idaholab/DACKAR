@@ -53,10 +53,14 @@ class Preprocessing(object):
   def __init__(self, preprocessorList, preprocessorOptions):
     """
       Preprocessing object constructor
-      @ In, preprocessorList, list, list of preprocessor names as strings
-      @ In, preprocessorOptions, dict, dictionary of dictionaries containing optional arguments for preprocessors
-                                       top level key is name of preprocessor
-      @ Out, None
+
+      Arg:
+        preprocessorList: list, list of preprocessor names as strings
+        preprocessorOptions: dict, dictionary of dictionaries containing optional arguments for preprocessors
+        top level key is name of preprocessor
+
+      Return:
+        None
     """
     self.functionList = [] # list of preprocessor functions
     self.preprocessorNames = textacyNormalize + textacyRemove + textacyReplace + numerizer
@@ -88,9 +92,13 @@ class Preprocessing(object):
     """
       Creates a function from textacy.preprocessing.normalize such that only argument is a string
       and adds it to the functionList
-      @ In, name, str, name of the preprocessor
-      @ In, options, dict, dictionary of preprocessor options
-      @ Out, None
+
+      Args:
+        name: str, name of the preprocessor
+        options: dict, dictionary of preprocessor options
+
+      Returns:
+        None
     """
     # check for optional arguments
     useChars, useMaxn, useForm = False, False, False
@@ -121,9 +129,13 @@ class Preprocessing(object):
     """
       Creates a function from textacy.preprocessing.remove such that the only argument is a string
       and adds it to the functionList
-      @ In, name, str, name of the preprocessor
-      @ In, options, dict, dictionary of preprocessor options
-      @ Out, None
+
+      Args:
+        name: str, name of the preprocessor
+        options: dict, dictionary of preprocessor options
+
+      Returns:
+        None
     """
     # check for optional arguments
     useFast, useOnly = False, False
@@ -151,9 +163,13 @@ class Preprocessing(object):
     """
       Creates a function from textacy.preprocessing.replace such that the only argument is a string
       and adds it to the functionList
-      @ In, name, str, name of the preprocessor
-      @ In, options, dict, dictionary of preprocessor options
-      @ Out, None
+
+      Args:
+        name: str, name of the preprocessor
+        options: dict, dictionary of preprocessor options
+
+      Returns:
+        None
     """
     # check for optional arguments
     useRepl = False
@@ -175,8 +191,12 @@ class Preprocessing(object):
   def __call__(self, text):
     """
       Performs the preprocessing
-      @ In, text, str, string of text to preprocess
-      @ Out, processed, str, string of processed text
+
+      Args:
+        text: str, string of text to preprocess
+
+      Returns:
+        processed: str, string of processed text
     """
     processed = self.pipeline(text)
 
@@ -190,8 +210,12 @@ class SpellChecker(object):
   def __init__(self, checker='autocorrect'):
     """
       SpellChecker object constructor
-      @ In, checker, str, optional, spelling corrector to use ('autocorrect' or 'ContextualSpellCheck')
-      @ Out, None
+
+      Args:
+        checker: str, optional, spelling corrector to use ('autocorrect' or 'ContextualSpellCheck')
+
+      Returns:
+        None
     """
     self.checker = checker.lower()
     # get included and additional dictionary words and update speller dictionary
@@ -217,8 +241,12 @@ class SpellChecker(object):
   def addWordsToDictionary(self, words):
     """
       Adds a list of words to the spell check dictionary
-      @ In, words, list, list of words to add to the dictionary
-      @ Out, None
+
+      Args:
+        words: list, list of words to add to the dictionary
+
+      Returns:
+        None
     """
     if self.checker == 'autocorrect':
       self.speller.nlp_data.update({word: 1000000 for word in words})
@@ -228,8 +256,12 @@ class SpellChecker(object):
   def getMisspelledWords(self, text):
     """
       Returns a list of words that are misspelled according to the dictionary used
-      @ In, None
-      @ Out, misspelled, list, list of misspelled words
+
+      Args:
+        None
+
+      Returns:
+        misspelled: list, list of misspelled words
     """
     if self.checker == 'autocorrect':
       corrected = self.speller(text.lower())
@@ -248,8 +280,12 @@ class SpellChecker(object):
   def correct(self, text):
     """
       Performs automatic spelling correction and returns corrected text
-      @ In, None
-      @ Out, corrected, str, spelling corrected text
+
+      Args:
+        None
+
+      Returns:
+        corrected: str, spelling corrected text
     """
     if self.checker == 'autocorrect':
       corrected = self.speller(text)
@@ -264,23 +300,27 @@ class SpellChecker(object):
     """
       Performs automatic correction of abbreviations and returns corrected text
       This method relies on a database of abbreviations located at:
-      src/nlp/data/abbreviations.xlsx
+      `src/nlp/data/abbreviations.xlsx`
       This database contains the most common abbreviations collected from literarture and
       it provides for each abbreviation its corresponding full word(s); an abbreviation might
       have multple words associated. In such case the full word that makes more sense given the
       context is chosen (see findOptimalOption method)
-      @ In, abbrDatabase, pandas dataframe, dataframe containing library of abbreviations
-                                            and their correspoding full expression
-      @ In, text, str, string of text that will be analyzed
-      @ In, type, string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
-                          to determine which words are abbreviations that nned to be expanded
-                          * spellcheck: in this case spellchecker is used to identify words that
-                                        are not recognized
-                          * hard: here we directly search for the abbreviations in the provided
-                                  sentence
-                          * mixed: here we perform first a "hard" search followed by a "spellcheck"
-                                   search
-      @ Out, options, list, list of corrected text options
+
+      Args:
+        abbrDatabase: pandas dataframe, dataframe containing library of abbreviations
+        and their correspoding full expression
+        text: str, string of text that will be analyzed
+        type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
+        to determine which words are abbreviations that nned to be expanded
+          * spellcheck: in this case spellchecker is used to identify words that
+                        are not recognized
+          * hard: here we directly search for the abbreviations in the provided
+                  sentence
+          * mixed: here we perform first a "hard" search followed by a "spellcheck"
+                    search
+
+      Returns:
+        options: list, list of corrected text options
     """
     abbreviationSet = set(abbrDatabase['Abbreviation'].values)
     if type == 'spellcheck':
@@ -335,9 +375,13 @@ class SpellChecker(object):
   def generateAbbrDict(self, abbrDatabase):
     """
       Generates a AbbrDict that can be used by handleAbbreviationsDict
-      @ In, abbrDatabase, pandas dataframe, dataframe containing library of abbreviations
+
+      Args:
+        abbrDatabase: pandas dataframe, dataframe containing library of abbreviations
                                             and their correspoding full expression
-      @ Out, abbrDict, dictionary, a abbreviations dictionary
+
+      Returns:
+        abbrDict: dictionary, a abbreviations dictionary
     """
     abbrDict = {}
     #There may be a more efficient way to do the following
@@ -356,18 +400,22 @@ class SpellChecker(object):
       it provides for each abbreviation its corresponding full word(s); an abbreviation might
       have multple words associated. In such case the full word that makes more sense given the
       context is chosen (see findOptimalOption method)
-      @ In, abbrDict, dictionary, dictionary containing library of abbreviations
+
+      Args:
+        abbrDict: dictionary, dictionary containing library of abbreviations
                                             and their correspoding full expression
-      @ In, text, str, string of text that will be analyzed
-      @ In, type, string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
-                          to determine which words are abbreviations that nned to be expanded
-                          * spellcheck: in this case spellchecker is used to identify words that
-                                        are not recognized
-                          * hard: here we directly search for the abbreviations in the provided
-                                  sentence
-                          * mixed: here we perform first a "hard" search followed by a "spellcheck"
-                                   search
-      @ Out, options, list, list of corrected text options
+        text: str, string of text that will be analyzed
+        type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
+          to determine which words are abbreviations that nned to be expanded
+          * spellcheck: in this case spellchecker is used to identify words that
+                        are not recognized
+          * hard: here we directly search for the abbreviations in the provided
+                  sentence
+          * mixed: here we perform first a "hard" search followed by a "spellcheck"
+                    search
+
+      Return:
+        options: list, list of corrected text options
     """
     if type == 'spellcheck':
       unknowns = self.getMisspelledWords(text)
@@ -421,8 +469,12 @@ class SpellChecker(object):
   def findOptimalOption(self,options):
     """
       Method to handle abbreviation with multiple meanings
-      @ In, options, list, list of sentence options
-      @ Out, optimalOpt, string, option from the provided options list that fits more the
+
+      Args:
+        options: list, list of sentence options
+
+      Return:
+        optimalOpt: string, option from the provided options list that fits more the
                                  possible
     """
     nOpt = len(options)
@@ -445,8 +497,12 @@ class AbbrExpander(object):
   def __init__(self, abbreviationsFilename, checkerType='autocorrect', abbrType='mixed'):
     """
       Abbrviation expander constructor
-      @ In, abbreviationsFilename, string, filename of abbreviations data
-      @ Out, None
+
+      Args:
+        abbreviationsFilename: string, filename of abbreviations data
+
+      Return:
+        None
     """
     self.abbrType = abbrType
     self.checkerType = checkerType
@@ -463,8 +519,12 @@ class AbbrExpander(object):
   def abbrProcess(self, text, splitToList=False):
     """
       Expands the abbreviations in text
-      @ In, text, string, the text to expand
-      @ Out, expandedText, string, the text with abbreviations expanded
+
+      Args:
+        text: string, the text to expand
+
+      Returns:
+        expandedText: string, the text with abbreviations expanded
     """
     text = self.preprocess(text)
     if not splitToList:
