@@ -1,11 +1,11 @@
-DACKAR Python API
-=================
+DACKAR Python API Reference
+===========================
 
-Getting started with DACKAR is easy.
-The main class you need to care about is :class:`~dackar.nlp.RuleBasedMatcher.RuleBasedMatcher`
+.. toctree::
+   :includehidden:
+   :maxdepth: 4
+   :caption: Modules:
+   :titlesonly:
 
-dackar.nlp.RuleBasedMatcher
----------------------------
-
-.. automodule:: dackar.nlp.RuleBasedMatcher
-   :members:
+   modules/RuleBasedMatcher
+   modules/nlp_utils

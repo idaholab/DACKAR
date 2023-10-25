@@ -27,12 +27,17 @@ release = '0.1'
 extensions = ['sphinx.ext.intersphinx',
 	'sphinx.ext.autodoc',
 	'sphinx.ext.doctest',
-	'sphinx.ext.todo',]
+	'sphinx.ext.todo',
+	"sphinx.ext.autodoc.typehints",
+	"sphinx.ext.mathjax",
+  "sphinx.ext.autosummary",
+]
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 
+autosummary_generate = True
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
