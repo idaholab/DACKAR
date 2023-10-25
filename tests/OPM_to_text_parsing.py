@@ -9,11 +9,20 @@ Created on Mar 22, 2022
 
 #Import the requisite library
 import spacy
-from OPLparser import OPLentityParser, OPLtextParser
 from spacy.pipeline import EntityRuler
 from spacy import displacy
 from pathlib import Path
-import re
+
+import os
+import sys
+
+cwd = os.path.dirname(__file__)
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
+sys.path.append(frameworkDir)
+
+from dackar.utils.opm.OPLparser import OPMobject
+# OPLentityParser, OPLtextParser
+
 
 def NERentityParser(text):
   nlp = spacy.load('en_core_web_sm')
@@ -60,9 +69,15 @@ def opmFormEntityParser(text, formEntitiesList, functionEntitiesList):
   output_path = Path(filename)
   output_path.open('w', encoding='utf-8').write(svg)
 
+pump_opl_file = os.path.abspath(os.path.join(cwd, os.pardir,'opm_models', 'pump_opl.html'))
+opm = OPMobject(pump_opl_file)
 
 ''' Testing workflow '''
-formList, functionList = OPLentityParser('pump_OPL.html')
+opm.OPLentityParser()
+opm.OPLtextParser()
+opm.OPLparser()
+formList = opm.returnObjectList()
+functionList = opm.returnProcessList()
 text_OPM = 'Pump inspection revealed excessive Impeller degradation.'
 text_base = 'Over the last quarter Apple sold nearly 20 thousand iPods for a profit of $6 million. By contrast, my kids sold a lot of lemonade'
 #NERentityParser(text_base)
