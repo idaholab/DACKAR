@@ -24,9 +24,7 @@ Welcome to DACKAR's documentation!
    :hidden:
    :caption: More documentation
 
-   api
    contributors
-
 
 Indices and tables
 ==================

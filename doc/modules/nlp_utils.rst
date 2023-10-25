@@ -1,5 +1,5 @@
 NLP Utils
 =========
 
-.. automodule:: dackar.nlp.nlp_utils
+.. automodule:: dackar.utils.nlp.nlp_utils
    :members:
