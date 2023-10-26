@@ -5,6 +5,7 @@ Digital Analytics, Causal Knowledge Acquisition and Reasoning
 - pip install sphinx
 - pip install sphinx_rtd_theme
 - pip install nbsphinx (for notebook support)
+- pip install sphinx-copybutton
 - cd doc
 - make html
 - cd _build/html
@@ -13,11 +14,11 @@ Digital Analytics, Causal Knowledge Acquisition and Reasoning
 
 # Use following to generate API
 
-- pip install sphinx-autoapi
+
 ## Add and configure AutoAPI in your project/doc's conf.py
 - extensions.append('autoapi.extension')
 - autoapi_dirs = ['../src']
 
 ## to enable Jupyter notebooks inside autodoc, install
-- conda install pandoc
+
 

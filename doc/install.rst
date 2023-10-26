@@ -56,6 +56,41 @@ Windows machine have issue with pydantic
 
   pip install typing_extensions==4.5.*
 
+Required libraries and nltk data for similarity analysis
+--------------------------------------------------------
+
+.. code-block:: bash
+
+  conda install -c conda-forge pandas
+  python -m nltk.downloader all
+
+Different approach when there is a issue with SSLError
+------------------------------------------------------
+
+Please check installing_nltk_data_ on how to manually install nltk data.
+For this project, the users can try the following steps:
+
+.. code-block:: bash
+
+  cd ~
+  mkdir nltk_data
+  cd nltk_data
+  mkdir corpora
+  mkdir taggers
+  mkdir tokenizers
+  Dowload wordnet, averaged_perceptron_tagger, punkt
+  cp -r wordnet ~/nltk_data/corpora/
+  cp -r averaged_perceptron_tagger ~/nltk_data/taggers/
+  cp -r punkt ~/nltk_data/tokenizers
+
+
+Required library for preprocessing
+----------------------------------
+
+.. code-block:: bash
+
+  pip install contextualSpellCheck
 
 .. _en_core_web_lg-3.1.0.tar.gz: https://github.com/explosion/spacy-models/releases/tag/en_core_web_lg-3.1.0
 .. _coreferee: https://github.com/richardpaulhudson/coreferee/tree/master/models/coreferee_model_en.zip
+.. _installing_nltk_data: https://www.nltk.org/data.html

@@ -34,12 +34,13 @@ extensions = ['sphinx.ext.intersphinx',
 	'sphinx.ext.todo',
 	"sphinx.ext.autodoc.typehints",
 	"sphinx.ext.mathjax",
-  "sphinx.ext.autosummary",
+    "sphinx.ext.autosummary",
 	"nbsphinx",  # <- For Jupyter Notebook support
 	"sphinx.ext.napoleon",  # <- For Google style docstrings
 	"sphinx.ext.imgmath",
 	"sphinx.ext.viewcode",
 	'autoapi.extension',
+    'sphinx_copybutton',
 ]
 
 templates_path = ['_templates']
