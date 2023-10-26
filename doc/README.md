@@ -18,4 +18,6 @@ Digital Analytics, Causal Knowledge Acquisition and Reasoning
 - extensions.append('autoapi.extension')
 - autoapi_dirs = ['../src']
 
+## to enable Jupyter notebooks inside autodoc, install
+- conda install pandoc
 

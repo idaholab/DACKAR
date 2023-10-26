@@ -17,6 +17,7 @@ Welcome to DACKAR's documentation!
 
    install
    support
+   Notebooks <notebooks/index>
 
 .. toctree::
    :maxdepth: 2

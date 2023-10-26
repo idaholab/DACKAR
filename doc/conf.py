@@ -3,6 +3,9 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import shutil
+from datetime import datetime
+from pathlib import Path
 import sys
 import os
 
@@ -83,14 +86,14 @@ def setup(app) -> None:
     app.connect('builder-inited', run_apidoc)
 # """
 
-"""
+
 def copy_notebooks() -> None:
     for filename in Path("../examples").glob("*.ipynb"):
         shutil.copy2(str(filename), "notebooks")
 
 
 copy_notebooks()
-"""
+
 
 # -- NBSphinx options
 # Do not execute the notebooks when building the docs
