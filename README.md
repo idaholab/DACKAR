@@ -38,13 +38,17 @@ autodoc_inherit_docstrings = False
 ```
 
 ## How to build html?
-- pip install sphinx, sphinx_rtd_theme, nbsphinx, sphinx-copybutton, sphinx-autoapi
-- conda install pandoc
-- cd doc
-- make html
-- cd _build/html
-- python3 -m http.server
-- open your brower to: http://localhost:8000
+
+```bash
+  pip install sphinx, sphinx_rtd_theme, nbsphinx, sphinx-copybutton, sphinx-autoapi
+  conda install pandoc
+  cd doc
+  make html
+  cd _build/html
+  python3 -m http.server
+```
+
+open your brower to: http://localhost:8000
 
 
 ## How to install DACKAR libraries
