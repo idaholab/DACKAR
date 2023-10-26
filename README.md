@@ -45,3 +45,84 @@ autodoc_inherit_docstrings = False
 - cd _build/html
 - python3 -m http.server
 - open your brower to: http://localhost:8000
+
+
+## How to install DACKAR libraries
+
+- Install dependency libraries
+
+```bash
+  conda create -n nlp_libs python=3.9
+  conda activate nlp_libs
+  pip install spacy==3.1 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy scikit-learn==1.2.2
+```
+
+**scikit-learn 1.2.2 is required for quantulum3**
+
+- Download language model from spacy (can not use INL network)
+
+```bash
+  python -m spacy download en_core_web_lg
+  python -m coreferee install en
+```
+
+- Different approach when there is a issue with SSLError
+
+```bash
+  Download en_core_web_lg-3.1.0.tar.gz from https://github.com/explosion/spacy-models/releases/tag/en_core_web_lg-3.1.0
+
+  python -m pip install ./en_core_web_lg-3.1.0.tar.gz
+```
+
+- Down coreferee model:
+
+```bash
+  Download from https://github.com/richardpaulhudson/coreferee/tree/master/models/coreferee_model_en.zip
+
+  python -m pip install ./coreferee_model_en.zip
+```
+
+- You may need to install stemming for some of unit parsing
+
+```bash
+  pip install stemming
+```
+
+- Windows machine have issue with pydantic (See https://github.com/explosion/spaCy/issues/12659)
+
+**Installing typing_extensions<4.6**
+
+```bash
+  pip install typing_extensions==4.5.*
+```
+
+- Required libraries and nltk data for similarity analysis
+
+```bash
+  conda install -c conda-forge pandas
+  python -m nltk.downloader all
+```
+
+- Different approach when there is a issue with SSLError
+
+Please check (https://www.nltk.org/data.html) on how to manually install nltk data.
+For this project, the users can try the following steps:
+
+```bash
+  cd ~
+  mkdir nltk_data
+  cd nltk_data
+  mkdir corpora
+  mkdir taggers
+  mkdir tokenizers
+  Dowload wordnet, averaged_perceptron_tagger, punkt
+  cp -r wordnet ~/nltk_data/corpora/
+  cp -r averaged_perceptron_tagger ~/nltk_data/taggers/
+  cp -r punkt ~/nltk_data/tokenizers
+```
+
+- Required library for preprocessing
+
+```bash
+  pip install contextualSpellCheck
+```
