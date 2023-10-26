@@ -24,9 +24,15 @@ logger = logging.getLogger(__name__)
 def displayNER(doc, includePunct=False):
   """
     Generate data frame for visualization of spaCy doc with custom attributes.
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ In, includePunct, bool, True if the punctuaction is included
-    @ Out, df, pandas.DataFrame, data frame contains attributes of tokens
+
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+      includePunct: bool, True if the punctuaction is included
+
+    Returns:
+
+      df: pandas.DataFrame, data frame contains attributes of tokens
   """
   rows = []
   for i, t in enumerate(doc):
@@ -54,9 +60,15 @@ def displayNER(doc, includePunct=False):
 def resetPipeline(nlp, pipes):
   """
     remove all custom pipes, and add new pipes
-    @ In, nlp, spacy.Language object, contains all components and data needed to process text
-    @ In, pipes, list, list of pipes that will be added to nlp pipeline
-    @ Out, nlp, spacy.Language object, contains updated components and data needed to process text
+
+    Args:
+
+      nlp: spacy.Language object, contains all components and data needed to process text
+      pipes: list, list of pipes that will be added to nlp pipeline
+
+    Returns:
+
+      nlp: spacy.Language object, contains updated components and data needed to process text
   """
   customPipes = [pipe for (pipe, _) in nlp.pipeline
                   if pipe not in ['tagger', 'parser', 'ner',
@@ -77,9 +89,15 @@ def resetPipeline(nlp, pipes):
 def printDepTree(doc, skipPunct=True):
   """
     Utility function to pretty print the dependency tree.
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ In, skipPunct, bool, True if skip punctuactions
-    @ Out, None
+
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+      skipPunct: bool, True if skip punctuactions
+
+    Returns:
+
+      None
   """
   def printRecursive(root, indent, skipPunct):
     if not root.dep_ == 'punct' or not skipPunct:
@@ -95,8 +113,10 @@ def printDepTree(doc, skipPunct=True):
 
 def plotDAG(edges, colors='k'):
   """
-  @ In, edges, list of tuples, [(subj, conj), (..,..)] or [(subj, conj, {"color":"blue"}), (..,..)]
-  @ In, colors, str or list, list of colors
+    Args:
+
+    edges: list of tuples, [(subj, conj), (..,..)] or [(subj, conj, {"color":"blue"}), (..,..)]
+    colors: str or list, list of colors
   """
   g = nx.MultiDiGraph()
   g.add_edges_from(edges)
@@ -108,9 +128,15 @@ def plotDAG(edges, colors='k'):
 def extractLemma(var, nlp):
   """
     Lammatize the variable list
-    @ In, var, str, string
-    @ In, nlp, object, preloaded nlp model
-    @ Out, lemVar, list, list of lammatized variables
+
+    Args:
+
+      var: str, string
+      nlp: object, preloaded nlp model
+
+    Returns:
+
+      lemVar: list, list of lammatized variables
   """
   mvar = ' '.join(var.split())
   lemVar = [token.lemma_ for token in nlp(mvar)]
@@ -119,11 +145,17 @@ def extractLemma(var, nlp):
 def generatePattern(form, label, id, attr="LOWER"):
   """
     Generate entity pattern
-    @ In, form, str or list, the given str or list of lemmas that will be used to generate pattern
-    @ In, label, str, the label name for the pattern
-    @ In, id, str, the id name for the pattern
-    @ In, attr, str, attribute used for the pattern, either "LOWER" or "LEMMA"
-    @ Out, pattern, dict, pattern will be used by entity matcher
+
+    Args:
+
+      form: str or list, the given str or list of lemmas that will be used to generate pattern
+      label: str, the label name for the pattern
+      id: str, the id name for the pattern
+      attr: str, attribute used for the pattern, either "LOWER" or "LEMMA"
+
+    Returns:
+
+      pattern: dict, pattern will be used by entity matcher
   """
   # if any of "!", "?", "+", "*" present in the provided string "form", we will treat it as determiter for the form
   if attr.lower() == "lower":
@@ -140,11 +172,17 @@ def generatePattern(form, label, id, attr="LOWER"):
 def generatePatternList(entList, label, id, nlp, attr="LOWER"):
   """
     Generate a list of entity patterns
-    @ In, entList, list, list of entities
-    @ In, label, str, the label name for the pattern
-    @ In, id, str, the id name for the pattern
-    @ In, attr, str, attribute used for the pattern, either "LOWER" or "LEMMA"
-    @ Out, ptnList, list, list of patterns will be used by entity matcher
+
+    Args:
+
+      entList: list, list of entities
+      label: str, the label name for the pattern
+      id: str, the id name for the pattern
+      attr: str, attribute used for the pattern, either "LOWER" or "LEMMA"
+
+    Returns:
+
+      ptnList, list, list of patterns will be used by entity matcher
   """
   ptnList = []
   for ent in entList:
@@ -166,11 +204,14 @@ def generatePatternList(entList, label, id, nlp, attr="LOWER"):
 def extendEnt(matcher, doc, i, matches):
   """
   Extend the doc's entity
-  @ In, matcher, spacy.Matcher, the spacy matcher instance
-  @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-  @ In, i, int, index of the current match (matches[i])
-  @ In, matches, List[Tuple[int, int, int]], a list of (match_id, start, end) tuples, describing
-  the matches. A match tuple describes a span doc[start:end]
+
+  Args:
+
+    matcher: spacy.Matcher, the spacy matcher instance
+    doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    i: int, index of the current match (matches[i])
+    matches: List[Tuple[int, int, int]], a list of (match_id, start, end) tuples, describing
+    the matches. A match tuple describes a span doc[start:end]
   """
   id, start, end = matches[i]
   ent = Span(doc, start, end, label=id)
