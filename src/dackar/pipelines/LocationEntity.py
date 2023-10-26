@@ -14,24 +14,29 @@ def create_location_component(nlp, name, patterns):
 class LocationEntity(object):
   """
     How to use it:
-    from LocationEntity import LocationEntity
-    nlp = spacy.load("en_core_web_sm")
-    patterns = {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}
-    cmatcher = ConjectureEntity(nlp, patterns)
-    doc = nlp("It is close to 5pm.")
-    updatedDoc = cmatcher(doc)
+
+    .. code-block:: python
+
+      from LocationEntity import LocationEntity
+      nlp = spacy.load("en_core_web_sm")
+      patterns = {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}
+      cmatcher = ConjectureEntity(nlp, patterns)
+      doc = nlp("It is close to 5pm.")
+      updatedDoc = cmatcher(doc)
 
     or:
 
-    nlp.add_pipe('location_entity', config={"patterns": {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('location_entity', config={"patterns": {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, patterns=None, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
-      @ patterns, list/dict,
+    Args:
+
+      patterns: list/dict, patterns for Location Entity
     """
     self.name = 'location_entity'
     if patterns is None:
@@ -60,7 +65,9 @@ class LocationEntity(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+
+        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     doc = self.entityRuler(doc)
     return doc

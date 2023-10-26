@@ -47,10 +47,16 @@ class SentenceSimilarity:
   def constructSimilarityVectorPawarMagoMethod(self, arr1, arr2):
     """
       Construct the similarity vector
-      @ In, arr1, set of wordnet.Synset for one sentence
-      @ In, arr2, set of wordnet.Synset for the other sentence
-      @ Out, vector, list, list of similarity vector
-      @ Out, count, int, the number of words that have high similarity >=0.804
+
+      Args:
+
+        arr1: set of wordnet.Synset for one sentence
+        arr2: set of wordnet.Synset for the other sentence
+
+      Returns:
+
+        vector: list, list of similarity vector
+        count: int, the number of words that have high similarity >=0.804
     """
     # vectorLen, the large length between arr1 and arr2
     if len(arr1) >= len(arr2):
@@ -95,9 +101,15 @@ class SentenceSimilarity:
   def sentenceSimilarityPawarMagoMethod(self, sentence1, sentence2):
     """
       Proposed method from https://arxiv.org/pdf/1802.05667.pdf
-      @ In, sentence1, str, first sentence used to compute sentence similarity
-      @ In, sentence2, str, second sentence used to compute sentence similarity
-      @ Out, similarity, float, [0, 1], the computed similarity for given two sentences
+
+      Args:
+
+        sentence1: str, first sentence used to compute sentence similarity
+        sentence2: str, second sentence used to compute sentence similarity
+
+      Returns:
+
+        similarity: float, [0, 1], the computed similarity for given two sentences
     """
     _, sense1 = simUtils.sentenceSenseDisambiguationPyWSD(sentence1, senseMethod=self.disambiguationMethod, simMethod='path')
     _, sense2 = simUtils.sentenceSenseDisambiguationPyWSD(sentence2, senseMethod=self.disambiguationMethod, simMethod='path')
@@ -122,10 +134,16 @@ class SentenceSimilarity:
       Proposed method from https://github.com/anishvarsha/Sentence-Similaritity-using-corpus-statistics
       Compute sentence similarity using both semantic and word order similarity
       The semantic similarity is based on maximum word similarity between one word and another sentence
-      @ In, sentence1, str, first sentence used to compute sentence similarity
-      @ In, sentence2, str, second sentence used to compute sentence similarity
-      @ In, infoContentNorm, bool, True if statistics corpus is used to weight similarity vectors
-      @ Out, similarity, float, [0, 1], the computed similarity for given two sentences
+
+      Args:
+
+        sentence1: str, first sentence used to compute sentence similarity
+        sentence2: str, second sentence used to compute sentence similarity
+        infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors
+
+      Returns:
+
+        similarity: float, [0, 1], the computed similarity for given two sentences
     """
     similarity = (1-self.wordOrder) * simUtils.semanticSimilaritySentences(sentence1, sentence2, infoContentNorm) + self.wordOrder * simUtils.wordOrderSimilaritySentences(sentence1, sentence2)
     return similarity

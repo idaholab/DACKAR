@@ -15,24 +15,31 @@ def create_simple_matcher_component(nlp, name, label, terms, asSpan):
 class SimpleEntityMatcher(object):
   """
     How to use it:
-    from SimpleEntityMatcher import SimpleEntityMatcher
-    nlp = spacy.load("en_core_web_sm")
-    terms = [{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}]
-    pmatcher = SimpleEntityMatcher(nlp, 'ssc', terms)
-    doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
-    updatedDoc = pmatcher(doc)
+
+    .. code-block:: python
+
+      from SimpleEntityMatcher import SimpleEntityMatcher
+      nlp = spacy.load("en_core_web_sm")
+      terms = [{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}]
+      pmatcher = SimpleEntityMatcher(nlp, 'ssc', terms)
+      doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
+      updatedDoc = pmatcher(doc)
 
     or:
 
-    nlp.add_pipe('simple_entity_matcher', config={"label": "ssc", "terms":[{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}], "asSpan":True})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('simple_entity_matcher', config={"label": "ssc", "terms":[{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}], "asSpan":True})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, label, terms, asSpan=True, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
-      @ In, terms, list, the rules used to match the entities, for example:
+    Args:
+
+      nlp: spacy nlp model
+      label: str, the name/label for the patterns in terms
+        terms, list, the rules used to match the entities, for example,
         terms = [{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}]
     """
     self.name = 'simple_entity_matcher'
@@ -46,7 +53,9 @@ class SimpleEntityMatcher(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     matches = self.matcher(doc, as_spans=self.asSpan)
     spans = []

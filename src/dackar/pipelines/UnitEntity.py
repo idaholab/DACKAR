@@ -18,22 +18,28 @@ def create_unit_component(nlp, name, label, asSpan):
 class UnitEntity(object):
   """
     How to use it:
-    from UnitEntity import UnitEntity
-    nlp = spacy.load("en_core_web_sm")
-    unit = UnitEntity(nlp, 'ssc')
-    doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
-    updatedDoc = unit(doc)
+
+    .. code-block:: python
+
+      from UnitEntity import UnitEntity
+      nlp = spacy.load("en_core_web_sm")
+      unit = UnitEntity(nlp, 'ssc')
+      doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
+      updatedDoc = unit(doc)
 
     or:
 
-    nlp.add_pipe('unit_entity', config={"label": "ssc", "asSpan":True})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('unit_entity', config={"label": "ssc", "asSpan":True})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, label='unit', asSpan=True, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
+    Args:
+      nlp: spacy nlp model
+      label: str, the name/label for the patterns in terms
     """
     self.name = 'unit_entity'
     self.label = label
@@ -43,7 +49,9 @@ class UnitEntity(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     text = doc.text
     # print(text)

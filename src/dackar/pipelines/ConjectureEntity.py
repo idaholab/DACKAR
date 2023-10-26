@@ -14,24 +14,30 @@ def create_conjecture_component(nlp, name, patterns):
 class ConjectureEntity(object):
   """
     How to use it:
-    from ConjectureEntity import ConjectureEntity
-    nlp = spacy.load("en_core_web_sm")
-    patterns = {'label': 'conjecture', 'pattern': [{'LOWER': 'possible'}], 'id': 'conjecture'}
-    cmatcher = ConjectureEntity(nlp, patterns)
-    doc = nlp("Vibration seems like it is coming from the shaft.")
-    updatedDoc = cmatcher(doc)
+
+    .. code-block:: python
+
+      from ConjectureEntity import ConjectureEntity
+      nlp = spacy.load("en_core_web_sm")
+      patterns = {'label': 'conjecture', 'pattern': [{'LOWER': 'possible'}], 'id': 'conjecture'}
+      cmatcher = ConjectureEntity(nlp, patterns)
+      doc = nlp("Vibration seems like it is coming from the shaft.")
+      updatedDoc = cmatcher(doc)
 
     or:
 
-    nlp.add_pipe('conjecture_entity', config={"patterns": {'label': 'conjecture', 'pattern': [{'LOWER': 'possible'}], 'id': 'conjecture'}})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('conjecture_entity', config={"patterns": {'label': 'conjecture', 'pattern': [{'LOWER': 'possible'}], 'id': 'conjecture'}})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, patterns=None, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
-      @ patterns, list/dict,
+    Args:
+
+      nlp: spacy nlp model
+      patterns: list/dict, patterns for conjecture entity
     """
     self.name = 'conjecture_entity'
     if patterns is None:
@@ -50,7 +56,8 @@ class ConjectureEntity(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     doc = self.entityRuler(doc)
     return doc

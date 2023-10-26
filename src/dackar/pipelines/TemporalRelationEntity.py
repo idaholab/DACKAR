@@ -15,24 +15,29 @@ def create_temporal_relation_component(nlp, name, patterns):
 class TemporalRelationEntity(object):
   """
     How to use it:
-    from TemporalRelationEntity import TemporalRelationEntity
-    nlp = spacy.load("en_core_web_sm")
-    patterns = {'label': 'temporal_relation', 'pattern': [{'LOWER': 'follow'}], 'id': 'temporal_relation'}
-    cmatcher = ConjectureEntity(nlp, patterns)
-    doc = nlp("The system failed following the pump failure.")
-    updatedDoc = cmatcher(doc)
+
+    .. code-block:: python
+
+      from TemporalRelationEntity import TemporalRelationEntity
+      nlp = spacy.load("en_core_web_sm")
+      patterns = {'label': 'temporal_relation', 'pattern': [{'LOWER': 'follow'}], 'id': 'temporal_relation'}
+      cmatcher = ConjectureEntity(nlp, patterns)
+      doc = nlp("The system failed following the pump failure.")
+      updatedDoc = cmatcher(doc)
 
     or:
 
-    nlp.add_pipe('temporal_relation_entity', config={"patterns": {'label': 'temporal_relation', 'pattern': [{'LOWER': 'follow'}], 'id': 'temporal_relation'}})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('temporal_relation_entity', config={"patterns": {'label': 'temporal_relation', 'pattern': [{'LOWER': 'follow'}], 'id': 'temporal_relation'}})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, patterns=None, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
-      @ patterns, list/dict,
+    Args:
+      nlp: spacy nlp model
+      patterns: list/dict
     """
     self.name = 'temporal_relation_entity'
     if patterns is None:
@@ -61,7 +66,8 @@ class TemporalRelationEntity(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     doc = self.entityRuler(doc)
     return doc

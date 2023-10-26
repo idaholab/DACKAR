@@ -14,24 +14,30 @@ def create_temporal_attribute_component(nlp, name, patterns):
 class TemporalAttributeEntity(object):
   """
     How to use it:
-    from TemporalAttributeEntity import TemporalAttributeEntity
-    nlp = spacy.load("en_core_web_sm")
-    patterns = {'label': 'temporal_attribute', 'pattern': [{'LOWER': 'about'}], 'id': 'temporal_attribute'}
-    cmatcher = ConjectureEntity(nlp, patterns)
-    doc = nlp("It is close to 5pm.")
-    updatedDoc = cmatcher(doc)
+
+    .. code-block:: python
+
+      from TemporalAttributeEntity import TemporalAttributeEntity
+      nlp = spacy.load("en_core_web_sm")
+      patterns = {'label': 'temporal_attribute', 'pattern': [{'LOWER': 'about'}], 'id': 'temporal_attribute'}
+      cmatcher = ConjectureEntity(nlp, patterns)
+      doc = nlp("It is close to 5pm.")
+      updatedDoc = cmatcher(doc)
 
     or:
 
-    nlp.add_pipe('temporal_attribute_entity', config={"patterns": {'label': 'temporal_attribute_entity', 'pattern': [{'LOWER': 'about'}], 'id': 'temporal_attribute_entity'}})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('temporal_attribute_entity', config={"patterns": {'label': 'temporal_attribute_entity', 'pattern': [{'LOWER': 'about'}], 'id': 'temporal_attribute_entity'}})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, patterns=None, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
-      @ patterns, list/dict,
+    Args:
+
+      nlp: spacy nlp model
+      patterns: list/dict
     """
     self.name = 'temporal_attribute_entity'
     if patterns is None:
@@ -50,7 +56,9 @@ class TemporalAttributeEntity(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     doc = self.entityRuler(doc)
     return doc

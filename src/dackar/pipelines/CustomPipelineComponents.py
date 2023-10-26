@@ -46,8 +46,12 @@ aliasLookup = {}
 def normEntities(doc):
   """
     Normalizing Named Entities, remove the leading article and trailing particle
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after the normalizing named entities
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after the normalizing named entities
   """
   ents = []
   for ent in doc.ents:
@@ -64,9 +68,13 @@ def normEntities(doc):
 @Language.component("initCoref")
 def initCoref(doc):
   """
-    Initialize the coreference, assign text and label to custom extension "ref_n" and "ref_t"
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after the initializing coreference
+    Initialize the coreference, assign text and label to custom extension ``ref_n`` and ``ref_t``
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after the initializing coreference
   """
   for e in doc.ents:
     #
@@ -77,9 +85,13 @@ def initCoref(doc):
 @Language.component("aliasResolver")
 def aliasResolver(doc):
   """
-    Lookup aliases and store result in ref_t, ref_n
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after the alias lookup
+    Lookup aliases and store result in ``ref_t``, ``ref_n``
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after the alias lookup
   """
   for ent in doc.ents:
     token = ent[0].text
@@ -90,9 +102,13 @@ def aliasResolver(doc):
 
 def propagateEntType(doc):
   """
-    propagate entity type stored in ref_t
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after entity type extension
+    propagate entity type stored in ``ref_t``
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after entity type extension
   """
   ents = []
   for e in doc.ents:
@@ -108,12 +124,16 @@ def anaphorCoref(doc):
     Anaphora resolution using coreferee
     This pipeline need to be added after NER.
     The assumption here is: The entities need to be recognized first, then call
-    pipeline "initCoref" to assign initial custom attribute "ref_n" and "ref_t",
-    then call pipeline "aliasResolver" to resolve all the aliases used in the text.
-    After all these pre-processes, we can use "anaphorCoref" pipeline to resolve the
+    pipeline ``initCoref`` to assign initial custom attribute ``ref_n`` and ``ref_t``,
+    then call pipeline ``aliasResolver`` to resolve all the aliases used in the text.
+    After all these pre-processes, we can use ``anaphorCoref`` pipeline to resolve the
     coreference.
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after the anaphora resolution using coreferee
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after the anaphora resolution using coreferee
   """
   if not Token.has_extension('coref_chains'):
     return doc
@@ -138,12 +158,16 @@ def anaphorEntCoref(doc):
     Anaphora resolution using coreferee for Entities
     This pipeline need to be added after NER.
     The assumption here is: The entities need to be recognized first, then call
-    pipeline "initCoref" to assign initial custom attribute "ref_n" and "ref_t",
-    then call pipeline "aliasResolver" to resolve all the aliases used in the text.
-    After all these pre-processes, we can use "anaphorEntCoref" pipeline to resolve the
+    pipeline ``initCoref`` to assign initial custom attribute ``ref_n`` and ``ref_t``,
+    then call pipeline ``aliasResolver`` to resolve all the aliases used in the text.
+    After all these pre-processes, we can use ``anaphorEntCoref`` pipeline to resolve the
     coreference.
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after the anaphora resolution using coreferee
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after the anaphora resolution using coreferee
   """
   if not Token.has_extension('coref_chains'):
     return doc
@@ -167,8 +191,12 @@ def anaphorEntCoref(doc):
 def expandEntities(doc):
   """
     Expand the current entities, recursive function to extend entity with all previous NOUN
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after expansion of current entities
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after expansion of current entities
   """
   newEnts = []
   isUpdated = False
@@ -191,9 +219,13 @@ def expandEntities(doc):
 def mergePhrase(doc):
   """
     Expand the current entities
-    This method will keep "DET" or "PART", using pipeline "normEntities" after this pipeline to remove them
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after merge phrase
+    This method will keep ``DET`` or ``PART``, using pipeline ``normEntities`` after this pipeline to remove them
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after merge phrase
   """
   def isNum(nounChunks):
     for elem in nounChunks:
@@ -240,15 +272,16 @@ def mergePhrase(doc):
   return doc
 
 
-
-
-
 @Language.component("pysbdSentenceBoundaries")
 def pysbdSentenceBoundaries(doc):
   """
     Use pysbd as a sentencizer component for spacy
-    @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
-    @ Out, doc, spacy.tokens.doc.Doc, the document after process
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after process
   """
   seg = pysbd.Segmenter(language="en", clean=False, char_span=True)
   sentsCharSpans = seg.segment(doc.text)

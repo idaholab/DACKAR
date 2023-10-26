@@ -312,12 +312,12 @@ class SpellChecker(object):
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
         to determine which words are abbreviations that nned to be expanded
-          * spellcheck: in this case spellchecker is used to identify words that
-                        are not recognized
-          * hard: here we directly search for the abbreviations in the provided
-                  sentence
-          * mixed: here we perform first a "hard" search followed by a "spellcheck"
-                    search
+        * spellcheck: in this case spellchecker is used to identify words that
+        are not recognized
+        * hard: here we directly search for the abbreviations in the provided
+        sentence
+        * mixed: here we perform first a "hard" search followed by a "spellcheck"
+        search
 
       Returns:
         options: list, list of corrected text options
@@ -378,7 +378,7 @@ class SpellChecker(object):
 
       Args:
         abbrDatabase: pandas dataframe, dataframe containing library of abbreviations
-                                            and their correspoding full expression
+        and their correspoding full expression
 
       Returns:
         abbrDict: dictionary, a abbreviations dictionary
@@ -403,16 +403,16 @@ class SpellChecker(object):
 
       Args:
         abbrDict: dictionary, dictionary containing library of abbreviations
-                                            and their correspoding full expression
+        and their correspoding full expression
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
-          to determine which words are abbreviations that nned to be expanded
-          * spellcheck: in this case spellchecker is used to identify words that
-                        are not recognized
-          * hard: here we directly search for the abbreviations in the provided
-                  sentence
-          * mixed: here we perform first a "hard" search followed by a "spellcheck"
-                    search
+        to determine which words are abbreviations that nned to be expanded
+        * spellcheck: in this case spellchecker is used to identify words that
+        are not recognized
+        * hard: here we directly search for the abbreviations in the provided
+        sentence
+        * mixed: here we perform first a "hard" search followed by a "spellcheck"
+        search
 
       Return:
         options: list, list of corrected text options
@@ -475,7 +475,7 @@ class SpellChecker(object):
 
       Return:
         optimalOpt: string, option from the provided options list that fits more the
-                                 possible
+        possible
     """
     nOpt = len(options)
     combScore = np.zeros(nOpt)

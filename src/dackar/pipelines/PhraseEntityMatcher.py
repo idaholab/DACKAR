@@ -15,25 +15,30 @@ def create_phrase_matcher_component(nlp, name, label, terms, asSpan):
 class PhraseEntityMatcher(object):
   """
     How to use it:
-    from PhraseEntityMatcher import PhraseEntityMatcher
-    nlp = spacy.load("en_core_web_sm")
-    phraseList = ["safety cage", "cage", "pump"]
-    pmatcher = PhraseEntityMatcher(nlp, 'ssc', phraseList)
-    doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
-    updatedDoc = pmatcher(doc)
+
+    .. code-block:: python
+
+      from PhraseEntityMatcher import PhraseEntityMatcher
+      nlp = spacy.load("en_core_web_sm")
+      phraseList = ["safety cage", "cage", "pump"]
+      pmatcher = PhraseEntityMatcher(nlp, 'ssc', phraseList)
+      doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
+      updatedDoc = pmatcher(doc)
 
     or:
 
-    nlp.add_pipe('phrase_entity_matcher', config={"label": "ssc", "terms":["safety cage", "pump"], "asSpan":True})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('phrase_entity_matcher', config={"label": "ssc", "terms":["safety cage", "pump"], "asSpan":True})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, label, terms, asSpan=True, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
-      @ terms, list, the phrase list, for example:
-        phraseList = ["hello", "world"]
+    Args:
+
+      label: str, the name/label for the patterns in terms
+      terms: list, the phrase list, for example, phraseList = ["hello", "world"]
     """
     self.name = 'phrase_entity_matcher'
     self.matcher = PhraseMatcher(nlp.vocab, attr='LOWER')
@@ -43,7 +48,9 @@ class PhraseEntityMatcher(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     matches = self.matcher(doc, as_spans=self.asSpan)
     spans = []

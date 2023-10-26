@@ -36,8 +36,8 @@ class OPMobject(object):
   def OPLentityParser(self):
     '''
     This method extracts all the form and function entities out of the OPL html file and it puts them in two separate lists:
-    - self.objectList
-    - self.processList
+    * self.objectList
+    * self.processList
     This process is performed by parsing the html file and identify color-coded entities.
     '''
     with open(self.filename) as fp:
@@ -193,8 +193,10 @@ class OPMobject(object):
 def checkAcronym(s):
   '''
   This method separates an OPM object if an acronym is defined
-  E.g.: 'travelling screen (TWS)'  --> ('travelling screen', 'TWS')
-        'travelling screen'        --> ('travelling screen', None)
+  E.g.:
+
+    'travelling screen (TWS)'  --> ('travelling screen', 'TWS')
+    'travelling screen'        --> ('travelling screen', None)
   '''
   if '(' in s:
       acronym = s[s.find("(")+1:s.find(")")]

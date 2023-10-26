@@ -12,24 +12,30 @@ def create_general_component(nlp, name, patterns, asSpan):
 class GeneralEntity(object):
   """
     How to use it:
-    from GeneralEntity import GeneralEntity
-    nlp = spacy.load("en_core_web_sm")
-    patterns = {'label': 'general', 'pattern': [{'LOWER': 'possible'}], 'id': 'general'}
-    cmatcher = generalEntity(nlp, patterns)
-    doc = nlp("Vibration seems like it is coming from the shaft.")
-    updatedDoc = cmatcher(doc)
+
+    .. code-block:: python
+
+      from GeneralEntity import GeneralEntity
+      nlp = spacy.load("en_core_web_sm")
+      patterns = {'label': 'general', 'pattern': [{'LOWER': 'possible'}], 'id': 'general'}
+      cmatcher = generalEntity(nlp, patterns)
+      doc = nlp("Vibration seems like it is coming from the shaft.")
+      updatedDoc = cmatcher(doc)
 
     or:
 
-    nlp.add_pipe('general_entity', config={"patterns": {'label': 'general', 'pattern': [{'LOWER': 'possible'}], 'id': 'general'}, "asSpan":True})
-    newDoc = nlp(doc.text)
+    .. code-block:: python
+
+      nlp.add_pipe('general_entity', config={"patterns": {'label': 'general', 'pattern': [{'LOWER': 'possible'}], 'id': 'general'}, "asSpan":True})
+      newDoc = nlp(doc.text)
   """
 
   def __init__(self, nlp, patterns, asSpan=True, callback=None):
     """
-      @ In, nlp
-      @ label, str, the name/label for the patterns in terms
-      @ patterns, list/dict,
+    Args:
+
+      nlp: spacy nlp model
+      patterns: list/dict, patterns for general entity
     """
     self.name = 'general_entity'
     if not isinstance(patterns, list) and isinstance(patterns, dict):
@@ -43,7 +49,8 @@ class GeneralEntity(object):
 
   def __call__(self, doc):
     """
-      @ In, doc, spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     doc = self.entityRuler(doc)
     return doc

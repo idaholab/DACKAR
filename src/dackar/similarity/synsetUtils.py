@@ -8,10 +8,16 @@ from nltk.corpus import wordnet_ic
 def synsetListSimilarity(synsetList1, synsetList2, delta=0.85):
   """
     Compute similarity for synsetList pair
-    @ In, synsetList1, list, list of synset
-    @ In, synsetList2, list, list of synset
-    @ In, delta, float, between 0 and 1, factor for semantic similarity contribution
-    @ Out, similarity, float, the similarity score
+
+    Args:
+
+      synsetList1: list, list of synset
+      synsetList2: list, list of synset
+      delta: float, between 0 and 1, factor for semantic similarity contribution
+
+    Returns:
+
+      similarity: float, the similarity score
   """
   similarity = delta * semanticSimilaritySynsetList(synsetList1, synsetList2) + (1.0-delta)* wordOrderSimilaritySynsetList(synsetList1, synsetList2)
   return similarity
@@ -19,9 +25,15 @@ def synsetListSimilarity(synsetList1, synsetList2, delta=0.85):
 def wordOrderSimilaritySynsetList(synsetList1, synsetList2):
   """
     Compute word order similarity for synsetList pair
-    @ In, synsetList1, list, list of synset
-    @ In, synsetList2, list, list of synset
-    @ Out, float, word order similarity score
+
+    Args:
+
+      synsetList1: list, list of synset
+      synsetList2: list, list of synset
+
+    Returns:
+
+      float, word order similarity score
   """
   # keep the order (works for python3.7+)
   synSet = list(dict.fromkeys(synsetList1+synsetList2))
@@ -35,10 +47,16 @@ def wordOrderSimilaritySynsetList(synsetList1, synsetList2):
 def constructSynsetOrderVector(synsets, jointSynsets, index):
   """
     Construct synset order vector for word order similarity calculation
-    @ In, synsets, list of synsets
-    @ In, jointSynsets, list of joint synsets
-    @ In, index, int, index for synsets
-    @ Out, vector, np.array, synset order vector
+
+    Args:
+
+      synsets: list of synsets
+      jointSynsets: list of joint synsets
+      index: int, index for synsets
+
+    Returns:
+
+      vector: np.array, synset order vector
   """
   vector = np.zeros(len(jointSynsets))
   i = 0
@@ -58,10 +76,16 @@ def constructSynsetOrderVector(synsets, jointSynsets, index):
 def identifyBestSimilarSynsetFromSynsets(syn, synsets):
   """
     Identify best similar synset from synsets
-    @ In, syn, wn.synset, synset
-    @ In, synsets, list of synsets
-    @ Out, bestSyn, the best similar synset in synsets
-    @ Out, similarity, the best similarity score
+
+    Args:
+
+      syn: wn.synset, synset
+      synsets: list of synsets
+
+    Returns:
+
+      bestSyn: the best similar synset in synsets
+      similarity: the best similarity score
   """
   similarity = 0.0
   bestSyn = None
@@ -76,9 +100,15 @@ def semanticSimilaritySynsets(synsetA, synsetB, disambiguation=False):
   """
     Compute the similarity between two synset using semantic analysis
     e.g., using both path length and depth information in wordnet
-    @ In, synsetA, wordnet.synset, the first synset
-    @ In, synsetB, wordnet.synset, the second synset
-    @ Out, similarity, float, [0, 1], the similarity score
+
+    Args:
+
+      synsetA: wordnet.synset, the first synset
+      synsetB: wordnet.synset, the second synset
+
+    Returns:
+
+      similarity: float, [0, 1], the similarity score
   """
   shortDistance = pathLength(synsetA, synsetB, disambiguation=disambiguation)
   maxHierarchy = scalingDepthEffect(synsetA, synsetB, disambiguation=disambiguation)
@@ -89,12 +119,18 @@ def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
   """
     Path length calculation using nonlinear transfer function between two Wordnet Synsets
     The two Synsets should be the best Synset Pair (e.g., disambiguation should be performed)
-    @ In, synsetA, wordnet.synset, synset for first word
-    @ In, synsetB, wordnet.synset, synset for second word
-    @ In, alpha, float, a constant in monotonically descreasing function, exp(-alpha*wordnetpathLength),
+
+    Args:
+
+      synsetA: wordnet.synset, synset for first word
+      synsetB: wordnet.synset, synset for second word
+      alpha: float, a constant in monotonically descreasing function, exp(-alpha*wordnetpathLength),
       parameter used to scale the shortest path length. For wordnet, the optimal value is 0.2
-    @ In, disambiguation, bool, True if disambiguation have been performed for the given synsets
-    @ Out, shortDistance, float, [0, 1], the shortest distance between two synsets using exponential descreasing
+      disambiguation: bool, True if disambiguation have been performed for the given synsets
+
+    Returns:
+
+      shortDistance: float, [0, 1], the shortest distance between two synsets using exponential descreasing
       function.
   """
   synsetA = wn.synset(synsetA.name())
@@ -130,11 +166,17 @@ def scalingDepthEffect(synsetA, synsetB, beta=0.45, disambiguation=False):
     between words than words at lower layers. This method is used to scale the similarity behavior with repect
     to depth h, e.g., [exp(beta*h)-exp(-beta*g)]/[exp(beta*h)+exp(-beta*g)]
     The two Synsets should be the best Synset Pair (e.g., disambiguation should be performed)
-    @ In, synsetA, wordnet.synset, synset for first word
-    @ In, synsetB, wordnet.synset, synset for second word
-    @ In, beta, float, parameter used to scale the shortest depth, for wordnet, the optimal value is 0.45
-    @ In, disambiguation, bool, True if disambiguation have been performed for the given synsets
-    @ out, treeDist, float, [0, 1], similary score based on depth effect in wordnet
+
+    Args:
+
+      synsetA: wordnet.synset, synset for first word
+      synsetB: wordnet.synset, synset for second word
+      beta: float, parameter used to scale the shortest depth, for wordnet, the optimal value is 0.45
+      disambiguation: bool, True if disambiguation have been performed for the given synsets
+
+    Returns:
+
+      treeDist: float, [0, 1], similary score based on depth effect in wordnet
   """
   maxLength = sys.maxsize
   smoothingFactor = beta
@@ -183,9 +225,15 @@ def semanticSimilaritySynsetList(synsetList1, synsetList2):
   """
     Compute the similarity between two synsetList using semantic analysis
     i.e., compute the similarity using both path length and depth information in wordnet
-    @ In, synsetList1, list, the list of synset
-    @ In, synsetList2, list, the list of synset
-    @ Out, semSimilarity, float, [0, 1], the similarity score
+
+    Args:
+
+      synsetList1: list, the list of synset
+      synsetList2: list, the list of synset
+
+    Returns:
+
+      semSimilarity: float, [0, 1], the similarity score
   """
   synSet = set(synsetList1).union(set(synsetList2))
   wordVectorA = constructSemanticVector(synsetList1, synSet)
@@ -197,9 +245,15 @@ def semanticSimilaritySynsetList(synsetList1, synsetList2):
 def constructSemanticVector(syns, jointSyns):
   """
     Construct semantic vector
-    @ In, syns, list of synsets
-    @ In, jointSyns, list of joint synsets
-    @ Out, vector, numpy.array, the semantic vector
+
+    Args:
+
+      syns: list of synsets
+      jointSyns: list of joint synsets
+
+    Returns:
+
+      vector: numpy.array, the semantic vector
   """
   synSet = set(syns)
   vector = np.zeros(len(jointSyns))
@@ -220,12 +274,18 @@ def constructSemanticVector(syns, jointSyns):
 def synsetsSimilarity(synsetA, synsetB, method='semantic_similarity_synsets', disambiguation=True):
   """
     Compute synsets similarity
-    @ In, synsetA, wordnet.synset, the first synset
-    @ In, synsetB, wordnet.synset, the second synset
-    @ In, method, str, the method used to compute synset similarity
+
+    Args:
+
+      synsetA: wordnet.synset, the first synset
+      synsetB: wordnet.synset, the second synset
+      method: str, the method used to compute synset similarity
       one of ['semantic_similarity_synsets', 'path', 'wup', 'lch', 'res', 'jcn', 'lin']
-    @ In, disambiguation, bool, True if disambiguation has been already performed
-    @ Out, similarity, float, [0, 1], the similarity score
+      disambiguation: bool, True if disambiguation has been already performed
+
+    Returns:
+
+      similarity: float, [0, 1], the similarity score
   """
   method = method.lower()
   if method != 'semantic_similarity_synsets' and not method.endswith('_similarity'):
@@ -262,11 +322,17 @@ def synsetsSimilarity(synsetA, synsetB, method='semantic_similarity_synsets', di
 def constructSemanticVectorUsingDisambiguatedSynsets(wordSynsets, jointWordSynsets, simMethod='semantic_similarity_synsets'):
   """
     Construct semantic vector while disambiguation has been already performed
-    @ In, wordSynsets, set/list, set of words synsets
-    @ In, jointWords, set, set of joint words synsets
-    @ In, simMethod, str, method for similarity analysis in the construction of semantic vectors
+
+    Args:
+
+      wordSynsets: set/list, set of words synsets
+      jointWords: set, set of joint words synsets
+      simMethod: str, method for similarity analysis in the construction of semantic vectors
       one of ['semantic_similarity_synsets', 'path', 'wup', 'lch', 'res', 'jcn', 'lin']
-    @ Out, vector, numpy.array, semantic vector with disambiguation
+
+    Returns:
+
+      vector: numpy.array, semantic vector with disambiguation
   """
   wordSynsets = set(wordSynsets)
   vector = np.zeros(len(jointWordSynsets))
@@ -290,11 +356,17 @@ def constructSemanticVectorUsingDisambiguatedSynsets(wordSynsets, jointWordSynse
 def semanticSimilarityUsingDisambiguatedSynsets(synsetsA, synsetsB, simMethod='semantic_similarity_synsets'):
   """
     Compute semantic similarity for given synsets while disambiguation has been already performed for given synsets
-    @ In, synsetsA, set/list, list of synsets
-    @ In, synsetsB, set/list, list of synsets
-    @ In, simMethod, str, method for similarity analysis in the construction of semantic vectors
+
+    Args:
+
+      synsetsA: set/list, list of synsets
+      synsetsB: set/list, list of synsets
+      simMethod: str, method for similarity analysis in the construction of semantic vectors
       one of ['semantic_similarity_synsets', 'path', 'wup', 'lch', 'res', 'jcn', 'lin']
-    @ Out, semSimilarity, float, [0, 1], the similarity score
+
+    Returns:
+
+      semSimilarity: float, [0, 1], the similarity score
   """
   jointWordSynsets = set(synsetsA).union(set(synsetsB))
   wordVectorA = constructSemanticVectorUsingDisambiguatedSynsets(synsetsA, jointWordSynsets, simMethod=simMethod)
