@@ -1,5 +1,5 @@
 # DACKAR
-Digital Analytics, Causal Knowledge Acquisition and Reasoning
+*Digital Analytics, Causal Knowledge Acquisition and Reasoning*
 
 ## Configuration for Sphinx doc/conf.py:
 
