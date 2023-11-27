@@ -109,11 +109,12 @@ open your brower to: http://localhost:8000
 
 - Different approach when there is a issue with SSLError
 
+As a first alternative, the following command can be used:
 ```bash
   python nltkDownloader.py
 ```
 
-Please check (https://www.nltk.org/data.html) on how to manually install nltk data.
+If not successful, please check (https://www.nltk.org/data.html) on how to manually install nltk data.
 For this project, the users can try the following steps:
 
 ```bash
