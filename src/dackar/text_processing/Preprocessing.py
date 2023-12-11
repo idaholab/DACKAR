@@ -229,7 +229,7 @@ class SpellChecker(object):
       self.speller.nlp_data.update({x: 1000000 for x in self.addedWords})
     else:
       name = 'contextual spellcheck'
-      self.nlp = spacy.load('en_core_web_sm')
+      self.nlp = spacy.load('en_core_web_lg')
       self.speller = ContextualSpellCheck(self.nlp, name)
       self.includedWords = list(self.speller.BertTokenizer.get_vocab().keys())
       file2open = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, 'data' , 'csc_additional_words.txt')
