@@ -70,6 +70,61 @@ if not Span.has_extension('ent_status_verb'):
 if not Span.has_extension('conjecture'):
   Span.set_extension('conjecture', default=False)
 
+if not Span.has_extension('health_status_prepend_amod'):
+  Span.set_extension("health_status_prepend_amod", default=None)
+if not Span.has_extension('health_status_prepend'):
+  Span.set_extension("health_status_prepend", default=None)
+if not Span.has_extension('health_status_amod'):
+  Span.set_extension("health_status_amod", default=None)
+if not Span.has_extension('health_status_append_amod'):
+  Span.set_extension("health_status_append_amod", default=None)
+if not Span.has_extension('health_status_append'):
+  Span.set_extension("health_status_append", default=None)
+if not Span.has_extension('neg'):
+  Span.set_extension("neg", default=None)
+if not Span.has_extension('neg_text'):
+  Span.set_extension("neg_text", default=None)
+
+if not Span.has_extension('status_prepend_amod'):
+  Span.set_extension("status_prepend_amod", default=None)
+if not Span.has_extension('status_prepend'):
+  Span.set_extension("status_prepend", default=None)
+if not Span.has_extension('status_amod'):
+  Span.set_extension("status_amod", default=None)
+if not Span.has_extension('status_append_amod'):
+  Span.set_extension("status_append_amod", default=None)
+if not Span.has_extension('status_append'):
+  Span.set_extension("status_append", default=None)
+
+
+if not Token.has_extension('health_status_prepend_amod'):
+  Token.set_extension("health_status_prepend_amod", default=None)
+if not Token.has_extension('health_status_prepend'):
+  Token.set_extension("health_status_prepend", default=None)
+if not Token.has_extension('health_status_amod'):
+  Token.set_extension("health_status_amod", default=None)
+if not Token.has_extension('health_status_append_amod'):
+  Token.set_extension("health_status_append_amod", default=None)
+if not Token.has_extension('health_status_append'):
+  Token.set_extension("health_status_append", default=None)
+if not Token.has_extension('neg'):
+  Token.set_extension("neg", default=None)
+if not Token.has_extension('neg_text'):
+  Token.set_extension("neg_text", default=None)
+
+if not Token.has_extension('status_prepend_amod'):
+  Token.set_extension("status_prepend_amod", default=None)
+if not Token.has_extension('status_prepend'):
+  Token.set_extension("status_prepend", default=None)
+if not Token.has_extension('status_amod'):
+  Token.set_extension("status_amod", default=None)
+if not Token.has_extension('status_append_amod'):
+  Token.set_extension("status_append_amod", default=None)
+if not Token.has_extension('status_append'):
+  Token.set_extension("status_append", default=None)
+
+
+
 class RuleBasedMatcher(object):
   """
     Rule Based Matcher Class
