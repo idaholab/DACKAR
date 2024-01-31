@@ -70,6 +70,10 @@ if not Span.has_extension('ent_status_verb'):
 if not Span.has_extension('conjecture'):
   Span.set_extension('conjecture', default=False)
 
+if not Span.has_extension('status'):
+  Span.set_extension("status", default=None)
+if not Token.has_extension('status'):
+  Token.set_extension("status", default=None)
 if not Span.has_extension('health_status_prepend_amod'):
   Span.set_extension("health_status_prepend_amod", default=None)
 if not Span.has_extension('health_status_prepend'):
@@ -202,6 +206,7 @@ class RuleBasedMatcher(object):
     self._rawCausalList = []
     self._causalSentsOneEnt = []
     self._entHS = None
+    self._entStatus = None
 
   def reset(self):
     """
@@ -361,27 +366,60 @@ class RuleBasedMatcher(object):
     kwList = []
     cjList = []
     sentList = []
+    hsPrependAmod = []
+    hsPrepend = []
+    hsAppend = []
+    hsAppendAmod = []
+    negList = []
+    negTextList = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
-      elist = [ent.text for ent in ents]
-      statusVerb = [ent._.ent_status_verb for ent in ents]
-      hs = [ent._.health_status for ent in ents]
-      kw = [ent._.hs_keyword for ent in ents]
-      cj = [ent._.conjecture for ent in ents]
-      sl = [sent.text.strip('\n') for ent in ents]
-      entList.extend(elist)
-      hsList.extend(hs)
-      svList.extend(statusVerb)
-      kwList.extend(kw)
-      cjList.extend(cj)
-      sentList.extend(sl)
+      for ent in ents:
+        if ent._.health_status is not None:
+          entList.append(ent.text)
+          hsList.append(ent._.health_status)
+          svList.append(ent._.ent_status_verb)
+          kwList.append(ent._.hs_keyword)
+          cjList.append(ent._.conjecture)
+          sentList.append(sent.text.strip('\n'))
+          hsPrepend.append(ent._.health_status_prepend)
+          hsPrependAmod.append(ent._.health_status_prepend_amod)
+          hsAppend.append(ent._.health_status_append)
+          hsAppendAmod.append(ent._.health_status_append_amod)
+          negList.append(ent._.neg)
+          negTextList.append(ent._.neg_text)
 
     ## include 'root' in the output
-    df = pd.DataFrame({'entities':entList, 'root':svList, 'status keywords':kwList, 'health statuses':hsList, 'conjecture':cjList, 'sentence':sentList})
-    df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'root','status keywords', 'health statuses', 'conjecture', 'sentence'])
+    df = pd.DataFrame({'entities':entList, 'root':svList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList,
+                       'health status prepend': hsPrepend, 'health status prepend adjectival modifier':hsPrependAmod, 'health status append': hsAppend,
+                       'health status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
+    df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'root','status keywords', 'health status prepend adjectival modifier', 'health status prepend', 'health status', 'health status append adjectival modifier', 'health status append', 'sentence'])
     self._entHS = df
-    # df = pd.DataFrame({'entities':entList, 'status keywords':kwList, 'health statuses':hsList, 'conjecture':cjList, 'sentence':sentList})
+    # df = pd.DataFrame({'entities':entList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList})
     # df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'status keywords', 'health statuses', 'conjecture', 'sentence'])
+
+    for sent in self._matchedSents:
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      for ent in ents:
+        if ent._.status is not None:
+          entList.append(ent.text)
+          hsList.append(ent._.status)
+          svList.append(ent._.ent_status_verb)
+          cjList.append(ent._.conjecture)
+          sentList.append(sent.text.strip('\n'))
+          hsPrepend.append(ent._.status_prepend)
+          hsPrependAmod.append(ent._.status_prepend_amod)
+          hsAppend.append(ent._.status_append)
+          hsAppendAmod.append(ent._.status_append_amod)
+          negList.append(ent._.neg)
+          negTextList.append(ent._.neg_text)
+
+    ## include 'root' in the output
+    dfStatus = pd.DataFrame({'entities':entList, 'status keywords':svList, 'status':hsList, 'conjecture':cjList, 'sentence':sentList,
+                       'status prepend': hsPrepend, 'status prepend adjectival modifier':hsPrependAmod, 'status append': hsAppend,
+                       'status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
+    # df.to_csv(nlpConfig['files']['output_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'status keyword', 'status prepend adjectival modifier', 'status prepend', 'status', 'status append adjectival modifier', 'status append', 'sentence'])
+    self._entStatus = dfStatus
 
     logger.info('End of health status extraction!')
     ## causal relation
@@ -1120,16 +1158,22 @@ class RuleBasedMatcher(object):
             healthStatus = self.getAmod(conjunct, conjunct.start, conjunct.end, include=False)
             if healthStatus is None:
               ent._.set('health_status',conjunct._.health_status)
+              ent._.set('status',conjunct._.status)
               ent._.set('hs_keyword',conjunct._.hs_keyword)
               ent._.set('ent_status_verb',conjunct._.ent_status_verb)
               ent._.set('conjecture',conjunct._.conjecture)
         if healthStatus is None:
           continue
 
+        _healthStatus = False
         if isinstance(healthStatus, Span):
           conjecture = self.isConjecture(healthStatus.root.head)
+          if healthStatus.root.lemma_ in statusNoun + statusAdj:
+            _healthStatus = True
         elif isinstance(healthStatus, Token):
           conjecture = self.isConjecture(healthStatus.head)
+          if healthStatus.lemma_ in statusNoun + statusAdj:
+            _healthStatus = True
         if not neg:
           if isinstance(healthStatus, Span):
             neg, negText = self.isNegation(healthStatus.root)
@@ -1137,6 +1181,23 @@ class RuleBasedMatcher(object):
             neg, negText = self.isNegation(healthStatus)
         # conjecture = self.isConjecture(healthStatus.head)
         # neg, negText = self.isNegation(healthStatus)
+        ent._.set('neg',neg)
+        ent._.set('neg_text',negText)
+        ent._.set('conjecture',conjecture)
+        if _healthStatus:
+          ent._.set('health_status',healthStatus)
+          ent._.set('health_status_prepend', healthStatusPrepend)
+          ent._.set('health_status_prepend_amod',healthStatusPrependAmod)
+          ent._.set('health_status_amod',healthStatusAmod)
+          ent._.set('health_status_append',healthStatusAppend)
+          ent._.set('health_status_append_amod',healthStatusAppendAmod)
+        else:
+          ent._.set('status',healthStatus)
+          ent._.set('status_prepend', healthStatusPrepend)
+          ent._.set('status_prepend_amod',healthStatusPrependAmod)
+          ent._.set('status_amod',healthStatusAmod)
+          ent._.set('status_append',healthStatusAppend)
+          ent._.set('status_append_amod',healthStatusAppendAmod)
 
         prependAmodText = ' '.join(healthStatusPrependAmod) if healthStatusPrependAmod is not None else ''
         prependText = healthStatusPrepend.text if healthStatusPrepend is not None else ''
@@ -1158,8 +1219,8 @@ class RuleBasedMatcher(object):
             # healthStatusText = healthStatusText.replace(ent.text, '')
 
         logger.debug(f'{ent} health status: {healthStatusText}')
-        ent._.set('health_status', healthStatusText)
-        ent._.set('conjecture',conjecture)
+        # ent._.set('health_status', healthStatusText)
+        # ent._.set('conjecture',conjecture)
 
   def findLeftSubj(self, pred, passive):
     """
