@@ -1,8 +1,10 @@
-'''
-Created on May 3, 2021
+# Copyright 2020, Battelle Energy Alliance, LLC
+# ALL RIGHTS RESERVED
+"""
+Created on February, 2024
 
 @author: mandd
-'''
+"""
 
 # External Imports
 import xml.etree.ElementTree as ET
@@ -10,7 +12,21 @@ import re
 import networkx as nx
 
 class LMLobject(object):
+  """
+    Class designed to process the MBSE model developed in Lifecycle Modeling Language (LML) using Innoslate.
+  """
   def __init__(self, filename):
+    """
+    Initialization method for the LMLobject class
+
+    Args:
+
+      filename: file, file in xml containing the MBSE model deveolped in LML using Innoslate
+
+    Returns:
+
+      None
+    """
     self.filename = filename
     self.entities = {}
     self.link_entities = []
@@ -19,9 +35,14 @@ class LMLobject(object):
     self.acronyms = {}
 
   def OPLparser(self):
-    '''
-    This method translates all the sentences (see self.sentences) and it create a graph structure (self.LMLgraph)
-    '''
+    """
+    This method is designed to parse the xml file containing the MBSE model, to create its corresponding graph
+    and to populate:
+    - the set of entities: dictionary of assets in the form of 'LML_ID': ('asset name', 'asset ID')
+    - the set of links: list containing the LML-IDs of all links between assets
+    - the set of embedded entities: dictionary of the components that have been specified in the description text of the 
+                                    LML asset or link (e.g., [comp1,comp2,comp3]) in the form of 'LML_ID': [comp1,comp2,comp3]
+    """
     self.LMLgraph = nx.MultiDiGraph()
 
     tree = ET.parse(self.filename)
@@ -41,6 +62,9 @@ class LMLobject(object):
     self.connetGraph()
 
   def connetGraph(self):
+    """
+    This method is designed to actually link the asset entities identified in the OPLparser method
+    """
     for child in self.DBnode:
       if child.tag=='relationship':
         sourceID  = child.find('sourceId').text
@@ -59,6 +83,19 @@ class LMLobject(object):
 
 
   def parseLinkEntity(self, linkNode):
+    """
+    This method extracts all required information of the link from the provided xml node.
+    It populates the self.link_entities and the self.emb_entities variables.
+
+    Args:
+
+      linkNode: xml node, xml node containing containing all the information of a single link generated 
+                          in LML using Innoslate
+
+    Returns:
+
+      None
+    """
     linkID = linkNode.find('globalId').text
     self.link_entities.append(linkID)
     self.LMLgraph.add_node(linkID, color='b', key='entity')
@@ -76,6 +113,19 @@ class LMLobject(object):
 
 
   def parseAssetEntity(self, entityNode):
+    """
+    This method extracts all required information of the asset from the provided xml node.
+    It populates the self.entities and the self.emb_entities variables.
+
+    Args:
+
+      linkNode: xml node, xml node containing containing all the information of a single link generated 
+                          in LML using Innoslate
+
+    Returns:
+
+      None
+    """
     assetID     = entityNode.find('number').text
     entityID    = entityNode.find('globalId').text
     entityName  = entityNode.find('name').text.strip()
@@ -104,18 +154,46 @@ class LMLobject(object):
           self.LMLgraph.add_edge((entityName,None), elem, color='k', key='assoc')
 
   def returnGraph(self):
-    '''
+    """
     This method returns the networkx graph
-    ''' 
+
+    Args:
+
+      None
+
+    Returns:
+
+      self.LMLgraph: networkx object, graph containing entities specified in the LML MBSE model
+    """ 
     return self.LMLgraph
 
   def returnEntities(self):
-    '''
-    This method returns the the list of objects
-    '''
+    """
+    This method returns the the dictionaries of entities and embedded entities specified in the MBSE model
+
+    Args:
+
+      None
+
+    Returns:
+
+      self.entities     : dict, dict of entities
+      self.emb_entities : dict, dict of embedded entities
+    """
     return self.entities, self.emb_entities
 
   def cleanedGraph(self):
+    """
+    This method is designed to clean the complete MBSE graph by removing the links which are represented as nodes
+
+    Args:
+
+      None
+
+    Returns:
+
+      g: networkx object, cleaned graph containing only asset entities specified in the LML MBSE model
+    """
     g = self.LMLgraph.copy()
 
     for node,degree in g.degree():
@@ -134,6 +212,18 @@ class LMLobject(object):
 
 
 def parseEntityDescription(text):
+    """
+    This method is designed to extract the elements specified in square brackets that are specified in 
+    the description node of the MBSE model of a link or entity
+
+    Args:
+
+      text: str, text contained in the description node of the MBSE model
+
+    Returns:
+
+      listOfElems     : list, list of elements specified in square brackets and separated by commas (i.e., ',')
+    """
   txtPortion = text[text.find("[")+1:text.find("]")]
   listOfElems = txtPortion.split(',')
   return listOfElems
