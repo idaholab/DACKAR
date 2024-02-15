@@ -32,7 +32,8 @@ if Token.has_extension('ref_t_'):
 Token.set_extension('ref_n', default='')
 Token.set_extension('ref_t', default='')
 
-Span.set_extension("health_status", default=None)
+if not Span.has_extension('health_status'):
+  Span.set_extension("health_status", default=None)
 if not Token.has_extension('ref_ent'):
   Token.set_extension("ref_ent", default=None)
 
