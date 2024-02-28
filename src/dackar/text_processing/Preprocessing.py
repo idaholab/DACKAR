@@ -3,7 +3,7 @@
 """
 Created on October, 2022
 
-@author: dgarrett622
+@author: dgarrett622, wangc, mandd
 """
 from cytoolz import functoolz
 import re
@@ -45,12 +45,35 @@ textacyReplace = ['currency_symbols',
 # list of available preprocessors from numerizer
 numerizer = ['numerize']
 
+preprocessorDefaultList = ['bullet_points',
+                    'hyphenated_words',
+                    'quotation_marks',
+                    'repeating_chars',
+                    'whitespace',
+                    'unicode',
+                    'accents',
+                    'html_tags',
+                    'punctuation',
+                    'emails',
+                    'emojis',
+                    'hashtags',
+                    'urls',
+                    'numerize',
+                    'whitespace']
+
+preprocessorDefaultOptions = {'repeating_chars': {'chars': ',', 'maxn': 1},
+                        'unicode': {'form': 'NFKC'},
+                        'accents': {'fast': False},
+                        'punctuation': {'only':["#","*","+",":","=","\\","^","_","|","~", "..", "...", "-"]}}
+
+# TODO: replace & --> and, @ --> at, maybe "/" --> or
+
 class Preprocessing(object):
   """
     NLP Preprocessing class
   """
 
-  def __init__(self, preprocessorList, preprocessorOptions):
+  def __init__(self, preprocessorList=preprocessorDefaultList, preprocessorOptions=preprocessorDefaultOptions):
     """
       Preprocessing object constructor
 
@@ -198,8 +221,9 @@ class Preprocessing(object):
       Returns:
         processed: str, string of processed text
     """
-    processed = self.pipeline(text)
-
+    processed = re.sub(r'&', ' and ', text)
+    processed = re.sub(r'@', ' at ', processed)
+    processed = self.pipeline(processed)
     return processed
 
 class SpellChecker(object):
