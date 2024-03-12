@@ -159,8 +159,17 @@ def generatePattern(form, label, id, attr="LOWER"):
   """
   # if any of "!", "?", "+", "*" present in the provided string "form", we will treat it as determiter for the form
   if attr.lower() == "lower":
+    ptn = []
     attr = "LOWER"
-    ptn = [{attr:elem} if elem not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":elem} for elem in form.lower().split()]
+    for elem in form.lower().split():
+      if "-" in form:
+        subList = list(elem.split("-"))
+        for i, sub in enumerate(subList):
+          ptn.append({attr:sub} if sub not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":sub})
+          if 0 < i < len(subList) - 1:
+            ptn.append({"ORTH":"-"})
+      else:
+        ptn = [{attr:elem} if elem not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":elem}]
   elif attr.lower() == "lemma":
     attr = "LEMMA"
     ptn = [{attr:elem} if elem not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":elem} for elem in form]
