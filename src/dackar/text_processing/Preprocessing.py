@@ -64,7 +64,7 @@ preprocessorDefaultList = ['bullet_points',
 preprocessorDefaultOptions = {'repeating_chars': {'chars': ',', 'maxn': 1},
                         'unicode': {'form': 'NFKC'},
                         'accents': {'fast': False},
-                        'punctuation': {'only':["#","*","+",":","=","\\","^","_","|","~", "..", "...", "-"]}}
+                        'punctuation': {'only':["*","+",":","=","\\","^","_","|","~", "..", "..."]}}
 
 # TODO: replace & --> and, @ --> at, maybe "/" --> or
 
@@ -221,7 +221,9 @@ class Preprocessing(object):
       Returns:
         processed: str, string of processed text
     """
-    processed = re.sub(r'&', ' and ', text)
+    processed = text.strip('\n')
+    processed = re.sub(r'&', ' and ', processed)
+    # processed = re.sub(r'/', ' and ', processed)
     processed = re.sub(r'@', ' at ', processed)
     processed = self.pipeline(processed)
     return processed
@@ -229,6 +231,8 @@ class Preprocessing(object):
 class SpellChecker(object):
   """
     Object to find misspelled words and automatically correct spelling
+
+    Note: when use autocorrect, one need to conduct a spell test to identify the threshold (the word frequences)
   """
 
   def __init__(self, checker='autocorrect'):
@@ -288,10 +292,13 @@ class SpellChecker(object):
         misspelled: list, list of misspelled words
     """
     if self.checker == 'autocorrect':
-      corrected = self.speller(text.lower())
+      # corrected = self.speller(text.lower())
       original = re.findall(r'[^\s!,.?":;-]+', text)
-      auto = re.findall(r'[^\s!,.?":;-]+', corrected)
-      misspelled = list({w1 if w1.lower() != w2.lower() else None for w1, w2 in zip(original, auto)})
+      # auto = re.findall(r'[^\s!,.?":;-]+', corrected)
+      # misspelled = list({w1 if w1.lower() != w2.lower() else None for w1, w2 in zip(original, auto)})
+      print(original)
+      misspelled = [word for word in original if word not in self.speller.nlp_data]
+
       if None in misspelled:
         misspelled.remove(None)
     else:
