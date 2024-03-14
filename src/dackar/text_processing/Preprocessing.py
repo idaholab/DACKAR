@@ -552,7 +552,7 @@ class AbbrExpander(object):
 
   def __init__(self, abbreviationsFilename, checkerType='autocorrect', abbrType='mixed'):
     """
-      Abbrviation expander constructor
+      Abbreviation expander constructor
 
       Args:
         abbreviationsFilename: string, filename of abbreviations data
