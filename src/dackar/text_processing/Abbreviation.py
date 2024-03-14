@@ -12,6 +12,15 @@ from ..config import nlpConfig
 
 logger = logging.getLogger(__name__)
 
+not_acronyms = [
+    "level", "was", "for", "ship", "start", "band", "by", "row", "new", "gap",
+    "technology", "system", "me", "our", "tag", "low", "east",
+    "us", "an", "bolt", "ups", "fan", "team", "hit", "oat", "fit", "well", "same",
+    "set", "case", "taps", "flux", "data", "leap", "col", "top", "arc", "side",
+    "rooms", "amps", "had", "fleet", "best", "most", "cover", "ice", "min", "tee",
+    "matrix", "bat", "rose", "rapid", "pipe", "its", "the", "it", "air", "and",
+    "email", "if", "are", "from", "success", "led",'parts','tips','pad','stem','pond','sit','toe','that','get','op','can','feed']
+
 class Abbreviation(object):
   """
     Class to handle abbreviations
@@ -50,17 +59,24 @@ class Abbreviation(object):
     """
     logger.info('Substitute abbreviations with their full expansions')
     text = text.replace("\n", "").lower()
+    print(text)
     textList = [t.strip() for t in text.split('.')]
     expandedText = []
     for sent in textList:
       corrected = sent
       splitSent = sent.split()
       for word in splitSent:
-        if word in self.abbrDict.keys():
-          full = self.abbrDict[word]
-          if len(full) > 0:
-            corrected = re.sub(r"\b%s\b" % str(word) , full, corrected)
+        if word not in not_acronyms:
+          if word in self.abbrDict.keys():
+            full = self.abbrDict[word]
+            if isinstance(full, str):
+              corrected = re.sub(r"\b%s\b" % str(word) , full, corrected)
+            elif isinstance(full, list) and len(full) == 1:
+              corrected = re.sub(r"\b%s\b" % str(word) , full[0], corrected)
+            else:
+              logger.info(f'Can not replace abbreviation {word}, possible solution {full}')
       expandedText.append(corrected)
+
     expandedText = '. '.join(expandedText)
     return expandedText
 
@@ -73,7 +89,14 @@ class Abbreviation(object):
         abbrDict: dict, provided abbreviation dictionary
         reset: boot, True if reset the existing abbreviation dictionary
     """
-    updateDict = {k.lower():v.lower() for k, v in abbrDict.items()}
+    updateDict = {}
+    for k, v in abbrDict.items():
+      if isinstance(v, str):
+        updateDict[k.lower().strip()] = v.lower()
+      elif isinstance(v, list):
+        updateDict[k.lower().strip()] = [e.lower().strip() for e in v]
+      else:
+        pass
     if reset:
       self.abbrDict = updateDict
     else:
