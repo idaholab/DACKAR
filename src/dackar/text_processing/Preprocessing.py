@@ -13,8 +13,8 @@ import spacy
 from spacy.vocab import Vocab
 from contextualSpellCheck.contextualSpellCheck import ContextualSpellCheck
 import autocorrect
+from spellchecker import SpellChecker as PySpellChecker
 import itertools
-from nltk.corpus import wordnet as wn
 import os
 import numpy as np
 import pandas as pd
@@ -255,6 +255,14 @@ class SpellChecker(object):
         tmp = file.readlines()
       self.addedWords = list({x.replace('\n', '') for x in tmp})
       self.speller.nlp_data.update({x: 1000000 for x in self.addedWords})
+    elif self.checker == 'pyspellchecker':
+      self.speller = PySpellChecker()
+      self.includedWords = []
+      file2open = os.path.join(os.path.dirname(__file__) , os.pardir, os.pardir, os.pardir, 'data' , 'psc_additional_words.txt')
+      with open(file2open, 'r') as file:
+        tmp = file.readlines()
+      self.addedWords = list({x.replace('\n', '') for x in tmp})
+      self.speller.word_frequency.load_words(self.addedWords)
     else:
       name = 'contextual spellcheck'
       self.nlp = spacy.load('en_core_web_lg')
@@ -278,6 +286,8 @@ class SpellChecker(object):
     """
     if self.checker == 'autocorrect':
       self.speller.nlp_data.update({word: 1000000 for word in words})
+    elif self.checker == 'pyspellchecker':
+      self.speller.word_frequency.load_words(self.addedWords+words)
     else:
       self.speller.vocab = Vocab(strings=self.includedWords+self.addedWords+words)
 
@@ -296,11 +306,12 @@ class SpellChecker(object):
       original = re.findall(r'[^\s!,.?":;-]+', text)
       # auto = re.findall(r'[^\s!,.?":;-]+', corrected)
       # misspelled = list({w1 if w1.lower() != w2.lower() else None for w1, w2 in zip(original, auto)})
-      print(original)
       misspelled = [word for word in original if word not in self.speller.nlp_data]
-
       if None in misspelled:
         misspelled.remove(None)
+    elif self.checker == 'pyspellchecker':
+      original = re.findall(r'[^\s!,.?":;-]+', text)
+      misspelled = self.speller.unknown(original)
     else:
       doc = self.nlp(text)
       doc = self.speller(doc)
@@ -320,6 +331,20 @@ class SpellChecker(object):
     """
     if self.checker == 'autocorrect':
       corrected = self.speller(text)
+    elif self.checker == 'pyspellchecker':
+      l = re.split("([A-Za-z]+(?=\s|\.))", text)
+      corrected = []
+      for elem in l:
+        if len(elem) == 0:
+          corrected.append(elem)
+        elif not re.search("[^A-Za-z]+",elem):
+          if elem in self.speller:
+            corrected.append(elem)
+          else:
+            corrected.append(self.speller.correction(elem))
+        else:
+          corrected.append(elem)
+      corrected = "".join(corrected)
     else:
       doc = self.nlp(text)
       doc = self.speller(doc)
