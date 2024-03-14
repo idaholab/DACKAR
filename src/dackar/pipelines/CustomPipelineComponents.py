@@ -16,6 +16,7 @@ from spacy.util import filter_spans
 
 # use pysbd as a sentencizer component for spacy
 import pysbd
+from ..config import nlpConfig
 
 import logging
 
@@ -39,6 +40,8 @@ if not Token.has_extension('ref_ent'):
 
 customLabel = ['STRUCTURE', 'COMPONENT', 'SYSTEM']
 aliasLookup = {}
+
+# Use Config File to update aliasLookup Dictionary
 
 # orders of NLP pipeline: 'ner' --> 'normEntities' --> 'merge_entities' --> 'initCoref'
 # --> 'aliasResolver' --> 'coreferee' --> 'anaphorCoref'
