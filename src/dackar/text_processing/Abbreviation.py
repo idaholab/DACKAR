@@ -59,7 +59,6 @@ class Abbreviation(object):
     """
     logger.info('Substitute abbreviations with their full expansions')
     text = text.replace("\n", "").lower()
-    print(text)
     textList = [t.strip() for t in text.split('.')]
     expandedText = []
     for sent in textList:
