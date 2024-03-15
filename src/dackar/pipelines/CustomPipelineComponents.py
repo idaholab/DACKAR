@@ -13,6 +13,7 @@ from spacy.tokens import Token
 # filter_spans is used to resolve the overlap issue in entities
 # It gives primacy to longer spans (entities)
 from spacy.util import filter_spans
+import pandas as pd
 
 # use pysbd as a sentencizer component for spacy
 import pysbd
@@ -32,14 +33,28 @@ if Token.has_extension('ref_t_'):
   _ = Token.remove_extension('ref_t_')
 Token.set_extension('ref_n', default='')
 Token.set_extension('ref_t', default='')
+if not Token.has_extension('alias'):
+  Token.set_extension('alias', default=None)
 
 if not Span.has_extension('health_status'):
   Span.set_extension("health_status", default=None)
+if not Span.has_extension('alias'):
+  Span.set_extension("alias", default=None)
 if not Token.has_extension('ref_ent'):
   Token.set_extension("ref_ent", default=None)
 
 customLabel = ['STRUCTURE', 'COMPONENT', 'SYSTEM']
 aliasLookup = {}
+if 'alias_file' in nlpConfig['files']:
+  df = pd.read_csv(nlpConfig['files']['alias_file'], index_col='alias')
+  aliasLookup.update(df.to_dict()['name'])
+
+if 'params' in nlpConfig:
+  entLabel = nlpConfig['params'].get('ent_label', "SSC")
+  entID = nlpConfig['params'].get('ent_id', "SSC")
+else:
+  entLabel = "SSC"
+  entID = "SSC"
 
 # Use Config File to update aliasLookup Dictionary
 
@@ -89,7 +104,7 @@ def initCoref(doc):
 @Language.component("aliasResolver")
 def aliasResolver(doc):
   """
-    Lookup aliases and store result in ``ref_t``, ``ref_n``
+    Lookup aliases and store result in ``alias``
 
     Args:
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
@@ -98,11 +113,11 @@ def aliasResolver(doc):
       doc: spacy.tokens.doc.Doc, the document after the alias lookup
   """
   for ent in doc.ents:
-    token = ent[0].text
-    if token in aliasLookup:
-      aName, aType = aliasLookup[token]
-      ent[0]._.ref_n, ent[0]._.ref_t = aName, aType
-  return propagateEntType(doc)
+    alias = ent.text
+    if alias in aliasLookup:
+      name = aliasLookup[alias]
+      ent._.alias = name
+  return doc
 
 def propagateEntType(doc):
   """
@@ -205,7 +220,7 @@ def expandEntities(doc):
   newEnts = []
   isUpdated = False
   for ent in doc.ents:
-    if ent.ent_id_ == "SSC" and ent.start != 0:
+    if ent.ent_id_ == entID and ent.start != 0:
       prevToken = doc[ent.start - 1]
       if prevToken.pos_ in ['NOUN']:
         newEnt = Span(doc, ent.start - 1, ent.end, label=ent.label)

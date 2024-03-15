@@ -99,7 +99,8 @@ if not Span.has_extension('status_append_amod'):
   Span.set_extension("status_append_amod", default=None)
 if not Span.has_extension('status_append'):
   Span.set_extension("status_append", default=None)
-
+if not Span.has_extension('alias'):
+  Span.set_extension("alias", default=None)
 
 if not Token.has_extension('health_status_prepend_amod'):
   Token.set_extension("health_status_prepend_amod", default=None)
@@ -126,7 +127,8 @@ if not Token.has_extension('status_append_amod'):
   Token.set_extension("status_append_amod", default=None)
 if not Token.has_extension('status_append'):
   Token.set_extension("status_append", default=None)
-
+if not Token.has_extension('alias'):
+  Token.set_extension("alias", default=None)
 
 
 class RuleBasedMatcher(object):
