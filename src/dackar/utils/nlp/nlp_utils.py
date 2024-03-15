@@ -72,7 +72,7 @@ def resetPipeline(nlp, pipes):
       nlp: spacy.Language object, contains updated components and data needed to process text
   """
   customPipes = [pipe for (pipe, _) in nlp.pipeline
-                  if pipe not in ['tagger', 'parser', 'ner',
+                  if pipe not in ['tagger', 'parser',
                                   'tok2vec', 'attribute_ruler', 'lemmatizer']]
   for pipe in customPipes:
     _ = nlp.remove_pipe(pipe)

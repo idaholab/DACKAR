@@ -42,7 +42,10 @@ class GeneralEntity(object):
       patterns = [patterns]
     # do we need to pop out other pipes?
     if not nlp.has_pipe('entity_ruler'):
-      nlp.add_pipe('entity_ruler')
+      if not nlp.has_pipe('aliasResolver'):
+        nlp.add_pipe('entity_ruler')
+      else:
+        nlp.add_pipe('entity_ruler', before='aliasResolver')
     self.entityRuler = nlp.get_pipe('entity_ruler')
     self.entityRuler.add_patterns(patterns)
     self.asSpan = asSpan

@@ -113,7 +113,7 @@ def aliasResolver(doc):
       doc: spacy.tokens.doc.Doc, the document after the alias lookup
   """
   for ent in doc.ents:
-    alias = ent.text
+    alias = ent.text.lower()
     if alias in aliasLookup:
       name = aliasLookup[alias]
       ent._.alias = name
