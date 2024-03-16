@@ -87,7 +87,7 @@ class WorkOrderProcessing(object):
   """
     Class to process OPG CWS work order dataset
   """
-  def __init__(self, nlp, entLabel='SSC', *args, **kwargs):
+  def __init__(self, nlp, entID='SSC', *args, **kwargs):
     """
       Construct
 
@@ -139,8 +139,8 @@ class WorkOrderProcessing(object):
     self._entityLabels = {} # labels for rule-based entities
     # reset entity label using toml input
     if 'params' in nlpConfig:
-      entLabel = nlpConfig['params'].get('ent_label', entLabel)
-    self._labelSSC = entLabel
+      entID = nlpConfig['params'].get('ent_id', entID)
+    self._entityID = entID
     self._entHS = None
     self._entStatus = None
     self._textProcess = self.textProcess()
@@ -310,7 +310,7 @@ class WorkOrderProcessing(object):
     negList = []
     negTextList = []
     for sent in self._matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entityID])
       for ent in ents:
         if ent._.status is not None:
           entList.append(ent.text)
@@ -463,7 +463,7 @@ class WorkOrderProcessing(object):
     # procedure to process OPG CWS data
     # collect status, negation, conjecture information
     for sent in matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entityID])
       root = sent.root
       neg, negText = self.isNegation(root)
       conjecture = self.isConjecture(root)
@@ -537,7 +537,7 @@ class WorkOrderProcessing(object):
     matchedSents = []
     matchedSentsForVis = []
     for span in doc.ents:
-      if span.ent_id_ != self._labelSSC:
+      if span.ent_id_ != self._entityID:
         continue
       sent = span.sent
       # Append mock entity for match in displaCy style to matched_sents
