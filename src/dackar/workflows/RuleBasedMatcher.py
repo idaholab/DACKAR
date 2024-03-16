@@ -135,7 +135,7 @@ class RuleBasedMatcher(object):
   """
     Rule Based Matcher Class
   """
-  def __init__(self, nlp, entLabel='SSC', causalKeywordLabel='causal', *args, **kwargs):
+  def __init__(self, nlp, entID='SSC', causalKeywordID='causal', *args, **kwargs):
     """
       Construct
 
@@ -200,8 +200,8 @@ class RuleBasedMatcher(object):
     self._visualizeMatchedSents = True
     self._coref = _corefAvail # True indicate coreference pipeline is available
     self._entityLabels = {} # labels for rule-based entities
-    self._labelSSC = entLabel
-    self._labelCausal = causalKeywordLabel
+    self._entID = entID
+    self._causalKeywordID = causalKeywordID
     self._causalNames = ['cause', 'cause health status', 'causal keyword', 'effect', 'effect health status', 'sentence', 'conjecture']
     self._extractedCausals = [] # list of tuples, each tuple represents one causal-effect, i.e., (cause, cause health status, cause keyword, effect, effect health status, sentence)
     self._causalSentsNoEnts = []
@@ -346,7 +346,7 @@ class RuleBasedMatcher(object):
     ## use entity ruler to identify entity
     # if self._entityRuler:
     #   logger.debug('Entity Ruler Matches:')
-    #   print([(ent.text, ent.label_, ent.ent_id_) for ent in doc.ents if ent.label_ in self._entityLabels[self._labelSSC]])
+    #   print([(ent.text, ent.label_, ent.ent_id_) for ent in doc.ents if ent.label_ in self._entityLabels[self._entID]])
 
     # First identify coreference through coreferee, then filter it through doc.ents
     if self._coref:
@@ -375,7 +375,7 @@ class RuleBasedMatcher(object):
     negList = []
     negTextList = []
     for sent in self._matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.health_status is not None:
           entList.append(ent.text)
@@ -401,7 +401,7 @@ class RuleBasedMatcher(object):
     # df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'status keywords', 'health statuses', 'conjecture', 'sentence'])
 
     for sent in self._matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.status is not None:
           entList.append(ent.text)
@@ -966,9 +966,9 @@ class RuleBasedMatcher(object):
     for sent in matchedSents:
       valid = self.validSent(sent)
       causalEnts = None
-      if self._labelCausal in self._entityLabels:
-        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._labelCausal])
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      if self._causalKeywordID in self._entityLabels:
+        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if ents is None:
         continue
       causalStatus = [sent.root.lemma_.lower()] in self._causalKeywords['VERB'] and [sent.root.lemma_.lower()] not in self._statusKeywords['VERB']
@@ -1412,11 +1412,11 @@ class RuleBasedMatcher(object):
     """
     allCauseEffectPairs = []
     for sent in matchedSents:
-      if self._labelCausal in self._entityLabels:
-        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._labelCausal])
+      if self._causalKeywordID in self._entityLabels:
+        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
       else:
         continue
-      sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       sscEnts = self.getConjuncts(sscEnts)
       logger.debug(f'Conjuncts pairs: {sscEnts}')
       if causalEnts is None: #  no causal keyword is found, skipping
@@ -1433,7 +1433,7 @@ class RuleBasedMatcher(object):
       logger.debug(f'Sentence contains causal keywords: {causalEnts}. \n {sent.text}')
 
       # grab all ents
-      labelList = self._entityLabels[self._labelCausal].union(self._entityLabels[self._labelSSC])
+      labelList = self._entityLabels[self._causalKeywordID].union(self._entityLabels[self._entID])
       ents = self.getCustomEnts(sent.ents, labelList)
       mEnts = copy.copy(ents)
       root = sent.root
@@ -1881,7 +1881,7 @@ class RuleBasedMatcher(object):
     matchedSents = []
     matchedSentsForVis = []
     for span in doc.ents:
-      if span.ent_id_ != self._labelSSC:
+      if span.ent_id_ != self._entID:
         continue
       sent = span.sent
       # Append mock entity for match in displaCy style to matched_sents
