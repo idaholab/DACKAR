@@ -435,6 +435,13 @@ class RuleBasedMatcher(object):
     # print(*self.extract(self._matchedSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[]), sep='\n')
     # logger.info('End of causal relation extraction using general extraction method!')
 
+    # collect general cause effect info
+    logger.info('Start to use general extraction method to extract causal relation')
+    matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
+    extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
+    print(*extractedCauseEffects)
+    logger.info('End of causal relation extraction using general extraction method!')
+
   def visualize(self):
     """
       Visualize the processed document
@@ -1897,7 +1904,21 @@ class RuleBasedMatcher(object):
       matchedSentsForVis.append({"text": sent.text, "ents": matchEnts})
     return matchedSents, matchedSentsForVis
 
+  def collectCauseEffectSents(self, doc):
+    """
+      Collect data of matched sentences that contain cause-effect keywords
 
+      Args:
+        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+    """
+    matchedSents = []
+    for sent in doc.sents:
+      for ent in sent.ents:
+        if ent.ent_id_ != self._causalKeywordID:
+          continue
+        if sent not in matchedSents:
+          matchedSents.append(sent)
+    return matchedSents
 
 #############################################################################
 # some useful methods, but currently they are not used
