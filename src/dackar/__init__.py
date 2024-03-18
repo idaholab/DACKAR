@@ -33,6 +33,7 @@ from dackar.similarity.SentenceSimilarity import SentenceSimilarity
 from dackar.utils.nlp import nlp_utils
 from dackar.utils.nlp.CreatePatterns import CreatePatterns
 from dackar.utils.opm.OPLparser import OPMobject
+from dackar.utils.mbse.LMLparser import LMLobject
 
 logger = logging.getLogger("dackar")
 logger.setLevel(logging.INFO)

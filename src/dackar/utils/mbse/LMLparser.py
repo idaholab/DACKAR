@@ -10,6 +10,7 @@ Created on February, 2024
 import xml.etree.ElementTree as ET
 import re
 import networkx as nx
+import pandas as pd
 
 class LMLobject(object):
   """
@@ -33,6 +34,8 @@ class LMLobject(object):
     self.emb_entities = {}
     self.LMLgraph = None
     self.acronyms = {}
+    self.listIDs = []
+    self.linkToMBSEmodels = {}
 
   def OPLparser(self):
     """
@@ -103,8 +106,9 @@ class LMLobject(object):
     # Parse description
     if linkNode.find('description').text:
       entityDescr = linkNode.find('description').text
-      elemList = parseEntityDescription(entityDescr)
+      elemList = parseEntityDescription(entityDescr)[0]    # No link to MBSE models allowed for links
       self.emb_entities[linkID] = elemList
+      self.listIDs = self.listIDs + elemList
     
       for elem in elemList:
         self.LMLgraph.add_node(elem, color='m', key='entity_emb')
@@ -131,27 +135,39 @@ class LMLobject(object):
     entityName  = entityNode.find('name').text.strip()
     cleanedName = re.sub(' +', ' ', entityName)
 
+    elemList = None 
+    MBSElink = None
+
     # Parse description
     if entityNode.find('description').text:
       entityDescr = entityNode.find('description').text
-      elemList = parseEntityDescription(entityDescr)
-      self.emb_entities[entityID] = elemList
+      (elemList,MBSElink) = parseEntityDescription(entityDescr)
 
-      for elem in elemList:
-        self.LMLgraph.add_node(elem, color='r', key='entity_emb')
+      if elemList:
+        self.emb_entities[entityID] = elemList
+        self.listIDs = self.listIDs + elemList
+        for elem in elemList:
+          self.LMLgraph.add_node(elem, color='r', key='entity_emb')
+      if MBSElink:
+        self.LMLgraph.add_node(MBSElink, color='g', key='MBSE_linked_ent')
     
     if assetID:
       self.entities[entityID] = (entityName,assetID)
+      self.listIDs.append(assetID)
       self.LMLgraph.add_node((entityName,assetID), color='m', key='entity')
-      if entityNode.find('description').text:
+      if elemList:
         for elem in elemList:
           self.LMLgraph.add_edge((entityName,assetID), elem, color='k', key='assoc')
+      if MBSElink:
+        self.LMLgraph.add_edge((entityName,assetID), MBSElink, color='g', key='MBSElink')
     else:
       self.entities[entityID] = (entityName,None)
       self.LMLgraph.add_node((entityName,None), color='m', key='entity')
-      if entityNode.find('description').text:
+      if elemList:
         for elem in elemList:
           self.LMLgraph.add_edge((entityName,None), elem, color='k', key='assoc')
+      if MBSElink:
+        self.LMLgraph.add_edge((entityName,None), MBSElink, color='g', key='MBSElink')
 
   def returnGraph(self):
     """
@@ -182,6 +198,22 @@ class LMLobject(object):
     """
     return self.entities, self.emb_entities
 
+  def returnListIDs(self):
+    """
+    This method returns the list of asset IDs
+
+    Args:
+
+      None
+
+    Returns:
+
+      self.listIDs: list, list of asset IDs specified in the LML MBSE model
+    """ 
+    rmv = [str(item) for item in range(1, 40)]
+    cleaned = set(self.listIDs).difference(set(rmv))
+    return list(cleaned) 
+
   def cleanedGraph(self):
     """
     This method is designed to clean the complete MBSE graph by removing the links which are represented as nodes
@@ -194,39 +226,115 @@ class LMLobject(object):
 
       g: networkx object, cleaned graph containing only asset entities specified in the LML MBSE model
     """
-    g = self.LMLgraph.copy()
+    self.cleanedGraph = self.LMLgraph.copy()
 
-    for node,degree in g.degree():
+    for node,degree in self.cleanedGraph.degree():
       if node in self.link_entities:
-        a0,b0 = list(g.in_edges(node))[0]
-        a1,b1 = list(g.out_edges(node))[0]
+        a0,b0 = list(self.cleanedGraph.in_edges(node))[0]
+        a1,b1 = list(self.cleanedGraph.out_edges(node))[0]
 
         e0 = a0 if a0!=node else b0
         e1 = a1 if a1!=node else b1
 
-        g.add_edge(e0, e1)
+        self.cleanedGraph.add_edge(e0, e1)
 
-    g.remove_nodes_from(self.link_entities)
+    self.cleanedGraph.remove_nodes_from(self.link_entities)
     
-    return g
+    return self.cleanedGraph
+
+
+  def createNeo4jGraph(self):
+
+    NXnodes = list(self.LMLgraph.nodes(data=True))
+    NXedges = list(self.LMLgraph.edges)
+
+    mapping = {}
+
+    nodes = {
+            "nodeId": [],
+            "labels": [],
+            "ID": [],
+            "type": []
+            }
+
+    for index,node in enumerate(NXnodes): 
+      nodes['nodeId'].append(index)
+      nodeInfo = node
+
+      mapping[node] = index
+
+      if nodeInfo[0] is None:
+        nodes['labels'].append(nodeInfo[1])
+        nodes['ID'].append(nodeInfo[1])
+
+      elif nodeInfo[1] is None:
+        nodes['labels'].append(nodeInfo[0])
+        nodes['ID'].append(nodeInfo[0])
+
+      else:
+        nodes['labels'].append(nodeInfo[0])
+        nodes['ID'].append(nodeInfo[1])  
+
+      nodes['type'].append(node[1]['key'])
+    
+    nodes = pd.DataFrame(nodes)
+
+    relationships = pd.DataFrame(
+        {
+            "sourceNodeId": [],
+            "targetNodeId": [],
+            "type": []
+        }
+    )
+    
+    for index,edge in enumerate(NXedges):
+      relationships['sourceNodeId'].append(mapping[edge[0]])
+      relationships['targetNodeId'].append(mapping[edge[1]])
+      relationships['type'].append(edge[2])
+
+    '''
+    self.G = gds.graph.construct(
+        "my-graph",      # Graph name
+        nodes,           # One or more dataframes containing node data
+        relationships    # One or more dataframes containing relationship data
+    )'''
+
+    return nodes, relationships
+
 
 
 def parseEntityDescription(text):
-    """
-    This method is designed to extract the elements specified in square brackets that are specified in 
-    the description node of the MBSE model of a link or entity
+  """
+  This method is designed to extract the elements specified in square brackets that are specified in 
+  the description node of the MBSE model of a link or entity
 
-    Args:
+  Args:
 
-      text: str, text contained in the description node of the MBSE model
+    text: str, text contained in the description node of the MBSE model
 
-    Returns:
+  Returns:
 
-      listOfElems     : list, list of elements specified in square brackets and separated by commas (i.e., ',')
-    """
-  txtPortion = text[text.find("[")+1:text.find("]")]
-  listOfElems = txtPortion.split(',')
-  return listOfElems
+    out     : tuple, tuple containing the list of elements specified in square brackets and separated 
+                     by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
+                     (e.g., ('centrifugalPumpFull', 'body'))
+
+  """
+
+  if '[' in text:
+    txtPortion1 = text[text.find("[")+1:text.find("]")]
+    listOfElems = txtPortion1.split(';')
+  else:
+    listOfElems = None
+  
+  if '{' in text:
+    MBSElink = text[text.find("{")+1:text.find("}")].split(':')
+    MBSEinstance = (MBSElink[0],MBSElink[1])
+  else:
+    MBSEinstance = None
+
+  out = (listOfElems,MBSEinstance)
+
+  return out
 
 
 
