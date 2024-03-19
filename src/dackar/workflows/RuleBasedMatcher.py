@@ -322,7 +322,7 @@ class RuleBasedMatcher(object):
     if not self._entityRuler:
       self._entityRuler = True
 
-  def __call__(self, text):
+  def __call__(self, text, extract=True):
     """
       Find all token sequences matching the supplied pattern
 
@@ -358,6 +358,22 @@ class RuleBasedMatcher(object):
     matchedSents, matchedSentsForVis = self.collectSents(self._doc)
     self._matchedSents += matchedSents
     self._matchedSentsForVis += matchedSentsForVis
+    if extract:
+      self.extractInformation()
+
+  def extractInformation(self):
+    """
+      extract information
+
+      Args:
+
+        None
+
+      Returns:
+
+        None
+    """
+
     ## health status
     logger.info('Start to extract health status')
     self.extractHealthStatus(self._matchedSents)
