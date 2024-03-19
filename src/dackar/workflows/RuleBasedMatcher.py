@@ -500,13 +500,14 @@ class RuleBasedMatcher(object):
     for left in token.lefts: # Check modal auxiliary verb: can, could, may, might, must, shall, should, will, would
       if left.dep_.startswith('aux') and left.tag_ in ['MD']:
         return True
-    if token.pos_ == 'VERB' and token.tag_ == 'VB': # If it is a verb, and there is no inflectional morphology for the verb
-      return True
     # check the keywords
     # FIXME: should we use token.subtree or token.children here
     for child in token.subtree:
       if [child.lemma_.lower()] in self._conjectureKeywords['conjecture-keywords']:
         return True
+    # For short sentences, conjecture can not determined by VERB inflectional morphology
+    # if token.pos_ == 'VERB' and token.tag_ == 'VB': # If it is a verb, and there is no inflectional morphology for the verb
+    #   return True
     return False
 
   def isNegation(self, token):

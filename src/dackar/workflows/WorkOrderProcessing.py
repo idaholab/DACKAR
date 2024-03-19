@@ -144,6 +144,8 @@ class WorkOrderProcessing(object):
     self._entHS = None
     self._entStatus = None
     self._textProcess = self.textProcess()
+    self._allRelPairs = []
+    self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
 
   def reset(self):
     """
@@ -151,7 +153,9 @@ class WorkOrderProcessing(object):
     """
     self._matchedSents = []
     self._matchedSentsForVis = []
+    self._allRelPairs = []
     self._entHS = None
+    self._entStatus = None
     self._doc = None
 
   def textProcess(self):
@@ -260,7 +264,7 @@ class WorkOrderProcessing(object):
     if not self._entityRuler:
       self._entityRuler = True
 
-  def __call__(self, text):
+  def __call__(self, text, extract=True):
     """
       Find all token sequences matching the supplied pattern
 
@@ -298,6 +302,21 @@ class WorkOrderProcessing(object):
     # Except reset, add new processed data into existing stored data
     self._matchedSents += matchedSents
     self._matchedSentsForVis += matchedSentsForVis
+    if extract:
+      self.extractInformation()
+
+  def extractInformation(self):
+    """
+      extractInformation
+
+      Args:
+
+        None
+
+      Returns:
+
+        None
+    """
     ## health status
     logger.info('Start to extract health status')
     self.extractHealthStatus(self._matchedSents)
@@ -320,13 +339,20 @@ class WorkOrderProcessing(object):
           negList.append(ent._.neg)
           negTextList.append(ent._.neg_text)
 
+    # Extracted information can be treated as attributes for given entity
     dfStatus = pd.DataFrame({'entity':entList, 'alias':aliasList, 'status':statusList, 'conjecture':cjList, 'negation':negList, 'negation_text': negTextList})
-    dfStatus.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entity', 'alias', 'status', 'conjecture', 'negation', 'negation_text'])
+    dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'status', 'conjecture', 'negation', 'negation_text'])
 
     self._entStatus = dfStatus
     logger.info('End of health status extraction!')
-    # df = pd.DataFrame({'entities':entList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList})
-    # df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'status keywords', 'health statuses', 'conjecture', 'sentence'])
+
+    # Extract entity relations
+    logger.info('Start to extract causal relation using OPM model information')
+    self.extractRelDep(self._matchedSents)
+    dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+    dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    logger.info('End of causal relation extraction!')
+
 
   def visualize(self):
     """
@@ -386,13 +412,13 @@ class WorkOrderProcessing(object):
     for left in token.lefts: # Check modal auxiliary verb: can, could, may, might, must, shall, should, will, would
       if left.dep_.startswith('aux') and left.tag_ in ['MD']:
         return True
-    if token.pos_ == 'VERB' and token.tag_ == 'VB': # If it is a verb, and there is no inflectional morphology for the verb
-      return True
     # check the keywords
     # FIXME: should we use token.subtree or token.children here
     for child in token.subtree:
       if [child.lemma_.lower()] in self._conjectureKeywords['conjecture-keywords']:
         return True
+    # if token.pos_ == 'VERB' and token.tag_ == 'VB': # If it is a verb, and there is no inflectional morphology for the verb
+    #   return True
     return False
 
   def isNegation(self, token):
@@ -523,6 +549,68 @@ class WorkOrderProcessing(object):
           else:
             # if the entity not among subj and obj, it may not need to report it
             pass
+
+  def extractRelDep(self, matchedSents):
+    """
+
+      Args:
+
+        matchedSents: list, the list of matched sentences
+
+      Returns:
+
+        (subject tuple, predicate, object tuple): generator, the extracted causal relation
+    """
+    subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
+    # objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
+    for sent in matchedSents:
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entityID])
+      if len(ents) <= 1:
+        continue
+      root = sent.root
+      allRelPairs = []
+      subjEnt = []
+      subjConjEnt = []
+      objEnt = []
+      objConjEnt = []
+
+      for ent in ents:
+        entRoot = ent.root
+        if ent._.alias is not None:
+          text = ent._.alias
+        else:
+          text = ent.text
+        # entity at the beginning of sentence
+        if ent.start == sent.start:
+          subjEnt.append(text)
+        elif entRoot.dep_ in ['conj'] and entRoot.i < root.i:
+          subjConjEnt.append(text)
+        elif entRoot.dep_ in subjList:
+          subjEnt.append(text)
+        elif entRoot.dep_ in ['obj', 'dobj']:
+          objEnt.append(text)
+        elif entRoot.i > root.i and entRoot.dep_ in ['conj']:
+          objConjEnt.append(text)
+      # subj
+      for subj in subjEnt:
+        for subjConj in subjConjEnt:
+          allRelPairs.append([subj, 'conj', subjConj])
+        for obj in objEnt:
+          allRelPairs.append([subj, root, obj])
+        for objConj in objConjEnt:
+          allRelPairs.append([subj, root, objConj])
+      # subjconj
+      for subjConj in subjConjEnt:
+        for obj in objEnt:
+          allRelPairs.append([subjConj, root, obj])
+        for objConj in objConjEnt:
+          allRelPairs.append([subjConj, root, objConj])
+      # obj
+      for obj in objEnt:
+        for objConj in objConjEnt:
+          allRelPairs.append([obj, 'conj', objConj])
+
+      self._allRelPairs += allRelPairs
 
 
   ##TODO: how to extend it for entity ruler?
