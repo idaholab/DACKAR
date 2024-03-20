@@ -307,7 +307,7 @@ class WorkOrderProcessing(object):
 
   def extractInformation(self):
     """
-      extractInformation
+      extract information
 
       Args:
 
@@ -324,6 +324,7 @@ class WorkOrderProcessing(object):
     ## Access status and output to an ordered csv file
     entList = []
     aliasList = []
+    entTextList = []
     statusList = []
     cjList = []
     negList = []
@@ -334,14 +335,18 @@ class WorkOrderProcessing(object):
         if ent._.status is not None:
           entList.append(ent.text)
           aliasList.append(ent._.alias)
+          if ent._.alias is not None:
+            entTextList.append(ent._.alias)
+          else:
+            entTextList.append(ent.text)
           statusList.append(ent._.status)
           cjList.append(ent._.conjecture)
           negList.append(ent._.neg)
           negTextList.append(ent._.neg_text)
 
     # Extracted information can be treated as attributes for given entity
-    dfStatus = pd.DataFrame({'entity':entList, 'alias':aliasList, 'status':statusList, 'conjecture':cjList, 'negation':negList, 'negation_text': negTextList})
-    dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'status', 'conjecture', 'negation', 'negation_text'])
+    dfStatus = pd.DataFrame({'entity':entList, 'alias':aliasList, 'entity_text': entTextList, 'status':statusList, 'conjecture':cjList, 'negation':negList, 'negation_text': negTextList})
+    dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'entity_text', 'status', 'conjecture', 'negation', 'negation_text'])
 
     self._entStatus = dfStatus
     logger.info('End of health status extraction!')
