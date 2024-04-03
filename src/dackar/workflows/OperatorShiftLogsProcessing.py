@@ -1,7 +1,7 @@
 # Copyright 2020, Battelle Energy Alliance, LLC
 # ALL RIGHTS RESERVED
 """
-Created on March, 2024
+Created on April, 2024
 
 @author: wangc, mandd
 """
@@ -15,6 +15,7 @@ from ..text_processing.Preprocessing import Preprocessing
 from ..utils.utils import getOnlyWords, getShortAcronym
 from ..config import nlpConfig
 from .WorkflowBase import WorkflowBase
+
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +42,11 @@ if not Token.has_extension('alias'):
   Token.set_extension("alias", default=None)
 
 
-class WorkOrderProcessing(WorkflowBase):
+class OperatorShiftLogs(WorkflowBase):
   """
-    Class to process OPG CWS work order dataset
+    Class to process OPG Operator Shift Logs dataset
   """
-  def __init__(self, nlp, entID='SSC', *args, **kwargs):
+  def __init__(self, nlp, entID='SSC', causalKeywordID='causal', *args, **kwargs):
     """
       Construct
 
@@ -59,7 +60,7 @@ class WorkOrderProcessing(WorkflowBase):
 
         None
     """
-    super().__init__(nlp, entID, causalKeywordID='causal', *args, **kwargs)
+    super().__init__(nlp, entID, causalKeywordID, *args, **kwargs)
     self._allRelPairs = []
     self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
 
@@ -71,26 +72,19 @@ class WorkOrderProcessing(WorkflowBase):
     self._allRelPairs = []
     self._entStatus = None
 
-  def addKeywords(self, keywords, ktype):
+
+  def textProcess(self):
     """
-      Method to update self._causalKeywords or self._statusKeywords
+      Function to clean text
 
       Args:
+        None
 
-        keywords: dict, keywords that will be add to self._causalKeywords or self._statusKeywords
-        ktype: string, either 'status' or 'causal'
+      Returns:
+        procObj, DACKAR.Preprocessing object
     """
-    if type(keywords) != dict:
-      raise IOError('"addCausalKeywords" method can only accept dictionary, but got {}'.format(type(keywords)))
-    if ktype.lower() == 'status':
-      for key, val in keywords.items():
-        if type(val) != list:
-          val = [val]
-        val = self.extractLemma(val)
-        if key in self._statusKeywords:
-          self._statusKeywords[key].append(val)
-        else:
-          logger.warning('keyword "{}" cannot be accepted, valid keys for the keywords are "{}"'.format(key, ','.join(list(self._statusKeywords.keys()))))
+    procObj = super().textProcess()
+    return procObj
 
   def extractInformation(self):
     """
@@ -144,6 +138,7 @@ class WorkOrderProcessing(WorkflowBase):
     dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
     dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
     logger.info('End of causal relation extraction!')
+
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
     """

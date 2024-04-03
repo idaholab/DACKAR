@@ -200,6 +200,9 @@ class WorkflowBase(object):
     self._visualizeMatchedSents = True
     self._coref = _corefAvail # True indicate coreference pipeline is available
     self._entityLabels = {} # labels for rule-based entities
+    # reset entity label using toml input
+    if 'params' in nlpConfig:
+      entID = nlpConfig['params'].get('ent_id', entID)
     self._entID = entID
     self._causalKeywordID = causalKeywordID
     self._causalNames = ['cause', 'cause health status', 'causal keyword', 'effect', 'effect health status', 'sentence', 'conjecture']
@@ -209,6 +212,8 @@ class WorkflowBase(object):
     self._causalSentsOneEnt = []
     self._entHS = None
     self._entStatus = None
+
+    self._textProcess = self.textProcess()
 
   def reset(self):
     """
@@ -222,6 +227,22 @@ class WorkflowBase(object):
     self._causalSentsOneEnt = []
     self._entHS = None
     self._doc = None
+
+  def textProcess(self):
+    """
+      Function to clean text
+
+      Args:
+        None
+
+      Returns:
+        procObj, DACKAR.Preprocessing object
+    """
+    procList = ['quotation_marks', 'punctuation', 'whitespace']
+    procOptions = {'punctuation': {'only':["*","+",":","=","\\","^","_","|","~", "..", "...", ",", ";", "."]}}
+    procObj = Preprocessing(preprocessorList=procList, preprocessorOptions=procOptions)
+    return procObj
+
 
   def getKeywords(self, filename, columnNames=None):
     """
