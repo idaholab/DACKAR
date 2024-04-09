@@ -5,7 +5,7 @@ import tomli
 import os
 
 #configFileName = 'nlp_config.toml'
-#configFileName = 'nlp_config_ler.toml'
+# configFileName = 'nlp_config_ler.toml'
 #configFileName = 'nlp_config_cws.toml'
 configFileName = 'nlp_config_opg.toml'
 

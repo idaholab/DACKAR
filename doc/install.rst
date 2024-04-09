@@ -11,7 +11,7 @@ How to install dependency libraries?
 
   conda activate dackar_libs
 
-  pip install spacy==3.1 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy scikit-learn==1.2.2
+  pip install spacy==3.1 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy scikit-learn==1.2.2 pyspellchecker
 
 .. scikit-learn 1.2.2 is required for quantulum3
 

@@ -50,8 +50,76 @@ autodoc_inherit_docstrings = False
 
 open your brower to: http://localhost:8000
 
+## Installation
 
-## How to install DACKAR libraries
+### How to install DACKAR libraries with spaCy 3.5?
+
+- Install dependency libraries
+
+```bash
+  conda create -n dackar_libs python=3.11
+
+  conda activate dackar_libs
+
+  pip install spacy==3.5 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy scikit-learn pyspellchecker contextualSpellCheck pandas
+```
+
+- Download language model from spacy (can not use INL network)
+
+```bash
+  python -m spacy download en_core_web_lg
+  python -m coreferee install en
+```
+
+- Install required nltk data for similarity analysis
+--------------------------------------------------------
+
+```bash
+  python -m nltk.downloader all
+```
+
+### Different approach when there is a issue with SSLError
+
+- Download language model from spacy
+```bash
+  Download en_core_web_lg-3.5.0-py3-none-any.whl from https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
+
+  python -m pip install ./en_core_web_lg-3.5.0-py3-none-any.whl
+```
+
+- Download coreferee model:
+
+```bash
+  Download from https://github.com/richardpaulhudson/coreferee/tree/master/models/coreferee_model_en.zip
+
+  python -m pip install ./coreferee_model_en.zip
+```
+
+- run script DACKAR/nltkDownloader.py to download nltk data:
+
+```bash
+  python nltkDownloader.py
+```
+
+or check installing_nltk_data_ on how to manually install nltk data.
+For this project, the users can also try the following steps:
+
+```bash
+  cd ~
+  mkdir nltk_data
+  cd nltk_data
+  mkdir corpora
+  mkdir taggers
+  mkdir tokenizers
+  Dowload wordnet, averaged_perceptron_tagger, punkt
+  cp -r wordnet ~/nltk_data/corpora/
+  cp -r averaged_perceptron_tagger ~/nltk_data/taggers/
+  cp -r punkt ~/nltk_data/tokenizers
+```
+
+## Old Installation Process
+
+### How to install DACKAR libraries with spaCy 3.1?
 
 - Install dependency libraries
 
@@ -78,7 +146,7 @@ open your brower to: http://localhost:8000
   python -m pip install ./en_core_web_lg-3.1.0.tar.gz
 ```
 
-- Down coreferee model:
+- Download coreferee model:
 
 ```bash
   Download from https://github.com/richardpaulhudson/coreferee/tree/master/models/coreferee_model_en.zip

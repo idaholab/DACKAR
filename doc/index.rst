@@ -15,6 +15,7 @@ Welcome to DACKAR's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   install_spacy3.5
    install
    support
    Notebooks <notebooks/index>
