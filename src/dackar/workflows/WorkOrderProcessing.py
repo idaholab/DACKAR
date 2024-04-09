@@ -1,5 +1,4 @@
-# Copyright 2020, Battelle Energy Alliance, LLC
-# ALL RIGHTS RESERVED
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 """
 Created on March, 2024
 

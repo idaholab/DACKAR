@@ -1,4 +1,4 @@
-# __init__.py
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 
 import pathlib
 import tomli

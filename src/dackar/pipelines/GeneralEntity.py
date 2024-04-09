@@ -1,3 +1,5 @@
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
+
 from spacy.language import Language
 import logging
 logger = logging.getLogger(__name__)

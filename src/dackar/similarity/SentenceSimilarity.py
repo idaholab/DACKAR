@@ -1,3 +1,5 @@
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
+
 # modified from https://github.com/nihitsaxena95/sentence-similarity-wordnet-sementic/blob/master/SentenceSimilarity.py
 # Method proposed by: https://arxiv.org/pdf/1802.05667.pdf
 
