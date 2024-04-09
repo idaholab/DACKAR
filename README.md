@@ -78,7 +78,7 @@ open your brower to: http://localhost:8000
   python -m nltk.downloader all
 ```
 
-### Different approach when there is a issue with SSLError
+### Different approach when there is an issue with SSLError
 
 - Download language model from spacy
 ```bash
@@ -138,7 +138,7 @@ For this project, the users can also try the following steps:
   python -m coreferee install en
 ```
 
-- Different approach when there is a issue with SSLError
+- Different approach when there is an issue with SSLError
 
 ```bash
   Download en_core_web_lg-3.1.0.tar.gz from https://github.com/explosion/spacy-models/releases/tag/en_core_web_lg-3.1.0
@@ -175,7 +175,7 @@ For this project, the users can also try the following steps:
   python -m nltk.downloader all
 ```
 
-- Different approach when there is a issue with SSLError
+- Different approach when there is an issue with SSLError
 
 As a first alternative, the following command can be used:
 ```bash
