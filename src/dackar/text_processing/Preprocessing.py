@@ -1,5 +1,4 @@
-# Copyright 2020, Battelle Energy Alliance, LLC
-# ALL RIGHTS RESERVED
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 """
 Created on October, 2022
 
@@ -11,9 +10,23 @@ import textacy.preprocessing as preprocessing
 from numerizer import numerize
 import spacy
 from spacy.vocab import Vocab
-from contextualSpellCheck.contextualSpellCheck import ContextualSpellCheck
-import autocorrect
-from spellchecker import SpellChecker as PySpellChecker
+
+try:
+  from contextualSpellCheck.contextualSpellCheck import ContextualSpellCheck
+except ModuleNotFoundError as error:
+  print("ERROR: Unable to import contextualSpellCheck", error)
+  print("Please try to install it via: 'pip install contextualSpellCheck'")
+try:
+  import autocorrect
+except ModuleNotFoundError as error:
+  print("ERROR: Unable to import autocorrect", error)
+  print("Please try to install it via: 'pip install autocorrect'")
+try:
+  from spellchecker import SpellChecker as PySpellChecker
+except ModuleNotFoundError as error:
+  print("ERROR: Unable to import spellchecker", error)
+  print("Please try to install it via: 'pip install spellchecker'")
+
 import itertools
 import os
 import numpy as np

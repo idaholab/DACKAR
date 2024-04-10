@@ -1,3 +1,5 @@
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
+
 import math
 import numpy as np
 import copy
