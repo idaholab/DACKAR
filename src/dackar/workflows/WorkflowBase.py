@@ -1098,7 +1098,6 @@ class WorkflowBase(object):
     """
     status = None
     neg = False
-
     negText = ''
     entRoot = ent.root
     head = entRoot.head
@@ -1110,9 +1109,8 @@ class WorkflowBase(object):
       prep = True
     else:
       root = head
-    causalStatus = [root.lemma_.lower()] in self._causalKeywords['VERB'] and [root.lemma_.lower()] not in self._statusKeywords['VERB']
     if entRoot.dep_ not in ['pobj', 'dobj']:
-      return status, neg, negText
+      raise IOError("Method 'self.getStatusForObj' can only be used for 'pobj' or 'dobj'")
     if root.pos_ != 'VERB':
       neg, negText = self.isNegation(root)
       if root.pos_ in ['ADJ']:
@@ -1126,40 +1124,41 @@ class WorkflowBase(object):
         leftInd = list(root.lefts)[0].i
         status = root.doc[leftInd:root.i]
       else:
-        logger.warning(f'No status identified for "{ent}" in "{sent}"')
+        logger.warning(f'No status identified for "{ent}" in "{ent.sent}"')
     else:
-      if not causalStatus:
-        if [root.lemma_.lower()] in predSynonyms:
-          entHS._.set('hs_keyword', root.lemma_)
-        else:
-          entHS._.set('ent_status_verb', root.lemma_)
-        passive = self.isPassive(root)
-        neg, negText = self.isNegation(root)
-        status = self.findLeftSubj(root, passive)
-        if status is not None and status.pos_ in ['PRON']:
+      subjStatus = None
+      if entRoot.dep_ in ['pobj']:
+        amod = self.getStatusForPobj(ent, include=include)
+      else:
+        amod = self.getAmod(ent, ent.start, ent.end, include=include)
+         # status = self.getCompoundOnly(ent, entHS)
+
+      passive = self.isPassive(root)
+      neg, negText = self.isNegation(root)
+      subjStatus = self.findLeftSubj(root, passive)
+      if subjStatus is not None:
+        if subjStatus.pos_ in ['PRON']:
           # coreference resolution
           passive = self.isPassive(root.head)
           neg, negText = self.isNegation(root.head)
-          status = self.findLeftSubj(root.head, passive)
-        if status is not None:
-          status = self.getAmod(status, status.i, status.i+1, include=True)
-        else:
-          status = self.getAmod(ent, ent.start, ent.end, include=include)
-          # status = self.getCompoundOnly(ent, entHS)
-        if status is None:
-          rights =[tk for tk in list(root.rights) if tk.pos_ not in ['SPACE', 'PUNCT'] and tk.i >= ent.end]
-          if len(rights) > 0 and rights[0].pos_ in ['VERB', 'NOUN', 'ADJ', 'ADV']:
-            status = rights[0]
+          subjStatus = self.findLeftSubj(root.head, passive)
+        subjStatus = self.getAmod(subjStatus, subjStatus.i, subjStatus.i+1, include=True)
       else:
-        if entRoot.dep_ in ['pobj']:
-          status = self.getstatusForPobj(ent, include=include)
-        else:
-          status = self.getAmod(ent, ent.start, ent.end, include=include)
+        subjStatus = root
+      # if amod is None:
+      #   rights =[tk for tk in list(root.rights) if tk.pos_ not in ['SPACE', 'PUNCT'] and tk.i >= ent.end]
+      #   if len(rights) > 0 and rights[0].pos_ in ['VERB', 'NOUN', 'ADJ', 'ADV']:
+      #     status = rights[0]
+
+      if amod is None:
+        status = subjStatus
+      else:
+        status = [amod, subjStatus]
+
     return status, neg, negText
 
 
-
-  def getHealthStatusForPobj(self, ent, include=False):
+  def getStatusForPobj(self, ent, include=False):
     """Get the status for ent root pos ``pobj``
 
       Args:
@@ -1181,10 +1180,10 @@ class WorkflowBase(object):
       start = ent.start
       end = ent.end
     if root.dep_ not in ['pobj']:
-      return status
+      raise IOError("Method 'self.getStatusForPobj' can only be used for 'pobj'")
+
     grandparent = root.head.head
     parent = root.head
-    causalStatus = [grandparent.lemma_.lower()] in self._causalKeywords['VERB'] and [grandparent.lemma_.lower()] not in self._statusKeywords['VERB']
     if grandparent.dep_ in ['dobj', 'nsubj', 'nsubjpass', 'pobj']:
       lefts = list(grandparent.lefts)
       if len(lefts) == 0:
@@ -1200,7 +1199,7 @@ class WorkflowBase(object):
       else:
         status = grandparent.doc[leftInd:end]
       status = self.getAmod(status, status.start, status.end, include=True)
-    elif grandparent.pos_ in ['VERB'] and causalStatus:
+    elif grandparent.pos_ in ['VERB']:
       status = self.findRightObj(grandparent)
       subtree = list(status.subtree)
       nbor = self.getNbor(status)
