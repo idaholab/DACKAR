@@ -103,43 +103,24 @@ class OperatorShiftLogs(WorkflowBase):
     ## health status
     logger.info('Start to extract health status')
     self.extractStatus(self._matchedSents)
-
-    ## Access status and output to an ordered csv file
-    entList = []
-    aliasList = []
-    entTextList = []
-    statusList = []
-    cjList = []
-    negList = []
-    negTextList = []
+    # print collected info
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
-      for ent in ents:
-        if ent._.status is not None:
-          entList.append(ent.text)
-          aliasList.append(ent._.alias)
-          if ent._.alias is not None:
-            entTextList.append(ent._.alias)
-          else:
-            entTextList.append(ent.text)
-          statusList.append(ent._.status)
-          cjList.append(ent._.conjecture)
-          negList.append(ent._.neg)
-          negTextList.append(ent._.neg_text)
+      if ents is not None:
+        print('Sentence:', sent)
+        print('... Conjecture:', sent._.conjecture)
+        print('... Negation:', sent._.neg, sent._.neg_text)
+        for ent in ents:
+          print('... Entity:', ent.text)
+          print('...... Status:', ent._.status)
+          print('...... Amod:', ent._.status_amod)
 
-    # Extracted information can be treated as attributes for given entity
-    dfStatus = pd.DataFrame({'entity':entList, 'alias':aliasList, 'entity_text': entTextList, 'status':statusList, 'conjecture':cjList, 'negation':negList, 'negation_text': negTextList})
-    dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'entity_text', 'status', 'conjecture', 'negation', 'negation_text'])
-
-    self._entStatus = dfStatus
-    logger.info('End of health status extraction!')
-
-    # Extract entity relations
-    logger.info('Start to extract causal relation using OPM model information')
-    self.extractRelDep(self._matchedSents)
-    dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
-    dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
-    logger.info('End of causal relation extraction!')
+    # # Extract entity relations
+    # logger.info('Start to extract causal relation using OPM model information')
+    # self.extractRelDep(self._matchedSents)
+    # dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+    # dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    # logger.info('End of causal relation extraction!')
 
 
   def extractStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
@@ -201,6 +182,7 @@ class OperatorShiftLogs(WorkflowBase):
         # TODO: recursive function to retrieve non-conj
         amod = self.getAmod(ent, ent.start, ent.end, include=False)
         head = entRoot.head
+        headStatus = None
         if head.dep_ in ['conj']:
           head = head.head
         if head.dep_ in ['nsubj', 'nsubjpass']:
@@ -229,7 +211,7 @@ class OperatorShiftLogs(WorkflowBase):
 
       if status is None:
         continue
-      elif isinstance(status, list)
+      elif isinstance(status, list):
         ent._.set('status', status[1])
         ent._.set('status_amod', status[0])
       else:

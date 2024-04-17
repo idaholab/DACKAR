@@ -32,6 +32,7 @@ from ..pipelines.CustomPipelineComponents import anaphorEntCoref
 from ..pipelines.CustomPipelineComponents import mergePhrase
 from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 from ..config import nlpConfig
+from ..text_processing.Preprocessing import Preprocessing
 
 logger = logging.getLogger(__name__)
 
@@ -1027,7 +1028,7 @@ class WorkflowBase(object):
         status = root
       elif root.pos_ in ['AUX']:
         rights = [r for r in root.rights]
-        if len(rights) == 0
+        if len(rights) == 0:
           status = None
         elif len(rights) == 1:
           status = root.doc[root.i+1:rights[0].i+1]
