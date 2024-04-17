@@ -188,8 +188,9 @@ class OperatorShiftLogs(WorkflowBase):
           ccomps = [child for child in head.rights if child.dep_ in ['ccomp']]
           status = ccomps[0] if len(ccomps) > 0 else None
       elif entRoot.dep_ in ['compound']:
-          status = self.getAmod(ent, ent.start, ent.end, include=False)
-
+        status = self.getAmod(ent, ent.start, ent.end, include=False)
+        if status is None and head.dep_ not in ['compound']:
+          status = head
       elif entRoot.dep_ in ['conj']:
         # TODO: recursive function to retrieve non-conj
         amod = self.getAmod(ent, ent.start, ent.end, include=False)
