@@ -164,8 +164,6 @@ class OperatorShiftLogs(WorkflowBase):
       valid = self.validSent(sent)
       if valid:
         self.handleValidSent(sent, ents)
-
-
       else:
         self.handleInvalidSent(sent, ents)
 
@@ -177,102 +175,49 @@ class OperatorShiftLogs(WorkflowBase):
     root = sent.root
     neg, negText = self.isNegation(root)
     conjecture = self.isConjecture(root)
+    sent._.set('neg',neg)
+    sent._.set('neg_text',negText)
+    sent._.set('conjecture',conjecture)
 
     for ent in ents:
+      neg = None
+      negText = None
+
       status = None        # store health status for identified entities
-      statusAmod = None    # store amod for health status
-      statusAppend = None  # store some append info for health status (used for short phrase)
-      statusAppendAmod = None # store amod info for health status append info
-      statusPrepend = None  # store some prepend info
-      statusPrependAmod = None # store amod info for prepend info
-      statusText = None
-      passive = False
       entRoot = ent.root
 
       if entRoot.dep_ in ['nsubj', 'nsubjpass']:
         status, neg, negText = self.getStatusForSubj(ent)
       elif entRoot.dep_ in ['pobj', 'dobj']:
         status, neg, negText = self.getStatusForObj(ent)
-
-
-        if len(ents) == 1 or entRoot.dep_ in ['dobj']:
-          status, neg, negText = self.getStatusForObj(ent, ent, sent, causalStatus, predSynonyms)
-          if entRoot.dep_ in ['pobj']:
-            # extract append info for health status
-            prep = entRoot.head
-            statusAppendAmod = self.getCompoundOnly(ent, ent)
-            if len(statusAppendAmod) > 0:
-              statusAppendAmod = [prep.text] + statusAppendAmod
-              statusAppend = ent
-        else:
-          status = self.getStatusForPobj(ent, include=False)
-        if status is None:
-          head = entRoot.head
-          if head.dep_ in ['xcomp', 'advcl', 'relcl']:
-            for child in head.rights:
-              if child.dep_ in ['ccomp']:
-                status = child
-                break
-      elif entRoot.dep_ in ['compound']:
         head = entRoot.head
-        if head.pos_ not in ['SPACE', 'PUNCT']:
-          if len(ents) == 1:
-            if head.dep_ in ['compound']:
-              head = head.head
-            headEnt = head.doc[head.i:head.i+1]
-            if head.dep_ in ['nsubj', 'nsubjpass']:
-              status, neg, negText = self.getStatusForSubj(headEnt, ent, sent, causalStatus, predSynonyms, include=True)
-              if isinstance(status, Span):
-                if entRoot.i >= status.start and entRoot.i < status.end:
-                  status = headEnt
-              if status is not None:
-                statusPrepend = headEnt
-                statusPrependAmod = self.getAmodOnly(headEnt)
-            elif head.dep_ in ['dobj', 'pobj']:
-              status, neg, negText = self.getStatusForObj(headEnt, ent, sent, causalStatus, predSynonyms, include=False)
-              if status is not None:
-                if isinstance(status, Span):
-                  if head not in status:
-                    # identify the dobj/pobj, and use it as append info
-                    statusAppend = headEnt
-                    statusAppendAmod = self.getAmodOnly(headEnt)
-                elif isinstance(status, Token):
-                  if head != status:
-                    # identify the dobj/pobj, and use it as append info
-                    statusAppend = headEnt
-                    statusAppendAmod = self.getAmodOnly(headEnt)
-            if status is None:
-              status = headEnt
-          else:
-            status = entRoot.head
-            statusAmod = self.getAmodOnly(status)
-            if len(statusAmod) == 0:
-              lefts = list(status.lefts)
-              # remove entity itself
-              for elem in lefts:
-                if elem in ent:
-                  lefts.remove(elem)
-              if len(lefts) != 0:
-                statusAmod = [e.text for e in lefts]
-            if head.dep_ in ['dobj','pobj','nsubj', 'nsubjpass'] and [root.lemma_.lower()] in predSynonyms:
-              ent._.set('hs_keyword', root.lemma_)
-        else:
+        if status is None and head.dep_ in ['xcomp', 'advcl', 'relcl']:
+          ccomps = [child for child in head.rights if child.dep_ in ['ccomp']]
+          status = ccomps[0] if len(ccomps) > 0 else None
+      elif entRoot.dep_ in ['compound']:
           status = self.getAmod(ent, ent.start, ent.end, include=False)
 
       elif entRoot.dep_ in ['conj']:
         # TODO: recursive function to retrieve non-conj
-        status = self.getAmod(ent, ent.start, ent.end, include=False)
-        if status is None:
+        amod = self.getAmod(ent, ent.start, ent.end, include=False)
+        head = entRoot.head
+        if head.dep_ in ['conj']:
+          head = head.head
+        if head.dep_ in ['nsubj', 'nsubjpass']:
+          headStatus, neg, negText = self.getStatusForSubj(ent)
+        elif head.dep_ in ['pobj', 'dobj']:
+          headStatus, neg, negText = self.getStatusForObj(ent)
           head = entRoot.head
-          if head.dep_ in ['conj']:
-            head = head.head
-          headEnt = head.doc[head.i:head.i+1]
-          if head.dep_ in ['nsubj', 'nsubjpass']:
-            status, neg, negText = self.getStatusForSubj(headEnt, ent, sent, causalStatus, predSynonyms)
-          elif head.dep_ in ['pobj', 'dobj']:
-            status = self.getStatusForPobj(headEnt, include=False)
-            if status is None:
-              status, neg, negText = self.getstatusForObj(headEnt, ent, sent, causalStatus, predSynonyms)
+          if headStatus is None and head.dep_ in ['xcomp', 'advcl', 'relcl']:
+            ccomps = [child for child in head.rights if child.dep_ in ['ccomp']]
+            headStatus = ccomps[0] if len(ccomps) > 0 else None
+        if headStatus is None:
+          status = amod
+        elif isinstance(headStatus, list):
+          status = headStatus if amod is None else [amod, headStatus[-1]]
+        else:
+          status = headStatus if amod is None else [amod, headStatus]
+
       elif entRoot.dep_ in ['ROOT']:
         status = self.getAmod(ent, ent.start, ent.end, include=False)
         if status is None:
@@ -280,110 +225,18 @@ class OperatorShiftLogs(WorkflowBase):
           if len(rights) > 0:
             status = rights[0]
       else:
-        logger.warning(f'Entity "{ent}" dep_ is "{entRoot.dep_}" is not among valid list "[nsubj, nsubjpass, pobj, dobj, compound]"')
-        if entRoot.head == root:
-          headEnt = root.doc[root.i:root.i+1]
-          if ent.start < root.i:
-            if [root.lemma_.lower()] in predSynonyms:
-              ent._.set('hs_keyword', root.lemma_)
-            else:
-              ent._.set('ent_status_verb', root.lemma_)
-            neg, negText = self.isNegation(root)
-            passive = self.isPassive(root)
-            # # last is punct, the one before last is the root
-            # if root.nbor().pos_ in ['PUNCT']:
-            #   status = root
-            status = self.findRightObj(root)
-            if status and status.dep_ == 'pobj':
-              status = self.getStatusForPobj(status, include=True)
-            elif status and status.dep_ == 'dobj':
-              subtree = list(status.subtree)
-              nbor = self.getNbor(status)
-              if nbor is not None and nbor.dep_ in ['prep']:
-                status = status.doc[status.i:subtree[-1].i+1]
-            # no object is found
-            if not status:
-              status = self.findRightKeyword(root)
-            # last is punct, the one before last is the root
-            nbor = self.getNbor(root)
-            if not status and nbor is not None and nbor.pos_ in ['PUNCT']:
-              status = root
-            if status is None:
-              status = self.getAmod(ent, ent.start, ent.end, include=False)
-            if status is None:
-              status = root
-          else:
-            if [root.lemma_.lower()] in predSynonyms:
-              ent._.set('hs_keyword', root.lemma_)
-            else:
-              ent._.set('ent_status_verb', root.lemma_)
-            passive = self.isPassive(root)
-            neg, negText = self.isNegation(root)
-            status = self.findLeftSubj(root, passive)
-            if status is not None:
-              status = self.getAmod(status, status.i, status.i+1, include=True)
+        status = self.getAmod(ent, ent.start, ent.end, include=False)
 
       if status is None:
         continue
-
-      _status = False
-      if isinstance(status, Span):
-        conjecture = self.isConjecture(status.root.head)
-        if status.root.lemma_ in statusNoun + statusAdj:
-          _status = True
-      elif isinstance(status, Token):
-        conjecture = self.isConjecture(status.head)
-        if status.lemma_ in statusNoun + statusAdj:
-          _status = True
-      if not neg:
-        if isinstance(status, Span):
-          neg, negText = self.isNegation(status.root)
-        else:
-          neg, negText = self.isNegation(status)
-      # conjecture = self.isConjecture(status.head)
-      # neg, negText = self.isNegation(status)
-      ent._.set('neg',neg)
-      ent._.set('neg_text',negText)
-      ent._.set('conjecture',conjecture)
-      if _status:
-        ent._.set('health_status',status)
-        ent._.set('health_status_prepend', statusPrepend)
-        ent._.set('health_status_prepend_amod',statusPrependAmod)
-        ent._.set('health_status_amod',statusAmod)
-        ent._.set('health_status_append',statusAppend)
-        ent._.set('health_status_append_amod',statusAppendAmod)
+      elif isinstance(status, list)
+        ent._.set('status', status[1])
+        ent._.set('status_amod', status[0])
       else:
-        ent._.set('status',status)
-        ent._.set('status_prepend', statusPrepend)
-        ent._.set('status_prepend_amod',statusPrependAmod)
-        ent._.set('status_amod',statusAmod)
-        ent._.set('status_append',statusAppend)
-        ent._.set('status_append_amod',statusAppendAmod)
+        ent._.set('status', status)
 
-      prependAmodText = ' '.join(statusPrependAmod) if statusPrependAmod is not None else ''
-      prependText = statusPrepend.text if statusPrepend is not None else ''
-      amodText = ' '.join(statusAmod) if statusAmod is not None else ''
-      appendAmodText = ' '.join(statusAppendAmod) if statusAppendAmod is not None else ''
-      if statusAppend is not None and statusAppend != ent:
-        appText = statusAppend.root.head.text + ' ' + statusAppend.text if statusAppend.root.dep_ in ['pobj'] else statusAppend.text
-      else:
-        appText = ''
-
-      statusText = ' '.join(list(filter(None, [prependAmodText, prependText, amodText, status.text, appendAmodText,appText]))).strip()
-      if neg:
-        statusText = ' '.join([negText,statusText])
-      if isinstance(status, Span):
-        if ent.start > status.start and ent.end < status.end:
-          # remove entity info in statusText
-          pn = re.compile(rf'{ent.text}\w*')
-          statusText = re.sub(pn, '', statusText).strip()
-          # statusText = statusText.replace(ent.text, '')
-
-      logger.debug(f'{ent} health status: {statusText}')
-      # ent._.set('health_status', statusText)
-      # ent._.set('conjecture',conjecture)
-
-
+      ent._.set('neg', neg)
+      ent._.set('neg_text', negText)
 
   def handleInvalidSent(self, sent, ents):
     """
@@ -392,6 +245,9 @@ class OperatorShiftLogs(WorkflowBase):
     root = sent.root
     neg, negText = self.isNegation(root)
     conjecture = self.isConjecture(root)
+    sent._.set('neg',neg)
+    sent._.set('neg_text',negText)
+    sent._.set('conjecture',conjecture)
 
     for ent in ents:
       ent._.set('neg', neg)
