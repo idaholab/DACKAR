@@ -654,14 +654,14 @@ class WorkflowBase(object):
     """
     foundSubj = False
     foundObj = False
-    valid = True
+    valid = False
     for tk in sent:
       if tk.dep_.startswith('nsubj'):
         foundSubj = True
       elif tk.dep_.endswith('obj'):
         foundObj = True
-    if not foundSubj and not foundObj:
-      valid = False
+    if foundSubj or foundObj:
+      valid = True
     return valid
 
   def findLeftSubj(self, pred, passive):
@@ -1116,14 +1116,16 @@ class WorkflowBase(object):
       neg, negText = self.isNegation(root)
       if root.pos_ in ['ADJ']:
         status = root
-      elif root.pos_ in ['NOUN']:
+      elif root.pos_ in ['NOUN', 'PROPN']:
         if root.dep_ in ['pobj']:
           status = root.doc[root.head.head.i:root.i+1]
         else:
           status = root
       elif root.pos_ in ['AUX']:
         leftInd = list(root.lefts)[0].i
-        status = root.doc[leftInd:root.i]
+        subj = root.doc[leftInd:root.i]
+        amod = self.findRightKeyword(root)
+        status = [amod, subj]
       else:
         logger.warning(f'No status identified for "{ent}" in "{ent.sent}"')
     else:
@@ -1144,6 +1146,7 @@ class WorkflowBase(object):
           neg, negText = self.isNegation(root.head)
           subjStatus = self.findLeftSubj(root.head, passive)
         subjStatus = self.getAmod(subjStatus, subjStatus.i, subjStatus.i+1, include=True)
+
       else:
         subjStatus = root
       # if amod is None:

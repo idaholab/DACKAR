@@ -29,6 +29,10 @@ if not Span.has_extension('neg_text'):
   Span.set_extension("neg_text", default=None)
 if not Span.has_extension('alias'):
   Span.set_extension("alias", default=None)
+if not Span.has_extension('action'):
+  Span.set_extension("action", default=None)
+if not Span.has_extension('edep'):
+  Span.set_extension("edep", default=None)
 
 if not Token.has_extension('conjecture'):
   Token.set_extension('conjecture', default=False)
@@ -40,7 +44,10 @@ if not Token.has_extension('neg_text'):
   Token.set_extension("neg_text", default=None)
 if not Token.has_extension('alias'):
   Token.set_extension("alias", default=None)
-
+if not Token.has_extension('action'):
+  Token.set_extension("action", default=None)
+if not Token.has_extension('edep'):
+  Token.set_extension("edep", default=None)
 
 class OperatorShiftLogs(WorkflowBase):
   """
@@ -110,10 +117,13 @@ class OperatorShiftLogs(WorkflowBase):
         print('Sentence:', sent)
         print('... Conjecture:', sent._.conjecture)
         print('... Negation:', sent._.neg, sent._.neg_text)
+        print('... Action:', sent._.action)
         for ent in ents:
           print('... Entity:', ent.text)
           print('...... Status:', ent._.status)
           print('...... Amod:', ent._.status_amod)
+          print('...... Action:', ent._.action)
+          print('...... Dep:', ent._.edep)
 
     # # Extract entity relations
     # logger.info('Start to extract causal relation using OPM model information')
@@ -159,7 +169,9 @@ class OperatorShiftLogs(WorkflowBase):
     sent._.set('neg',neg)
     sent._.set('neg_text',negText)
     sent._.set('conjecture',conjecture)
-
+    root = sent.root
+    action = root if root.pos_ in ['VERB', 'AUX'] else None
+    sent._.set('action', action)
     for ent in ents:
       neg = None
       negText = None
@@ -169,7 +181,7 @@ class OperatorShiftLogs(WorkflowBase):
 
       if entRoot.dep_ in ['nsubj', 'nsubjpass']:
         status, neg, negText = self.getStatusForSubj(ent)
-      elif entRoot.dep_ in ['pobj', 'dobj']:
+      elif entRoot.dep_ in ['dobj', 'pobj', 'iobj', 'obj', 'obl', 'oprd']:
         status, neg, negText = self.getStatusForObj(ent)
         head = entRoot.head
         if status is None and head.dep_ in ['xcomp', 'advcl', 'relcl']:
@@ -209,9 +221,7 @@ class OperatorShiftLogs(WorkflowBase):
       else:
         status = self.getAmod(ent, ent.start, ent.end, include=False)
 
-      if status is None:
-        continue
-      elif isinstance(status, list):
+      if isinstance(status, list):
         ent._.set('status', status[1])
         ent._.set('status_amod', status[0])
       else:
@@ -219,6 +229,12 @@ class OperatorShiftLogs(WorkflowBase):
 
       ent._.set('neg', neg)
       ent._.set('neg_text', negText)
+      ent._.set('edep', ent.root.dep_)
+
+      if ent.root.head.pos_ in ['VERB', 'AUX']:
+        ent._.set('action', ent.root.head)
+      elif ent.root.head.dep_ in ['prep'] and ent.root.head.head.pos_ in ['VERB', 'AUX']:
+        ent._.set('action', ent.root.head.head)
 
   def handleInvalidSent(self, sent, ents):
     """
@@ -230,11 +246,18 @@ class OperatorShiftLogs(WorkflowBase):
     sent._.set('neg',neg)
     sent._.set('neg_text',negText)
     sent._.set('conjecture',conjecture)
+    root = sent.root
+    action = root if root.pos_ in ['VERB', 'AUX'] else None
+    sent._.set('action', action)
 
     for ent in ents:
       ent._.set('neg', neg)
       ent._.set('neg_text', negText)
       ent._.set('conjecture', conjecture)
+      entRoot = ent.root
+      ent._.set('edep', entRoot.dep_)
+      if entRoot.head.pos_ in ['VERB', 'AUX']:
+        ent._.set('action', entRoot.head)
       if ent._.alias is not None:
         # entity at the beginning of sentence
         if ent.start == sent.start:
@@ -356,33 +379,3 @@ class OperatorShiftLogs(WorkflowBase):
 
       self._allRelPairs += allRelPairs
 
-
-
-  def validSent(self, sent):
-    """
-      Check if the sentence has valid structure, either contains subject or object
-
-      Args:
-
-        sent: Span, sentence from user provided text
-
-      Returns:
-
-        valid: bool, False if the sentence has no subject, predicate and object.
-    """
-    foundSubj = False
-    foundObj = False
-    foundVerb = False
-    valid = False
-    root = sent.root
-    if root.pos_ in  ['AUX', 'VERB']:
-      foundVerb = True
-    for tk in sent:
-      if tk.dep_.startswith('nsubj'):
-        foundSubj = True
-      elif tk.dep_.endswith('obj'):
-        foundObj = True
-    # Is it a strong assumption here?
-    if foundSubj and foundObj and foundVerb:
-      valid = True
-    return valid
