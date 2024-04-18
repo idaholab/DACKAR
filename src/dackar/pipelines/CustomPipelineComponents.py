@@ -275,12 +275,25 @@ def mergeCCWEntities(doc):
         elif prev1.dep_ in ['punct'] and prev2.pos_ in ['NUM']:
           start = prev2.i
       if ent2.ent_id_ == entID:
-        if end == ent2.start or (end == ent2.start - 1 and doc[end].dep_ in ['punct']):
-          end = ent2.end
-          label = ent2.label
-          if ent2._.alias:
-            alias = ent2._.alias
-          # id = ent2.ent_id
+        cond = ent1.root.dep_ in ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd'] and ent2.root.dep_ in ['nsubj', 'nsubjpass', 'nsubj:pass']
+        if not cond:
+          if end == ent2.start or (end == ent2.start - 1 and doc[end].dep_ in ['punct']):
+            end = ent2.end
+            label = ent2.label
+            if ent2._.alias:
+              alias = ent2._.alias
+            # id = ent2.ent_id
+      if end == ent1.end:
+        if end < ent1.sent.end - 1:
+          post1, post2 = doc[end], doc[end+1]
+          if post1.pos_ in ['NUM']:
+            end = end + 1
+          elif post1.dep_ in ['punct'] and post2.pos_ in ['NUM']:
+            end = end + 2
+        elif end == ent1.sent.end:
+          post = doc[end]
+          if post.pos_ in ['NUM']:
+            end = end + 1
 
       if start != ent1.start or end != ent1.end:
         isUpdated = True

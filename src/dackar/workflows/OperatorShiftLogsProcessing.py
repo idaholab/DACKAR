@@ -128,12 +128,18 @@ class OperatorShiftLogs(WorkflowBase):
           print('...... Action:', ent._.action)
           print('...... Dep:', ent._.edep)
 
-    # # Extract entity relations
-    # logger.info('Start to extract causal relation using OPM model information')
-    # self.extractRelDep(self._matchedSents)
-    # dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
-    # dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
-    # logger.info('End of causal relation extraction!')
+    # Extract entity relations
+    logger.info('Start to extract entity relations')
+    self.extractRelDep(self._matchedSents)
+    dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+    dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    logger.info('End of causal relation extraction!')
+
+
+    # # Extract entity causal relations
+    # logger.info('Start to extract entity causal relation')
+    # self.extractCausalRelDep(self._matchedSents)
+
 
 
   def extractStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
@@ -338,7 +344,7 @@ class OperatorShiftLogs(WorkflowBase):
     # objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
     for sent in matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
-      if len(ents) <= 1:
+      if ents is None or len(ents) <= 1:
         continue
       root = sent.root
       allRelPairs = []
