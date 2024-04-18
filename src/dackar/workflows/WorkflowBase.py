@@ -1140,11 +1140,14 @@ class WorkflowBase(object):
       neg, negText = self.isNegation(root)
       subjStatus = self.findLeftSubj(root, passive)
       if subjStatus is not None:
-        if subjStatus.pos_ in ['PRON']:
-          # coreference resolution
-          passive = self.isPassive(root.head)
-          neg, negText = self.isNegation(root.head)
-          subjStatus = self.findLeftSubj(root.head, passive)
+        # Corefence can be handled coreferee
+        # if subjStatus.pos_ in ['PROPN']:
+        #   # coreference resolution
+        #   passive = self.isPassive(root.head)
+        #   neg, negText = self.isNegation(root.head)
+        #   headSubj = self.findLeftSubj(root.head, passive)
+        #   if headSubj is not None:
+        #     subjStatus = headSubj
         subjStatus = self.getAmod(subjStatus, subjStatus.i, subjStatus.i+1, include=True)
 
       else:
@@ -1203,14 +1206,6 @@ class WorkflowBase(object):
       else:
         status = grandparent.doc[leftInd:end]
       status = self.getAmod(status, status.start, status.end, include=True)
-    elif grandparent.pos_ in ['VERB']:
-      status = self.findRightObj(grandparent)
-      subtree = list(status.subtree)
-      nbor = self.getNbor(status)
-      if status is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
-        status = grandparent.doc[status.i:subtree[-1].i+1]
-      elif status is not None and status.i >= root.i:
-        status = None
     elif grandparent.pos_ in ['VERB'] and grandparent.dep_ in ['ROOT']:
       dobj = [tk for tk in grandparent.rights if tk.dep_ in ['dobj'] and tk.i < start]
       if len(dobj) > 0:
@@ -1219,6 +1214,15 @@ class WorkflowBase(object):
       else:
         status = ent
         status = self.getAmod(ent, start, end, include=include)
+    elif grandparent.pos_ in ['VERB']:
+      status = self.findRightObj(grandparent)
+      subtree = list(status.subtree)
+      nbor = self.getNbor(status)
+      if status is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
+        status = grandparent.doc[status.i:subtree[-1].i+1]
+      elif status is not None and status.i >= root.i:
+        status = None
+
     elif grandparent.pos_ in ['NOUN']:
       grandEnt = grandparent.doc[grandparent.i:grandparent.i+1]
       status = self.getAmod(grandEnt, grandparent.i, grandparent.i+1, include=True)

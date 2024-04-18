@@ -189,6 +189,7 @@ class OperatorShiftLogs(WorkflowBase):
           status = ccomps[0] if len(ccomps) > 0 else None
       elif entRoot.dep_ in ['compound']:
         status = self.getAmod(ent, ent.start, ent.end, include=False)
+        head = entRoot.head
         if status is None and head.dep_ not in ['compound']:
           status = head
       elif entRoot.dep_ in ['conj']:
@@ -198,10 +199,11 @@ class OperatorShiftLogs(WorkflowBase):
         headStatus = None
         if head.dep_ in ['conj']:
           head = head.head
+        headEnt = head.doc[head.i:head.i+1]
         if head.dep_ in ['nsubj', 'nsubjpass']:
-          headStatus, neg, negText = self.getStatusForSubj(ent)
+          headStatus, neg, negText = self.getStatusForSubj(headEnt)
         elif head.dep_ in ['pobj', 'dobj']:
-          headStatus, neg, negText = self.getStatusForObj(ent)
+          headStatus, neg, negText = self.getStatusForObj(headEnt)
           head = entRoot.head
           if headStatus is None and head.dep_ in ['xcomp', 'advcl', 'relcl']:
             ccomps = [child for child in head.rights if child.dep_ in ['ccomp']]
