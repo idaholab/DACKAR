@@ -37,7 +37,7 @@ class LMLobject(object):
     self.listIDs = []
     self.linkToMBSEmodels = {}
 
-  def OPLparser(self):
+  def LMLparser(self, diagramName):
     """
     This method is designed to parse the xml file containing the MBSE model, to create its corresponding graph
     and to populate:
@@ -45,7 +45,13 @@ class LMLobject(object):
     - the set of links: list containing the LML-IDs of all links between assets
     - the set of embedded entities: dictionary of the components that have been specified in the description text of the 
                                     LML asset or link (e.g., [comp1,comp2,comp3]) in the form of 'LML_ID': [comp1,comp2,comp3]
+    
+    Args:
+
+      diagramName: string, original name of the diagram; it is used to remove the correposing node in the graph
     """
+    self.diagramName = diagramName
+
     self.LMLgraph = nx.MultiDiGraph()
 
     tree = ET.parse(self.filename)
@@ -63,6 +69,7 @@ class LMLobject(object):
           self.parseAssetEntity(child)
 
     self.connetGraph()
+
 
   def connetGraph(self):
     """
@@ -138,9 +145,11 @@ class LMLobject(object):
     elemList = None 
     MBSElink = None
 
+    if entityName == self.diagramName: return
+
     # Parse description
-    if entityNode.find('description').text:
-      entityDescr = entityNode.find('description').text
+    entityDescr = entityNode.find('description').text
+    if entityDescr:
       (elemList,MBSElink) = parseEntityDescription(entityDescr)
 
       if elemList:
