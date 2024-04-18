@@ -41,6 +41,8 @@ if not Span.has_extension('alias'):
   Span.set_extension("alias", default=None)
 if not Token.has_extension('ref_ent'):
   Token.set_extension("ref_ent", default=None)
+if not Span.has_extension('alias'):
+  Span.set_extension("alias", default=None)
 
 customLabel = ['STRUCTURE', 'COMPONENT', 'SYSTEM']
 aliasLookup = {}
@@ -48,12 +50,16 @@ if 'alias_file' in nlpConfig['files']:
   df = pd.read_csv(nlpConfig['files']['alias_file'], index_col='alias')
   aliasLookup.update(df.to_dict()['name'])
 
-if 'params' in nlpConfig:
-  entLabel = nlpConfig['params'].get('ent_label', "SSC")
-  entID = nlpConfig['params'].get('ent_id', "SSC")
-else:
-  entLabel = "SSC"
-  entID = "SSC"
+def getEntID():
+  """
+  """
+  if 'params' in nlpConfig:
+    entLabel = nlpConfig['params'].get('ent_label', "SSC")
+    entID = nlpConfig['params'].get('ent_id', "SSC")
+  else:
+    entLabel = "SSC"
+    entID = "SSC"
+  return entID, entLabel
 
 # Use Config File to update aliasLookup Dictionary
 
@@ -115,7 +121,7 @@ def aliasResolver(doc):
     alias = ent.text.lower()
     if alias in aliasLookup:
       name = aliasLookup[alias]
-      ent._.alias = name
+      ent._.set('alias', name)
   return doc
 
 def propagateEntType(doc):
@@ -218,6 +224,7 @@ def expandEntities(doc):
   """
   newEnts = []
   isUpdated = False
+  entID, _ = getEntID()
   for ent in doc.ents:
     if ent.ent_id_ == entID and ent.start != 0:
       prevToken = doc[ent.start - 1]
@@ -231,6 +238,81 @@ def expandEntities(doc):
   doc.ents = filter_spans(list(doc.ents) +  newEnts)
   if isUpdated:
     doc = expandEntities(doc)
+  return doc
+
+
+@Language.component("mergeCCWEntities")
+def mergeCCWEntities(doc):
+  """
+    Merge the CCW entities
+
+    Args:
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+      doc: spacy.tokens.doc.Doc, the document after expansion of current entities
+  """
+  newEnts = []
+  isUpdated = False
+  ents = list(doc.ents)
+  entID, _ = getEntID()
+  for i in range(len(ents)-1):
+    ent1, ent2 = ents[i], ents[i+1]
+    start = ent1.start
+    end = ent1.end
+    label = ent1.label
+    alias = ent1._.alias
+    # print('ent1 alias', alias)
+    # id = ent1.ent_id
+    if ent1.ent_id_ == entID and not isUpdated:
+      if start == 1:
+        prev = doc[start - 1]
+        if prev.pos_ in ['NUM']:
+          start = prev.i
+      elif start > 1:
+        prev1, prev2 = doc[start-1], doc[start-2]
+        if prev1.pos_ in ['NUM']:
+          start = prev1.i
+        elif prev1.dep_ in ['punct'] and prev2.pos_ in ['NUM']:
+          start = prev2.i
+      if ent2.ent_id_ == entID:
+        if end == ent2.start or (end == ent2.start - 1 and doc[end].dep_ in ['punct']):
+          end = ent2.end
+          label = ent2.label
+          if ent2._.alias:
+            # print("+++++ ", type(ent2._.alias))
+            print(ent2._.alias)
+            alias = ent2._.alias
+          # id = ent2.ent_id
+          # print("ent2 alias:", alias)
+
+      if start != ent1.start or end != ent1.end:
+        isUpdated = True
+        newEnt = Span(doc, start, end, label=label)
+        newEnt._.set('alias', alias)
+        # print(newEnt, newEnt.ent_id_, newEnt.label_, newEnt._.alias)
+        newEnts.append(newEnt)
+        # The following can not resolve span attributes
+        # print(newEnt)
+        # with doc.retokenize() as retokenizer:
+        #   attrs = {
+        #     "tag": newEnt.root.tag,
+        #     "dep": newEnt.root.dep,
+        #     "ent_type": label,
+        #     "ent_id": id,
+        #     "_": {
+        #           "alias": alias
+        #           },
+        #   }
+        #   retokenizer.merge(newEnt, attrs=attrs)
+        # newEnts.append(doc[start:start+1])
+        # print("======>: ", newEnts[0], newEnts[0]._.alias)
+    if isUpdated:
+      break
+
+  doc.ents = filter_spans(list(doc.ents) +  newEnts)
+  if isUpdated:
+    doc = mergeCCWEntities(doc)
   return doc
 
 @Language.component("mergePhrase")
