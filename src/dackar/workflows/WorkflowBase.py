@@ -1082,8 +1082,6 @@ class WorkflowBase(object):
           status = objStatus
     return status, neg, negText
 
-
-
   def getStatusForObj(self, ent, include=False):
     """
       Get the status for pobj/dobj ent
