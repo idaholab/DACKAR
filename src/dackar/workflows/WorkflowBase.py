@@ -1220,8 +1220,11 @@ class WorkflowBase(object):
       nbor = self.getNbor(status)
       if status is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
         status = grandparent.doc[status.i:subtree[-1].i+1]
-      elif status is not None and status.i >= root.i:
-        status = None
+      if not include:
+        if isinstance(status, Token) and status.i >= root.i:
+          status = None
+        elif isinstance(status, Span) and status.end >= root.i:
+          status = None
 
     elif grandparent.pos_ in ['NOUN']:
       grandEnt = grandparent.doc[grandparent.i:grandparent.i+1]

@@ -234,7 +234,7 @@ def expandEntities(doc):
         isUpdated = True
     else:
       newEnts.append(ent)
-  print(newEnts)
+  # print(newEnts)
   doc.ents = filter_spans(list(doc.ents) +  newEnts)
   if isUpdated:
     doc = expandEntities(doc)
@@ -262,7 +262,6 @@ def mergeCCWEntities(doc):
     end = ent1.end
     label = ent1.label
     alias = ent1._.alias
-    # print('ent1 alias', alias)
     # id = ent1.ent_id
     if ent1.ent_id_ == entID and not isUpdated:
       if start == 1:
@@ -280,11 +279,8 @@ def mergeCCWEntities(doc):
           end = ent2.end
           label = ent2.label
           if ent2._.alias:
-            # print("+++++ ", type(ent2._.alias))
-            print(ent2._.alias)
             alias = ent2._.alias
           # id = ent2.ent_id
-          # print("ent2 alias:", alias)
 
       if start != ent1.start or end != ent1.end:
         isUpdated = True
@@ -293,7 +289,7 @@ def mergeCCWEntities(doc):
         # print(newEnt, newEnt.ent_id_, newEnt.label_, newEnt._.alias)
         newEnts.append(newEnt)
         # The following can not resolve span attributes
-        # print(newEnt)
+
         # with doc.retokenize() as retokenizer:
         #   attrs = {
         #     "tag": newEnt.root.tag,
