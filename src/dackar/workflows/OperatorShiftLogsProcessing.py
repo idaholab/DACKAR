@@ -127,6 +127,7 @@ class OperatorShiftLogs(WorkflowBase):
           print('...... Amod:', ent._.status_amod)
           print('...... Action:', ent._.action)
           print('...... Dep:', ent._.edep)
+          print('...... Alias:', ent._.alias)
 
     # Extract entity relations
     logger.info('Start to extract entity relations')
@@ -152,8 +153,6 @@ class OperatorShiftLogs(WorkflowBase):
         predSynonyms: list, predicate synonyms
         exclPrepos: list, exclude the prepositions
     """
-
-
     # procedure to process OPG CWS data
     # collect status, negation, conjecture information
     for sent in matchedSents:

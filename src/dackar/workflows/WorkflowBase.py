@@ -1019,7 +1019,7 @@ class WorkflowBase(object):
     entRoot = ent.root
     root = entRoot.head
 
-    if entRoot.dep_ not in ['nsubj', 'nsubjpass']:
+    if entRoot.dep_ not in ['nsubj', 'nsubjpass', 'nsubj:pass']:
       raise IOError("Method 'self.getStatusForSubj' can only be used for 'nsubj' or 'nsubjpass'")
     if root.pos_ != 'VERB':
       neg, negText = self.isNegation(root)
@@ -1108,7 +1108,7 @@ class WorkflowBase(object):
       prep = True
     else:
       root = head
-    if entRoot.dep_ not in ['pobj', 'dobj']:
+    if entRoot.dep_ not in ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']:
       raise IOError("Method 'self.getStatusForObj' can only be used for 'pobj' or 'dobj'")
     if root.pos_ != 'VERB':
       neg, negText = self.isNegation(root)
@@ -1214,15 +1214,16 @@ class WorkflowBase(object):
         status = self.getAmod(ent, start, end, include=include)
     elif grandparent.pos_ in ['VERB']:
       status = self.findRightObj(grandparent)
-      subtree = list(status.subtree)
-      nbor = self.getNbor(status)
-      if status is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
-        status = grandparent.doc[status.i:subtree[-1].i+1]
-      if not include:
-        if isinstance(status, Token) and status.i >= root.i:
-          status = None
-        elif isinstance(status, Span) and status.end >= root.i:
-          status = None
+      if status is not None:
+        subtree = list(status.subtree)
+        nbor = self.getNbor(status)
+        if status is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
+          status = grandparent.doc[status.i:subtree[-1].i+1]
+        if not include:
+          if isinstance(status, Token) and status.i >= root.i:
+            status = None
+          elif isinstance(status, Span) and status.end >= root.i:
+            status = None
 
     elif grandparent.pos_ in ['NOUN']:
       grandEnt = grandparent.doc[grandparent.i:grandparent.i+1]
