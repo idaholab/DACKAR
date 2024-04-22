@@ -212,6 +212,9 @@ class WorkflowBase(object):
     self._causalSentsOneEnt = []
     self._entHS = None
     self._entStatus = None
+    self._screen = False
+    self.dataframeRelations = None
+    self.dataframeEntities = None
 
     self._textProcess = self.textProcess()
 
@@ -227,6 +230,8 @@ class WorkflowBase(object):
     self._causalSentsOneEnt = []
     self._entHS = None
     self._doc = None
+    self.dataframeRelations = None
+    self.dataframeEntities = None
 
   def textProcess(self):
     """
@@ -343,7 +348,7 @@ class WorkflowBase(object):
     if not self._entityRuler:
       self._entityRuler = True
 
-  def __call__(self, text, extract=True):
+  def __call__(self, text, extract=True, screen=False):
     """
       Find all token sequences matching the supplied pattern
 
@@ -364,6 +369,7 @@ class WorkflowBase(object):
     # self.nlp.add_pipe('merge_entities')
     doc = self.nlp(text)
     self._doc = doc
+    self._screen = screen
     ## use entity ruler to identify entity
     # if self._entityRuler:
     #   logger.debug('Entity Ruler Matches:')

@@ -75,6 +75,7 @@ class OperatorShiftLogs(WorkflowBase):
     self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
     self._subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
     self._objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
+    self._extractedInfoNames = ['Entity', 'Status', 'Amod', 'Action', 'Dep', 'Alias', 'Negation', 'Conjecture', 'Sentence']
 
   def reset(self):
     """
@@ -83,7 +84,6 @@ class OperatorShiftLogs(WorkflowBase):
     super().reset()
     self._allRelPairs = []
     self._entStatus = None
-
 
   def textProcess(self):
     """
@@ -113,27 +113,44 @@ class OperatorShiftLogs(WorkflowBase):
     ## health status
     logger.info('Start to extract health status')
     self.extractStatus(self._matchedSents)
-    # print collected info
+
+    if self._screen:
+      # print collected info
+      for sent in self._matchedSents:
+        ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+        if ents is not None:
+          print('Sentence:', sent)
+          print('... Conjecture:', sent._.conjecture)
+          print('... Negation:', sent._.neg, sent._.neg_text)
+          print('... Action:', sent._.action)
+          for ent in ents:
+            print('... Entity:', ent.text)
+            print('...... Status:', ent._.status)
+            print('...... Amod:', ent._.status_amod)
+            print('...... Action:', ent._.action)
+            print('...... Dep:', ent._.edep)
+            print('...... Alias:', ent._.alias)
+            if ent._.neg:
+              print('...... Negation', ent._.neg_text)
+
+    entInfo = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if ents is not None:
-        print('Sentence:', sent)
-        print('... Conjecture:', sent._.conjecture)
-        print('... Negation:', sent._.neg, sent._.neg_text)
-        print('... Action:', sent._.action)
         for ent in ents:
-          print('... Entity:', ent.text)
-          print('...... Status:', ent._.status)
-          print('...... Amod:', ent._.status_amod)
-          print('...... Action:', ent._.action)
-          print('...... Dep:', ent._.edep)
-          print('...... Alias:', ent._.alias)
+            entInfo.append([ent.text, ent._.status, ent._.status_amod, ent._.action, ent._.edep, ent._.alias, ent._.neg_text, sent._.conjecture, sent.text])
+    if len(entInfo) > 0:
+      self.dataframeEntities = pd.DataFrame(entInfo, columns=self._extractedInfoNames)
 
     # Extract entity relations
     logger.info('Start to extract entity relations')
     self.extractRelDep(self._matchedSents)
-    dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
-    dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    # dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+    # dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    if len(self._allRelPairs) > 0:
+      self.dataframeRelations = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+      if self._screen:
+        print(self.dataframeRelations)
     logger.info('End of causal relation extraction!')
 
 
