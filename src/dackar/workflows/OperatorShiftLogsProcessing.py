@@ -8,6 +8,7 @@ Created on April, 2024
 import logging
 import pandas as pd
 import re
+from operator import itemgetter
 from spacy.tokens import Token
 from spacy.tokens import Span
 
@@ -151,12 +152,17 @@ class OperatorShiftLogs(WorkflowBase):
       self.dataframeRelations = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
       if self._screen:
         print(self.dataframeRelations)
-    logger.info('End of causal relation extraction!')
+    logger.info('End of entity relation extraction!')
 
-
-    # # Extract entity causal relations
-    # logger.info('Start to extract entity causal relation')
-    # self.extractCausalRelDep(self._matchedSents)
+    if self._causalKeywordID in self._entityLabels:
+      # # Extract entity causal relations
+      logger.info('Start to extract entity causal relation')
+      self.extractCausalRelDep(self._matchedSents)
+      logger.info('End of causal relation extraction!')
+      if len(self._rawCausalList) > 0:
+        for l in self._rawCausalList:
+          print(l, l[0].sent)
+        # print(self._rawCausalList)
 
 
 
@@ -406,4 +412,44 @@ class OperatorShiftLogs(WorkflowBase):
           allRelPairs.append([obj, 'conj', objConj])
 
       self._allRelPairs += allRelPairs
+
+  def extractCausalRelDep(self, matchedSents):
+    """
+
+      Args:
+
+        matchedSents: list, the list of matched sentences
+
+      Returns:
+
+        (subject tuple, predicate, object tuple): generator, the extracted causal relation
+    """
+    allCausalPairs = []
+    for sent in matchedSents:
+      causalPairs = []
+      root = sent.root
+      passive = self.isPassive(root)
+      causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
+      if causalEnts is None:
+        continue
+      causalPairs.extend([(ent, ent.start) for ent in causalEnts])
+      sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      if sscEnts is not None:
+        causalPairs.extend([(ent, ent.start) for ent in sscEnts])
+
+      # subj = self.findSubj(root, passive)
+      # if subj is not None:
+      #   causalPairs.append((subj, subj.i))
+      # obj = self.findObj(root)
+      # if obj is not None:
+      #   causalPairs.append((obj, obj.i))
+
+      causalPairs = sorted(causalPairs, key=itemgetter(1))
+
+      causalPairs = [elem[0] for elem in causalPairs]
+      allCausalPairs.append(causalPairs)
+    self._rawCausalList.extend(allCausalPairs)
+
+
+
 
