@@ -433,17 +433,28 @@ class OperatorShiftLogs(WorkflowBase):
       if causalEnts is None:
         continue
       causalPairs.extend([(ent, ent.start) for ent in causalEnts])
+
       sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if sscEnts is not None:
         causalPairs.extend([(ent, ent.start) for ent in sscEnts])
 
-      # subj = self.findSubj(root, passive)
-      # if subj is not None:
-      #   causalPairs.append((subj, subj.i))
-      # obj = self.findObj(root)
-      # if obj is not None:
-      #   causalPairs.append((obj, obj.i))
+      subj = self.findSubj(root, passive)
+      obj = self.findObj(root)
 
+      if sscEnts is None:
+        if subj is not None:
+          causalPairs.append((subj, subj.i))
+        if obj is not None:
+          causalPairs.append((obj, obj.i))
+      else:
+        if subj is not None:
+          if not self.isSubElements(subj, sscEnts+causalEnts):
+            causalPairs.append((subj, subj.i))
+        if obj is not None:
+          if not self.isSubElements(obj, sscEnts+causalEnts):
+            causalPairs.append((obj, obj.i))
+
+      # mergePhrase pipelie can merge "( Issue" into single entity.
       causalPairs = sorted(causalPairs, key=itemgetter(1))
 
       causalPairs = [elem[0] for elem in causalPairs]
@@ -451,5 +462,34 @@ class OperatorShiftLogs(WorkflowBase):
     self._rawCausalList.extend(allCausalPairs)
 
 
+  def isSubElements(self, elem1, elemList):
+    """
+    """
+    isSub = False
+    for elem in elemList:
+      isSub = self.isSubElement(elem1, elem)
+      if isSub:
+        return isSub
+    return isSub
 
 
+  def isSubElement(self, elem1, elem2):
+    """
+      True if elem1 is a subelement of elem2
+    """
+    if isinstance(elem1, Token):
+      s1, e1 = elem1.i, elem1.i
+    elif isinstance(elem1, Span):
+      s1, e1 = elem1.start, elem1.end
+    else:
+      raise IOError("Wrong data type is provided!")
+    if isinstance(elem2, Token):
+      s2, e2 = elem2.i, elem2.i
+    elif isinstance(elem2, Span):
+      s2, e2 = elem2.start, elem2.end
+    else:
+      raise IOError("Wrong data type is provided!")
+    if s1 >= s2 and e1 <=e2:
+      return True
+    else:
+      return False
