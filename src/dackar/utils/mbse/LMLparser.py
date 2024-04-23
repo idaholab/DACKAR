@@ -1,5 +1,5 @@
-# Copyright 2020, Battelle Energy Alliance, LLC
-# ALL RIGHTS RESERVED
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
+
 """
 Created on February, 2024
 
@@ -30,8 +30,8 @@ class LMLobject(object):
     """
     self.filename = filename
     self.entities = {}
-    self.link_entities = []
-    self.emb_entities = {}
+    self.linkEntities = []
+    self.embEntities = {}
     self.LMLgraph = None
     self.acronyms = {}
     self.listIDs = []
@@ -83,19 +83,19 @@ class LMLobject(object):
         if attrNode is not None:
           attribute = attrNode.find('booleanValue').text
 
-          if sourceID in self.link_entities and targetID in self.entities.keys():
+          if sourceID in self.linkEntities and targetID in self.entities.keys():
             if attribute=='true':
               self.LMLgraph.add_edge(self.entities[targetID], sourceID, color='k', key='link')
             elif attribute=='false':
               self.LMLgraph.add_edge(sourceID, self.entities[targetID], color='k', key='link')
             else:
-              print('---error----')
+               raise IOError('LMLobject object: booleanValue for edge connecting "{}" and "{}" is not defined'.format(sourceID,self.entities[targetID]))
 
 
   def parseLinkEntity(self, linkNode):
     """
     This method extracts all required information of the link from the provided xml node.
-    It populates the self.link_entities and the self.emb_entities variables.
+    It populates the self.linkEntities and the self.embEntities variables.
 
     Args:
 
@@ -107,14 +107,14 @@ class LMLobject(object):
       None
     """
     linkID = linkNode.find('globalId').text
-    self.link_entities.append(linkID)
+    self.linkEntities.append(linkID)
     self.LMLgraph.add_node(linkID, color='b', key='entity')
 
     # Parse description
     if linkNode.find('description').text:
       entityDescr = linkNode.find('description').text
       elemList = parseEntityDescription(entityDescr)[0]    # No link to MBSE models allowed for links
-      self.emb_entities[linkID] = elemList
+      self.embEntities[linkID] = elemList
       self.listIDs = self.listIDs + elemList
     
       for elem in elemList:
@@ -126,7 +126,7 @@ class LMLobject(object):
   def parseAssetEntity(self, entityNode):
     """
     This method extracts all required information of the asset from the provided xml node.
-    It populates the self.entities and the self.emb_entities variables.
+    It populates the self.entities and the self.embEntities variables.
 
     Args:
 
@@ -153,7 +153,7 @@ class LMLobject(object):
       (elemList,MBSElink) = parseEntityDescription(entityDescr)
 
       if elemList:
-        self.emb_entities[entityID] = elemList
+        self.embEntities[entityID] = elemList
         self.listIDs = self.listIDs + elemList
         for elem in elemList:
           self.LMLgraph.add_node(elem, color='r', key='entity_emb')
@@ -203,9 +203,9 @@ class LMLobject(object):
     Returns:
 
       self.entities     : dict, dict of entities
-      self.emb_entities : dict, dict of embedded entities
+      self.embEntities : dict, dict of embedded entities
     """
-    return self.entities, self.emb_entities
+    return self.entities, self.embEntities
 
   def returnListIDs(self):
     """
@@ -238,7 +238,7 @@ class LMLobject(object):
     self.cleanedGraph = self.LMLgraph.copy()
 
     for node,degree in self.cleanedGraph.degree():
-      if node in self.link_entities:
+      if node in self.linkEntities:
         a0,b0 = list(self.cleanedGraph.in_edges(node))[0]
         a1,b1 = list(self.cleanedGraph.out_edges(node))[0]
 
@@ -247,7 +247,7 @@ class LMLobject(object):
 
         self.cleanedGraph.add_edge(e0, e1)
 
-    self.cleanedGraph.remove_nodes_from(self.link_entities)
+    self.cleanedGraph.remove_nodes_from(self.linkEntities)
     
     return self.cleanedGraph
 
