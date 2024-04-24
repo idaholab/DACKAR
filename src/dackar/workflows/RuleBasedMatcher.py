@@ -1,80 +1,27 @@
-# Copyright 2020, Battelle Energy Alliance, LLC
-# ALL RIGHTS RESERVED
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 """
 Created on March, 2022
 
 @author: wangc, mandd
 """
 import logging
-import os
 import pandas as pd
 import re
 import copy
-import spacy
-from spacy.matcher import Matcher
 from spacy.tokens import Token
 from spacy.tokens import Span
-from spacy import displacy
-from spacy.matcher import PhraseMatcher
-from spacy.matcher import DependencyMatcher
-from spacy.util import filter_spans
 from collections import deque
-# filter_spans is used to resolve the overlap issue in entities
-# It gives primacy to longer spans (entities)
 
-from ..utils.nlp.nlp_utils import displayNER, resetPipeline, printDepTree
-from ..utils.nlp.nlp_utils import extendEnt
-## import pipelines
-from ..pipelines.CustomPipelineComponents import normEntities
-from ..pipelines.CustomPipelineComponents import initCoref
-from ..pipelines.CustomPipelineComponents import aliasResolver
-from ..pipelines.CustomPipelineComponents import anaphorCoref
-from ..pipelines.CustomPipelineComponents import anaphorEntCoref
-from ..pipelines.CustomPipelineComponents import mergePhrase
-from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 from ..config import nlpConfig
+from .WorkflowBase import WorkflowBase
 
 logger = logging.getLogger(__name__)
 
-## temporary add stream handler
-# ch = logging.StreamHandler()
-# logger.addHandler(ch)
-##
-
-## coreferee module for Coreference Resolution
-## Q? at which level to perform coreferee? After NER and perform coreferee on collected sentence
-_corefAvail = False
-try:
-  # check the current version spacy>=3.0.0,<=3.3.0
-  from packaging.version import Version
-  ver = spacy.__version__
-  valid = Version(ver)>=Version('3.0.0') and Version(ver)<=Version('3.3.0')
-  if valid:
-    # https://github.com/msg-systems/coreferee
-    import coreferee
-    _corefAvail = True
-  else:
-    logger.info(f'Module coreferee is not compatible with spacy version {ver}')
-except ModuleNotFoundError:
-  logger.info('Module coreferee can not be imported')
-
-
-if not Span.has_extension('health_status'):
-  Span.set_extension("health_status", default=None)
-if not Token.has_extension('health_status'):
-  Token.set_extension("health_status", default=None)
-if not Span.has_extension('hs_keyword'):
-  Span.set_extension('hs_keyword', default=None)
-if not Span.has_extension('ent_status_verb'):
-  Span.set_extension('ent_status_verb', default=None)
-if not Span.has_extension('conjecture'):
-  Span.set_extension('conjecture', default=False)
-
-class RuleBasedMatcher(object):
+class RuleBasedMatcher(WorkflowBase):
   """
     Rule Based Matcher Class
   """
-  def __init__(self, nlp, entLabel='SSC', causalKeywordLabel='causal', *args, **kwargs):
+  def __init__(self, nlp, entID='SSC', causalKeywordID='causal', *args, **kwargs):
     """
       Construct
 
@@ -88,214 +35,27 @@ class RuleBasedMatcher(object):
 
         None
     """
-    self.type = self.__class__.__name__
-    self.name = self.__class__.__name__
-    logger.info(f'Create instance of {self.name}')
-    # orders of NLP pipeline: 'ner' --> 'normEntities' --> 'merge_entities' --> 'initCoref'
-    # --> 'aliasResolver' --> 'coreferee' --> 'anaphorCoref'
-    # pipeline 'merge_noun_chunks' can be used to merge phrases (see also displacy option)
-    self.nlp = nlp
-    self._causalFile = nlpConfig['files']['cause_effect_keywords_file']
-    # SCONJ->Because, CCONJ->so, ADP->as, ADV->therefore
-    self._causalPOS = {'VERB':['VERB'], 'NOUN':['NOUN'], 'TRANSITION':['SCONJ', 'CCONJ', 'ADP', 'ADV']}
-    # current columns include: "VERB", "NOUN", "TRANSITION", "causal-relator", "effect-relator", "causal-noun", "effect-noun"
-    # For relator, such as becaue, therefore, as, etc.
-    #   if the column starts with causal, which means causal entity --> keyword --> effect entity
-    #   if the column starts with effect, which means effect entity <-- keyword <-- causal entity
-    # For NOUN
-    #   if the column starts with causal, which means causal entity --> keyword --> effect entity
-    #   if the column starts with effect, the relation is depend on the keyword.dep_
-    #   First check the right child of the keyword is ADP with dep_ "prep",
-    #   Then, check the dep_ of keyword, if it is "dobj", then causal entity --> keyword --> effect entity
-    #   elif it is "nsubj" or "nsubjpass" or "attr", then effect entity <-- keyword <-- causal entity
-    self._causalKeywords = self.getKeywords(self._causalFile)
-    self._statusFile = nlpConfig['files']['status_keywords_file']['all']
-    self._statusKeywords = self.getKeywords(self._statusFile)
-    self._updateStatusKeywords = False
-    self._updateCausalKeywords = False
-    self._conjectureFile = nlpConfig['files']['conjecture_keywords_file']
-    self._conjectureKeywords = self.getKeywords(self._conjectureFile, columnNames=['conjecture-keywords'])
-    ## pipelines "merge_entities" and "merge_noun_chunks" can be used to merge noun phrases and entities
-    ## for easier analysis
-    if _corefAvail:
-      self.pipelines = ['pysbdSentenceBoundaries',
-                      'mergePhrase', 'normEntities', 'initCoref', 'aliasResolver',
-                      'coreferee','anaphorCoref', 'anaphorEntCoref']
-    else:
-      self.pipelines = ['pysbdSentenceBoundaries',
-                      'mergePhrase','normEntities', 'initCoref', 'aliasResolver',
-                      'anaphorCoref', 'anaphorEntCoref']
-    # ner pipeline is not needed since we are focusing on the keyword matching approach
-    if nlp.has_pipe("ner"):
-      nlp.remove_pipe("ner")
-    nlp = resetPipeline(nlp, self.pipelines)
-    self.nlp = nlp
-    self._doc = None
-    self.entityRuler = None
-    self._entityRuler = False
-    self._entityRulerMatches = []
-    self._matchedSents = [] # collect data of matched sentences
-    self._matchedSentsForVis = [] # collect data of matched sentences to be visualized
-    self._visualizeMatchedSents = True
-    self._coref = _corefAvail # True indicate coreference pipeline is available
-    self._entityLabels = {} # labels for rule-based entities
-    self._labelSSC = entLabel
-    self._labelCausal = causalKeywordLabel
-    self._causalNames = ['cause', 'cause health status', 'causal keyword', 'effect', 'effect health status', 'sentence', 'conjecture']
-    self._extractedCausals = [] # list of tuples, each tuple represents one causal-effect, i.e., (cause, cause health status, cause keyword, effect, effect health status, sentence)
-    self._causalSentsNoEnts = []
-    self._rawCausalList = []
-    self._causalSentsOneEnt = []
-    self._entHS = None
+    super().__init__(nlp, entID, causalKeywordID, *args, **kwargs)
 
   def reset(self):
     """
       Reset rule-based matcher
     """
-    self._matchedSents = []
-    self._matchedSentsForVis = []
-    self._extractedCausals = []
-    self._causalSentsNoEnts = []
-    self._rawCausalList = []
-    self._causalSentsOneEnt = []
-    self._entHS = None
-    self._doc = None
+    super().reset()
 
-  def getKeywords(self, filename, columnNames=None):
+  def extractInformation(self):
     """
-      Get the keywords from given file
+      extract information
 
       Args:
 
-        filename: str, the file name to read the keywords
-
-      Returns:
-
-        kw: dict, dictionary contains the keywords
-    """
-    kw = {}
-    if columnNames is not None:
-      ds = pd.read_csv(filename, skipinitialspace=True, names=columnNames)
-    else:
-      ds = pd.read_csv(filename, skipinitialspace=True)
-    for col in ds.columns:
-      vars = set(ds[col].dropna())
-      kw[col] = self.extractLemma(vars)
-    return kw
-
-  def extractLemma(self, varList):
-    """
-      Lammatize the variable list
-
-      Args:
-
-        varList: list, list of variables
-
-      Returns:
-
-        lemmaList: list, list of lammatized variables
-    """
-    lemmaList = []
-    for var in varList:
-      lemVar = [token.lemma_.lower() for token in self.nlp(var) if token.lemma_ not in ["!", "?", "+", "*"]]
-      lemmaList.append(lemVar)
-    return lemmaList
-
-  def addKeywords(self, keywords, ktype):
-    """
-      Method to update self._causalKeywords or self._statusKeywords
-
-      Args:
-
-        keywords: dict, keywords that will be add to self._causalKeywords or self._statusKeywords
-        ktype: string, either 'status' or 'causal'
-    """
-    if type(keywords) != dict:
-      raise IOError('"addCausalKeywords" method can only accept dictionary, but got {}'.format(type(keywords)))
-    if ktype.lower() == 'status':
-      for key, val in keywords.items():
-        if type(val) != list:
-          val = [val]
-        val = self.extractLemma(val)
-        if key in self._statusKeywords:
-          self._statusKeywords[key].append(val)
-        else:
-          logger.warning('keyword "{}" cannot be accepted, valid keys for the keywords are "{}"'.format(key, ','.join(list(self._statusKeywords.keys()))))
-    elif ktype.lower() == 'causal':
-      for key, val in keywords.items():
-        if type(val) != list:
-          val = [val]
-        val = self.extractLemma(val)
-        if key in self._causalKeywords:
-          self._causalKeywords[key].append(val)
-        else:
-          logger.warning('keyword "{}" cannot be accepted, valid keys for the keywords are "{}"'.format(key, ','.join(list(self._causalKeywords.keys()))))
-
-  def addEntityPattern(self, name, patternList):
-    """
-      Add entity pattern, to extend doc.ents, similar function to self.extendEnt
-
-      Args:
-
-        name: str, the name for the entity pattern.
-        patternList: list, the pattern list, for example:
-        {"label": "GPE", "pattern": [{"LOWER": "san"}, {"LOWER": "francisco"}]}
-    """
-    if not self.nlp.has_pipe('entity_ruler'):
-      self.nlp.add_pipe('entity_ruler', before='mergePhrase')
-      self.entityRuler = self.nlp.get_pipe("entity_ruler")
-    if not isinstance(patternList, list):
-      patternList = [patternList]
-    # TODO: able to check "id" and "label", able to use "name"
-    for pa in patternList:
-      label = pa.get('label')
-      id = pa.get('id')
-      if id is not None:
-        if id not in self._entityLabels:
-          self._entityLabels[id] = set([label]) if label is not None else set()
-        else:
-          self._entityLabels[id] = self._entityLabels[id].union(set([label])) if label is not None else set()
-    # self._entityLabels += [pa.get('label') for pa in patternList if pa.get('label') is not None]
-    self.entityRuler.add_patterns(patternList)
-    if not self._entityRuler:
-      self._entityRuler = True
-
-  def __call__(self, text):
-    """
-      Find all token sequences matching the supplied pattern
-
-      Args:
-
-        text: string, the text that need to be processed
+        None
 
       Returns:
 
         None
     """
-    # Merging Entity Tokens
-    # We need to consider how to do this, I sugguest to first conduct rule based NER, then collect
-    # all related sentences, then create new pipelines to perform NER with "merge_entities" before the
-    # conduction of relationship extraction
-    # if self.nlp.has_pipe('merge_entities'):
-    #   _ = self.nlp.remove_pipe('merge_entities')
-    # self.nlp.add_pipe('merge_entities')
-    doc = self.nlp(text)
-    self._doc = doc
-    ## use entity ruler to identify entity
-    # if self._entityRuler:
-    #   logger.debug('Entity Ruler Matches:')
-    #   print([(ent.text, ent.label_, ent.ent_id_) for ent in doc.ents if ent.label_ in self._entityLabels[self._labelSSC]])
 
-    # First identify coreference through coreferee, then filter it through doc.ents
-    if self._coref:
-      corefRep = doc._.coref_chains.pretty_representation
-      if len(corefRep) != 0:
-        logger.debug('Print Coreference Info:')
-        print(corefRep)
-
-    matchedSents, matchedSentsForVis = self.collectSents(self._doc)
-    self._matchedSents += matchedSents
-    self._matchedSentsForVis += matchedSentsForVis
     ## health status
     logger.info('Start to extract health status')
     self.extractHealthStatus(self._matchedSents)
@@ -306,27 +66,60 @@ class RuleBasedMatcher(object):
     kwList = []
     cjList = []
     sentList = []
+    hsPrependAmod = []
+    hsPrepend = []
+    hsAppend = []
+    hsAppendAmod = []
+    negList = []
+    negTextList = []
     for sent in self._matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
-      elist = [ent.text for ent in ents]
-      statusVerb = [ent._.ent_status_verb for ent in ents]
-      hs = [ent._.health_status for ent in ents]
-      kw = [ent._.hs_keyword for ent in ents]
-      cj = [ent._.conjecture for ent in ents]
-      sl = [sent.text.strip('\n') for ent in ents]
-      entList.extend(elist)
-      hsList.extend(hs)
-      svList.extend(statusVerb)
-      kwList.extend(kw)
-      cjList.extend(cj)
-      sentList.extend(sl)
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      for ent in ents:
+        if ent._.health_status is not None:
+          entList.append(ent.text)
+          hsList.append(ent._.health_status)
+          svList.append(ent._.ent_status_verb)
+          kwList.append(ent._.hs_keyword)
+          cjList.append(ent._.conjecture)
+          sentList.append(sent.text.strip('\n'))
+          hsPrepend.append(ent._.health_status_prepend)
+          hsPrependAmod.append(ent._.health_status_prepend_amod)
+          hsAppend.append(ent._.health_status_append)
+          hsAppendAmod.append(ent._.health_status_append_amod)
+          negList.append(ent._.neg)
+          negTextList.append(ent._.neg_text)
 
     ## include 'root' in the output
-    df = pd.DataFrame({'entities':entList, 'root':svList, 'status keywords':kwList, 'health statuses':hsList, 'conjecture':cjList, 'sentence':sentList})
-    df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'root','status keywords', 'health statuses', 'conjecture', 'sentence'])
+    df = pd.DataFrame({'entities':entList, 'root':svList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList,
+                       'health status prepend': hsPrepend, 'health status prepend adjectival modifier':hsPrependAmod, 'health status append': hsAppend,
+                       'health status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
+    df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'root','status keywords', 'health status prepend adjectival modifier', 'health status prepend', 'health status', 'health status append adjectival modifier', 'health status append', 'sentence'])
     self._entHS = df
-    # df = pd.DataFrame({'entities':entList, 'status keywords':kwList, 'health statuses':hsList, 'conjecture':cjList, 'sentence':sentList})
+    # df = pd.DataFrame({'entities':entList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList})
     # df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'status keywords', 'health statuses', 'conjecture', 'sentence'])
+
+    for sent in self._matchedSents:
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      for ent in ents:
+        if ent._.status is not None:
+          entList.append(ent.text)
+          hsList.append(ent._.status)
+          svList.append(ent._.ent_status_verb)
+          cjList.append(ent._.conjecture)
+          sentList.append(sent.text.strip('\n'))
+          hsPrepend.append(ent._.status_prepend)
+          hsPrependAmod.append(ent._.status_prepend_amod)
+          hsAppend.append(ent._.status_append)
+          hsAppendAmod.append(ent._.status_append_amod)
+          negList.append(ent._.neg)
+          negTextList.append(ent._.neg_text)
+
+    ## include 'root' in the output
+    dfStatus = pd.DataFrame({'entities':entList, 'status keywords':svList, 'status':hsList, 'conjecture':cjList, 'sentence':sentList,
+                       'status prepend': hsPrepend, 'status prepend adjectival modifier':hsPrependAmod, 'status append': hsAppend,
+                       'status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
+    # df.to_csv(nlpConfig['files']['output_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'status keyword', 'status prepend adjectival modifier', 'status prepend', 'status', 'status append adjectival modifier', 'status append', 'sentence'])
+    self._entStatus = dfStatus
 
     logger.info('End of health status extraction!')
     ## causal relation
@@ -340,141 +133,12 @@ class RuleBasedMatcher(object):
     # print(*self.extract(self._matchedSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[]), sep='\n')
     # logger.info('End of causal relation extraction using general extraction method!')
 
-  def visualize(self):
-    """
-      Visualize the processed document
-
-      Args:
-
-        None
-
-      Returns:
-
-        None
-    """
-    if self._visualizeMatchedSents:
-      # Serve visualization of sentences containing match with displaCy
-      # set manual=True to make displaCy render straight from a dictionary
-      # (if you're running the code within a Jupyer environment, you can
-      # use displacy.render instead)
-      # displacy.render(self._matchedSentsForVis, style="ent", manual=True)
-      displacy.serve(self._matchedSentsForVis, style="ent", manual=True)
-
-  ##########################
-  # methods for relation extraction
-  ##########################
-
-  def isPassive(self, token):
-    """
-      Check the passiveness of the token
-
-      Args:
-
-        token: spacy.tokens.Token, the token of the doc
-
-      Returns:
-
-        isPassive: True, if the token is passive
-    """
-    if token.dep_.endswith('pass'): # noun
-      return True
-    for left in token.lefts: # verb
-      if left.dep_ == 'auxpass':
-        return True
-    return False
-
-  def isConjecture(self, token):
-    """
-      Check the conjecture of the token
-
-      Args:
-
-        token: spacy.tokens.Token, the token of the doc, the token should be the root of the Doc
-
-      Returns:
-
-        isConjecture: True, if the token/sentence indicates conjecture
-    """
-    for left in token.lefts: # Check modal auxiliary verb: can, could, may, might, must, shall, should, will, would
-      if left.dep_.startswith('aux') and left.tag_ in ['MD']:
-        return True
-    if token.pos_ == 'VERB' and token.tag_ == 'VB': # If it is a verb, and there is no inflectional morphology for the verb
-      return True
-    # check the keywords
-    # FIXME: should we use token.subtree or token.children here
-    for child in token.subtree:
-      if [child.lemma_.lower()] in self._conjectureKeywords['conjecture-keywords']:
-        return True
-    return False
-
-  def isNegation(self, token):
-    """
-      Check negation status of given token
-
-      Args:
-
-        token: spacy.tokens.Token, token from spacy.tokens.doc.Doc
-
-      Returns:
-
-        (neg, text): tuple, the negation status and the token text
-    """
-    neg = False
-    text = ''
-    if token.dep_ == 'neg':
-      neg = True
-      text = token.text
-      return neg, text
-    # check left for verbs
-    for left in token.lefts:
-      if left.dep_ == 'neg':
-        neg = True
-        text = left.text
-        return neg, text
-    # The following can be used to check the negation status of the sentence
-    # # check the subtree
-    # for sub in token.subtree:
-    #   if sub.dep_ == 'neg':
-    #     neg = True
-    #     text = sub.text
-    #     return neg, text
-    return neg, text
-
-  def findVerb(self, doc):
-    """
-      Find the first verb in the doc
-
-      Args:
-
-        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
-
-      Returns:
-
-        token: spacy.tokens.Token, the token that has VERB pos
-    """
-    for token in doc:
-      if token.pos_ == 'VERB':
-        return token
-        break
-    return None
-
-  def getCustomEnts(self, ents, labels):
-    """
-      Get the custom entities
-
-      Args:
-
-        ents: list, all entities from the processed doc
-        labels: list, list of labels to be used to get the custom entities out of "ents"
-
-      Returns:
-
-        customEnts: list, the customEnts associates with the "labels"
-    """
-    customEnts = [ent for ent in ents if ent.label_ in labels]
-    if len(customEnts) == 0:
-      customEnts = None
-    return customEnts
+    # collect general cause effect info
+    logger.info('Start to use general extraction method to extract causal relation')
+    matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
+    extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
+    print(*extractedCauseEffects)
+    logger.info('End of causal relation extraction using general extraction method!')
 
   def getHealthStatusForPobj(self, ent, include=False):
     """Get the status for ent root pos ``pobj``
@@ -541,113 +205,6 @@ class RuleBasedMatcher(object):
     else: # search lefts for amod
       healthStatus = self.getAmod(ent, start, end, include)
     return healthStatus
-
-  def getPhrase(self, ent, start, end, include=False):
-    """
-      Get the phrase for ent with all left children
-
-      Args:
-
-        ent: Span, the ent to amend with all left children
-        start: int, the start index of ent
-        end: int, the end index of ent
-        include: bool, include ent in the returned expression if True
-
-      Returns:
-
-        healthStatus: Span or Token, the identified status
-    """
-    leftInd = list(ent.lefts)[0].i
-    if not include:
-      healthStatus = ent.doc[leftInd:start]
-    else:
-      healthStatus = ent.doc[leftInd:end]
-    return healthStatus
-
-  def getAmod(self, ent, start, end, include = False):
-    """
-      Get amod tokens for ent
-
-      Args:
-
-        ent: Span, the ent to amend with all left children
-        start: int, the start index of ent
-        end: int, the end index of ent
-        include: bool, include ent in the returned expression if True
-
-      Returns:
-
-        healthStatus: Span or Token, the identified status
-    """
-    healthStatus = None
-    deps = [tk.dep_ in ['amod'] for tk in ent.lefts]
-    if any(deps):
-      healthStatus = self.getPhrase(ent, start, end, include)
-    else:
-      deps = [tk.dep_ in ['compound'] for tk in ent.lefts]
-      if any(deps):
-        healthStatus = self.getPhrase(ent, start, end, include)
-        healthStatus = self.getAmod(healthStatus, healthStatus.start, healthStatus.end, include=True)
-    if healthStatus is None and include:
-      healthStatus = ent
-    return healthStatus
-
-  def getAmodOnly(self, ent):
-    """
-      Get amod tokens texts for ent
-
-      Args:
-
-        ent: Span, the ent to amend with all left children
-
-      Returns:
-
-        amod: list, the list of amods for ent
-    """
-    amod = [tk.text for tk in ent.lefts if tk.dep_ in ['amod']]
-    return amod
-
-  def getCompoundOnly(self, headEnt, ent):
-    """
-      Get the compounds for headEnt except ent
-
-      Args:
-
-        headEnt: Span, the head entity to ent
-
-      Returns:
-
-        compDes: list, the list of compounds for head ent
-    """
-    compDes = []
-    comp = [tk for tk in headEnt.lefts if tk.dep_ in ['compound'] and tk not in ent]
-    if len(comp) > 0:
-      for elem in comp:
-        des = [tk.text for tk in elem.lefts if tk.dep_ in ['amod', 'compound'] and tk not in ent]
-        compDes.extend(des)
-        compDes.append(elem.text)
-    return compDes
-
-  def getNbor(self, token):
-    """
-      Method to get the nbor from token, return None if nbor is not exist
-
-      Args:
-
-        token: Token, the provided Token to request nbor
-
-      Returns:
-
-        nbor: Token, the requested nbor
-    """
-    nbor = None
-    if token is None:
-      return nbor
-    try:
-      nbor = token.nbor()
-    except IndexError:
-      pass
-    return nbor
 
   def getHealthStatusForSubj(self, ent, entHS, sent, causalStatus, predSynonyms, include=False):
     """
@@ -811,31 +368,6 @@ class RuleBasedMatcher(object):
           healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
     return healthStatus, neg, negText
 
-  def validSent(self, sent):
-    """
-      Check if the sentence has valid structure, either contains subject or object
-
-      Args:
-
-        sent: Span, sentence from user provided text
-
-      Returns:
-
-        valid: bool, False if the sentence has no subject and object.
-    """
-    foundSubj = False
-    foundObj = False
-    valid = True
-    for tk in sent:
-      if tk.dep_.startswith('nsubj'):
-        foundSubj = True
-      elif tk.dep_.endswith('obj'):
-        foundObj = True
-    if not foundSubj and not foundObj:
-      valid = False
-    return valid
-
-
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
     """
       Extract health status and relation
@@ -871,9 +403,9 @@ class RuleBasedMatcher(object):
     for sent in matchedSents:
       valid = self.validSent(sent)
       causalEnts = None
-      if self._labelCausal in self._entityLabels:
-        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._labelCausal])
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      if self._causalKeywordID in self._entityLabels:
+        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if ents is None:
         continue
       causalStatus = [sent.root.lemma_.lower()] in self._causalKeywords['VERB'] and [sent.root.lemma_.lower()] not in self._statusKeywords['VERB']
@@ -1065,16 +597,22 @@ class RuleBasedMatcher(object):
             healthStatus = self.getAmod(conjunct, conjunct.start, conjunct.end, include=False)
             if healthStatus is None:
               ent._.set('health_status',conjunct._.health_status)
+              ent._.set('status',conjunct._.status)
               ent._.set('hs_keyword',conjunct._.hs_keyword)
               ent._.set('ent_status_verb',conjunct._.ent_status_verb)
               ent._.set('conjecture',conjunct._.conjecture)
         if healthStatus is None:
           continue
 
+        _healthStatus = False
         if isinstance(healthStatus, Span):
           conjecture = self.isConjecture(healthStatus.root.head)
+          if healthStatus.root.lemma_ in statusNoun + statusAdj:
+            _healthStatus = True
         elif isinstance(healthStatus, Token):
           conjecture = self.isConjecture(healthStatus.head)
+          if healthStatus.lemma_ in statusNoun + statusAdj:
+            _healthStatus = True
         if not neg:
           if isinstance(healthStatus, Span):
             neg, negText = self.isNegation(healthStatus.root)
@@ -1082,6 +620,23 @@ class RuleBasedMatcher(object):
             neg, negText = self.isNegation(healthStatus)
         # conjecture = self.isConjecture(healthStatus.head)
         # neg, negText = self.isNegation(healthStatus)
+        ent._.set('neg',neg)
+        ent._.set('neg_text',negText)
+        ent._.set('conjecture',conjecture)
+        if _healthStatus:
+          ent._.set('health_status',healthStatus)
+          ent._.set('health_status_prepend', healthStatusPrepend)
+          ent._.set('health_status_prepend_amod',healthStatusPrependAmod)
+          ent._.set('health_status_amod',healthStatusAmod)
+          ent._.set('health_status_append',healthStatusAppend)
+          ent._.set('health_status_append_amod',healthStatusAppendAmod)
+        else:
+          ent._.set('status',healthStatus)
+          ent._.set('status_prepend', healthStatusPrepend)
+          ent._.set('status_prepend_amod',healthStatusPrependAmod)
+          ent._.set('status_amod',healthStatusAmod)
+          ent._.set('status_append',healthStatusAppend)
+          ent._.set('status_append_amod',healthStatusAppendAmod)
 
         prependAmodText = ' '.join(healthStatusPrependAmod) if healthStatusPrependAmod is not None else ''
         prependText = healthStatusPrepend.text if healthStatusPrepend is not None else ''
@@ -1103,72 +658,8 @@ class RuleBasedMatcher(object):
             # healthStatusText = healthStatusText.replace(ent.text, '')
 
         logger.debug(f'{ent} health status: {healthStatusText}')
-        ent._.set('health_status', healthStatusText)
-        ent._.set('conjecture',conjecture)
-
-  def findLeftSubj(self, pred, passive):
-    """
-      Find closest subject in predicates left subtree or
-      predicates parent's left subtree (recursive).
-      Has a filter on organizations.
-
-      Args:
-
-        pred: spacy.tokens.Token, the predicate token
-        passive: bool, True if passive
-
-      Returns:
-
-        subj: spacy.tokens.Token, the token that represent subject
-    """
-    for left in pred.lefts:
-      if passive: # if pred is passive, search for passive subject
-        subj = self.findHealthStatus(left, ['nsubjpass', 'nsubj:pass'])
-      else:
-        subj = self.findHealthStatus(left, ['nsubj'])
-      if subj is not None: # found it!
-        return subj
-    if pred.head != pred and not self.isPassive(pred):
-      return self.findLeftSubj(pred.head, passive) # climb up left subtree
-    else:
-      return None
-
-  def findRightObj(self, pred, deps=['dobj', 'pobj', 'iobj', 'obj', 'obl', 'oprd'], exclPrepos=[]):
-    """
-      Find closest object in predicates right subtree.
-      Skip prepositional objects if the preposition is in exclude list.
-      Has a filter on organizations.
-
-      Args:
-        pred: spacy.tokens.Token, the predicate token
-        exclPrepos: list, list of the excluded prepositions
-    """
-    for right in pred.rights:
-      obj = self.findHealthStatus(right, deps)
-      if obj is not None:
-        if obj.dep_ == 'pobj' and obj.head.lemma_.lower() in exclPrepos: # check preposition
-          continue
-        return obj
-    return None
-
-  def findRightKeyword(self, pred, exclPrepos=[]):
-    """
-      Find
-      Skip prepositional objects if the preposition is in exclude list.
-      Has a filter on organizations.
-
-      Args:
-
-        pred: spacy.tokens.Token, the predicate token
-        exclPrepos: list, list of the excluded prepositions
-    """
-    for right in pred.rights:
-      pos = right.pos_
-      if pos in ['VERB', 'NOUN', 'ADJ']:
-        # skip check to remove the limitation of status only in status keywords list
-        # if [right.lemma_.lower()] in self._statusKeywords[pos]:
-        return right
-    return None
+        # ent._.set('health_status', healthStatusText)
+        # ent._.set('conjecture',conjecture)
 
   def findHealthStatus(self, root, deps):
     """
@@ -1228,29 +719,6 @@ class RuleBasedMatcher(object):
         break
     return valid
 
-  def getIndex(self, ent, entList):
-    """
-      Get index for ent in entList
-
-      Args:
-
-        ent: Span, ent that is used to get index
-        entList: list, list of entities
-
-      Returns:
-
-        idx: int, the index for ent
-    """
-    idx = -1
-    for i, e in enumerate(entList):
-      if isinstance(e, list):
-        if ent in e:
-          idx = i
-      else:
-        if e == ent:
-          idx = i
-    return idx
-
   def getSSCEnt(self, entList, index, direction='left'):
     """
       Get the closest group of SSC entities
@@ -1294,11 +762,11 @@ class RuleBasedMatcher(object):
     """
     allCauseEffectPairs = []
     for sent in matchedSents:
-      if self._labelCausal in self._entityLabels:
-        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._labelCausal])
+      if self._causalKeywordID in self._entityLabels:
+        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
       else:
         continue
-      sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._labelSSC])
+      sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       sscEnts = self.getConjuncts(sscEnts)
       logger.debug(f'Conjuncts pairs: {sscEnts}')
       if causalEnts is None: #  no causal keyword is found, skipping
@@ -1315,7 +783,7 @@ class RuleBasedMatcher(object):
       logger.debug(f'Sentence contains causal keywords: {causalEnts}. \n {sent.text}')
 
       # grab all ents
-      labelList = self._entityLabels[self._labelCausal].union(self._entityLabels[self._labelSSC])
+      labelList = self._entityLabels[self._causalKeywordID].union(self._entityLabels[self._entID])
       ents = self.getCustomEnts(sent.ents, labelList)
       mEnts = copy.copy(ents)
       root = sent.root
@@ -1724,194 +1192,19 @@ class RuleBasedMatcher(object):
             logger.debug(f'({c} health status: {c._.health_status}) "{causalKeyword}" ({e} health status: {e._.health_status}), conjecture: "{conjecture}"')
             self._extractedCausals.append([c, c._.health_status, causalKeyword, e, e._.health_status, sent, conjecture])
 
-  def getConjuncts(self, entList):
-    """
-      Get a list of conjuncts from entity list
 
-      Args:
-        entList: list, list of entities
-
-      Returns:
-        conjunctList: list, list of conjuncts
+  def collectCauseEffectSents(self, doc):
     """
-    ent = entList[0]
-    conjunctList = []
-    conjuncts = [ent]
-    collected = False
-    for i, elem in enumerate(entList[1:]):
-      # print('elem', elem, elem.conjuncts)
-      # print('ent', ent, ent.conjuncts)
-      if elem.root not in ent.conjuncts:
-        conjunctList.append(conjuncts)
-        conjunctList.extend(self.getConjuncts(entList[i+1:]))
-        collected = True
-        break
-      conjuncts.append(elem)
-    if not collected:
-      conjunctList.append(conjuncts)
-    return conjunctList
-
-  ##TODO: how to extend it for entity ruler?
-  # @staticmethod
-  def collectSents(self, doc):
-    """
-    collect data of matched sentences that can be used for visualization
+      Collect data of matched sentences that contain cause-effect keywords
 
       Args:
         doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     matchedSents = []
-    matchedSentsForVis = []
-    for span in doc.ents:
-      if span.ent_id_ != self._labelSSC:
-        continue
-      sent = span.sent
-      # Append mock entity for match in displaCy style to matched_sents
-      # get the match span by ofsetting the start and end of the span with the
-      # start and end of the sentence in the doc
-      matchEnts = [{
-          "start": span.start_char - sent.start_char,
-          "end": span.end_char - sent.start_char,
-          "label": span.label_,
-      }]
-      if sent not in matchedSents:
-        matchedSents.append(sent)
-      matchedSentsForVis.append({"text": sent.text, "ents": matchEnts})
-    return matchedSents, matchedSentsForVis
-
-
-
-#############################################################################
-# some useful methods, but currently they are not used
-
-  def extract(self, sents, predSynonyms=[], exclPrepos=[]):
-    """
-      General extraction method
-
-      Args:
-        sents: list, the list of sentences
-        predSynonyms: list, the list of predicate synonyms
-        exclPrepos: list, the list of exlcuded prepositions
-
-      Returns:
-        (subject tuple, predicate, object tuple): generator, the extracted causal relation
-    """
-    for sent in sents:
-      root = sent.root
-      if root.pos_ == 'VERB' and [root.lemma_.lower()] in predSynonyms:
-        passive = self.isPassive(root)
-        subj = self.findSubj(root, passive)
-        if subj is not None:
-          obj = self.findObj(root, deps=['dobj', 'pobj', 'iobj', 'obj', 'obl'], exclPrepos=[])
-          if obj is not None:
-            if passive: # switch roles
-              obj, subj = subj, obj
-            yield ((subj), root, (obj))
-      else:
-        for token in sent:
-          if [token.lemma_.lower()] in predSynonyms:
-            root = token
-            passive = self.isPassive(root)
-            subj = self.findSubj(root, passive)
-            if subj is not None:
-              obj = self.findObj(root, deps=['dobj', 'pobj', 'iobj', 'obj', 'obl'], exclPrepos=[])
-              if obj is not None:
-                if passive: # switch roles
-                  obj, subj = subj, obj
-                yield ((subj), root, (obj))
-
-  def bfs(self, root, deps):
-    """
-      Return first child of root (included) that matches
-      entType and dependency list by breadth first search.
-      Search stops after first dependency match if firstDepOnly
-      (used for subject search - do not "jump" over subjects)
-
-      Args:
-        root: spacy.tokens.Token, the root token
-        deps: list, list of dependency
-
-      Returns:
-        child: spacy.tokens.Token, the matched token
-    """
-    toVisit = deque([root]) # queue for bfs
-    while len(toVisit) > 0:
-      child = toVisit.popleft()
-      if child.dep_ in deps:
-        # to handle preposition
-        nbor = self.getNbor(child)
-        if nbor is not None and nbor.dep_ in ['prep'] and nbor.lemma_.lower() in ['of']:
-          obj = self.findObj(nbor, deps=['pobj'])
-          return obj
-        else:
-          return child
-      elif child.dep_ == 'compound' and \
-         child.head.dep_ in deps: # check if contained in compound
-        return child
-      toVisit.extend(list(child.children))
-    return None
-
-  def findSubj(self, pred, passive):
-    """
-      Find closest subject in predicates left subtree or
-      predicates parent's left subtree (recursive).
-      Has a filter on organizations.
-
-      Args:
-        pred: spacy.tokens.Token, the predicate token
-        passive: bool, True if the predicate token is passive
-
-      Returns:
-        subj: spacy.tokens.Token, the token that represents subject
-    """
-    for left in pred.lefts:
-      if passive: # if pred is passive, search for passive subject
-        subj = self.bfs(left, ['nsubjpass', 'nsubj:pass'])
-      else:
-        subj = self.bfs(left, ['nsubj'])
-      if subj is not None: # found it!
-        return subj
-    if pred.head != pred and not self.isPassive(pred):
-      return self.findSubj(pred.head, passive) # climb up left subtree
-    else:
-      return None
-
-  def findObj(self, pred, deps=['dobj', 'pobj', 'iobj', 'obj', 'obl'], exclPrepos=[]):
-    """
-      Find closest object in predicates right subtree.
-      Skip prepositional objects if the preposition is in exclude list.
-      Has a filter on organizations.
-
-      Args:
-        pred: spacy.tokens.Token, the predicate token
-        exclPrepos: list, the list of prepositions that will be excluded
-
-      Returns:
-        obj: spacy.tokens.Token,, the token that represents the object
-    """
-    for right in pred.rights:
-      obj = self.bfs(right, deps)
-      if obj is not None:
-        if obj.dep_ == 'pobj' and obj.head.lemma_.lower() in exclPrepos: # check preposition
+    for sent in doc.sents:
+      for ent in sent.ents:
+        if ent.ent_id_ != self._causalKeywordID:
           continue
-        return obj
-    return None
-
-  def isValidKeyword(self, var, keywords):
-    """
-
-      Args:
-        var: token
-        keywords: list/dict
-
-      Returns: True if the var is a valid among the keywords
-    """
-    if isinstance(keywords, dict):
-      for _, vals in keywords.items():
-        if var.lemma_.lower() in vals:
-          return True
-    elif isinstance(keywords, list):
-      if var.lemma_.lower() in keywords:
-        return True
-    return False
-#######################################################################################
+        if sent not in matchedSents:
+          matchedSents.append(sent)
+    return matchedSents

@@ -1,3 +1,5 @@
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
+
 '''
 Created on May 3, 2021
 
@@ -153,6 +155,7 @@ class OPMobject(object):
       self.opmGraph.add_node(elem, color='m', key='object')
     for elem in self.processList:
       self.opmGraph.add_node(elem, color='k', key='process')
+
 
   def returnsExternalLinks(self):
     '''
