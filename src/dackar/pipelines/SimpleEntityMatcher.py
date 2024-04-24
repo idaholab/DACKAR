@@ -1,3 +1,5 @@
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
+
 from spacy.matcher import Matcher
 from spacy.tokens import Span
 from spacy.language import Language

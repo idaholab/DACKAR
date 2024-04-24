@@ -1,5 +1,4 @@
-# Copyright 2020, Battelle Energy Alliance, LLC
-# ALL RIGHTS RESERVED
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 """
 Created on March, 2022
 
@@ -7,6 +6,7 @@ Created on March, 2022
 """
 import pandas as pd
 import spacy
+import re
 from spacy.tokens import Span
 # filter_spans is used to resolve the overlap issue in entities
 # It gives primacy to longer spans (entities)
@@ -71,7 +71,7 @@ def resetPipeline(nlp, pipes):
       nlp: spacy.Language object, contains updated components and data needed to process text
   """
   customPipes = [pipe for (pipe, _) in nlp.pipeline
-                  if pipe not in ['tagger', 'parser', 'ner',
+                  if pipe not in ['tagger', 'parser',
                                   'tok2vec', 'attribute_ruler', 'lemmatizer']]
   for pipe in customPipes:
     _ = nlp.remove_pipe(pipe)
@@ -159,8 +159,24 @@ def generatePattern(form, label, id, attr="LOWER"):
   """
   # if any of "!", "?", "+", "*" present in the provided string "form", we will treat it as determiter for the form
   if attr.lower() == "lower":
+    ptn = []
     attr = "LOWER"
-    ptn = [{attr:elem} if elem not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":elem} for elem in form.lower().split()]
+    for elem in form.lower().split():
+      if "-" in form:
+        subList = list(elem.split("-"))
+        # slow when using re.split
+        # subList = re.split("(-)", elem)
+        # for sub in subList:
+        #   if sub != '-':
+        #     ptn.append({attr:sub} if sub not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":sub})
+        #   else:
+        #     ptn.append({"ORTH":"-"})
+        for i, sub in enumerate(subList):
+          ptn.append({attr:sub} if sub not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":sub})
+          if i < len(subList)-1:
+            ptn.append({"ORTH":"-"})
+      else:
+        ptn.append({attr:elem} if elem not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":elem})
   elif attr.lower() == "lemma":
     attr = "LEMMA"
     ptn = [{attr:elem} if elem not in ["!", "?", "+", "*"] else {"POS":"DET", "OP":elem} for elem in form]
@@ -186,13 +202,18 @@ def generatePatternList(entList, label, id, nlp, attr="LOWER"):
   """
   ptnList = []
   for ent in entList:
+    if len(ent.strip()) == 0:
+      continue
     # if default is LEMMA, we should also add LOWER to the pattern, since the lemma for "Cooling System"
     # will be "cool System", which can not capture "cool system".
     ptn = generatePattern(ent, label, id, attr="LOWER")
     ptnList.append(ptn)
     if attr.lower() == "lemma":
-      entLemma = extractLemma(ent, nlp)
-      # print('ent lemma: --->', ent)
+      try:
+        entLemma = extractLemma(ent, nlp)
+      except ValueError:
+        print(f'Can not add to pattern list {ent}')
+        continue
       ptnLemma = generatePattern(entLemma, label, id, attr)
       # print(ptnLemma)
       ptnList.append(ptnLemma)

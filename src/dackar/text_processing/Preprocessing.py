@@ -1,9 +1,8 @@
-# Copyright 2020, Battelle Energy Alliance, LLC
-# ALL RIGHTS RESERVED
+# Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 """
 Created on October, 2022
 
-@author: dgarrett622
+@author: dgarrett622, wangc, mandd
 """
 from cytoolz import functoolz
 import re
@@ -11,10 +10,24 @@ import textacy.preprocessing as preprocessing
 from numerizer import numerize
 import spacy
 from spacy.vocab import Vocab
-from contextualSpellCheck.contextualSpellCheck import ContextualSpellCheck
-import autocorrect
+
+try:
+  from contextualSpellCheck.contextualSpellCheck import ContextualSpellCheck
+except ModuleNotFoundError as error:
+  print("ERROR: Unable to import contextualSpellCheck", error)
+  print("Please try to install it via: 'pip install contextualSpellCheck'")
+try:
+  import autocorrect
+except ModuleNotFoundError as error:
+  print("ERROR: Unable to import autocorrect", error)
+  print("Please try to install it via: 'pip install autocorrect'")
+try:
+  from spellchecker import SpellChecker as PySpellChecker
+except ModuleNotFoundError as error:
+  print("ERROR: Unable to import spellchecker", error)
+  print("Please try to install it via: 'pip install spellchecker'")
+
 import itertools
-from nltk.corpus import wordnet as wn
 import os
 import numpy as np
 import pandas as pd
@@ -45,12 +58,35 @@ textacyReplace = ['currency_symbols',
 # list of available preprocessors from numerizer
 numerizer = ['numerize']
 
+preprocessorDefaultList = ['bullet_points',
+                    'hyphenated_words',
+                    'quotation_marks',
+                    'repeating_chars',
+                    'whitespace',
+                    'unicode',
+                    'accents',
+                    'html_tags',
+                    'punctuation',
+                    'emails',
+                    'emojis',
+                    'hashtags',
+                    'urls',
+                    'numerize',
+                    'whitespace']
+
+preprocessorDefaultOptions = {'repeating_chars': {'chars': ',', 'maxn': 1},
+                        'unicode': {'form': 'NFKC'},
+                        'accents': {'fast': False},
+                        'punctuation': {'only':["*","+",":","=","\\","^","_","|","~", "..", "..."]}}
+
+# TODO: replace & --> and, @ --> at, maybe "/" --> or
+
 class Preprocessing(object):
   """
     NLP Preprocessing class
   """
 
-  def __init__(self, preprocessorList, preprocessorOptions):
+  def __init__(self, preprocessorList=preprocessorDefaultList, preprocessorOptions=preprocessorDefaultOptions):
     """
       Preprocessing object constructor
 
@@ -198,13 +234,18 @@ class Preprocessing(object):
       Returns:
         processed: str, string of processed text
     """
-    processed = self.pipeline(text)
-
+    processed = text.strip('\n')
+    processed = re.sub(r'&', ' and ', processed)
+    # processed = re.sub(r'/', ' and ', processed)
+    processed = re.sub(r'@', ' at ', processed)
+    processed = self.pipeline(processed)
     return processed
 
 class SpellChecker(object):
   """
     Object to find misspelled words and automatically correct spelling
+
+    Note: when use autocorrect, one need to conduct a spell test to identify the threshold (the word frequences)
   """
 
   def __init__(self, checker='autocorrect'):
@@ -227,6 +268,14 @@ class SpellChecker(object):
         tmp = file.readlines()
       self.addedWords = list({x.replace('\n', '') for x in tmp})
       self.speller.nlp_data.update({x: 1000000 for x in self.addedWords})
+    elif self.checker == 'pyspellchecker':
+      self.speller = PySpellChecker()
+      self.includedWords = []
+      file2open = os.path.join(os.path.dirname(__file__) , os.pardir, os.pardir, os.pardir, 'data' , 'psc_additional_words.txt')
+      with open(file2open, 'r') as file:
+        tmp = file.readlines()
+      self.addedWords = list({x.replace('\n', '') for x in tmp})
+      self.speller.word_frequency.load_words(self.addedWords)
     else:
       name = 'contextual spellcheck'
       self.nlp = spacy.load('en_core_web_lg')
@@ -250,6 +299,8 @@ class SpellChecker(object):
     """
     if self.checker == 'autocorrect':
       self.speller.nlp_data.update({word: 1000000 for word in words})
+    elif self.checker == 'pyspellchecker':
+      self.speller.word_frequency.load_words(self.addedWords+words)
     else:
       self.speller.vocab = Vocab(strings=self.includedWords+self.addedWords+words)
 
@@ -264,12 +315,16 @@ class SpellChecker(object):
         misspelled: list, list of misspelled words
     """
     if self.checker == 'autocorrect':
-      corrected = self.speller(text.lower())
+      # corrected = self.speller(text.lower())
       original = re.findall(r'[^\s!,.?":;-]+', text)
-      auto = re.findall(r'[^\s!,.?":;-]+', corrected)
-      misspelled = list({w1 if w1.lower() != w2.lower() else None for w1, w2 in zip(original, auto)})
+      # auto = re.findall(r'[^\s!,.?":;-]+', corrected)
+      # misspelled = list({w1 if w1.lower() != w2.lower() else None for w1, w2 in zip(original, auto)})
+      misspelled = [word for word in original if word not in self.speller.nlp_data]
       if None in misspelled:
         misspelled.remove(None)
+    elif self.checker == 'pyspellchecker':
+      original = re.findall(r'[^\s!,.?":;-]+', text)
+      misspelled = self.speller.unknown(original)
     else:
       doc = self.nlp(text)
       doc = self.speller(doc)
@@ -289,6 +344,20 @@ class SpellChecker(object):
     """
     if self.checker == 'autocorrect':
       corrected = self.speller(text)
+    elif self.checker == 'pyspellchecker':
+      l = re.split("([A-Za-z]+(?=\s|\.))", text)
+      corrected = []
+      for elem in l:
+        if len(elem) == 0:
+          corrected.append(elem)
+        elif not re.search("[^A-Za-z]+",elem):
+          if elem in self.speller:
+            corrected.append(elem)
+          else:
+            corrected.append(self.speller.correction(elem))
+        else:
+          corrected.append(elem)
+      corrected = "".join(corrected)
     else:
       doc = self.nlp(text)
       doc = self.speller(doc)
@@ -496,7 +565,7 @@ class AbbrExpander(object):
 
   def __init__(self, abbreviationsFilename, checkerType='autocorrect', abbrType='mixed'):
     """
-      Abbrviation expander constructor
+      Abbreviation expander constructor
 
       Args:
         abbreviationsFilename: string, filename of abbreviations data
