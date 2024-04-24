@@ -40,7 +40,7 @@ autodoc_inherit_docstrings = False
 ## How to build html?
 
 ```bash
-  pip install sphinx, sphinx_rtd_theme, nbsphinx, sphinx-copybutton, sphinx-autoapi
+  pip install sphinx sphinx_rtd_theme nbsphinx sphinx-copybutton sphinx-autoapi
   conda install pandoc
   cd doc
   make html
