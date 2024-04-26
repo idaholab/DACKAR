@@ -11,7 +11,7 @@ How to install dependency libraries?
 
   conda activate dackar_libs
 
-  pip install spacy==3.1 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy scikit-learn==1.2.2
+  pip install spacy==3.1 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy scikit-learn==1.2.2 pyspellchecker
 
 .. scikit-learn 1.2.2 is required for quantulum3
 
@@ -24,7 +24,7 @@ Download language model from spacy (can not use INL network)
 
   python -m coreferee install en
 
-Different approach when there is a issue with SSLError
+Different approach when there is an issue with SSLError
 ------------------------------------------------------
 
 1. Download en_core_web_lg-3.1.0.tar.gz_, then run
@@ -47,7 +47,7 @@ You may need to install stemming for some of unit parsing
 
   pip install stemming
 
-Windows machine have issue with pydantic
+Windows machine have an issue with pydantic
 ----------------------------------------
 
 .. See https://github.com/explosion/spaCy/issues/12659. Installing typing_extensions<4.6
@@ -64,7 +64,7 @@ Required libraries and nltk data for similarity analysis
   conda install -c conda-forge pandas
   python -m nltk.downloader all
 
-Different approach when there is a issue with SSLError
+Different approach when there is an issue with SSLError
 ------------------------------------------------------
 
 Please check installing_nltk_data_ on how to manually install nltk data.
