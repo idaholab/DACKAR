@@ -42,7 +42,7 @@ if not Token.has_extension('alias'):
 
 class WorkOrderProcessing(WorkflowBase):
   """
-    Class to process OPG CWS work order dataset
+    Class to process CWS work order dataset
   """
   def __init__(self, nlp, entID='SSC', *args, **kwargs):
     """
@@ -157,7 +157,7 @@ class WorkOrderProcessing(WorkflowBase):
     subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
     objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
 
-    # procedure to process OPG CWS data
+    # procedure to process CWS data
     # collect status, negation, conjecture information
     for sent in matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])

@@ -156,6 +156,7 @@ class OPMobject(object):
     for elem in self.processList:
       self.opmGraph.add_node(elem, color='k', key='process')
 
+
   def returnsExternalLinks(self):
     '''
     This method returns the links to other external OPM models
