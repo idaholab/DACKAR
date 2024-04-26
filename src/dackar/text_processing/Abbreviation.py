@@ -12,13 +12,10 @@ from ..config import nlpConfig
 logger = logging.getLogger(__name__)
 
 not_acronyms = [
-    "level", "was", "for", "ship", "start", "band", "by", "row", "new", "gap",
-    "technology", "system", "me", "our", "tag", "low", "east",
-    "us", "an", "bolt", "ups", "fan", "team", "hit", "oat", "fit", "well", "same",
-    "set", "case", "taps", "flux", "data", "leap", "col", "top", "arc", "side",
-    "rooms", "amps", "had", "fleet", "best", "most", "cover", "ice", "min", "tee",
-    "matrix", "bat", "rose", "rapid", "pipe", "its", "the", "it", "air", "and",
-    "email", "if", "are", "from", "success", "led",'parts','tips','pad','stem','pond','sit','toe','that','get','op','can','feed']
+     'was', 'for', 'by',  'me', 'our', 'is', 'he', 'she', 'they', 'him', 'his', 'her','them', 'my','mine','min','max',
+     'us', 'an', 'had', 'its', 'the', 'it', 'and', 'a', 'has', 'have', 'should', 'will', 'may', 'could',
+     'if', 'are', 'from', 'that','can', 'in', 'on', 'above', 'when', 'where', 'who', 'why', 'were', 'their',
+     'since', 'of', 'at', 'all', 'to', 'as', 'this']
 
 class Abbreviation(object):
   """
