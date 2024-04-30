@@ -244,10 +244,10 @@ def expandEntities(doc):
     doc = expandEntities(doc)
   return doc
 
-# @Language.component("mergeCCWEntities")
-# def mergeCCWEntities(doc):
+# @Language.component("mergeEntitiesWithSameID")
+# def mergeEntitiesWithSameID(doc):
 #   """
-#     Merge the CCW entities
+#     Merge the same ID entities
 
 #     Args:
 #       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
@@ -324,10 +324,10 @@ def expandEntities(doc):
 
 # Recursive function has default max depth 1000, when process record by record, the number of calls
 # is equal the number of record, and the max depth will be reached.
-@Language.component("mergeCCWEntities")
-def mergeCCWEntities(doc):
+@Language.component("mergeEntitiesWithSameID")
+def mergeEntitiesWithSameID(doc):
   """
-    Merge the CCW entities
+    Merge the same ID entities
 
     Args:
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
@@ -411,14 +411,14 @@ def mergeCCWEntities(doc):
 
   doc.ents = filter_spans(list(doc.ents) +  newEnts)
   # if isUpdated:
-  #   doc = mergeCCWEntities(doc)
+  #   doc = mergeEntitiesWithSameID(doc)
   return doc
 
 # Recursive Functions
-# @Language.component("mergeCCWEntities")
-# def mergeCCWEntities(doc):
+# @Language.component("mergeEntitiesWithSameID")
+# def mergeEntitiesWithSameID(doc):
 #   """
-#     Merge the CCW entities
+#     Merge the same ID entities
 
 #     Args:
 #       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
@@ -495,7 +495,7 @@ def mergeCCWEntities(doc):
 
 #   doc.ents = filter_spans(list(doc.ents) +  newEnts)
 #   if isUpdated:
-#     doc = mergeCCWEntities(doc)
+#     doc = mergeEntitiesWithSameID(doc)
 #   return doc
 
 

@@ -16,7 +16,7 @@ from ..text_processing.Preprocessing import Preprocessing
 from ..utils.utils import getOnlyWords, getShortAcronym
 from ..config import nlpConfig
 from .WorkflowBase import WorkflowBase
-from ..pipelines.CustomPipelineComponents import mergeCCWEntities
+from ..pipelines.CustomPipelineComponents import mergeEntitiesWithSameID
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +69,8 @@ class OperatorShiftLogs(WorkflowBase):
         None
     """
     super().__init__(nlp, entID, causalKeywordID, *args, **kwargs)
-    if not nlp.has_pipe('mergeCCWEntities'):
-      self.nlp.add_pipe('mergeCCWEntities', after='aliasResolver')
+    if not nlp.has_pipe('mergeEntitiesWithSameID'):
+      self.nlp.add_pipe('mergeEntitiesWithSameID', after='aliasResolver')
 
     self._allRelPairs = []
     self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
