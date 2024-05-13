@@ -140,234 +140,6 @@ class RuleBasedMatcher(WorkflowBase):
     print(*extractedCauseEffects)
     logger.info('End of causal relation extraction using general extraction method!')
 
-  def getHealthStatusForPobj(self, ent, include=False):
-    """Get the status for ent root pos ``pobj``
-
-      Args:
-
-        ent: Span, the span of entity
-        include: bool, ent will be included in returned status if True
-
-      returns:
-
-        Span or Token, the identified health status
-    """
-    healthStatus = None
-    if isinstance(ent, Token):
-      root = ent
-      start = root.i
-      end = start + 1
-    elif isinstance(ent, Span):
-      root = ent.root
-      start = ent.start
-      end = ent.end
-    if root.dep_ not in ['pobj']:
-      return healthStatus
-    grandparent = root.head.head
-    parent = root.head
-    causalStatus = [grandparent.lemma_.lower()] in self._causalKeywords['VERB'] and [grandparent.lemma_.lower()] not in self._statusKeywords['VERB']
-    if grandparent.dep_ in ['dobj', 'nsubj', 'nsubjpass', 'pobj']:
-      lefts = list(grandparent.lefts)
-      if len(lefts) == 0:
-        leftInd = grandparent.i
-      else:
-        leftInd = lefts[0].i
-      if not include:
-        rights = list(grandparent.rights)
-        if grandparent.n_rights > 1 and rights[-1] == parent:
-          healthStatus = grandparent.doc[leftInd:rights[-1].i]
-        else:
-          healthStatus = grandparent.doc[leftInd:grandparent.i+1]
-      else:
-        healthStatus = grandparent.doc[leftInd:end]
-      healthStatus = self.getAmod(healthStatus, healthStatus.start, healthStatus.end, include=True)
-    elif grandparent.pos_ in ['VERB'] and causalStatus:
-      healthStatus = self.findRightObj(grandparent)
-      subtree = list(healthStatus.subtree)
-      nbor = self.getNbor(healthStatus)
-      if healthStatus is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
-        healthStatus = grandparent.doc[healthStatus.i:subtree[-1].i+1]
-      elif healthStatus is not None and healthStatus.i >= root.i:
-        healthStatus = None
-    elif grandparent.pos_ in ['VERB'] and grandparent.dep_ in ['ROOT']:
-      dobj = [tk for tk in grandparent.rights if tk.dep_ in ['dobj'] and tk.i < start]
-      if len(dobj) > 0:
-        dobjEnt = root.doc[dobj[0].i:dobj[0].i+1]
-        healthStatus = self.getAmod(dobjEnt, dobjEnt.start, dobjEnt.end, include=True)
-      else:
-        healthStatus = ent
-        healthStatus = self.getAmod(ent, start, end, include=include)
-    elif grandparent.pos_ in ['NOUN']:
-      grandEnt = grandparent.doc[grandparent.i:grandparent.i+1]
-      healthStatus = self.getAmod(grandEnt, grandparent.i, grandparent.i+1, include=True)
-    elif grandparent.pos_ in ['AUX']:
-      healthStatus = grandparent.doc[grandparent.i+1:parent.i]
-    else: # search lefts for amod
-      healthStatus = self.getAmod(ent, start, end, include)
-    return healthStatus
-
-  def getHealthStatusForSubj(self, ent, entHS, sent, causalStatus, predSynonyms, include=False):
-    """
-      Get the status for nsubj/nsubjpass ent
-
-      Args:
-
-        ent: Span, the nsubj/nsubjpass ent that will be used to search status
-        entHS: Span, the entHS that the status will be associated with
-        sent: Span, the sent that includes the ent, entHS and status
-        causalStatus: bool, the causal status for the ent
-        predSynonyms: list, predicate synonyms
-        include: bool, include ent in the returned expression if True
-
-      Returns:
-
-        healthStatus: Span or Token, the identified status
-    """
-    healthStatus = None
-    neg = False
-    negText = ''
-    entRoot = ent.root
-    # root = sent.root
-    root = entRoot.head
-    causalStatus = [root.lemma_.lower()] in self._causalKeywords['VERB'] and [root.lemma_.lower()] not in self._statusKeywords['VERB']
-    if entRoot.dep_ not in ['nsubj', 'nsubjpass']:
-      return healthStatus, neg, negText
-    if root.pos_ != 'VERB':
-      neg, negText = self.isNegation(root)
-      if root.pos_ in ['NOUN', 'ADJ']:
-        # TODO: search entRoot.lefts for 'amod' and attach to healthStatus
-        healthStatus = root
-      elif root.pos_ in ['AUX']:
-        healthStatus = root.doc[root.i+1:root.i+root.n_rights+1]
-      else:
-        logger.warning(f'No status identified for "{ent}" in "{sent}"')
-    else:
-      rights = root.rights
-      valid = [tk.dep_ in ['advcl', 'relcl'] for tk in rights if tk.pos_ not in ['PUNCT', 'SPACE']]
-      nbor = self.getNbor(root)
-      if nbor is not None and (nbor.dep_ in ['cc'] or nbor.pos_ in ['PUNCT']):
-        healthStatus = root
-      elif len(valid)>0 and all(valid):
-        healthStatus = root
-      elif not causalStatus:
-        if [root.lemma_.lower()] in predSynonyms:
-          entHS._.set('hs_keyword', root.lemma_)
-        else:
-          entHS._.set('ent_status_verb', root.lemma_)
-        neg, negText = self.isNegation(root)
-        passive = self.isPassive(root)
-        # # last is punct, the one before last is the root
-        # if root.nbor().pos_ in ['PUNCT']:
-        #   healthStatus = root
-        healthStatus = self.findRightObj(root)
-        if healthStatus and healthStatus.dep_ == 'pobj':
-          healthStatus = self.getHealthStatusForPobj(healthStatus, include=True)
-        elif healthStatus and healthStatus.dep_ == 'dobj':
-          subtree = list(healthStatus.subtree)
-          try:
-            if healthStatus.nbor().dep_ in ['prep']:
-              healthStatus = healthStatus.doc[healthStatus.i:subtree[-1].i+1]
-          except IndexError:
-            pass
-        # no object is found
-        if not healthStatus:
-          healthStatus = self.findRightKeyword(root)
-        # last is punct, the one before last is the root
-        # if not healthStatus and root.nbor().pos_ in ['PUNCT']:
-        #   healthStatus = root
-        if healthStatus is None:
-          healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
-        if healthStatus is None:
-          extra = [tk for tk in root.rights if tk.pos_ in ['ADP', 'ADJ']]
-          # Only select the first ADP and combine with root
-          if len(extra) > 0:
-            healthStatus = root.doc[root.i:extra[0].i+1]
-          else:
-            healthStatus = root
-      else:
-        healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
-      if healthStatus is None:
-        healthStatus = root
-    return healthStatus, neg, negText
-
-  def getHealthStatusForObj(self, ent, entHS, sent, causalStatus, predSynonyms, include=False):
-    """
-      Get the status for pobj/dobj ent
-
-      Args:
-
-        ent: Span, the pobj/dobj ent that will be used to search status
-        entHS: Span, the entHS that the status will be associated with
-        sent: Span, the sent that includes the ent, entHS and status
-        causalStatus: bool, the causal status for the ent
-        predSynonyms: list, predicate synonyms
-        include: bool, include ent in the returned expression if True
-
-      Returns:
-
-        healthStatus: Span or Token, the identified status
-    """
-    healthStatus = None
-    neg = False
-
-    negText = ''
-    entRoot = ent.root
-    head = entRoot.head
-    prep = False
-    if head.pos_ in ['VERB']:
-      root = head
-    elif head.dep_ in ['prep']:
-      root = head.head
-      prep = True
-    else:
-      root = head
-    causalStatus = [root.lemma_.lower()] in self._causalKeywords['VERB'] and [root.lemma_.lower()] not in self._statusKeywords['VERB']
-    if entRoot.dep_ not in ['pobj', 'dobj']:
-      return healthStatus, neg, negText
-    if root.pos_ != 'VERB':
-      neg, negText = self.isNegation(root)
-      if root.pos_ in ['ADJ']:
-        healthStatus = root
-      elif root.pos_ in ['NOUN']:
-        if root.dep_ in ['pobj']:
-          healthStatus = root.doc[root.head.head.i:root.i+1]
-        else:
-          healthStatus = root
-      elif root.pos_ in ['AUX']:
-        leftInd = list(root.lefts)[0].i
-        healthStatus = root.doc[leftInd:root.i]
-      else:
-        logger.warning(f'No status identified for "{ent}" in "{sent}"')
-    else:
-      if not causalStatus:
-        if [root.lemma_.lower()] in predSynonyms:
-          entHS._.set('hs_keyword', root.lemma_)
-        else:
-          entHS._.set('ent_status_verb', root.lemma_)
-        passive = self.isPassive(root)
-        neg, negText = self.isNegation(root)
-        healthStatus = self.findLeftSubj(root, passive)
-        if healthStatus is not None and healthStatus.pos_ in ['PRON']:
-          # coreference resolution
-          passive = self.isPassive(root.head)
-          neg, negText = self.isNegation(root.head)
-          healthStatus = self.findLeftSubj(root.head, passive)
-        if healthStatus is not None:
-          healthStatus = self.getAmod(healthStatus, healthStatus.i, healthStatus.i+1, include=True)
-        else:
-          healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
-          # healthStatus = self.getCompoundOnly(ent, entHS)
-        if healthStatus is None:
-          rights =[tk for tk in list(root.rights) if tk.pos_ not in ['SPACE', 'PUNCT'] and tk.i >= ent.end]
-          if len(rights) > 0 and rights[0].pos_ in ['VERB', 'NOUN', 'ADJ', 'ADV']:
-            healthStatus = rights[0]
-      else:
-        if entRoot.dep_ in ['pobj']:
-          healthStatus = self.getHealthStatusForPobj(ent, include=include)
-        else:
-          healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
-    return healthStatus, neg, negText
-
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
     """
       Extract health status and relation
@@ -1208,3 +980,233 @@ class RuleBasedMatcher(WorkflowBase):
         if sent not in matchedSents:
           matchedSents.append(sent)
     return matchedSents
+
+
+
+  def getHealthStatusForPobj(self, ent, include=False):
+    """Get the status for ent root pos ``pobj``
+
+      Args:
+
+        ent: Span, the span of entity
+        include: bool, ent will be included in returned status if True
+
+      returns:
+
+        Span or Token, the identified health status
+    """
+    healthStatus = None
+    if isinstance(ent, Token):
+      root = ent
+      start = root.i
+      end = start + 1
+    elif isinstance(ent, Span):
+      root = ent.root
+      start = ent.start
+      end = ent.end
+    if root.dep_ not in ['pobj']:
+      return healthStatus
+    grandparent = root.head.head
+    parent = root.head
+    causalStatus = [grandparent.lemma_.lower()] in self._causalKeywords['VERB'] and [grandparent.lemma_.lower()] not in self._statusKeywords['VERB']
+    if grandparent.dep_ in ['dobj', 'nsubj', 'nsubjpass', 'pobj']:
+      lefts = list(grandparent.lefts)
+      if len(lefts) == 0:
+        leftInd = grandparent.i
+      else:
+        leftInd = lefts[0].i
+      if not include:
+        rights = list(grandparent.rights)
+        if grandparent.n_rights > 1 and rights[-1] == parent:
+          healthStatus = grandparent.doc[leftInd:rights[-1].i]
+        else:
+          healthStatus = grandparent.doc[leftInd:grandparent.i+1]
+      else:
+        healthStatus = grandparent.doc[leftInd:end]
+      healthStatus = self.getAmod(healthStatus, healthStatus.start, healthStatus.end, include=True)
+    elif grandparent.pos_ in ['VERB'] and causalStatus:
+      healthStatus = self.findRightObj(grandparent)
+      subtree = list(healthStatus.subtree)
+      nbor = self.getNbor(healthStatus)
+      if healthStatus is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
+        healthStatus = grandparent.doc[healthStatus.i:subtree[-1].i+1]
+      elif healthStatus is not None and healthStatus.i >= root.i:
+        healthStatus = None
+    elif grandparent.pos_ in ['VERB'] and grandparent.dep_ in ['ROOT']:
+      dobj = [tk for tk in grandparent.rights if tk.dep_ in ['dobj'] and tk.i < start]
+      if len(dobj) > 0:
+        dobjEnt = root.doc[dobj[0].i:dobj[0].i+1]
+        healthStatus = self.getAmod(dobjEnt, dobjEnt.start, dobjEnt.end, include=True)
+      else:
+        healthStatus = ent
+        healthStatus = self.getAmod(ent, start, end, include=include)
+    elif grandparent.pos_ in ['NOUN']:
+      grandEnt = grandparent.doc[grandparent.i:grandparent.i+1]
+      healthStatus = self.getAmod(grandEnt, grandparent.i, grandparent.i+1, include=True)
+    elif grandparent.pos_ in ['AUX']:
+      healthStatus = grandparent.doc[grandparent.i+1:parent.i]
+    else: # search lefts for amod
+      healthStatus = self.getAmod(ent, start, end, include)
+    return healthStatus
+
+  def getHealthStatusForSubj(self, ent, entHS, sent, causalStatus, predSynonyms, include=False):
+    """
+      Get the status for nsubj/nsubjpass ent
+
+      Args:
+
+        ent: Span, the nsubj/nsubjpass ent that will be used to search status
+        entHS: Span, the entHS that the status will be associated with
+        sent: Span, the sent that includes the ent, entHS and status
+        causalStatus: bool, the causal status for the ent
+        predSynonyms: list, predicate synonyms
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+
+        healthStatus: Span or Token, the identified status
+    """
+    healthStatus = None
+    neg = False
+    negText = ''
+    entRoot = ent.root
+    # root = sent.root
+    root = entRoot.head
+    causalStatus = [root.lemma_.lower()] in self._causalKeywords['VERB'] and [root.lemma_.lower()] not in self._statusKeywords['VERB']
+    if entRoot.dep_ not in ['nsubj', 'nsubjpass']:
+      return healthStatus, neg, negText
+    if root.pos_ != 'VERB':
+      neg, negText = self.isNegation(root)
+      if root.pos_ in ['NOUN', 'ADJ']:
+        # TODO: search entRoot.lefts for 'amod' and attach to healthStatus
+        healthStatus = root
+      elif root.pos_ in ['AUX']:
+        healthStatus = root.doc[root.i+1:root.i+root.n_rights+1]
+      else:
+        logger.warning(f'No status identified for "{ent}" in "{sent}"')
+    else:
+      rights = root.rights
+      valid = [tk.dep_ in ['advcl', 'relcl'] for tk in rights if tk.pos_ not in ['PUNCT', 'SPACE']]
+      nbor = self.getNbor(root)
+      if nbor is not None and (nbor.dep_ in ['cc'] or nbor.pos_ in ['PUNCT']):
+        healthStatus = root
+      elif len(valid)>0 and all(valid):
+        healthStatus = root
+      elif not causalStatus:
+        if [root.lemma_.lower()] in predSynonyms:
+          entHS._.set('hs_keyword', root.lemma_)
+        else:
+          entHS._.set('ent_status_verb', root.lemma_)
+        neg, negText = self.isNegation(root)
+        passive = self.isPassive(root)
+        # # last is punct, the one before last is the root
+        # if root.nbor().pos_ in ['PUNCT']:
+        #   healthStatus = root
+        healthStatus = self.findRightObj(root)
+        if healthStatus and healthStatus.dep_ == 'pobj':
+          healthStatus = self.getHealthStatusForPobj(healthStatus, include=True)
+        elif healthStatus and healthStatus.dep_ == 'dobj':
+          subtree = list(healthStatus.subtree)
+          try:
+            if healthStatus.nbor().dep_ in ['prep']:
+              healthStatus = healthStatus.doc[healthStatus.i:subtree[-1].i+1]
+          except IndexError:
+            pass
+        # no object is found
+        if not healthStatus:
+          healthStatus = self.findRightKeyword(root)
+        # last is punct, the one before last is the root
+        # if not healthStatus and root.nbor().pos_ in ['PUNCT']:
+        #   healthStatus = root
+        if healthStatus is None:
+          healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
+        if healthStatus is None:
+          extra = [tk for tk in root.rights if tk.pos_ in ['ADP', 'ADJ']]
+          # Only select the first ADP and combine with root
+          if len(extra) > 0:
+            healthStatus = root.doc[root.i:extra[0].i+1]
+          else:
+            healthStatus = root
+      else:
+        healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
+      if healthStatus is None:
+        healthStatus = root
+    return healthStatus, neg, negText
+
+  def getHealthStatusForObj(self, ent, entHS, sent, causalStatus, predSynonyms, include=False):
+    """
+      Get the status for pobj/dobj ent
+
+      Args:
+
+        ent: Span, the pobj/dobj ent that will be used to search status
+        entHS: Span, the entHS that the status will be associated with
+        sent: Span, the sent that includes the ent, entHS and status
+        causalStatus: bool, the causal status for the ent
+        predSynonyms: list, predicate synonyms
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+
+        healthStatus: Span or Token, the identified status
+    """
+    healthStatus = None
+    neg = False
+
+    negText = ''
+    entRoot = ent.root
+    head = entRoot.head
+    prep = False
+    if head.pos_ in ['VERB']:
+      root = head
+    elif head.dep_ in ['prep']:
+      root = head.head
+      prep = True
+    else:
+      root = head
+    causalStatus = [root.lemma_.lower()] in self._causalKeywords['VERB'] and [root.lemma_.lower()] not in self._statusKeywords['VERB']
+    if entRoot.dep_ not in ['pobj', 'dobj']:
+      return healthStatus, neg, negText
+    if root.pos_ != 'VERB':
+      neg, negText = self.isNegation(root)
+      if root.pos_ in ['ADJ']:
+        healthStatus = root
+      elif root.pos_ in ['NOUN']:
+        if root.dep_ in ['pobj']:
+          healthStatus = root.doc[root.head.head.i:root.i+1]
+        else:
+          healthStatus = root
+      elif root.pos_ in ['AUX']:
+        leftInd = list(root.lefts)[0].i
+        healthStatus = root.doc[leftInd:root.i]
+      else:
+        logger.warning(f'No status identified for "{ent}" in "{sent}"')
+    else:
+      if not causalStatus:
+        if [root.lemma_.lower()] in predSynonyms:
+          entHS._.set('hs_keyword', root.lemma_)
+        else:
+          entHS._.set('ent_status_verb', root.lemma_)
+        passive = self.isPassive(root)
+        neg, negText = self.isNegation(root)
+        healthStatus = self.findLeftSubj(root, passive)
+        if healthStatus is not None and healthStatus.pos_ in ['PRON']:
+          # coreference resolution
+          passive = self.isPassive(root.head)
+          neg, negText = self.isNegation(root.head)
+          healthStatus = self.findLeftSubj(root.head, passive)
+        if healthStatus is not None:
+          healthStatus = self.getAmod(healthStatus, healthStatus.i, healthStatus.i+1, include=True)
+        else:
+          healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
+          # healthStatus = self.getCompoundOnly(ent, entHS)
+        if healthStatus is None:
+          rights =[tk for tk in list(root.rights) if tk.pos_ not in ['SPACE', 'PUNCT'] and tk.i >= ent.end]
+          if len(rights) > 0 and rights[0].pos_ in ['VERB', 'NOUN', 'ADJ', 'ADV']:
+            healthStatus = rights[0]
+      else:
+        if entRoot.dep_ in ['pobj']:
+          healthStatus = self.getHealthStatusForPobj(ent, include=include)
+        else:
+          healthStatus = self.getAmod(ent, ent.start, ent.end, include=include)
+    return healthStatus, neg, negText

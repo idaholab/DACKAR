@@ -32,6 +32,7 @@ from ..pipelines.CustomPipelineComponents import anaphorEntCoref
 from ..pipelines.CustomPipelineComponents import mergePhrase
 from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 from ..config import nlpConfig
+from ..text_processing.Preprocessing import Preprocessing
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,9 @@ class WorkflowBase(object):
     self._visualizeMatchedSents = True
     self._coref = _corefAvail # True indicate coreference pipeline is available
     self._entityLabels = {} # labels for rule-based entities
+    # reset entity label using toml input
+    if 'params' in nlpConfig:
+      entID = nlpConfig['params'].get('ent_id', entID)
     self._entID = entID
     self._causalKeywordID = causalKeywordID
     self._causalNames = ['cause', 'cause health status', 'causal keyword', 'effect', 'effect health status', 'sentence', 'conjecture']
@@ -208,6 +212,11 @@ class WorkflowBase(object):
     self._causalSentsOneEnt = []
     self._entHS = None
     self._entStatus = None
+    self._screen = False
+    self.dataframeRelations = None
+    self.dataframeEntities = None
+
+    self._textProcess = self.textProcess()
 
   def reset(self):
     """
@@ -221,6 +230,24 @@ class WorkflowBase(object):
     self._causalSentsOneEnt = []
     self._entHS = None
     self._doc = None
+    self.dataframeRelations = None
+    self.dataframeEntities = None
+
+  def textProcess(self):
+    """
+      Function to clean text
+
+      Args:
+        None
+
+      Returns:
+        procObj, DACKAR.Preprocessing object
+    """
+    procList = ['quotation_marks', 'punctuation', 'whitespace']
+    procOptions = {'punctuation': {'only':["*","+",":","=","\\","^","_","|","~", "..", "...", ",", ";", "."]}}
+    procObj = Preprocessing(preprocessorList=procList, preprocessorOptions=procOptions)
+    return procObj
+
 
   def getKeywords(self, filename, columnNames=None):
     """
@@ -321,7 +348,7 @@ class WorkflowBase(object):
     if not self._entityRuler:
       self._entityRuler = True
 
-  def __call__(self, text, extract=True):
+  def __call__(self, text, extract=True, screen=False):
     """
       Find all token sequences matching the supplied pattern
 
@@ -342,6 +369,7 @@ class WorkflowBase(object):
     # self.nlp.add_pipe('merge_entities')
     doc = self.nlp(text)
     self._doc = doc
+    self._screen = screen
     ## use entity ruler to identify entity
     # if self._entityRuler:
     #   logger.debug('Entity Ruler Matches:')
@@ -524,14 +552,14 @@ class WorkflowBase(object):
 
       Returns:
 
-        healthStatus: Span or Token, the identified status
+        status: Span or Token, the identified status
     """
     leftInd = list(ent.lefts)[0].i
     if not include:
-      healthStatus = ent.doc[leftInd:start]
+      status = ent.doc[leftInd:start]
     else:
-      healthStatus = ent.doc[leftInd:end]
-    return healthStatus
+      status = ent.doc[leftInd:end]
+    return status
 
   def getAmod(self, ent, start, end, include = False):
     """
@@ -546,20 +574,20 @@ class WorkflowBase(object):
 
       Returns:
 
-        healthStatus: Span or Token, the identified status
+        status: Span or Token, the identified status
     """
-    healthStatus = None
+    status = None
     deps = [tk.dep_ in ['amod'] for tk in ent.lefts]
     if any(deps):
-      healthStatus = self.getPhrase(ent, start, end, include)
+      status = self.getPhrase(ent, start, end, include)
     else:
       deps = [tk.dep_ in ['compound'] for tk in ent.lefts]
       if any(deps):
-        healthStatus = self.getPhrase(ent, start, end, include)
-        healthStatus = self.getAmod(healthStatus, healthStatus.start, healthStatus.end, include=True)
-    if healthStatus is None and include:
-      healthStatus = ent
-    return healthStatus
+        status = self.getPhrase(ent, start, end, include)
+        status = self.getAmod(status, status.start, status.end, include=True)
+    if status is None and include:
+      status = ent
+    return status
 
   def getAmodOnly(self, ent):
     """
@@ -632,14 +660,14 @@ class WorkflowBase(object):
     """
     foundSubj = False
     foundObj = False
-    valid = True
+    valid = False
     for tk in sent:
       if tk.dep_.startswith('nsubj'):
         foundSubj = True
       elif tk.dep_.endswith('obj'):
         foundObj = True
-    if not foundSubj and not foundObj:
-      valid = False
+    if foundSubj or foundObj:
+      valid = True
     return valid
 
   def findLeftSubj(self, pred, passive):
@@ -977,3 +1005,239 @@ class WorkflowBase(object):
         return True
     return False
 #######################################################################################
+
+  def getStatusForSubj(self, ent, include=False):
+    """
+      Get the status for nsubj/nsubjpass ent
+
+      Args:
+
+        ent: Span, the nsubj/nsubjpass ent that will be used to search status
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+
+        status: Span or Token, the identified status
+    """
+    status = None
+    neg = False
+    negText = ''
+    entRoot = ent.root
+    root = entRoot.head
+
+    if entRoot.dep_ not in ['nsubj', 'nsubjpass', 'nsubj:pass']:
+      raise IOError("Method 'self.getStatusForSubj' can only be used for 'nsubj' or 'nsubjpass'")
+    if root.pos_ != 'VERB':
+      neg, negText = self.isNegation(root)
+      if root.pos_ in ['NOUN', 'ADJ']:
+        # TODO: search entRoot.lefts for 'amod' and attach to status
+        status = root
+      elif root.pos_ in ['AUX']:
+        rights = [r for r in root.rights]
+        if len(rights) == 0:
+          status = None
+        elif len(rights) == 1:
+          status = root.doc[root.i+1:rights[0].i+1]
+        else:
+          status = []
+          for r in rights:
+            s = self.getAmod(r, r.i, r.i+1, include=include)
+            status.append(s)
+      else:
+        logger.warning(f'No status identified for "{ent}" in "{ent.sent}"')
+    else:
+      rights = root.rights
+      valid = [tk.dep_ in ['advcl', 'relcl'] for tk in rights if tk.pos_ not in ['PUNCT', 'SPACE']]
+      nbor = self.getNbor(root)
+      if nbor is not None and (nbor.dep_ in ['cc'] or nbor.pos_ in ['PUNCT']):
+        status = root
+      elif len(valid)>0 and all(valid):
+        status = root
+      else:
+        objStatus = None
+        amod = self.getAmod(ent, ent.start, ent.end, include=include)
+        obj = self.findRightObj(root)
+        if obj:
+          if obj.dep_ == 'pobj':
+            objStatus = self.getStatusForPobj(obj, include=True)
+          elif obj.dep_ == 'dobj':
+            subtree = list(obj.subtree)
+            try:
+              if obj.nbor().dep_ in ['prep']:
+                objStatus = obj.doc[obj.i:subtree[-1].i+1]
+              else:
+                objStatus = obj
+            except IndexError:
+              objStatus = obj
+        # no object is found
+        else:
+          objStatus = self.findRightKeyword(root)
+        # last is punct, the one before last is the root
+        # if not status and root.nbor().pos_ in ['PUNCT']:
+        #   status = root
+        if objStatus is None and amod is None:
+          extra = [tk for tk in root.rights if tk.pos_ in ['ADP', 'ADJ']]
+          # Only select the first ADP and combine with root
+          if len(extra) > 0:
+            objStatus = root.doc[root.i:extra[0].i+1]
+          else:
+            objStatus = root
+        if amod is not None:
+          status = [amod, objStatus]
+        else:
+          status = objStatus
+    return status, neg, negText
+
+  def getStatusForObj(self, ent, include=False):
+    """
+      Get the status for pobj/dobj ent
+
+      Args:
+
+        ent: Span, the pobj/dobj ent that will be used to search status
+        include: bool, include ent in the returned expression if True
+
+      Returns:
+
+        status: Span or Token, the identified status
+    """
+    status = None
+    neg = False
+    negText = ''
+    entRoot = ent.root
+    head = entRoot.head
+    prep = False
+    if head.pos_ in ['VERB']:
+      root = head
+    elif head.dep_ in ['prep']:
+      root = head.head
+      prep = True
+    else:
+      root = head
+    if entRoot.dep_ not in ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']:
+      raise IOError("Method 'self.getStatusForObj' can only be used for 'pobj' or 'dobj'")
+    if root.pos_ != 'VERB':
+      neg, negText = self.isNegation(root)
+      if root.pos_ in ['ADJ']:
+        status = root
+      elif root.pos_ in ['NOUN', 'PROPN']:
+        if root.dep_ in ['pobj']:
+          status = root.doc[root.head.head.i:root.i+1]
+        else:
+          status = root
+      elif root.pos_ in ['AUX']:
+        leftInd = list(root.lefts)[0].i
+        subj = root.doc[leftInd:root.i]
+        amod = self.findRightKeyword(root)
+        status = [amod, subj]
+      else:
+        logger.warning(f'No status identified for "{ent}" in "{ent.sent}"')
+    else:
+      subjStatus = None
+      if entRoot.dep_ in ['pobj']:
+        amod = self.getStatusForPobj(ent, include=include)
+      else:
+        amod = self.getAmod(ent, ent.start, ent.end, include=include)
+         # status = self.getCompoundOnly(ent, entHS)
+
+      passive = self.isPassive(root)
+      neg, negText = self.isNegation(root)
+      subjStatus = self.findLeftSubj(root, passive)
+      if subjStatus is not None:
+        # Corefence can be handled coreferee
+        # if subjStatus.pos_ in ['PROPN']:
+        #   # coreference resolution
+        #   passive = self.isPassive(root.head)
+        #   neg, negText = self.isNegation(root.head)
+        #   headSubj = self.findLeftSubj(root.head, passive)
+        #   if headSubj is not None:
+        #     subjStatus = headSubj
+        subjStatus = self.getAmod(subjStatus, subjStatus.i, subjStatus.i+1, include=True)
+
+      else:
+        subjStatus = root
+      # if amod is None:
+      #   rights =[tk for tk in list(root.rights) if tk.pos_ not in ['SPACE', 'PUNCT'] and tk.i >= ent.end]
+      #   if len(rights) > 0 and rights[0].pos_ in ['VERB', 'NOUN', 'ADJ', 'ADV']:
+      #     status = rights[0]
+
+      if amod is None:
+        status = subjStatus
+      else:
+        status = [amod, subjStatus]
+
+    return status, neg, negText
+
+
+  def getStatusForPobj(self, ent, include=False):
+    """Get the status for ent root pos ``pobj``
+
+      Args:
+
+        ent: Span, the span of entity
+        include: bool, ent will be included in returned status if True
+
+      returns:
+
+        Span or Token, the identified health status
+    """
+    status = None
+    if isinstance(ent, Token):
+      root = ent
+      start = root.i
+      end = start + 1
+    elif isinstance(ent, Span):
+      root = ent.root
+      start = ent.start
+      end = ent.end
+    if root.dep_ not in ['pobj']:
+      raise IOError("Method 'self.getStatusForPobj' can only be used for 'pobj'")
+
+    grandparent = root.head.head
+    parent = root.head
+    if grandparent.dep_ in ['dobj', 'nsubj', 'nsubjpass', 'pobj']:
+      lefts = list(grandparent.lefts)
+      if len(lefts) == 0:
+        leftInd = grandparent.i
+      else:
+        leftInd = lefts[0].i
+      if not include:
+        rights = list(grandparent.rights)
+        if grandparent.n_rights > 1 and rights[-1] == parent:
+          status = grandparent.doc[leftInd:rights[-1].i]
+        else:
+          status = grandparent.doc[leftInd:grandparent.i+1]
+      else:
+        status = grandparent.doc[leftInd:end]
+      status = self.getAmod(status, status.start, status.end, include=True)
+    elif grandparent.pos_ in ['VERB'] and grandparent.dep_ in ['ROOT']:
+      dobj = [tk for tk in grandparent.rights if tk.dep_ in ['dobj'] and tk.i < start]
+      if len(dobj) > 0:
+        dobjEnt = root.doc[dobj[0].i:dobj[0].i+1]
+        status = self.getAmod(dobjEnt, dobjEnt.start, dobjEnt.end, include=True)
+      else:
+        status = ent
+        status = self.getAmod(ent, start, end, include=include)
+    elif grandparent.pos_ in ['VERB']:
+      status = self.findRightObj(grandparent)
+      if status is not None:
+        subtree = list(status.subtree)
+        nbor = self.getNbor(status)
+        if status is not None and nbor is not None and nbor.dep_ in ['prep'] and subtree[-1].i < root.i:
+          status = grandparent.doc[status.i:subtree[-1].i+1]
+        if not include:
+          if isinstance(status, Token) and status.i >= root.i:
+            status = None
+          elif isinstance(status, Span) and status.end >= root.i:
+            status = None
+
+    elif grandparent.pos_ in ['NOUN']:
+      grandEnt = grandparent.doc[grandparent.i:grandparent.i+1]
+      status = self.getAmod(grandEnt, grandparent.i, grandparent.i+1, include=True)
+    elif grandparent.pos_ in ['AUX']:
+      status = grandparent.doc[grandparent.i+1:parent.i]
+    else: # search lefts for amod
+      status = self.getAmod(ent, start, end, include)
+    return status
+
+

@@ -7,11 +7,8 @@ Created on March, 2024
 import logging
 import pandas as pd
 import re
-import spacy
-
 from spacy.tokens import Token
 from spacy.tokens import Span
-from spacy import displacy
 
 from ..text_processing.Preprocessing import Preprocessing
 from ..utils.utils import getOnlyWords, getShortAcronym
@@ -62,11 +59,6 @@ class WorkOrderProcessing(WorkflowBase):
         None
     """
     super().__init__(nlp, entID, causalKeywordID='causal', *args, **kwargs)
-    # reset entity label using toml input
-    if 'params' in nlpConfig:
-      entID = nlpConfig['params'].get('ent_id', entID)
-    self._entID = entID
-    self._textProcess = self.textProcess()
     self._allRelPairs = []
     self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
 
@@ -77,22 +69,6 @@ class WorkOrderProcessing(WorkflowBase):
     super().reset()
     self._allRelPairs = []
     self._entStatus = None
-
-  def textProcess(self):
-    """
-      Function to clean text
-
-      Args:
-        None
-
-      Returns:
-        procObj, DACKAR.Preprocessing object
-    """
-    procList = ['quotation_marks', 'punctuation', 'whitespace']
-    procOptions = {'punctuation': {'only':["*","+",":","=","\\","^","_","|","~", "..", "...", ",", ";", "."]}}
-    procObj = Preprocessing(preprocessorList=procList, preprocessorOptions=procOptions)
-    return procObj
-
 
   def addKeywords(self, keywords, ktype):
     """
@@ -114,7 +90,6 @@ class WorkOrderProcessing(WorkflowBase):
           self._statusKeywords[key].append(val)
         else:
           logger.warning('keyword "{}" cannot be accepted, valid keys for the keywords are "{}"'.format(key, ','.join(list(self._statusKeywords.keys()))))
-
 
   def extractInformation(self):
     """
