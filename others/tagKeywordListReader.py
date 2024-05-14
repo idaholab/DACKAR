@@ -256,8 +256,8 @@ class entityLibrary():
       self.library[tag] = [i for i in self.library[tag] if i]
 
     for tag in self.library:
-      n_keywords = n_keywords + len(self.library[tag])
-    print("Number of listed keywords: " + str(n_keywords))
+      nKeywords = n_keywords + len(self.library[tag])
+    print("Number of listed keywords: " + str(nKeywords))
 
 
 
