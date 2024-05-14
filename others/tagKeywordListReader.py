@@ -186,10 +186,10 @@ class entityLibrary():
 
     df = pd.read_excel(fileName, None)
     # retrieve list of sheets in excel file
-    sheet_list = df.keys()
+    sheetList = df.keys()
 
     tagsDict = {}
-    for sheet in sheet_list:
+    for sheet in sheetList:
       # retrieve columns of each sheet
       cols = df[sheet].keys()
       for col in cols:
@@ -241,14 +241,14 @@ class entityLibrary():
           print('Error of acronym definition')
         if (first>=0 and second>=0):
           acronym = cleanElem[first + 1:second].strip().lstrip()
-          to_replace = "(" + acronym + ")"
-          cleanElem = cleanElem.replace(to_replace,'')
+          toReplace = "(" + acronym + ")"
+          cleanElem = cleanElem.replace(toReplace,'')
           cleanElem = " ".join(cleanElem.split())
           # save acronym into its own dictionary
           self.acronymsDict[acronym] = cleanElem.strip().lstrip()
           # remove acronym from tags_dict
-          to_replace = "(" + acronym + ")"
-          cleanElem = cleanElem.replace(to_replace,'')
+          toReplace = "(" + acronym + ")"
+          cleanElem = cleanElem.replace(toReplace,'')
         else:
           cleanElem = cleanElem
 
