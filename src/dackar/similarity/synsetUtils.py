@@ -101,7 +101,7 @@ def identifyBestSimilarSynsetFromSynsets(syn, synsets):
 def semanticSimilaritySynsets(synsetA, synsetB, disambiguation=False):
   """
     Compute the similarity between two synset using semantic analysis
-    e.g., using both path length and depth information in wordnet
+    (e.g., using both path length and depth information in wordnet)
 
     Args:
 
@@ -119,7 +119,7 @@ def semanticSimilaritySynsets(synsetA, synsetB, disambiguation=False):
 
 def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
   """
-    Path length calculation using nonlinear transfer function between two Wordnet Synsets
+    Path length calculation using nonlinear transfer function between two Wordnet Synsets.
     The two Synsets should be the best Synset Pair (e.g., disambiguation should be performed)
 
     Args:
@@ -166,7 +166,7 @@ def scalingDepthEffect(synsetA, synsetB, beta=0.45, disambiguation=False):
   """
     Words at upper layers of hierarchical semantic nets have more general concepts and less semantic similarity
     between words than words at lower layers. This method is used to scale the similarity behavior with repect
-    to depth h, e.g., [exp(beta*h)-exp(-beta*g)]/[exp(beta*h)+exp(-beta*g)]
+    to depth h (e.g., [exp(beta*h)-exp(-beta*g)]/[exp(beta*h)+exp(-beta*g)])
     The two Synsets should be the best Synset Pair (e.g., disambiguation should be performed)
 
     Args:
@@ -226,7 +226,7 @@ def scalingDepthEffect(synsetA, synsetB, beta=0.45, disambiguation=False):
 def semanticSimilaritySynsetList(synsetList1, synsetList2):
   """
     Compute the similarity between two synsetList using semantic analysis
-    i.e., compute the similarity using both path length and depth information in wordnet
+    (i.e., compute the similarity using both path length and depth information in wordnet)
 
     Args:
 

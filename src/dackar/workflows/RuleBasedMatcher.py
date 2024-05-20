@@ -45,7 +45,7 @@ class RuleBasedMatcher(WorkflowBase):
 
   def extractInformation(self):
     """
-      extract information
+      Extract information
 
       Args:
 
@@ -792,7 +792,7 @@ class RuleBasedMatcher(WorkflowBase):
       Args:
 
         cRoot: Token, the root of causal entity
-        rootCause: tuple,
+        rootCause: tuple, list of causes
         validLeftSSCEnts: list, the valid list of entities on the left of given causal entity
         validRightSSCEnts: list, the valid list of entities on the right of given causal entity
         reverse: bool, reverse the cause effect relation if True

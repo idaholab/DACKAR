@@ -245,7 +245,7 @@ class SpellChecker(object):
   """
     Object to find misspelled words and automatically correct spelling
 
-    Note: when use autocorrect, one need to conduct a spell test to identify the threshold (the word frequences)
+    Note: when using autocorrect, one need to conduct a spell test to identify the threshold (the word frequences)
   """
 
   def __init__(self, checker='autocorrect'):
@@ -380,7 +380,7 @@ class SpellChecker(object):
         and their correspoding full expression
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
-        to determine which words are abbreviations that nned to be expanded
+        to determine which words are abbreviations that need to be expanded
         * spellcheck: in this case spellchecker is used to identify words that
         are not recognized
         * hard: here we directly search for the abbreviations in the provided
@@ -443,7 +443,7 @@ class SpellChecker(object):
 
   def generateAbbrDict(self, abbrDatabase):
     """
-      Generates a AbbrDict that can be used by handleAbbreviationsDict
+      Generates an AbbrDict that can be used by handleAbbreviationsDict
 
       Args:
         abbrDatabase: pandas dataframe, dataframe containing library of abbreviations
@@ -475,7 +475,7 @@ class SpellChecker(object):
         and their correspoding full expression
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
-        to determine which words are abbreviations that nned to be expanded
+        to determine which words are abbreviations that need to be expanded
         * spellcheck: in this case spellchecker is used to identify words that
         are not recognized
         * hard: here we directly search for the abbreviations in the provided

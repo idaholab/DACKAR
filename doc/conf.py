@@ -21,8 +21,8 @@ from dackar import __version__
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'DACKAR'
-copyright = '2023, Congjian Wang, Diego Mandelli'
-author = 'Congjian Wang, Diego Mandelli'
+copyright = 'Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED'
+author = 'Congjian Wang, Diego Mandelli, Joshua J. Cogliati'
 release = __version__
 
 # -- General configuration ---------------------------------------------------

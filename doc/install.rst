@@ -1,9 +1,9 @@
-============
-Installation
-============
+======================================
+Installation with Spacy 3.1 (Archived)
+======================================
 
-How to install dependency libraries?
-------------------------------------
+How to install dependency libraries
+-----------------------------------
 
 .. code-block:: bash
 
@@ -15,8 +15,8 @@ How to install dependency libraries?
 
 .. scikit-learn 1.2.2 is required for quantulum3
 
-Download language model from spacy (can not use INL network)
-------------------------------------------------------------
+Download language model from spacy
+----------------------------------
 
 .. code-block:: bash
 
@@ -25,7 +25,7 @@ Download language model from spacy (can not use INL network)
   python -m coreferee install en
 
 Different approach when there is an issue with SSLError
-------------------------------------------------------
+-------------------------------------------------------
 
 1. Download en_core_web_lg-3.1.0.tar.gz_, then run
 
@@ -48,7 +48,7 @@ You may need to install stemming for some of unit parsing
   pip install stemming
 
 Windows machine have an issue with pydantic
-----------------------------------------
+-------------------------------------------
 
 .. See https://github.com/explosion/spaCy/issues/12659. Installing typing_extensions<4.6
 
@@ -65,10 +65,10 @@ Required libraries and nltk data for similarity analysis
   python -m nltk.downloader all
 
 Different approach when there is an issue with SSLError
-------------------------------------------------------
+-------------------------------------------------------
 
 Please check installing_nltk_data_ on how to manually install nltk data.
-For this project, the users can try the following steps:
+For this project, users can try these steps:
 
 .. code-block:: bash
 
