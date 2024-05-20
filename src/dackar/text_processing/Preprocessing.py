@@ -380,7 +380,7 @@ class SpellChecker(object):
         and their correspoding full expression
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
-        to determine which words are abbreviations that nead to be expanded
+        to determine which words are abbreviations that need to be expanded
         * spellcheck: in this case spellchecker is used to identify words that
         are not recognized
         * hard: here we directly search for the abbreviations in the provided
@@ -475,7 +475,7 @@ class SpellChecker(object):
         and their correspoding full expression
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
-        to determine which words are abbreviations that nead to be expanded
+        to determine which words are abbreviations that need to be expanded
         * spellcheck: in this case spellchecker is used to identify words that
         are not recognized
         * hard: here we directly search for the abbreviations in the provided
