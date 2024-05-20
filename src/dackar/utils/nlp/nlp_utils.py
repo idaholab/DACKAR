@@ -115,8 +115,8 @@ def plotDAG(edges, colors='k'):
   """
     Args:
 
-    edges: list of tuples, [(subj, conj), (..,..)] or [(subj, conj, {"color":"blue"}), (..,..)]
-    colors: str or list, list of colors
+      edges: list of tuples, [(subj, conj), (..,..)] or [(subj, conj, {"color":"blue"}), (..,..)]
+      colors: str or list, list of colors
   """
   g = nx.MultiDiGraph()
   g.add_edges_from(edges)

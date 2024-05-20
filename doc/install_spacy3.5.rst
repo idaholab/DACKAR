@@ -1,8 +1,8 @@
-============
-Installation
-============
+===========================
+Installation with Spacy 3.5
+===========================
 
-How to install dependency libraries?
+How to install dependency libraries
 ------------------------------------
 
 .. code-block:: bash
@@ -16,8 +16,8 @@ How to install dependency libraries?
 ..  conda install -c conda-forge pandas
 .. scikit-learn 1.2.2 is required for quantulum3
 
-Download language model from spacy (can not use INL network)
-------------------------------------------------------------
+Download language model from spacy
+----------------------------------
 
 .. code-block:: bash
 
@@ -27,7 +27,7 @@ Download language model from spacy (can not use INL network)
 
 
 Required nltk data for similarity analysis
---------------------------------------------------------
+------------------------------------------
 
 .. code-block:: bash
 
@@ -35,7 +35,7 @@ Required nltk data for similarity analysis
 
 
 Different approach when there is an issue with SSLError
-------------------------------------------------------
+-------------------------------------------------------
 
 1. Download en_core_web_lg-3.5.0.whl_, then run
 
@@ -56,7 +56,7 @@ Different approach when there is an issue with SSLError
   python nltkDownloader.py
 
 or check installing_nltk_data_ on how to manually install nltk data.
-For this project, the users can also try the following steps:
+For this project, users can also try these steps:
 
 .. code-block:: bash
 

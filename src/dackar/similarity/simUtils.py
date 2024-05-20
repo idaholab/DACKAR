@@ -545,7 +545,7 @@ def convertToSynsets(wordSet):
 
 def identifyBestSynset(word, jointWordList, jointSynsetList):
   """
-    Identify the best synset for given word with provided additional information, i.e., jointWordList
+    Identify the best synset for given word with provided additional information (i.e., jointWordList)
 
     Args:
 
