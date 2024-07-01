@@ -188,7 +188,7 @@ class LMLobject(object):
 
       Returns:
 
-        self.LMLgraph: networkx object, graph containing entities specified in the LML MBSE model
+        self.LMLgraph: networkx object, graph containing entities specified in the LML model
     """
     return self.LMLgraph
 
