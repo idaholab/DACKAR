@@ -271,7 +271,7 @@ class LMLobject(object):
 
   def dumpDGSgraph(self, name):
     """
-      This method is designed to save the graph structure into two dictionaries: nodes and relationships
+      This method is designed to save the graph structure into gds entity
       See Example 3.2 in https://neo4j.com/docs/graph-data-science-client/current/graph-object/
       Args:
 
