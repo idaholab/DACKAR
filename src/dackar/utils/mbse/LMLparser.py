@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 import re
 import networkx as nx
 import pandas as pd
+import graphdatascience as gds
 
 class LMLobject(object):
   """
@@ -250,10 +251,36 @@ class LMLobject(object):
     self.cleanedGraph.remove_nodes_from(self.linkEntities)
 
     return self.cleanedGraph
+  
+  def printOnFile(self, name):
+    """
+      This method is designed to print on file the graph from networkx. 
+      This is to test a method to import a graph into neo4j as indicated in:
+      https://stackoverflow.com/questions/52210619/how-to-import-a-networkx-graph-to-neo4j
+      Args:
+
+        None
+
+      Returns:
+
+        None
+    """
+    name = name + ".graphml"
+    nx.write_graphml(self.LMLgraph, name)
 
 
-  def createNeo4jGraph(self):
+  def dumpDGSgraph(self, name):
+    """
+      This method is designed to save the graph structure into two dictionaries: nodes and relationships
+      See Example 3.2 in https://neo4j.com/docs/graph-data-science-client/current/graph-object/
+      Args:
 
+        None
+
+      Returns:
+
+        None
+    """
     NXnodes = list(self.LMLgraph.nodes(data=True))
     NXedges = list(self.LMLgraph.edges)
 
@@ -270,7 +297,7 @@ class LMLobject(object):
       nodes['nodeId'].append(index)
       nodeInfo = node
 
-      mapping[node] = index
+      mapping[index] = node[0]
 
       if nodeInfo[0] is None:
         nodes['labels'].append(nodeInfo[1])
@@ -288,27 +315,28 @@ class LMLobject(object):
 
     nodes = pd.DataFrame(nodes)
 
-    relationships = pd.DataFrame(
-        {
-            "sourceNodeId": [],
-            "targetNodeId": [],
-            "type": []
-        }
-    )
-
+    relationships = {
+                    "sourceNodeId": [],
+                    "targetNodeId": [],
+                    "type"        : []
+                    }
+    
     for index,edge in enumerate(NXedges):
-      relationships['sourceNodeId'].append(mapping[edge[0]])
-      relationships['targetNodeId'].append(mapping[edge[1]])
+      father = [key for key, val in mapping.items() if val == edge[0]][0]
+      child  = [key for key, val in mapping.items() if val == edge[1]][0]
+      relationships['sourceNodeId'].append(father) # mapping[edge[0]]
+      relationships['targetNodeId'].append(child) #mapping[edge[1]]
       relationships['type'].append(edge[2])
 
-    '''
+    relationships = pd.DataFrame(relationships)
+
     self.G = gds.graph.construct(
-        "my-graph",      # Graph name
+        name,            # Graph name
         nodes,           # One or more dataframes containing node data
         relationships    # One or more dataframes containing relationship data
-    )'''
+    )
 
-    return nodes, relationships
+    return self.G
 
 
 
