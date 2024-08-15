@@ -352,8 +352,8 @@ def parseEntityDescription(text):
     Returns:
 
       out     : tuple, tuple containing the list of elements specified in square brackets and separated
-                      by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
-                      (e.g., ('centrifugalPumpFull', 'body'))
+                       by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
+                       (e.g., ('centrifugalPumpFull', 'body'))
 
   """
 
