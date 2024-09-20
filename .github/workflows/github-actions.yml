@@ -1,0 +1,27 @@
+name: GitHub DACKAR test
+run-name: ${{ github.actor }} is testing out DACKAR
+on: [push, pull_request]
+jobs:
+  Test-DACKAR-Linux:
+    # runs-on: [self-hosted, ubuntu-latest]
+    runs-on: ${{ fromJSON('["ubuntu-latest", "self-hosted"]')[github.repository == 'github/docs-internal'] }}
+    steps:
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniconda-version: "latest"
+          channels: conda-forge, defaults
+          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
+          auto-update-conda: true
+          auto-activate-base: true
+      - run: echo " The job was automatically triggered by a ${{ github.event_name }} event."
+      - run: echo " This job is now running on a ${{ runner.os }} server"
+      - run: echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - run: pwd
+      - run: conda create -n dackar_libs python=3.11
+      - run: conda init bash && source ~/.bashrc && conda activate dackar_libs
+      - run: pip install spacy==3.5 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy scikit-learn pyspellchecker contextualSpellCheck pandas
+      - run: python3 -m spacy download en_core_web_lg
+      - run: python3 -m coreferee install en
+      - run: python3 -m nltk.downloader all
