@@ -15,7 +15,7 @@ import os
 
 # sys.path.insert(0, os.path.abspath('../src'))
 # from dackar import __version__
-__version__ = 0.1
+__version__ = '0.1'
 
 
 # -- Project information -----------------------------------------------------
