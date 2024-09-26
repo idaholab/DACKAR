@@ -8,27 +8,31 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
-    - uses: conda-incubator/setup-miniconda@v3
-      with:
-        miniconda-version: "latest"
-        channels: conda-forge, defaults
-        use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
-        auto-update-conda: true
-        activate-environment: dackar_libs
-        auto-activate-base: false
-    - name: Build HTML
-      uses: ammaraskar/sphinx-action@master
-      with:
-        pre-build-command: conda install -c conda-forge pandoc python=3.11
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: html-docs
-        path: docs/build/html/
-    - name: Deploy
-      uses: peaceiris/actions-gh-pages@v3
-      if: github.ref == 'refs/heads/main'
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: docs/build/html
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniconda-version: "latest"
+          channels: conda-forge, defaults
+          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
+          auto-update-conda: true
+          activate-environment: dackar_libs
+          auto-activate-base: false
+      - name: Use Pandoc
+        uses: docker://pandoc/core:2.9
+        with:
+          args: "--help" # gets appended to pandoc command
+      - name: Build HTML
+        uses: ammaraskar/sphinx-action@master
+        with:
+          pre-build-command: "conda install -c conda-forge pandoc python=3.11"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-docs
+          path: docs/build/html/
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/build/html
