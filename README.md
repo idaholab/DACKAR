@@ -42,7 +42,7 @@ autodoc_inherit_docstrings = False
 ```bash
   pip install sphinx sphinx_rtd_theme nbsphinx sphinx-copybutton sphinx-autoapi
   conda install pandoc
-  cd doc
+  cd docs
   make html
   cd _build/html
   python3 -m http.server
