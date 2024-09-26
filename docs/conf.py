@@ -29,19 +29,20 @@ release = __version__
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ['sphinx.ext.intersphinx',
-	'sphinx.ext.autodoc',
+extensions = [
+    "sphinx.ext.napoleon",  # <- For Google style docstrings
+    'sphinx.ext.intersphinx',
 	'sphinx.ext.doctest',
 	'sphinx.ext.todo',
 	"sphinx.ext.autodoc.typehints",
 	"sphinx.ext.mathjax",
     "sphinx.ext.autosummary",
 	"nbsphinx",  # <- For Jupyter Notebook support
-	"sphinx.ext.napoleon",  # <- For Google style docstrings
 	"sphinx.ext.imgmath",
 	"sphinx.ext.viewcode",
 	'autoapi.extension',
     'sphinx_copybutton',
+    'sphinx.ext.autodoc',
 ]
 
 templates_path = ['_templates']
