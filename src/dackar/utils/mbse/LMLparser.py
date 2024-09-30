@@ -252,7 +252,7 @@ class LMLobject(object):
 
     return self.cleanedGraph
   
-  def printOnFile(self, name):
+  def printOnFile(self, name, csv=True):
     """
       This method is designed to print on file the graph from networkx. 
       This is to test a method to import a graph into neo4j as indicated in:
@@ -265,8 +265,12 @@ class LMLobject(object):
 
         None
     """
-    name = name + ".graphml"
-    nx.write_graphml(self.LMLgraph, name)
+    if csv:
+      name = name + ".csv"
+      nx.write_edgelist(self.LMLgraph, name, delimiter=',', data=True, encoding='utf-8')
+    else:
+      name = name + ".graphml"
+      nx.write_graphml(self.LMLgraph, name)
 
 
   def dumpDGSgraph(self, name):
@@ -330,14 +334,17 @@ class LMLobject(object):
 
     relationships = pd.DataFrame(relationships)
 
+    '''
     self.G = gds.graph.construct(
         name,            # Graph name
         nodes,           # One or more dataframes containing node data
         relationships    # One or more dataframes containing relationship data
     )
 
-    return self.G
+    return self.G'''
 
+    nodes.to_csv(name+'_nodes.csv')
+    relationships.to_csv(name+'_edges.csv')
 
 
 def parseEntityDescription(text):
