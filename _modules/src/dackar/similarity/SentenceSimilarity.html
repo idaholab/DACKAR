@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.similarity.SentenceSimilarity &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.similarity.SentenceSimilarity</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.similarity.SentenceSimilarity</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="c1"># modified from https://github.com/nihitsaxena95/sentence-similarity-wordnet-sementic/blob/master/SentenceSimilarity.py</span>
+<span class="c1"># Method proposed by: https://arxiv.org/pdf/1802.05667.pdf</span>
+
+<span class="kn">from</span> <span class="nn">pywsd.lesk</span> <span class="kn">import</span> <span class="n">simple_lesk</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">from</span> <span class="nn">nltk.corpus</span> <span class="kn">import</span> <span class="n">wordnet</span><span class="p">,</span> <span class="n">wordnet_ic</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">simUtils</span>
+
+<div class="viewcode-block" id="log_format">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.log_format">[docs]</a>
+<span class="n">log_format</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2"> </span><span class="si">%(message)s</span><span class="s2">&quot;</span></div>
+
+<span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span>
+    <span class="n">filename</span><span class="o">=</span><span class="s2">&quot;sentence_similarity_computing.log&quot;</span><span class="p">,</span>
+    <span class="n">filemode</span><span class="o">=</span><span class="s2">&quot;a&quot;</span><span class="p">,</span>
+    <span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span>
+    <span class="nb">format</span><span class="o">=</span><span class="n">log_format</span><span class="p">,</span>
+    <span class="n">datefmt</span><span class="o">=</span><span class="s2">&quot;%m/</span><span class="si">%d</span><span class="s2"> %I:%M:%S %p&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;SentenceSimilarity&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SentenceSimilarity">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity">[docs]</a>
+<span class="k">class</span> <span class="nc">SentenceSimilarity</span><span class="p">:</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">disambiguationMethod</span><span class="o">=</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="n">similarityMethod</span><span class="o">=</span><span class="s1">&#39;semantic_similarity_synsets&#39;</span><span class="p">,</span> <span class="n">wordOrderContribution</span><span class="o">=</span><span class="mf">0.0</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Options for the initiation for this class</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="SentenceSimilarity.validDisambiguation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.validDisambiguation">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">validDisambiguation</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;original_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;cosine_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;adapted_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;max_similarity&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="SentenceSimilarity.wordnetSimMethod">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.wordnetSimMethod">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">wordnetSimMethod</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;path_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;wup_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;lch_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;res_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;jcn_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;lin_similarity&quot;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="SentenceSimilarity.validSimilarity">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.validSimilarity">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">validSimilarity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">wordnetSimMethod</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;semantic_similarity_synsets&quot;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="SentenceSimilarity.wordOrder">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.wordOrder">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">wordOrder</span> <span class="o">=</span> <span class="n">wordOrderContribution</span></div>
+
+    <span class="k">if</span> <span class="n">disambiguationMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">validDisambiguation</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Inappropriate argument value for &quot;disambiguationMethod&quot;, valid values are </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">validDisambiguation</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">similarityMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">validSimilarity</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Inappropriate argument value for &quot;similarityMethod&quot;, valid values are </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">validSimilarity</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+<div class="viewcode-block" id="SentenceSimilarity.disambiguationMethod">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.disambiguationMethod">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">disambiguationMethod</span> <span class="o">=</span> <span class="n">disambiguationMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="SentenceSimilarity.similarityMethod">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.similarityMethod">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">similarityMethod</span> <span class="o">=</span> <span class="n">similarityMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="SentenceSimilarity.brownIc">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.brownIc">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">brownIc</span> <span class="o">=</span> <span class="n">wordnet_ic</span><span class="o">.</span><span class="n">ic</span><span class="p">(</span><span class="s1">&#39;ic-brown.dat&#39;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SentenceSimilarity.setParameters">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.setParameters">[docs]</a>
+  <span class="k">def</span> <span class="nf">setParameters</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">paramDict</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method to set the parameters</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">paramDict</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SentenceSimilarity.constructSimilarityVectorPawarMagoMethod">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.constructSimilarityVectorPawarMagoMethod">[docs]</a>
+  <span class="k">def</span> <span class="nf">constructSimilarityVectorPawarMagoMethod</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arr1</span><span class="p">,</span> <span class="n">arr2</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Construct the similarity vector</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        arr1: set of wordnet.Synset for one sentence</span>
+<span class="sd">        arr2: set of wordnet.Synset for the other sentence</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        vector: list, list of similarity vector</span>
+<span class="sd">        count: int, the number of words that have high similarity &gt;=0.804</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># vectorLen, the large length between arr1 and arr2</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">arr1</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="nb">len</span><span class="p">(</span><span class="n">arr2</span><span class="p">):</span>
+      <span class="n">vectorLen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">arr1</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">vectorLen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">arr2</span><span class="p">)</span>
+    <span class="n">vector</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">]</span> <span class="o">*</span> <span class="n">vectorLen</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span><span class="n">a1</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">arr1</span><span class="p">):</span>
+      <span class="n">allSimilarityIndex</span><span class="o">=</span><span class="p">[]</span>
+      <span class="k">for</span> <span class="n">a2</span> <span class="ow">in</span> <span class="n">arr2</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">a1</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">a2</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+          <span class="n">similarity</span> <span class="o">=</span> <span class="mf">0.</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">a1Edit</span> <span class="o">=</span> <span class="n">wordnet</span><span class="o">.</span><span class="n">synset</span><span class="p">(</span><span class="n">a1</span><span class="o">.</span><span class="n">name</span><span class="p">())</span>
+          <span class="n">a2Edit</span> <span class="o">=</span> <span class="n">wordnet</span><span class="o">.</span><span class="n">synset</span><span class="p">(</span><span class="n">a2</span><span class="o">.</span><span class="n">name</span><span class="p">())</span>
+          <span class="n">similarity</span> <span class="o">=</span> <span class="n">simUtils</span><span class="o">.</span><span class="n">synsetsSimilarity</span><span class="p">(</span><span class="n">a1Edit</span><span class="p">,</span> <span class="n">a2Edit</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">similarityMethod</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">similarity</span> <span class="o">!=</span> <span class="kc">None</span><span class="p">:</span>
+          <span class="n">allSimilarityIndex</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">similarity</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">allSimilarityIndex</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+      <span class="n">allSimilarityIndex</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">allSimilarityIndex</span><span class="p">,</span> <span class="n">reverse</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+      <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">=</span><span class="n">allSimilarityIndex</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+      <span class="c1"># According to Rubinstein 1965, the benchmark synonymy value of two word is 0.8025.</span>
+      <span class="k">if</span> <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mf">0.8025</span><span class="p">:</span>
+        <span class="n">count</span> <span class="o">+=</span><span class="mi">1</span>
+    <span class="n">vector</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">vector</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">vector</span><span class="p">,</span> <span class="n">count</span></div>
+
+
+<div class="viewcode-block" id="SentenceSimilarity.sentenceSimilarity">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.sentenceSimilarity">[docs]</a>
+  <span class="k">def</span> <span class="nf">sentenceSimilarity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;pm_disambiguation&#39;</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      sentence similarity calculation</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;pm_disambiguation&#39;</span><span class="p">:</span>
+      <span class="n">similarity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sentenceSimilarityPawarMagoMethod</span><span class="p">(</span><span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;best_sense&#39;</span><span class="p">:</span>
+      <span class="n">similarity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sentenceSimialrityBestSense</span><span class="p">(</span><span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1"> is not a valid option, please try &quot;pm_disambiguation&quot; or &quot;best_sense&quot;&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">similarity</span></div>
+
+
+<div class="viewcode-block" id="SentenceSimilarity.sentenceSimilarityPawarMagoMethod">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.sentenceSimilarityPawarMagoMethod">[docs]</a>
+  <span class="k">def</span> <span class="nf">sentenceSimilarityPawarMagoMethod</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Proposed method from https://arxiv.org/pdf/1802.05667.pdf</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        sentence1: str, first sentence used to compute sentence similarity</span>
+<span class="sd">        sentence2: str, second sentence used to compute sentence similarity</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        similarity: float, [0, 1], the computed similarity for given two sentences</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">sense1</span> <span class="o">=</span> <span class="n">simUtils</span><span class="o">.</span><span class="n">sentenceSenseDisambiguationPyWSD</span><span class="p">(</span><span class="n">sentence1</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">disambiguationMethod</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="s1">&#39;path&#39;</span><span class="p">)</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">sense2</span> <span class="o">=</span> <span class="n">simUtils</span><span class="o">.</span><span class="n">sentenceSenseDisambiguationPyWSD</span><span class="p">(</span><span class="n">sentence2</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">disambiguationMethod</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="s1">&#39;path&#39;</span><span class="p">)</span>
+    <span class="n">v1</span><span class="p">,</span> <span class="n">c1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">constructSimilarityVectorPawarMagoMethod</span><span class="p">(</span><span class="n">sense1</span><span class="p">,</span><span class="n">sense2</span><span class="p">)</span>
+    <span class="n">v2</span><span class="p">,</span> <span class="n">c2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">constructSimilarityVectorPawarMagoMethod</span><span class="p">(</span><span class="n">sense2</span><span class="p">,</span><span class="n">sense1</span><span class="p">)</span>
+    <span class="c1"># FIXME: check the following algorithms with benchmarks</span>
+    <span class="c1"># dot = np.dot(v1,v2)</span>
+    <span class="c1"># from original paper</span>
+    <span class="n">dot</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">v1</span><span class="p">)</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">v2</span><span class="p">)</span>
+    <span class="c1"># print(&quot;dot&quot;, dot) # getting the dot product</span>
+    <span class="n">tow</span> <span class="o">=</span> <span class="p">(</span><span class="n">c1</span><span class="o">+</span><span class="n">c2</span><span class="p">)</span><span class="o">/</span><span class="mf">1.8</span>
+    <span class="k">if</span> <span class="n">tow</span> <span class="o">==</span> <span class="mf">0.</span><span class="p">:</span>
+      <span class="n">tow</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">v1</span><span class="p">)</span><span class="o">/</span><span class="mf">2.0</span>
+    <span class="n">semanticSimilarity</span> <span class="o">=</span> <span class="n">dot</span><span class="o">/</span><span class="n">tow</span>
+    <span class="c1"># print(&quot;similarity&quot;,semanticSimilarity)</span>
+    <span class="n">similarity</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">wordOrder</span><span class="p">)</span> <span class="o">*</span> <span class="n">semanticSimilarity</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">wordOrder</span> <span class="o">*</span> <span class="n">simUtils</span><span class="o">.</span><span class="n">wordOrderSimilaritySentences</span><span class="p">(</span><span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">similarity</span></div>
+
+
+
+<div class="viewcode-block" id="SentenceSimilarity.sentenceSimialrityBestSense">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/SentenceSimilarity/index.html#src.dackar.similarity.SentenceSimilarity.SentenceSimilarity.sentenceSimialrityBestSense">[docs]</a>
+  <span class="k">def</span> <span class="nf">sentenceSimialrityBestSense</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Proposed method from https://github.com/anishvarsha/Sentence-Similaritity-using-corpus-statistics</span>
+<span class="sd">      Compute sentence similarity using both semantic and word order similarity</span>
+<span class="sd">      The semantic similarity is based on maximum word similarity between one word and another sentence</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        sentence1: str, first sentence used to compute sentence similarity</span>
+<span class="sd">        sentence2: str, second sentence used to compute sentence similarity</span>
+<span class="sd">        infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        similarity: float, [0, 1], the computed similarity for given two sentences</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">similarity</span> <span class="o">=</span> <span class="p">(</span><span class="mi">1</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">wordOrder</span><span class="p">)</span> <span class="o">*</span> <span class="n">simUtils</span><span class="o">.</span><span class="n">semanticSimilaritySentences</span><span class="p">(</span><span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">wordOrder</span> <span class="o">*</span> <span class="n">simUtils</span><span class="o">.</span><span class="n">wordOrderSimilaritySentences</span><span class="p">(</span><span class="n">sentence1</span><span class="p">,</span> <span class="n">sentence2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">similarity</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

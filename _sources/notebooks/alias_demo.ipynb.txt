@@ -1,0 +1,179 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "c8612552-0a4d-4832-81d7-b6163552c286",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "ERROR: Unable to import spellchecker No module named 'indexer'\n",
+      "Please try to install it via: 'pip install spellchecker'\n"
+     ]
+    },
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "Warming up PyWSD (takes ~10 secs)... took 2.4493210315704346 secs.\n"
+     ]
+    }
+   ],
+   "source": [
+    "import spacy\n",
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import os, sys, time\n",
+    "\n",
+    "cwd = os.getcwd()\n",
+    "frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))\n",
+    "sys.path.append(frameworkDir)\n",
+    "\n",
+    "from dackar.pipelines.CustomPipelineComponents import aliasResolver\n",
+    "from dackar.utils.nlp.nlp_utils import resetPipeline\n",
+    "\n",
+    "nlp = spacy.load(\"en_core_web_lg\")\n",
+    "# import logging\n",
+    "# logger = logging.getLogger(__name__)\n",
+    "\n",
+    "# ch = logging.StreamHandler()\n",
+    "# logger.addHandler(ch)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "7614e9f2-1d50-49d8-8e9b-8c7dd0230419",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[('tok2vec', <spacy.pipeline.tok2vec.Tok2Vec object at 0x346dd7a10>), ('tagger', <spacy.pipeline.tagger.Tagger object at 0x346dd7110>), ('parser', <spacy.pipeline.dep_parser.DependencyParser object at 0x375919150>), ('attribute_ruler', <spacy.pipeline.attributeruler.AttributeRuler object at 0x375a89d90>), ('lemmatizer', <spacy.lang.en.lemmatizer.EnglishLemmatizer object at 0x375a63a90>), ('aliasResolver', <function aliasResolver at 0x16b0fede0>)]\n"
+     ]
+    }
+   ],
+   "source": [
+    "# aliasResolver pipeline should always after \"entity_ruler\"\n",
+    "pipelines = ['aliasResolver']\n",
+    "resetPipeline(nlp, pipelines)\n",
+    "print(nlp.pipeline)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "c744e125-5782-4592-8048-9f17cc43c2c4",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "text=\"1-91120-P1, CLEAN PUMP AND MOTOR. 1-91120-PM1 REQUIRES OIL. 91120, CLEAN TRASH SCREEN\""
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "0c8fcfc3-9f0f-4fac-92ab-07dea3a06d63",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<span class=\"tex2jax_ignore\"><div class=\"entities\" style=\"line-height: 2.5; direction: ltr\">\n",
+       "<mark class=\"entity\" style=\"background: #ddd; padding: 0.45em 0.6em; margin: 0 0.25em; line-height: 1; border-radius: 0.35em;\">\n",
+       "    1-91120-P1\n",
+       "    <span style=\"font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; vertical-align: middle; margin-left: 0.5rem\">cws_component</span>\n",
+       "</mark>\n",
+       ", CLEAN PUMP AND MOTOR. \n",
+       "<mark class=\"entity\" style=\"background: #ddd; padding: 0.45em 0.6em; margin: 0 0.25em; line-height: 1; border-radius: 0.35em;\">\n",
+       "    1-91120-PM1\n",
+       "    <span style=\"font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; vertical-align: middle; margin-left: 0.5rem\">cws_component</span>\n",
+       "</mark>\n",
+       " REQUIRES OIL. \n",
+       "<mark class=\"entity\" style=\"background: #ddd; padding: 0.45em 0.6em; margin: 0 0.25em; line-height: 1; border-radius: 0.35em;\">\n",
+       "    91120\n",
+       "    <span style=\"font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; vertical-align: middle; margin-left: 0.5rem\">cws_component</span>\n",
+       "</mark>\n",
+       ", CLEAN TRASH SCREEN</div></span>"
+      ],
+      "text/plain": [
+       "<IPython.core.display.HTML object>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "# Load module from DACKAR\n",
+    "from dackar.pipelines.GeneralEntity import GeneralEntity\n",
+    "from spacy import displacy\n",
+    "# Load pattern generation from DACKAR\n",
+    "from dackar.utils.nlp.nlp_utils import generatePatternList\n",
+    "\n",
+    "pipeline = [pipe for (pipe,_) in nlp.pipeline]\n",
+    "if \"enity_ruler\" in pipeline:\n",
+    "    nlp.remove_pipe(\"entity_ruler\")\n",
+    "if \"ner\" in pipeline:\n",
+    "    nlp.remove_pipe(\"ner\")\n",
+    "\n",
+    "# Specify Entities Labels and IDs\n",
+    "entLabel = \"cws_component\"        # user defined entity label\n",
+    "entId = \"OPM\"  \n",
+    "entIDList = ['1-91120-P1', '1-91120-PM1', '91120']\n",
+    "patternsEnts = generatePatternList(entIDList, label=entLabel,    id=entId,    nlp=nlp, attr=\"LEMMA\")\n",
+    "\n",
+    "generalEntity = GeneralEntity(nlp, patternsEnts)\n",
+    "\n",
+    "doc = nlp(text)\n",
+    "displacy.render(doc, style='ent', jupyter=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "5e4cefd2-bc47-4151-96b0-834742614972",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "1-91120-P1 unit 1 pump\n",
+      "1-91120-PM1 unit 1 pump motor\n",
+      "91120 pump\n"
+     ]
+    }
+   ],
+   "source": [
+    "for ent in doc.ents:\n",
+    "    print(ent.text, ent._.alias)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.8"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

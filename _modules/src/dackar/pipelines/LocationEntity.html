@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.pipelines.LocationEntity &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.pipelines.LocationEntity</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.pipelines.LocationEntity</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="kn">from</span> <span class="nn">spacy.language</span> <span class="kn">import</span> <span class="n">Language</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<span class="kn">from</span> <span class="nn">..utils.nlp.nlp_utils</span> <span class="kn">import</span> <span class="n">generatePatternList</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/LocationEntity/index.html#src.dackar.pipelines.LocationEntity.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">factory</span><span class="p">(</span><span class="s2">&quot;location_entity&quot;</span><span class="p">,</span> <span class="n">default_config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;patterns&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">})</span>
+<div class="viewcode-block" id="create_location_component">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/LocationEntity/index.html#src.dackar.pipelines.LocationEntity.create_location_component">[docs]</a>
+<span class="k">def</span> <span class="nf">create_location_component</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">patterns</span><span class="p">):</span>
+  <span class="k">return</span> <span class="n">LocationEntity</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="n">patterns</span><span class="o">=</span><span class="n">patterns</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="LocationEntity">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/LocationEntity/index.html#src.dackar.pipelines.LocationEntity.LocationEntity">[docs]</a>
+<span class="k">class</span> <span class="nc">LocationEntity</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    How to use it:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">      from LocationEntity import LocationEntity</span>
+<span class="sd">      nlp = spacy.load(&quot;en_core_web_sm&quot;)</span>
+<span class="sd">      patterns = {&#39;label&#39;: &#39;location&#39;, &#39;pattern&#39;: [{&#39;LOWER&#39;: &#39;follow&#39;}], &#39;id&#39;: &#39;location&#39;}</span>
+<span class="sd">      cmatcher = ConjectureEntity(nlp, patterns)</span>
+<span class="sd">      doc = nlp(&quot;It is close to 5pm.&quot;)</span>
+<span class="sd">      updatedDoc = cmatcher(doc)</span>
+
+<span class="sd">    or:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">      nlp.add_pipe(&#39;location_entity&#39;, config={&quot;patterns&quot;: {&#39;label&#39;: &#39;location&#39;, &#39;pattern&#39;: [{&#39;LOWER&#39;: &#39;follow&#39;}], &#39;id&#39;: &#39;location&#39;}})</span>
+<span class="sd">      newDoc = nlp(doc.text)</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">callback</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">      patterns: list/dict, patterns for Location Entity</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="LocationEntity.name">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/LocationEntity/index.html#src.dackar.pipelines.LocationEntity.LocationEntity.name">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;location_entity&#39;</span></div>
+
+    <span class="k">if</span> <span class="n">patterns</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="c1"># update to use config file instead</span>
+      <span class="c1"># filename = nlpConfig[&#39;files&#39;][&#39;location_file&#39;]</span>
+      <span class="n">filename</span> <span class="o">=</span> <span class="s1">&#39;~/projects/raven/plugins/SR2ML/src/nlp/data/location_keywords.csv&#39;</span>
+      <span class="n">entLists</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">header</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+      <span class="n">proxList</span> <span class="o">=</span> <span class="n">entLists</span><span class="p">[</span><span class="s1">&#39;proximity&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+      <span class="n">upList</span> <span class="o">=</span> <span class="n">entLists</span><span class="p">[</span><span class="s1">&#39;up&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+      <span class="n">downList</span> <span class="o">=</span> <span class="n">entLists</span><span class="p">[</span><span class="s1">&#39;down&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+      <span class="n">patterns</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="n">proxPatterns</span> <span class="o">=</span> <span class="n">generatePatternList</span><span class="p">(</span><span class="n">proxList</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;location_proximity&#39;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="s1">&#39;location&#39;</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="n">nlp</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">)</span>
+      <span class="n">patterns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">proxPatterns</span><span class="p">)</span>
+      <span class="n">upPatterns</span> <span class="o">=</span> <span class="n">generatePatternList</span><span class="p">(</span><span class="n">upList</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;location_up&#39;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="s1">&#39;location&#39;</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="n">nlp</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">)</span>
+      <span class="n">patterns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">upPatterns</span><span class="p">)</span>
+      <span class="n">downPatterns</span> <span class="o">=</span> <span class="n">generatePatternList</span><span class="p">(</span><span class="n">downList</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;location_down&#39;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="s1">&#39;location&#39;</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="n">nlp</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">)</span>
+      <span class="n">patterns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">downPatterns</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">patterns</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">patterns</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+      <span class="n">patterns</span> <span class="o">=</span> <span class="p">[</span><span class="n">patterns</span><span class="p">]</span>
+    <span class="c1"># do we need to pop out other pipes?</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">nlp</span><span class="o">.</span><span class="n">has_pipe</span><span class="p">(</span><span class="s1">&#39;entity_ruler&#39;</span><span class="p">):</span>
+      <span class="n">nlp</span><span class="o">.</span><span class="n">add_pipe</span><span class="p">(</span><span class="s1">&#39;entity_ruler&#39;</span><span class="p">)</span>
+<div class="viewcode-block" id="LocationEntity.entityRuler">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/LocationEntity/index.html#src.dackar.pipelines.LocationEntity.LocationEntity.entityRuler">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">entityRuler</span> <span class="o">=</span> <span class="n">nlp</span><span class="o">.</span><span class="n">get_pipe</span><span class="p">(</span><span class="s1">&#39;entity_ruler&#39;</span><span class="p">)</span></div>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">entityRuler</span><span class="o">.</span><span class="n">add_patterns</span><span class="p">(</span><span class="n">patterns</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LocationEntity.__call__">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/LocationEntity/index.html#src.dackar.pipelines.LocationEntity.LocationEntity.__call__">[docs]</a>
+  <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">entityRuler</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">doc</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

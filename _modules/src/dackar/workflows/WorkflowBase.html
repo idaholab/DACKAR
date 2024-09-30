@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.workflows.WorkflowBase &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.workflows.WorkflowBase</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.workflows.WorkflowBase</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on April, 2024</span>
+
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">abc</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">spacy</span>
+<span class="kn">from</span> <span class="nn">spacy.matcher</span> <span class="kn">import</span> <span class="n">Matcher</span>
+<span class="kn">from</span> <span class="nn">spacy.tokens</span> <span class="kn">import</span> <span class="n">Token</span>
+<span class="kn">from</span> <span class="nn">spacy.tokens</span> <span class="kn">import</span> <span class="n">Span</span>
+<span class="kn">from</span> <span class="nn">spacy</span> <span class="kn">import</span> <span class="n">displacy</span>
+<span class="kn">from</span> <span class="nn">spacy.matcher</span> <span class="kn">import</span> <span class="n">PhraseMatcher</span>
+<span class="kn">from</span> <span class="nn">spacy.matcher</span> <span class="kn">import</span> <span class="n">DependencyMatcher</span>
+<span class="kn">from</span> <span class="nn">spacy.util</span> <span class="kn">import</span> <span class="n">filter_spans</span>
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">deque</span>
+<span class="c1"># filter_spans is used to resolve the overlap issue in entities</span>
+<span class="c1"># It gives primacy to longer spans (entities)</span>
+
+<span class="kn">from</span> <span class="nn">..utils.nlp.nlp_utils</span> <span class="kn">import</span> <span class="n">displayNER</span><span class="p">,</span> <span class="n">resetPipeline</span><span class="p">,</span> <span class="n">printDepTree</span>
+<span class="kn">from</span> <span class="nn">..utils.nlp.nlp_utils</span> <span class="kn">import</span> <span class="n">extendEnt</span>
+<span class="c1">## import pipelines</span>
+<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">normEntities</span>
+<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">initCoref</span>
+<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">aliasResolver</span>
+<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">anaphorCoref</span>
+<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">anaphorEntCoref</span>
+<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">mergePhrase</span>
+<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">pysbdSentenceBoundaries</span>
+<span class="kn">from</span> <span class="nn">..config</span> <span class="kn">import</span> <span class="n">nlpConfig</span>
+<span class="kn">from</span> <span class="nn">..text_processing.Preprocessing</span> <span class="kn">import</span> <span class="n">Preprocessing</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1">## temporary add stream handler</span>
+<span class="c1"># ch = logging.StreamHandler()</span>
+<span class="c1"># logger.addHandler(ch)</span>
+<span class="c1">##</span>
+
+<span class="c1">## coreferee module for Coreference Resolution</span>
+<span class="c1">## Q? at which level to perform coreferee? After NER and perform coreferee on collected sentence</span>
+<div class="viewcode-block" id="_corefAvail">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase._corefAvail">[docs]</a>
+<span class="n">_corefAvail</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+<span class="k">try</span><span class="p">:</span>
+  <span class="c1"># check the current version spacy&gt;=3.0.0,&lt;=3.3.0</span>
+  <span class="kn">from</span> <span class="nn">packaging.version</span> <span class="kn">import</span> <span class="n">Version</span>
+<div class="viewcode-block" id="ver">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.ver">[docs]</a>
+  <span class="n">ver</span> <span class="o">=</span> <span class="n">spacy</span><span class="o">.</span><span class="n">__version__</span></div>
+
+  <span class="n">valid</span> <span class="o">=</span> <span class="n">Version</span><span class="p">(</span><span class="n">ver</span><span class="p">)</span><span class="o">&gt;=</span><span class="n">Version</span><span class="p">(</span><span class="s1">&#39;3.0.0&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">Version</span><span class="p">(</span><span class="n">ver</span><span class="p">)</span><span class="o">&lt;=</span><span class="n">Version</span><span class="p">(</span><span class="s1">&#39;3.3.0&#39;</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">valid</span><span class="p">:</span>
+    <span class="c1"># https://github.com/msg-systems/coreferee</span>
+    <span class="kn">import</span> <span class="nn">coreferee</span>
+    <span class="n">_corefAvail</span> <span class="o">=</span> <span class="kc">True</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Module coreferee is not compatible with spacy version </span><span class="si">{</span><span class="n">ver</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">ModuleNotFoundError</span><span class="p">:</span>
+  <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Module coreferee can not be imported&#39;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;hs_keyword&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;hs_keyword&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;ent_status_verb&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;ent_status_verb&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_prepend_amod&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_prepend_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_prepend&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_prepend&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_amod&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_append_amod&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_append_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_append&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_append&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg_text&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_prepend_amod&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_prepend_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_prepend&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_prepend&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_amod&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_append_amod&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_append_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_append&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_append&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;alias&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_prepend_amod&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_prepend_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_prepend&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_prepend&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_amod&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_append_amod&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_append_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status_append&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status_append&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg_text&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_prepend_amod&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_prepend_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_prepend&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_prepend&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_amod&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_append_amod&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_append_amod&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status_append&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status_append&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;alias&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="WorkflowBase">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase">[docs]</a>
+<span class="k">class</span> <span class="nc">WorkflowBase</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Base Class for Workflow Analysis</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="s1">&#39;SSC&#39;</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="s1">&#39;causal&#39;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Construct</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        nlp: spacy.Language object, contains all components and data needed to process text</span>
+<span class="sd">        args: list, positional arguments</span>
+<span class="sd">        kwargs: dict, keyword arguments</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="WorkflowBase.type">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.type">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span></div>
+
+<div class="viewcode-block" id="WorkflowBase.name">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.name">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span></div>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Create instance of </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+    <span class="c1"># orders of NLP pipeline: &#39;ner&#39; --&gt; &#39;normEntities&#39; --&gt; &#39;merge_entities&#39; --&gt; &#39;initCoref&#39;</span>
+    <span class="c1"># --&gt; &#39;aliasResolver&#39; --&gt; &#39;coreferee&#39; --&gt; &#39;anaphorCoref&#39;</span>
+    <span class="c1"># pipeline &#39;merge_noun_chunks&#39; can be used to merge phrases (see also displacy option)</span>
+<div class="viewcode-block" id="WorkflowBase.nlp">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.nlp">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span> <span class="o">=</span> <span class="n">nlp</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._causalFile">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._causalFile">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalFile</span> <span class="o">=</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;cause_effect_keywords_file&#39;</span><span class="p">]</span></div>
+
+    <span class="c1"># SCONJ-&gt;Because, CCONJ-&gt;so, ADP-&gt;as, ADV-&gt;therefore</span>
+<div class="viewcode-block" id="WorkflowBase._causalPOS">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._causalPOS">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalPOS</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;VERB&#39;</span><span class="p">:[</span><span class="s1">&#39;VERB&#39;</span><span class="p">],</span> <span class="s1">&#39;NOUN&#39;</span><span class="p">:[</span><span class="s1">&#39;NOUN&#39;</span><span class="p">],</span> <span class="s1">&#39;TRANSITION&#39;</span><span class="p">:[</span><span class="s1">&#39;SCONJ&#39;</span><span class="p">,</span> <span class="s1">&#39;CCONJ&#39;</span><span class="p">,</span> <span class="s1">&#39;ADP&#39;</span><span class="p">,</span> <span class="s1">&#39;ADV&#39;</span><span class="p">]}</span></div>
+
+    <span class="c1"># current columns include: &quot;VERB&quot;, &quot;NOUN&quot;, &quot;TRANSITION&quot;, &quot;causal-relator&quot;, &quot;effect-relator&quot;, &quot;causal-noun&quot;, &quot;effect-noun&quot;</span>
+    <span class="c1"># For relator, such as becaue, therefore, as, etc.</span>
+    <span class="c1">#   if the column starts with causal, which means causal entity --&gt; keyword --&gt; effect entity</span>
+    <span class="c1">#   if the column starts with effect, which means effect entity &lt;-- keyword &lt;-- causal entity</span>
+    <span class="c1"># For NOUN</span>
+    <span class="c1">#   if the column starts with causal, which means causal entity --&gt; keyword --&gt; effect entity</span>
+    <span class="c1">#   if the column starts with effect, the relation is depend on the keyword.dep_</span>
+    <span class="c1">#   First check the right child of the keyword is ADP with dep_ &quot;prep&quot;,</span>
+    <span class="c1">#   Then, check the dep_ of keyword, if it is &quot;dobj&quot;, then causal entity --&gt; keyword --&gt; effect entity</span>
+    <span class="c1">#   elif it is &quot;nsubj&quot; or &quot;nsubjpass&quot; or &quot;attr&quot;, then effect entity &lt;-- keyword &lt;-- causal entity</span>
+<div class="viewcode-block" id="WorkflowBase._causalKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._causalKeywords">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalKeywords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getKeywords</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalFile</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._statusFile">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._statusFile">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_statusFile</span> <span class="o">=</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;status_keywords_file&#39;</span><span class="p">][</span><span class="s1">&#39;all&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._statusKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._statusKeywords">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_statusKeywords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getKeywords</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_statusFile</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._updateStatusKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._updateStatusKeywords">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_updateStatusKeywords</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._updateCausalKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._updateCausalKeywords">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_updateCausalKeywords</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._conjectureFile">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._conjectureFile">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_conjectureFile</span> <span class="o">=</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;conjecture_keywords_file&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._conjectureKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._conjectureKeywords">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_conjectureKeywords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getKeywords</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_conjectureFile</span><span class="p">,</span> <span class="n">columnNames</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;conjecture-keywords&#39;</span><span class="p">])</span></div>
+
+    <span class="c1">## pipelines &quot;merge_entities&quot; and &quot;merge_noun_chunks&quot; can be used to merge noun phrases and entities</span>
+    <span class="c1">## for easier analysis</span>
+    <span class="k">if</span> <span class="n">_corefAvail</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">pipelines</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;pysbdSentenceBoundaries&#39;</span><span class="p">,</span>
+                      <span class="s1">&#39;mergePhrase&#39;</span><span class="p">,</span> <span class="s1">&#39;normEntities&#39;</span><span class="p">,</span> <span class="s1">&#39;initCoref&#39;</span><span class="p">,</span> <span class="s1">&#39;aliasResolver&#39;</span><span class="p">,</span>
+                      <span class="s1">&#39;coreferee&#39;</span><span class="p">,</span><span class="s1">&#39;anaphorCoref&#39;</span><span class="p">,</span> <span class="s1">&#39;anaphorEntCoref&#39;</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">pipelines</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;pysbdSentenceBoundaries&#39;</span><span class="p">,</span>
+                      <span class="s1">&#39;mergePhrase&#39;</span><span class="p">,</span><span class="s1">&#39;normEntities&#39;</span><span class="p">,</span> <span class="s1">&#39;initCoref&#39;</span><span class="p">,</span> <span class="s1">&#39;aliasResolver&#39;</span><span class="p">,</span>
+                      <span class="s1">&#39;anaphorCoref&#39;</span><span class="p">,</span> <span class="s1">&#39;anaphorEntCoref&#39;</span><span class="p">]</span>
+    <span class="c1"># ner pipeline is not needed since we are focusing on the keyword matching approach</span>
+    <span class="k">if</span> <span class="n">nlp</span><span class="o">.</span><span class="n">has_pipe</span><span class="p">(</span><span class="s2">&quot;ner&quot;</span><span class="p">):</span>
+      <span class="n">nlp</span><span class="o">.</span><span class="n">remove_pipe</span><span class="p">(</span><span class="s2">&quot;ner&quot;</span><span class="p">)</span>
+    <span class="n">nlp</span> <span class="o">=</span> <span class="n">resetPipeline</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">pipelines</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span> <span class="o">=</span> <span class="n">nlp</span>
+<div class="viewcode-block" id="WorkflowBase._doc">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._doc">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_doc</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="WorkflowBase.entityRuler">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.entityRuler">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">entityRuler</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._entityRuler">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._entityRuler">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entityRuler</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._entityRulerMatches">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._entityRulerMatches">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entityRulerMatches</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._matchedSents">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._matchedSents">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span> <span class="o">=</span> <span class="p">[]</span> <span class="c1"># collect data of matched sentences</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._matchedSentsForVis">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._matchedSentsForVis">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSentsForVis</span> <span class="o">=</span> <span class="p">[]</span> <span class="c1"># collect data of matched sentences to be visualized</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._visualizeMatchedSents">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._visualizeMatchedSents">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_visualizeMatchedSents</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._coref">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._coref">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_coref</span> <span class="o">=</span> <span class="n">_corefAvail</span> <span class="c1"># True indicate coreference pipeline is available</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._entityLabels">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._entityLabels">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span> <span class="o">=</span> <span class="p">{}</span> <span class="c1"># labels for rule-based entities</span></div>
+
+    <span class="c1"># reset entity label using toml input</span>
+    <span class="k">if</span> <span class="s1">&#39;params&#39;</span> <span class="ow">in</span> <span class="n">nlpConfig</span><span class="p">:</span>
+      <span class="n">entID</span> <span class="o">=</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ent_id&#39;</span><span class="p">,</span> <span class="n">entID</span><span class="p">)</span>
+<div class="viewcode-block" id="WorkflowBase._entID">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._entID">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entID</span> <span class="o">=</span> <span class="n">entID</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._causalKeywordID">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._causalKeywordID">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalKeywordID</span> <span class="o">=</span> <span class="n">causalKeywordID</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._causalNames">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._causalNames">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalNames</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;cause&#39;</span><span class="p">,</span> <span class="s1">&#39;cause health status&#39;</span><span class="p">,</span> <span class="s1">&#39;causal keyword&#39;</span><span class="p">,</span> <span class="s1">&#39;effect&#39;</span><span class="p">,</span> <span class="s1">&#39;effect health status&#39;</span><span class="p">,</span> <span class="s1">&#39;sentence&#39;</span><span class="p">,</span> <span class="s1">&#39;conjecture&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._extractedCausals">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._extractedCausals">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_extractedCausals</span> <span class="o">=</span> <span class="p">[]</span> <span class="c1"># list of tuples, each tuple represents one causal-effect, i.e., (cause, cause health status, cause keyword, effect, effect health status, sentence)</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._causalSentsNoEnts">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._causalSentsNoEnts">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalSentsNoEnts</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._rawCausalList">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._rawCausalList">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_rawCausalList</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._causalSentsOneEnt">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._causalSentsOneEnt">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalSentsOneEnt</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._entHS">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._entHS">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entHS</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._entStatus">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._entStatus">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entStatus</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="WorkflowBase._screen">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._screen">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_screen</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+<div class="viewcode-block" id="WorkflowBase.dataframeRelations">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.dataframeRelations">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">dataframeRelations</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="WorkflowBase.dataframeEntities">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.dataframeEntities">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">dataframeEntities</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase._textProcess">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase._textProcess">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">textProcess</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.reset">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.reset">[docs]</a>
+  <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Reset rule-based matcher</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSentsForVis</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_extractedCausals</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalSentsNoEnts</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_rawCausalList</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalSentsOneEnt</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entHS</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_doc</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">dataframeRelations</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">dataframeEntities</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.textProcess">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.textProcess">[docs]</a>
+  <span class="k">def</span> <span class="nf">textProcess</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Function to clean text</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        procObj, DACKAR.Preprocessing object</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">procList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;quotation_marks&#39;</span><span class="p">,</span> <span class="s1">&#39;punctuation&#39;</span><span class="p">,</span> <span class="s1">&#39;whitespace&#39;</span><span class="p">]</span>
+    <span class="n">procOptions</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;punctuation&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;only&#39;</span><span class="p">:[</span><span class="s2">&quot;*&quot;</span><span class="p">,</span><span class="s2">&quot;+&quot;</span><span class="p">,</span><span class="s2">&quot;:&quot;</span><span class="p">,</span><span class="s2">&quot;=&quot;</span><span class="p">,</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span><span class="s2">&quot;^&quot;</span><span class="p">,</span><span class="s2">&quot;_&quot;</span><span class="p">,</span><span class="s2">&quot;|&quot;</span><span class="p">,</span><span class="s2">&quot;~&quot;</span><span class="p">,</span> <span class="s2">&quot;..&quot;</span><span class="p">,</span> <span class="s2">&quot;...&quot;</span><span class="p">,</span> <span class="s2">&quot;,&quot;</span><span class="p">,</span> <span class="s2">&quot;;&quot;</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">]}}</span>
+    <span class="n">procObj</span> <span class="o">=</span> <span class="n">Preprocessing</span><span class="p">(</span><span class="n">preprocessorList</span><span class="o">=</span><span class="n">procList</span><span class="p">,</span> <span class="n">preprocessorOptions</span><span class="o">=</span><span class="n">procOptions</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">procObj</span></div>
+
+
+
+<div class="viewcode-block" id="WorkflowBase.getKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getKeywords">[docs]</a>
+  <span class="k">def</span> <span class="nf">getKeywords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">columnNames</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get the keywords from given file</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        filename: str, the file name to read the keywords</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        kw: dict, dictionary contains the keywords</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">kw</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">columnNames</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="n">ds</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">skipinitialspace</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">names</span><span class="o">=</span><span class="n">columnNames</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">ds</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">skipinitialspace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">ds</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+      <span class="nb">vars</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ds</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">())</span>
+      <span class="n">kw</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">extractLemma</span><span class="p">(</span><span class="nb">vars</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">kw</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.extractLemma">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.extractLemma">[docs]</a>
+  <span class="k">def</span> <span class="nf">extractLemma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varList</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Lammatize the variable list</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        varList: list, list of variables</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        lemmaList: list, list of lammatized variables</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">lemmaList</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">varList</span><span class="p">:</span>
+      <span class="n">lemVar</span> <span class="o">=</span> <span class="p">[</span><span class="n">token</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="p">(</span><span class="n">var</span><span class="p">)</span> <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">lemma_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;!&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span> <span class="s2">&quot;*&quot;</span><span class="p">]]</span>
+      <span class="n">lemmaList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lemVar</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">lemmaList</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.addKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.addKeywords">[docs]</a>
+  <span class="k">def</span> <span class="nf">addKeywords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keywords</span><span class="p">,</span> <span class="n">ktype</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method to update self._causalKeywords or self._statusKeywords</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        keywords: dict, keywords that will be add to self._causalKeywords or self._statusKeywords</span>
+<span class="sd">        ktype: string, either &#39;status&#39; or &#39;causal&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">keywords</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">dict</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s1">&#39;&quot;addCausalKeywords&quot; method can only accept dictionary, but got </span><span class="si">{}</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">keywords</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="n">ktype</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;status&#39;</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">keywords</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">:</span>
+          <span class="n">val</span> <span class="o">=</span> <span class="p">[</span><span class="n">val</span><span class="p">]</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">extractLemma</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_statusKeywords</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_statusKeywords</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;keyword &quot;</span><span class="si">{}</span><span class="s1">&quot; cannot be accepted, valid keys for the keywords are &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_statusKeywords</span><span class="o">.</span><span class="n">keys</span><span class="p">()))))</span>
+    <span class="k">elif</span> <span class="n">ktype</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;causal&#39;</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">keywords</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">list</span><span class="p">:</span>
+          <span class="n">val</span> <span class="o">=</span> <span class="p">[</span><span class="n">val</span><span class="p">]</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">extractLemma</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalKeywords</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_causalKeywords</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;keyword &quot;</span><span class="si">{}</span><span class="s1">&quot; cannot be accepted, valid keys for the keywords are &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalKeywords</span><span class="o">.</span><span class="n">keys</span><span class="p">()))))</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.addEntityPattern">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.addEntityPattern">[docs]</a>
+  <span class="k">def</span> <span class="nf">addEntityPattern</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">patternList</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Add entity pattern, to extend doc.ents, similar function to self.extendEnt</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        name: str, the name for the entity pattern.</span>
+<span class="sd">        patternList: list, the pattern list, for example:</span>
+<span class="sd">        {&quot;label&quot;: &quot;GPE&quot;, &quot;pattern&quot;: [{&quot;LOWER&quot;: &quot;san&quot;}, {&quot;LOWER&quot;: &quot;francisco&quot;}]}</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="o">.</span><span class="n">has_pipe</span><span class="p">(</span><span class="s1">&#39;entity_ruler&#39;</span><span class="p">):</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="o">.</span><span class="n">add_pipe</span><span class="p">(</span><span class="s1">&#39;entity_ruler&#39;</span><span class="p">,</span> <span class="n">before</span><span class="o">=</span><span class="s1">&#39;mergePhrase&#39;</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">entityRuler</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="o">.</span><span class="n">get_pipe</span><span class="p">(</span><span class="s2">&quot;entity_ruler&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">patternList</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+      <span class="n">patternList</span> <span class="o">=</span> <span class="p">[</span><span class="n">patternList</span><span class="p">]</span>
+    <span class="c1"># TODO: able to check &quot;id&quot; and &quot;label&quot;, able to use &quot;name&quot;</span>
+    <span class="k">for</span> <span class="n">pa</span> <span class="ow">in</span> <span class="n">patternList</span><span class="p">:</span>
+      <span class="n">label</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;label&#39;</span><span class="p">)</span>
+      <span class="nb">id</span> <span class="o">=</span> <span class="n">pa</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="nb">id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">[</span><span class="nb">id</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">label</span><span class="p">])</span> <span class="k">if</span> <span class="n">label</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">[</span><span class="nb">id</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">[</span><span class="nb">id</span><span class="p">]</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="nb">set</span><span class="p">([</span><span class="n">label</span><span class="p">]))</span> <span class="k">if</span> <span class="n">label</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="c1"># self._entityLabels += [pa.get(&#39;label&#39;) for pa in patternList if pa.get(&#39;label&#39;) is not None]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">entityRuler</span><span class="o">.</span><span class="n">add_patterns</span><span class="p">(</span><span class="n">patternList</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityRuler</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_entityRuler</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.__call__">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.__call__">[docs]</a>
+  <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">extract</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">screen</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Find all token sequences matching the supplied pattern</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        text: string, the text that need to be processed</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Merging Entity Tokens</span>
+    <span class="c1"># We need to consider how to do this, I sugguest to first conduct rule based NER, then collect</span>
+    <span class="c1"># all related sentences, then create new pipelines to perform NER with &quot;merge_entities&quot; before the</span>
+    <span class="c1"># conduction of relationship extraction</span>
+    <span class="c1"># if self.nlp.has_pipe(&#39;merge_entities&#39;):</span>
+    <span class="c1">#   _ = self.nlp.remove_pipe(&#39;merge_entities&#39;)</span>
+    <span class="c1"># self.nlp.add_pipe(&#39;merge_entities&#39;)</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_doc</span> <span class="o">=</span> <span class="n">doc</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_screen</span> <span class="o">=</span> <span class="n">screen</span>
+    <span class="c1">## use entity ruler to identify entity</span>
+    <span class="c1"># if self._entityRuler:</span>
+    <span class="c1">#   logger.debug(&#39;Entity Ruler Matches:&#39;)</span>
+    <span class="c1">#   print([(ent.text, ent.label_, ent.ent_id_) for ent in doc.ents if ent.label_ in self._entityLabels[self._entID]])</span>
+
+    <span class="c1"># First identify coreference through coreferee, then filter it through doc.ents</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coref</span><span class="p">:</span>
+      <span class="n">corefRep</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">coref_chains</span><span class="o">.</span><span class="n">pretty_representation</span>
+      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">corefRep</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;Print Coreference Info:&#39;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">corefRep</span><span class="p">)</span>
+
+    <span class="n">matchedSents</span><span class="p">,</span> <span class="n">matchedSentsForVis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">collectSents</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_doc</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span> <span class="o">+=</span> <span class="n">matchedSents</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSentsForVis</span> <span class="o">+=</span> <span class="n">matchedSentsForVis</span>
+    <span class="k">if</span> <span class="n">extract</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">extractInformation</span><span class="p">()</span></div>
+
+
+  <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+<div class="viewcode-block" id="WorkflowBase.extractInformation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.extractInformation">[docs]</a>
+  <span class="k">def</span> <span class="nf">extractInformation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      extract information</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.visualize">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.visualize">[docs]</a>
+  <span class="k">def</span> <span class="nf">visualize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Visualize the processed document</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_visualizeMatchedSents</span><span class="p">:</span>
+      <span class="c1"># Serve visualization of sentences containing match with displaCy</span>
+      <span class="c1"># set manual=True to make displaCy render straight from a dictionary</span>
+      <span class="c1"># (if you&#39;re running the code within a Jupyer environment, you can</span>
+      <span class="c1"># use displacy.render instead)</span>
+      <span class="c1"># displacy.render(self._matchedSentsForVis, style=&quot;ent&quot;, manual=True)</span>
+      <span class="n">displacy</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_matchedSentsForVis</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s2">&quot;ent&quot;</span><span class="p">,</span> <span class="n">manual</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+  <span class="c1">##########################</span>
+  <span class="c1"># methods for relation extraction</span>
+  <span class="c1">##########################</span>
+
+<div class="viewcode-block" id="WorkflowBase.isPassive">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isPassive">[docs]</a>
+  <span class="k">def</span> <span class="nf">isPassive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Check the passiveness of the token</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        token: spacy.tokens.Token, the token of the doc</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        isPassive: True, if the token is passive</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">dep_</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;pass&#39;</span><span class="p">):</span> <span class="c1"># noun</span>
+      <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">for</span> <span class="n">left</span> <span class="ow">in</span> <span class="n">token</span><span class="o">.</span><span class="n">lefts</span><span class="p">:</span> <span class="c1"># verb</span>
+      <span class="k">if</span> <span class="n">left</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;auxpass&#39;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.isConjecture">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isConjecture">[docs]</a>
+  <span class="k">def</span> <span class="nf">isConjecture</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Check the conjecture of the token</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        token: spacy.tokens.Token, the token of the doc, the token should be the root of the Doc</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        isConjecture: True, if the token/sentence indicates conjecture</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">left</span> <span class="ow">in</span> <span class="n">token</span><span class="o">.</span><span class="n">lefts</span><span class="p">:</span> <span class="c1"># Check modal auxiliary verb: can, could, may, might, must, shall, should, will, would</span>
+      <span class="k">if</span> <span class="n">left</span><span class="o">.</span><span class="n">dep_</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;aux&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">left</span><span class="o">.</span><span class="n">tag_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;MD&#39;</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="c1"># check the keywords</span>
+    <span class="c1"># FIXME: should we use token.subtree or token.children here</span>
+    <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">token</span><span class="o">.</span><span class="n">subtree</span><span class="p">:</span>
+      <span class="k">if</span> <span class="p">[</span><span class="n">child</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conjectureKeywords</span><span class="p">[</span><span class="s1">&#39;conjecture-keywords&#39;</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="c1"># For short sentences, conjecture can not determined by VERB inflectional morphology</span>
+    <span class="c1"># if token.pos_ == &#39;VERB&#39; and token.tag_ == &#39;VB&#39;: # If it is a verb, and there is no inflectional morphology for the verb</span>
+    <span class="c1">#   return True</span>
+    <span class="k">return</span> <span class="kc">False</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.isNegation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isNegation">[docs]</a>
+  <span class="k">def</span> <span class="nf">isNegation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Check negation status of given token</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        token: spacy.tokens.Token, token from spacy.tokens.doc.Doc</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        (neg, text): tuple, the negation status and the token text</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">neg</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;neg&#39;</span><span class="p">:</span>
+      <span class="n">neg</span> <span class="o">=</span> <span class="kc">True</span>
+      <span class="n">text</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">text</span>
+      <span class="k">return</span> <span class="n">neg</span><span class="p">,</span> <span class="n">text</span>
+    <span class="c1"># check left for verbs</span>
+    <span class="k">for</span> <span class="n">left</span> <span class="ow">in</span> <span class="n">token</span><span class="o">.</span><span class="n">lefts</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">left</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;neg&#39;</span><span class="p">:</span>
+        <span class="n">neg</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">left</span><span class="o">.</span><span class="n">text</span>
+        <span class="k">return</span> <span class="n">neg</span><span class="p">,</span> <span class="n">text</span>
+    <span class="c1"># The following can be used to check the negation status of the sentence</span>
+    <span class="c1"># # check the subtree</span>
+    <span class="c1"># for sub in token.subtree:</span>
+    <span class="c1">#   if sub.dep_ == &#39;neg&#39;:</span>
+    <span class="c1">#     neg = True</span>
+    <span class="c1">#     text = sub.text</span>
+    <span class="c1">#     return neg, text</span>
+    <span class="k">return</span> <span class="n">neg</span><span class="p">,</span> <span class="n">text</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.findVerb">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findVerb">[docs]</a>
+  <span class="k">def</span> <span class="nf">findVerb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Find the first verb in the doc</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        token: spacy.tokens.Token, the token that has VERB pos</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">doc</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">pos_</span> <span class="o">==</span> <span class="s1">&#39;VERB&#39;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">token</span>
+        <span class="k">break</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getCustomEnts">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getCustomEnts">[docs]</a>
+  <span class="k">def</span> <span class="nf">getCustomEnts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ents</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get the custom entities</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ents: list, all entities from the processed doc</span>
+<span class="sd">        labels: list, list of labels to be used to get the custom entities out of &quot;ents&quot;</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        customEnts: list, the customEnts associates with the &quot;labels&quot;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">customEnts</span> <span class="o">=</span> <span class="p">[</span><span class="n">ent</span> <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">ents</span> <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">label_</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">customEnts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="n">customEnts</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">customEnts</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getPhrase">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getPhrase">[docs]</a>
+  <span class="k">def</span> <span class="nf">getPhrase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get the phrase for ent with all left children</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: Span, the ent to amend with all left children</span>
+<span class="sd">        start: int, the start index of ent</span>
+<span class="sd">        end: int, the end index of ent</span>
+<span class="sd">        include: bool, include ent in the returned expression if True</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        status: Span or Token, the identified status</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">leftInd</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">lefts</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">i</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">include</span><span class="p">:</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">leftInd</span><span class="p">:</span><span class="n">start</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">leftInd</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">status</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getAmod">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getAmod">[docs]</a>
+  <span class="k">def</span> <span class="nf">getAmod</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get amod tokens for ent</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: Span, the ent to amend with all left children</span>
+<span class="sd">        start: int, the start index of ent</span>
+<span class="sd">        end: int, the end index of ent</span>
+<span class="sd">        include: bool, include ent in the returned expression if True</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        status: Span or Token, the identified status</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;amod&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">ent</span><span class="o">.</span><span class="n">lefts</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">deps</span><span class="p">):</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getPhrase</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;compound&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">ent</span><span class="o">.</span><span class="n">lefts</span><span class="p">]</span>
+      <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">deps</span><span class="p">):</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getPhrase</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="p">)</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">status</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">status</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">include</span><span class="p">:</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="n">ent</span>
+    <span class="k">return</span> <span class="n">status</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getAmodOnly">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getAmodOnly">[docs]</a>
+  <span class="k">def</span> <span class="nf">getAmodOnly</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get amod tokens texts for ent</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: Span, the ent to amend with all left children</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        amod: list, the list of amods for ent</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">amod</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span><span class="o">.</span><span class="n">text</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">ent</span><span class="o">.</span><span class="n">lefts</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;amod&#39;</span><span class="p">]]</span>
+    <span class="k">return</span> <span class="n">amod</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getCompoundOnly">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getCompoundOnly">[docs]</a>
+  <span class="k">def</span> <span class="nf">getCompoundOnly</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">headEnt</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get the compounds for headEnt except ent</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        headEnt: Span, the head entity to ent</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        compDes: list, the list of compounds for head ent</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">compDes</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">comp</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">headEnt</span><span class="o">.</span><span class="n">lefts</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;compound&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">tk</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ent</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">comp</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">comp</span><span class="p">:</span>
+        <span class="n">des</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span><span class="o">.</span><span class="n">text</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">elem</span><span class="o">.</span><span class="n">lefts</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;amod&#39;</span><span class="p">,</span> <span class="s1">&#39;compound&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">tk</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ent</span><span class="p">]</span>
+        <span class="n">compDes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">des</span><span class="p">)</span>
+        <span class="n">compDes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">compDes</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getNbor">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getNbor">[docs]</a>
+  <span class="k">def</span> <span class="nf">getNbor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method to get the nbor from token, return None if nbor is not exist</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        token: Token, the provided Token to request nbor</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        nbor: Token, the requested nbor</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nbor</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">token</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">nbor</span>
+    <span class="k">try</span><span class="p">:</span>
+      <span class="n">nbor</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">nbor</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+      <span class="k">pass</span>
+    <span class="k">return</span> <span class="n">nbor</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.validSent">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.validSent">[docs]</a>
+  <span class="k">def</span> <span class="nf">validSent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Check if the sentence has valid structure, either contains subject or object</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        sent: Span, sentence from user provided text</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        valid: bool, False if the sentence has no subject and object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">foundSubj</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">foundObj</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">valid</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">sent</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">dep_</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;nsubj&#39;</span><span class="p">):</span>
+        <span class="n">foundSubj</span> <span class="o">=</span> <span class="kc">True</span>
+      <span class="k">elif</span> <span class="n">tk</span><span class="o">.</span><span class="n">dep_</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;obj&#39;</span><span class="p">):</span>
+        <span class="n">foundObj</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">foundSubj</span> <span class="ow">or</span> <span class="n">foundObj</span><span class="p">:</span>
+      <span class="n">valid</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="n">valid</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.findLeftSubj">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findLeftSubj">[docs]</a>
+  <span class="k">def</span> <span class="nf">findLeftSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">passive</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Find closest subject in predicates left subtree or</span>
+<span class="sd">      predicates parent&#39;s left subtree (recursive).</span>
+<span class="sd">      Has a filter on organizations.</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        pred: spacy.tokens.Token, the predicate token</span>
+<span class="sd">        passive: bool, True if passive</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        subj: spacy.tokens.Token, the token that represent subject</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">left</span> <span class="ow">in</span> <span class="n">pred</span><span class="o">.</span><span class="n">lefts</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">passive</span><span class="p">:</span> <span class="c1"># if pred is passive, search for passive subject</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findHealthStatus</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj:pass&#39;</span><span class="p">])</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findHealthStatus</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">])</span>
+      <span class="k">if</span> <span class="n">subj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="c1"># found it!</span>
+        <span class="k">return</span> <span class="n">subj</span>
+    <span class="k">if</span> <span class="n">pred</span><span class="o">.</span><span class="n">head</span> <span class="o">!=</span> <span class="n">pred</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">isPassive</span><span class="p">(</span><span class="n">pred</span><span class="p">):</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">findLeftSubj</span><span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">head</span><span class="p">,</span> <span class="n">passive</span><span class="p">)</span> <span class="c1"># climb up left subtree</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.findRightObj">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findRightObj">[docs]</a>
+  <span class="k">def</span> <span class="nf">findRightObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Find closest object in predicates right subtree.</span>
+<span class="sd">      Skip prepositional objects if the preposition is in exclude list.</span>
+<span class="sd">      Has a filter on organizations.</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        pred: spacy.tokens.Token, the predicate token</span>
+<span class="sd">        exclPrepos: list, list of the excluded prepositions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">right</span> <span class="ow">in</span> <span class="n">pred</span><span class="o">.</span><span class="n">rights</span><span class="p">:</span>
+      <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findHealthStatus</span><span class="p">(</span><span class="n">right</span><span class="p">,</span> <span class="n">deps</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;pobj&#39;</span> <span class="ow">and</span> <span class="n">obj</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">exclPrepos</span><span class="p">:</span> <span class="c1"># check preposition</span>
+          <span class="k">continue</span>
+        <span class="k">return</span> <span class="n">obj</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.findRightKeyword">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findRightKeyword">[docs]</a>
+  <span class="k">def</span> <span class="nf">findRightKeyword</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Find</span>
+<span class="sd">      Skip prepositional objects if the preposition is in exclude list.</span>
+<span class="sd">      Has a filter on organizations.</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        pred: spacy.tokens.Token, the predicate token</span>
+<span class="sd">        exclPrepos: list, list of the excluded prepositions</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">right</span> <span class="ow">in</span> <span class="n">pred</span><span class="o">.</span><span class="n">rights</span><span class="p">:</span>
+      <span class="n">pos</span> <span class="o">=</span> <span class="n">right</span><span class="o">.</span><span class="n">pos_</span>
+      <span class="k">if</span> <span class="n">pos</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">,</span> <span class="s1">&#39;NOUN&#39;</span><span class="p">,</span> <span class="s1">&#39;ADJ&#39;</span><span class="p">]:</span>
+        <span class="c1"># skip check to remove the limitation of status only in status keywords list</span>
+        <span class="c1"># if [right.lemma_.lower()] in self._statusKeywords[pos]:</span>
+        <span class="k">return</span> <span class="n">right</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.findHealthStatus">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findHealthStatus">[docs]</a>
+  <span class="k">def</span> <span class="nf">findHealthStatus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Return first child of root (included) that matches</span>
+<span class="sd">      dependency list by breadth first search.</span>
+<span class="sd">      Search stops after first dependency match if firstDepOnly</span>
+<span class="sd">      (used for subject search - do not &quot;jump&quot; over subjects)</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        root: spacy.tokens.Token, the root token</span>
+<span class="sd">        deps: list, the dependency list</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        child: token, the token represents the health status</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">toVisit</span> <span class="o">=</span> <span class="n">deque</span><span class="p">([</span><span class="n">root</span><span class="p">])</span> <span class="c1"># queue for bfs</span>
+    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">toVisit</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="n">child</span> <span class="o">=</span> <span class="n">toVisit</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+      <span class="c1"># print(&quot;child&quot;, child, child.dep_)</span>
+      <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">deps</span><span class="p">:</span>
+        <span class="c1"># to handle preposition</span>
+        <span class="k">try</span><span class="p">:</span>
+          <span class="n">nbor</span> <span class="o">=</span> <span class="n">child</span><span class="o">.</span><span class="n">nbor</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+          <span class="k">pass</span> <span class="c1"># ignore for now</span>
+        <span class="c1"># TODO, what else need to be added</span>
+        <span class="c1"># can not use the first check only, since is nbor is &#39;during&#39;, it will also satisfy the check condition</span>
+        <span class="c1"># if (nbor.dep_ in [&#39;prep&#39;] and nbor.lemma_.lower() in [&#39;of&#39;, &#39;in&#39;]) or nbor.pos_ in [&#39;VERB&#39;]:</span>
+        <span class="c1">#   return self.findRightObj(nbor, deps=[&#39;pobj&#39;])</span>
+        <span class="k">return</span> <span class="n">child</span>
+      <span class="k">elif</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;compound&#39;</span> <span class="ow">and</span> \
+         <span class="n">child</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">deps</span><span class="p">:</span> <span class="c1"># check if contained in compound</span>
+        <span class="k">return</span> <span class="n">child</span>
+      <span class="n">toVisit</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">children</span><span class="p">))</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.isValidCausalEnts">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isValidCausalEnts">[docs]</a>
+  <span class="k">def</span> <span class="nf">isValidCausalEnts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Check the entity if it belongs to the valid causal entities</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: list, list of entities</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        valid: bool, valid cansual ent if True</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">valid</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">validDep</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj:pass&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">ent</span><span class="p">:</span>
+      <span class="n">root</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">root</span>
+      <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">validDep</span> <span class="ow">or</span> <span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">validDep</span><span class="p">:</span>
+        <span class="n">valid</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">break</span>
+    <span class="k">return</span> <span class="n">valid</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getIndex">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getIndex">[docs]</a>
+  <span class="k">def</span> <span class="nf">getIndex</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">entList</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get index for ent in entList</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: Span, ent that is used to get index</span>
+<span class="sd">        entList: list, list of entities</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        idx: int, the index for ent</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">entList</span><span class="p">):</span>
+      <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">e</span><span class="p">:</span>
+          <span class="n">idx</span> <span class="o">=</span> <span class="n">i</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">e</span> <span class="o">==</span> <span class="n">ent</span><span class="p">:</span>
+          <span class="n">idx</span> <span class="o">=</span> <span class="n">i</span>
+    <span class="k">return</span> <span class="n">idx</span></div>
+
+
+
+<div class="viewcode-block" id="WorkflowBase.getConjuncts">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getConjuncts">[docs]</a>
+  <span class="k">def</span> <span class="nf">getConjuncts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entList</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get a list of conjuncts from entity list</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        entList: list, list of entities</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        conjunctList: list, list of conjuncts</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ent</span> <span class="o">=</span> <span class="n">entList</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">conjunctList</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">conjuncts</span> <span class="o">=</span> <span class="p">[</span><span class="n">ent</span><span class="p">]</span>
+    <span class="n">collected</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">elem</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">entList</span><span class="p">[</span><span class="mi">1</span><span class="p">:]):</span>
+      <span class="c1"># print(&#39;elem&#39;, elem, elem.conjuncts)</span>
+      <span class="c1"># print(&#39;ent&#39;, ent, ent.conjuncts)</span>
+      <span class="k">if</span> <span class="n">elem</span><span class="o">.</span><span class="n">root</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ent</span><span class="o">.</span><span class="n">conjuncts</span><span class="p">:</span>
+        <span class="n">conjunctList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">conjuncts</span><span class="p">)</span>
+        <span class="n">conjunctList</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">getConjuncts</span><span class="p">(</span><span class="n">entList</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">:]))</span>
+        <span class="n">collected</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">break</span>
+      <span class="n">conjuncts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">collected</span><span class="p">:</span>
+      <span class="n">conjunctList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">conjuncts</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">conjunctList</span></div>
+
+
+  <span class="c1">##TODO: how to extend it for entity ruler?</span>
+  <span class="c1"># @staticmethod</span>
+<div class="viewcode-block" id="WorkflowBase.collectSents">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.collectSents">[docs]</a>
+  <span class="k">def</span> <span class="nf">collectSents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    collect data of matched sentences that can be used for visualization</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">matchedSents</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">matchedSentsForVis</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">span</span><span class="o">.</span><span class="n">ent_id_</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entID</span><span class="p">:</span>
+        <span class="k">continue</span>
+      <span class="n">sent</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">sent</span>
+      <span class="c1"># Append mock entity for match in displaCy style to matched_sents</span>
+      <span class="c1"># get the match span by ofsetting the start and end of the span with the</span>
+      <span class="c1"># start and end of the sentence in the doc</span>
+      <span class="n">matchEnts</span> <span class="o">=</span> <span class="p">[{</span>
+          <span class="s2">&quot;start&quot;</span><span class="p">:</span> <span class="n">span</span><span class="o">.</span><span class="n">start_char</span> <span class="o">-</span> <span class="n">sent</span><span class="o">.</span><span class="n">start_char</span><span class="p">,</span>
+          <span class="s2">&quot;end&quot;</span><span class="p">:</span> <span class="n">span</span><span class="o">.</span><span class="n">end_char</span> <span class="o">-</span> <span class="n">sent</span><span class="o">.</span><span class="n">start_char</span><span class="p">,</span>
+          <span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="n">span</span><span class="o">.</span><span class="n">label_</span><span class="p">,</span>
+      <span class="p">}]</span>
+      <span class="k">if</span> <span class="n">sent</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">matchedSents</span><span class="p">:</span>
+        <span class="n">matchedSents</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sent</span><span class="p">)</span>
+      <span class="n">matchedSentsForVis</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="s2">&quot;ents&quot;</span><span class="p">:</span> <span class="n">matchEnts</span><span class="p">})</span>
+    <span class="k">return</span> <span class="n">matchedSents</span><span class="p">,</span> <span class="n">matchedSentsForVis</span></div>
+
+
+<span class="c1">#############################################################################</span>
+<span class="c1"># some useful methods, but currently they are not used</span>
+
+<div class="viewcode-block" id="WorkflowBase.extract">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.extract">[docs]</a>
+  <span class="k">def</span> <span class="nf">extract</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sents</span><span class="p">,</span> <span class="n">predSynonyms</span><span class="o">=</span><span class="p">[],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      General extraction method</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        sents: list, the list of sentences</span>
+<span class="sd">        predSynonyms: list, the list of predicate synonyms</span>
+<span class="sd">        exclPrepos: list, the list of exlcuded prepositions</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        (subject tuple, predicate, object tuple): generator, the extracted causal relation</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">sents</span><span class="p">:</span>
+      <span class="n">root</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">root</span>
+      <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="o">==</span> <span class="s1">&#39;VERB&#39;</span> <span class="ow">and</span> <span class="p">[</span><span class="n">root</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span> <span class="ow">in</span> <span class="n">predSynonyms</span><span class="p">:</span>
+        <span class="n">passive</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isPassive</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findSubj</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">passive</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">subj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+          <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findObj</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[])</span>
+          <span class="k">if</span> <span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">passive</span><span class="p">:</span> <span class="c1"># switch roles</span>
+              <span class="n">obj</span><span class="p">,</span> <span class="n">subj</span> <span class="o">=</span> <span class="n">subj</span><span class="p">,</span> <span class="n">obj</span>
+            <span class="k">yield</span> <span class="p">((</span><span class="n">subj</span><span class="p">),</span> <span class="n">root</span><span class="p">,</span> <span class="p">(</span><span class="n">obj</span><span class="p">))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">sent</span><span class="p">:</span>
+          <span class="k">if</span> <span class="p">[</span><span class="n">token</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span> <span class="ow">in</span> <span class="n">predSynonyms</span><span class="p">:</span>
+            <span class="n">root</span> <span class="o">=</span> <span class="n">token</span>
+            <span class="n">passive</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isPassive</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+            <span class="n">subj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findSubj</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">passive</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">subj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+              <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findObj</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[])</span>
+              <span class="k">if</span> <span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">passive</span><span class="p">:</span> <span class="c1"># switch roles</span>
+                  <span class="n">obj</span><span class="p">,</span> <span class="n">subj</span> <span class="o">=</span> <span class="n">subj</span><span class="p">,</span> <span class="n">obj</span>
+                <span class="k">yield</span> <span class="p">((</span><span class="n">subj</span><span class="p">),</span> <span class="n">root</span><span class="p">,</span> <span class="p">(</span><span class="n">obj</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.bfs">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.bfs">[docs]</a>
+  <span class="k">def</span> <span class="nf">bfs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Return first child of root (included) that matches</span>
+<span class="sd">      entType and dependency list by breadth first search.</span>
+<span class="sd">      Search stops after first dependency match if firstDepOnly</span>
+<span class="sd">      (used for subject search - do not &quot;jump&quot; over subjects)</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        root: spacy.tokens.Token, the root token</span>
+<span class="sd">        deps: list, list of dependency</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        child: spacy.tokens.Token, the matched token</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">toVisit</span> <span class="o">=</span> <span class="n">deque</span><span class="p">([</span><span class="n">root</span><span class="p">])</span> <span class="c1"># queue for bfs</span>
+    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">toVisit</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="n">child</span> <span class="o">=</span> <span class="n">toVisit</span><span class="o">.</span><span class="n">popleft</span><span class="p">()</span>
+      <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">deps</span><span class="p">:</span>
+        <span class="c1"># to handle preposition</span>
+        <span class="n">nbor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getNbor</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">nbor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">nbor</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;prep&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">nbor</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;of&#39;</span><span class="p">]:</span>
+          <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findObj</span><span class="p">(</span><span class="n">nbor</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">])</span>
+          <span class="k">return</span> <span class="n">obj</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">child</span>
+      <span class="k">elif</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;compound&#39;</span> <span class="ow">and</span> \
+         <span class="n">child</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">deps</span><span class="p">:</span> <span class="c1"># check if contained in compound</span>
+        <span class="k">return</span> <span class="n">child</span>
+      <span class="n">toVisit</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">child</span><span class="o">.</span><span class="n">children</span><span class="p">))</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.findSubj">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findSubj">[docs]</a>
+  <span class="k">def</span> <span class="nf">findSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">passive</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Find closest subject in predicates left subtree or</span>
+<span class="sd">      predicates parent&#39;s left subtree (recursive).</span>
+<span class="sd">      Has a filter on organizations.</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        pred: spacy.tokens.Token, the predicate token</span>
+<span class="sd">        passive: bool, True if the predicate token is passive</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        subj: spacy.tokens.Token, the token that represents subject</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">left</span> <span class="ow">in</span> <span class="n">pred</span><span class="o">.</span><span class="n">lefts</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">passive</span><span class="p">:</span> <span class="c1"># if pred is passive, search for passive subject</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bfs</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj:pass&#39;</span><span class="p">])</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bfs</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">])</span>
+      <span class="k">if</span> <span class="n">subj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span> <span class="c1"># found it!</span>
+        <span class="k">return</span> <span class="n">subj</span>
+    <span class="k">if</span> <span class="n">pred</span><span class="o">.</span><span class="n">head</span> <span class="o">!=</span> <span class="n">pred</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">isPassive</span><span class="p">(</span><span class="n">pred</span><span class="p">):</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">findSubj</span><span class="p">(</span><span class="n">pred</span><span class="o">.</span><span class="n">head</span><span class="p">,</span> <span class="n">passive</span><span class="p">)</span> <span class="c1"># climb up left subtree</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.findObj">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findObj">[docs]</a>
+  <span class="k">def</span> <span class="nf">findObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Find closest object in predicates right subtree.</span>
+<span class="sd">      Skip prepositional objects if the preposition is in exclude list.</span>
+<span class="sd">      Has a filter on organizations.</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        pred: spacy.tokens.Token, the predicate token</span>
+<span class="sd">        exclPrepos: list, the list of prepositions that will be excluded</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        obj: spacy.tokens.Token,, the token that represents the object</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">right</span> <span class="ow">in</span> <span class="n">pred</span><span class="o">.</span><span class="n">rights</span><span class="p">:</span>
+      <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bfs</span><span class="p">(</span><span class="n">right</span><span class="p">,</span> <span class="n">deps</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">obj</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;pobj&#39;</span> <span class="ow">and</span> <span class="n">obj</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">exclPrepos</span><span class="p">:</span> <span class="c1"># check preposition</span>
+          <span class="k">continue</span>
+        <span class="k">return</span> <span class="n">obj</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.isValidKeyword">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isValidKeyword">[docs]</a>
+  <span class="k">def</span> <span class="nf">isValidKeyword</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">,</span> <span class="n">keywords</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        var: token</span>
+<span class="sd">        keywords: list/dict</span>
+
+<span class="sd">      Returns: True if the var is a valid among the keywords</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">keywords</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+      <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">vals</span> <span class="ow">in</span> <span class="n">keywords</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">var</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">vals</span><span class="p">:</span>
+          <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">keywords</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+      <span class="k">if</span> <span class="n">var</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">keywords</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span></div>
+
+<span class="c1">#######################################################################################</span>
+
+<div class="viewcode-block" id="WorkflowBase.getStatusForSubj">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getStatusForSubj">[docs]</a>
+  <span class="k">def</span> <span class="nf">getStatusForSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get the status for nsubj/nsubjpass ent</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: Span, the nsubj/nsubjpass ent that will be used to search status</span>
+<span class="sd">        include: bool, include ent in the returned expression if True</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        status: Span or Token, the identified status</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">neg</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">negText</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">entRoot</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span>
+
+    <span class="k">if</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj:pass&#39;</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">&quot;Method &#39;self.getStatusForSubj&#39; can only be used for &#39;nsubj&#39; or &#39;nsubjpass&#39;&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="o">!=</span> <span class="s1">&#39;VERB&#39;</span><span class="p">:</span>
+      <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isNegation</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NOUN&#39;</span><span class="p">,</span> <span class="s1">&#39;ADJ&#39;</span><span class="p">]:</span>
+        <span class="c1"># TODO: search entRoot.lefts for &#39;amod&#39; and attach to status</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">root</span>
+      <span class="k">elif</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;AUX&#39;</span><span class="p">]:</span>
+        <span class="n">rights</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">rights</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rights</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">rights</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">rights</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="p">[]</span>
+          <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rights</span><span class="p">:</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">i</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="n">include</span><span class="p">)</span>
+            <span class="n">status</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;No status identified for &quot;</span><span class="si">{</span><span class="n">ent</span><span class="si">}</span><span class="s1">&quot; in &quot;</span><span class="si">{</span><span class="n">ent</span><span class="o">.</span><span class="n">sent</span><span class="si">}</span><span class="s1">&quot;&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">rights</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">rights</span>
+      <span class="n">valid</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;advcl&#39;</span><span class="p">,</span> <span class="s1">&#39;relcl&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">rights</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;PUNCT&#39;</span><span class="p">,</span> <span class="s1">&#39;SPACE&#39;</span><span class="p">]]</span>
+      <span class="n">nbor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getNbor</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">nbor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="n">nbor</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;cc&#39;</span><span class="p">]</span> <span class="ow">or</span> <span class="n">nbor</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;PUNCT&#39;</span><span class="p">]):</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">root</span>
+      <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span><span class="o">&gt;</span><span class="mi">0</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">valid</span><span class="p">):</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">root</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">objStatus</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">amod</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="n">include</span><span class="p">)</span>
+        <span class="n">obj</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findRightObj</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">obj</span><span class="p">:</span>
+          <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;pobj&#39;</span><span class="p">:</span>
+            <span class="n">objStatus</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getStatusForPobj</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+          <span class="k">elif</span> <span class="n">obj</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;dobj&#39;</span><span class="p">:</span>
+            <span class="n">subtree</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">subtree</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+              <span class="k">if</span> <span class="n">obj</span><span class="o">.</span><span class="n">nbor</span><span class="p">()</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;prep&#39;</span><span class="p">]:</span>
+                <span class="n">objStatus</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">obj</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="n">subtree</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+              <span class="k">else</span><span class="p">:</span>
+                <span class="n">objStatus</span> <span class="o">=</span> <span class="n">obj</span>
+            <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+              <span class="n">objStatus</span> <span class="o">=</span> <span class="n">obj</span>
+        <span class="c1"># no object is found</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">objStatus</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findRightKeyword</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+        <span class="c1"># last is punct, the one before last is the root</span>
+        <span class="c1"># if not status and root.nbor().pos_ in [&#39;PUNCT&#39;]:</span>
+        <span class="c1">#   status = root</span>
+        <span class="k">if</span> <span class="n">objStatus</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">amod</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+          <span class="n">extra</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">rights</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;ADP&#39;</span><span class="p">,</span> <span class="s1">&#39;ADJ&#39;</span><span class="p">]]</span>
+          <span class="c1"># Only select the first ADP and combine with root</span>
+          <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">extra</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">objStatus</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="n">extra</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+          <span class="k">else</span><span class="p">:</span>
+            <span class="n">objStatus</span> <span class="o">=</span> <span class="n">root</span>
+        <span class="k">if</span> <span class="n">amod</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="p">[</span><span class="n">amod</span><span class="p">,</span> <span class="n">objStatus</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="n">objStatus</span>
+    <span class="k">return</span> <span class="n">status</span><span class="p">,</span> <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span></div>
+
+
+<div class="viewcode-block" id="WorkflowBase.getStatusForObj">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getStatusForObj">[docs]</a>
+  <span class="k">def</span> <span class="nf">getStatusForObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get the status for pobj/dobj ent</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: Span, the pobj/dobj ent that will be used to search status</span>
+<span class="sd">        include: bool, include ent in the returned expression if True</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        status: Span or Token, the identified status</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">neg</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">negText</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span>
+    <span class="n">entRoot</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
+    <span class="n">head</span> <span class="o">=</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span>
+    <span class="n">prep</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">head</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">]:</span>
+      <span class="n">root</span> <span class="o">=</span> <span class="n">head</span>
+    <span class="k">elif</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;prep&#39;</span><span class="p">]:</span>
+      <span class="n">root</span> <span class="o">=</span> <span class="n">head</span><span class="o">.</span><span class="n">head</span>
+      <span class="n">prep</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">root</span> <span class="o">=</span> <span class="n">head</span>
+    <span class="k">if</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">&quot;Method &#39;self.getStatusForObj&#39; can only be used for &#39;pobj&#39; or &#39;dobj&#39;&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="o">!=</span> <span class="s1">&#39;VERB&#39;</span><span class="p">:</span>
+      <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isNegation</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;ADJ&#39;</span><span class="p">]:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">root</span>
+      <span class="k">elif</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NOUN&#39;</span><span class="p">,</span> <span class="s1">&#39;PROPN&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">]:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="n">root</span>
+      <span class="k">elif</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;AUX&#39;</span><span class="p">]:</span>
+        <span class="n">leftInd</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">root</span><span class="o">.</span><span class="n">lefts</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">i</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">leftInd</span><span class="p">:</span><span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">amod</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findRightKeyword</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="p">[</span><span class="n">amod</span><span class="p">,</span> <span class="n">subj</span><span class="p">]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;No status identified for &quot;</span><span class="si">{</span><span class="n">ent</span><span class="si">}</span><span class="s1">&quot; in &quot;</span><span class="si">{</span><span class="n">ent</span><span class="o">.</span><span class="n">sent</span><span class="si">}</span><span class="s1">&quot;&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">subjStatus</span> <span class="o">=</span> <span class="kc">None</span>
+      <span class="k">if</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">]:</span>
+        <span class="n">amod</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getStatusForPobj</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="n">include</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">amod</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="n">include</span><span class="p">)</span>
+         <span class="c1"># status = self.getCompoundOnly(ent, entHS)</span>
+
+      <span class="n">passive</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isPassive</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+      <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isNegation</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+      <span class="n">subjStatus</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findLeftSubj</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">passive</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">subjStatus</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Corefence can be handled coreferee</span>
+        <span class="c1"># if subjStatus.pos_ in [&#39;PROPN&#39;]:</span>
+        <span class="c1">#   # coreference resolution</span>
+        <span class="c1">#   passive = self.isPassive(root.head)</span>
+        <span class="c1">#   neg, negText = self.isNegation(root.head)</span>
+        <span class="c1">#   headSubj = self.findLeftSubj(root.head, passive)</span>
+        <span class="c1">#   if headSubj is not None:</span>
+        <span class="c1">#     subjStatus = headSubj</span>
+        <span class="n">subjStatus</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">subjStatus</span><span class="p">,</span> <span class="n">subjStatus</span><span class="o">.</span><span class="n">i</span><span class="p">,</span> <span class="n">subjStatus</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">subjStatus</span> <span class="o">=</span> <span class="n">root</span>
+      <span class="c1"># if amod is None:</span>
+      <span class="c1">#   rights =[tk for tk in list(root.rights) if tk.pos_ not in [&#39;SPACE&#39;, &#39;PUNCT&#39;] and tk.i &gt;= ent.end]</span>
+      <span class="c1">#   if len(rights) &gt; 0 and rights[0].pos_ in [&#39;VERB&#39;, &#39;NOUN&#39;, &#39;ADJ&#39;, &#39;ADV&#39;]:</span>
+      <span class="c1">#     status = rights[0]</span>
+
+      <span class="k">if</span> <span class="n">amod</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">subjStatus</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="p">[</span><span class="n">amod</span><span class="p">,</span> <span class="n">subjStatus</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">status</span><span class="p">,</span> <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span></div>
+
+
+
+<div class="viewcode-block" id="WorkflowBase.getStatusForPobj">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getStatusForPobj">[docs]</a>
+  <span class="k">def</span> <span class="nf">getStatusForPobj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get the status for ent root pos ``pobj``</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        ent: Span, the span of entity</span>
+<span class="sd">        include: bool, ent will be included in returned status if True</span>
+
+<span class="sd">      returns:</span>
+
+<span class="sd">        Span or Token, the identified health status</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">Token</span><span class="p">):</span>
+      <span class="n">root</span> <span class="o">=</span> <span class="n">ent</span>
+      <span class="n">start</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span>
+      <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">Span</span><span class="p">):</span>
+      <span class="n">root</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
+      <span class="n">start</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span>
+      <span class="n">end</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span>
+    <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">&quot;Method &#39;self.getStatusForPobj&#39; can only be used for &#39;pobj&#39;&quot;</span><span class="p">)</span>
+
+    <span class="n">grandparent</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">head</span>
+    <span class="n">parent</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">head</span>
+    <span class="k">if</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">]:</span>
+      <span class="n">lefts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">grandparent</span><span class="o">.</span><span class="n">lefts</span><span class="p">)</span>
+      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lefts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">leftInd</span> <span class="o">=</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">i</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">leftInd</span> <span class="o">=</span> <span class="n">lefts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">i</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">include</span><span class="p">:</span>
+        <span class="n">rights</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">grandparent</span><span class="o">.</span><span class="n">rights</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">n_rights</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">rights</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">parent</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">leftInd</span><span class="p">:</span><span class="n">rights</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">i</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">leftInd</span><span class="p">:</span><span class="n">grandparent</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">leftInd</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">status</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">status</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;ROOT&#39;</span><span class="p">]:</span>
+      <span class="n">dobj</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">rights</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">tk</span><span class="o">.</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">start</span><span class="p">]</span>
+      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dobj</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">dobjEnt</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">dobj</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="n">dobj</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">dobjEnt</span><span class="p">,</span> <span class="n">dobjEnt</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">dobjEnt</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="n">ent</span>
+        <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="n">include</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">]:</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findRightObj</span><span class="p">(</span><span class="n">grandparent</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">subtree</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">status</span><span class="o">.</span><span class="n">subtree</span><span class="p">)</span>
+        <span class="n">nbor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getNbor</span><span class="p">(</span><span class="n">status</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">nbor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">nbor</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;prep&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">subtree</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="p">:</span>
+          <span class="n">status</span> <span class="o">=</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">status</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="n">subtree</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">include</span><span class="p">:</span>
+          <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">Token</span><span class="p">)</span> <span class="ow">and</span> <span class="n">status</span><span class="o">.</span><span class="n">i</span> <span class="o">&gt;=</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+          <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">Span</span><span class="p">)</span> <span class="ow">and</span> <span class="n">status</span><span class="o">.</span><span class="n">end</span> <span class="o">&gt;=</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="p">:</span>
+            <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">elif</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NOUN&#39;</span><span class="p">]:</span>
+      <span class="n">grandEnt</span> <span class="o">=</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">grandparent</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="n">grandparent</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">grandEnt</span><span class="p">,</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">i</span><span class="p">,</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;AUX&#39;</span><span class="p">]:</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="n">grandparent</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">grandparent</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">parent</span><span class="o">.</span><span class="n">i</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span> <span class="c1"># search lefts for amod</span>
+      <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">status</span></div>
+</div>
+
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

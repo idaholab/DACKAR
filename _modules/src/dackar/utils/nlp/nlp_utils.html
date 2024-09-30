@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.utils.nlp.nlp_utils &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.utils.nlp.nlp_utils</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.utils.nlp.nlp_utils</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on March, 2022</span>
+
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span> <span class="nn">spacy</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">spacy.tokens</span> <span class="kn">import</span> <span class="n">Span</span>
+<span class="c1"># filter_spans is used to resolve the overlap issue in entities</span>
+<span class="c1"># It gives primacy to longer spans (entities)</span>
+<span class="kn">from</span> <span class="nn">spacy.util</span> <span class="kn">import</span> <span class="n">filter_spans</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1">###########################################################################</span>
+
+<div class="viewcode-block" id="displayNER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.displayNER">[docs]</a>
+<span class="k">def</span> <span class="nf">displayNER</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">includePunct</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate data frame for visualization of spaCy doc with custom attributes.</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+<span class="sd">      includePunct: bool, True if the punctuaction is included</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      df: pandas.DataFrame, data frame contains attributes of tokens</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">rows</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">t</span><span class="o">.</span><span class="n">is_punct</span> <span class="ow">or</span> <span class="n">includePunct</span><span class="p">:</span>
+      <span class="n">row</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;token&#39;</span><span class="p">:</span> <span class="n">i</span><span class="p">,</span>
+             <span class="s1">&#39;text&#39;</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="s1">&#39;lemma&#39;</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">lemma_</span><span class="p">,</span>
+             <span class="s1">&#39;pos&#39;</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">pos_</span><span class="p">,</span> <span class="s1">&#39;dep&#39;</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">dep_</span><span class="p">,</span> <span class="s1">&#39;ent_type&#39;</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">ent_type_</span><span class="p">,</span>
+             <span class="s1">&#39;ent_iob_&#39;</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">ent_iob_</span><span class="p">}</span>
+      <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;coref_chains&#39;</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;coref_chains&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">t</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">coref_chains</span><span class="p">:</span> <span class="c1"># neuralcoref attributes</span>
+          <span class="n">row</span><span class="p">[</span><span class="s1">&#39;coref_chains&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">coref_chains</span><span class="o">.</span><span class="n">pretty_representation</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">row</span><span class="p">[</span><span class="s1">&#39;coref_chains&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+      <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;ref_n&#39;</span><span class="p">):</span> <span class="c1"># referent attribute</span>
+        <span class="n">row</span><span class="p">[</span><span class="s1">&#39;ref_n&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span>
+        <span class="n">row</span><span class="p">[</span><span class="s1">&#39;ref_t&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_t</span>
+      <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;ref_ent&#39;</span><span class="p">):</span> <span class="c1"># ref_n/ref_t</span>
+        <span class="n">row</span><span class="p">[</span><span class="s1">&#39;ref_ent&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_ent</span>
+      <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+  <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s1">&#39;token&#39;</span><span class="p">)</span>
+  <span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="kc">None</span>
+
+  <span class="k">return</span> <span class="n">df</span></div>
+
+
+<div class="viewcode-block" id="resetPipeline">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.resetPipeline">[docs]</a>
+<span class="k">def</span> <span class="nf">resetPipeline</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="n">pipes</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    remove all custom pipes, and add new pipes</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      nlp: spacy.Language object, contains all components and data needed to process text</span>
+<span class="sd">      pipes: list, list of pipes that will be added to nlp pipeline</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      nlp: spacy.Language object, contains updated components and data needed to process text</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">customPipes</span> <span class="o">=</span> <span class="p">[</span><span class="n">pipe</span> <span class="k">for</span> <span class="p">(</span><span class="n">pipe</span><span class="p">,</span> <span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="n">nlp</span><span class="o">.</span><span class="n">pipeline</span>
+                  <span class="k">if</span> <span class="n">pipe</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;tagger&#39;</span><span class="p">,</span> <span class="s1">&#39;parser&#39;</span><span class="p">,</span>
+                                  <span class="s1">&#39;tok2vec&#39;</span><span class="p">,</span> <span class="s1">&#39;attribute_ruler&#39;</span><span class="p">,</span> <span class="s1">&#39;lemmatizer&#39;</span><span class="p">]]</span>
+  <span class="k">for</span> <span class="n">pipe</span> <span class="ow">in</span> <span class="n">customPipes</span><span class="p">:</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">nlp</span><span class="o">.</span><span class="n">remove_pipe</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
+  <span class="c1"># re-add specified pipes</span>
+  <span class="k">for</span> <span class="n">pipe</span> <span class="ow">in</span> <span class="n">pipes</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">pipe</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;pysbdSentenceBoundaries&#39;</span><span class="p">]:</span>
+      <span class="c1"># nlp.add_pipe(pipe, before=&#39;parser&#39;)</span>
+      <span class="n">nlp</span><span class="o">.</span><span class="n">add_pipe</span><span class="p">(</span><span class="n">pipe</span><span class="p">,</span> <span class="n">first</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">nlp</span><span class="o">.</span><span class="n">add_pipe</span><span class="p">(</span><span class="n">pipe</span><span class="p">)</span>
+  <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model: </span><span class="si">{</span><span class="n">nlp</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">, Language: </span><span class="si">{</span><span class="n">nlp</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s1">&#39;lang&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+  <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Available pipelines:&#39;</span><span class="o">+</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">pipe</span> <span class="k">for</span> <span class="p">(</span><span class="n">pipe</span><span class="p">,</span><span class="n">_</span><span class="p">)</span> <span class="ow">in</span> <span class="n">nlp</span><span class="o">.</span><span class="n">pipeline</span><span class="p">]))</span>
+  <span class="k">return</span> <span class="n">nlp</span></div>
+
+
+<div class="viewcode-block" id="printDepTree">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.printDepTree">[docs]</a>
+<span class="k">def</span> <span class="nf">printDepTree</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">skipPunct</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Utility function to pretty print the dependency tree.</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+<span class="sd">      skipPunct: bool, True if skip punctuactions</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      None</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">def</span> <span class="nf">printRecursive</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="n">indent</span><span class="p">,</span> <span class="n">skipPunct</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">root</span><span class="o">.</span><span class="n">dep_</span> <span class="o">==</span> <span class="s1">&#39;punct&#39;</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">skipPunct</span><span class="p">:</span>
+      <span class="nb">print</span><span class="p">(</span><span class="s2">&quot; &quot;</span><span class="o">*</span><span class="n">indent</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">root</span><span class="si">}</span><span class="s2"> [</span><span class="si">{</span><span class="n">root</span><span class="o">.</span><span class="n">pos_</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">root</span><span class="o">.</span><span class="n">dep_</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">left</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">lefts</span><span class="p">:</span>
+      <span class="n">printRecursive</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="n">indent</span><span class="o">+</span><span class="mi">4</span><span class="p">,</span> <span class="n">skipPunct</span><span class="o">=</span><span class="n">skipPunct</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">right</span> <span class="ow">in</span> <span class="n">root</span><span class="o">.</span><span class="n">rights</span><span class="p">:</span>
+      <span class="n">printRecursive</span><span class="p">(</span><span class="n">right</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="n">indent</span><span class="o">+</span><span class="mi">4</span><span class="p">,</span> <span class="n">skipPunct</span><span class="o">=</span><span class="n">skipPunct</span><span class="p">)</span>
+
+  <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">sents</span><span class="p">:</span> <span class="c1"># iterate over all sentences in a doc</span>
+    <span class="n">printRecursive</span><span class="p">(</span><span class="n">sent</span><span class="o">.</span><span class="n">root</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">skipPunct</span><span class="o">=</span><span class="n">skipPunct</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="plotDAG">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.plotDAG">[docs]</a>
+<span class="k">def</span> <span class="nf">plotDAG</span><span class="p">(</span><span class="n">edges</span><span class="p">,</span> <span class="n">colors</span><span class="o">=</span><span class="s1">&#39;k&#39;</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">      edges: list of tuples, [(subj, conj), (..,..)] or [(subj, conj, {&quot;color&quot;:&quot;blue&quot;}), (..,..)]</span>
+<span class="sd">      colors: str or list, list of colors</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">g</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">MultiDiGraph</span><span class="p">()</span>
+  <span class="n">g</span><span class="o">.</span><span class="n">add_edges_from</span><span class="p">(</span><span class="n">edges</span><span class="p">)</span>
+  <span class="n">nx</span><span class="o">.</span><span class="n">draw_networkx</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="n">edge_color</span><span class="o">=</span><span class="n">colors</span><span class="p">)</span>
+  <span class="n">ax</span> <span class="o">=</span> <span class="n">plot</span><span class="o">.</span><span class="n">gca</span><span class="p">()</span>
+  <span class="n">plt</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s2">&quot;off&quot;</span><span class="p">)</span>
+  <span class="n">plot</span><span class="o">.</span><span class="n">show</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="extractLemma">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.extractLemma">[docs]</a>
+<span class="k">def</span> <span class="nf">extractLemma</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="n">nlp</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Lammatize the variable list</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      var: str, string</span>
+<span class="sd">      nlp: object, preloaded nlp model</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      lemVar: list, list of lammatized variables</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">mvar</span> <span class="o">=</span> <span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">var</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+  <span class="n">lemVar</span> <span class="o">=</span> <span class="p">[</span><span class="n">token</span><span class="o">.</span><span class="n">lemma_</span> <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">nlp</span><span class="p">(</span><span class="n">mvar</span><span class="p">)]</span>
+  <span class="k">return</span> <span class="n">lemVar</span></div>
+
+
+<div class="viewcode-block" id="generatePattern">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.generatePattern">[docs]</a>
+<span class="k">def</span> <span class="nf">generatePattern</span><span class="p">(</span><span class="n">form</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="nb">id</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LOWER&quot;</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate entity pattern</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      form: str or list, the given str or list of lemmas that will be used to generate pattern</span>
+<span class="sd">      label: str, the label name for the pattern</span>
+<span class="sd">      id: str, the id name for the pattern</span>
+<span class="sd">      attr: str, attribute used for the pattern, either &quot;LOWER&quot; or &quot;LEMMA&quot;</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      pattern: dict, pattern will be used by entity matcher</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="c1"># if any of &quot;!&quot;, &quot;?&quot;, &quot;+&quot;, &quot;*&quot; present in the provided string &quot;form&quot;, we will treat it as determiter for the form</span>
+  <span class="k">if</span> <span class="n">attr</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;lower&quot;</span><span class="p">:</span>
+    <span class="n">ptn</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">attr</span> <span class="o">=</span> <span class="s2">&quot;LOWER&quot;</span>
+    <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">form</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">():</span>
+      <span class="k">if</span> <span class="s2">&quot;-&quot;</span> <span class="ow">in</span> <span class="n">form</span><span class="p">:</span>
+        <span class="n">subList</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">))</span>
+        <span class="c1"># slow when using re.split</span>
+        <span class="c1"># subList = re.split(&quot;(-)&quot;, elem)</span>
+        <span class="c1"># for sub in subList:</span>
+        <span class="c1">#   if sub != &#39;-&#39;:</span>
+        <span class="c1">#     ptn.append({attr:sub} if sub not in [&quot;!&quot;, &quot;?&quot;, &quot;+&quot;, &quot;*&quot;] else {&quot;POS&quot;:&quot;DET&quot;, &quot;OP&quot;:sub})</span>
+        <span class="c1">#   else:</span>
+        <span class="c1">#     ptn.append({&quot;ORTH&quot;:&quot;-&quot;})</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">sub</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">subList</span><span class="p">):</span>
+          <span class="n">ptn</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">attr</span><span class="p">:</span><span class="n">sub</span><span class="p">}</span> <span class="k">if</span> <span class="n">sub</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;!&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span> <span class="s2">&quot;*&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="p">{</span><span class="s2">&quot;POS&quot;</span><span class="p">:</span><span class="s2">&quot;DET&quot;</span><span class="p">,</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span><span class="n">sub</span><span class="p">})</span>
+          <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">subList</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">ptn</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;ORTH&quot;</span><span class="p">:</span><span class="s2">&quot;-&quot;</span><span class="p">})</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">ptn</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">attr</span><span class="p">:</span><span class="n">elem</span><span class="p">}</span> <span class="k">if</span> <span class="n">elem</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;!&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span> <span class="s2">&quot;*&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="p">{</span><span class="s2">&quot;POS&quot;</span><span class="p">:</span><span class="s2">&quot;DET&quot;</span><span class="p">,</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span><span class="n">elem</span><span class="p">})</span>
+  <span class="k">elif</span> <span class="n">attr</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;lemma&quot;</span><span class="p">:</span>
+    <span class="n">attr</span> <span class="o">=</span> <span class="s2">&quot;LEMMA&quot;</span>
+    <span class="n">ptn</span> <span class="o">=</span> <span class="p">[{</span><span class="n">attr</span><span class="p">:</span><span class="n">elem</span><span class="p">}</span> <span class="k">if</span> <span class="n">elem</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;!&quot;</span><span class="p">,</span> <span class="s2">&quot;?&quot;</span><span class="p">,</span> <span class="s2">&quot;+&quot;</span><span class="p">,</span> <span class="s2">&quot;*&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="p">{</span><span class="s2">&quot;POS&quot;</span><span class="p">:</span><span class="s2">&quot;DET&quot;</span><span class="p">,</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span><span class="n">elem</span><span class="p">}</span> <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">form</span><span class="p">]</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Incorrect &#39;attr=</span><span class="si">{</span><span class="n">attr</span><span class="si">}</span><span class="s2">&#39; is provided, valid value for &#39;attr&#39; is either &#39;LOWER&#39; or &#39;LEMMA&#39;&quot;</span><span class="p">)</span>
+  <span class="n">pattern</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;label&quot;</span><span class="p">:</span><span class="n">label</span><span class="p">,</span> <span class="s2">&quot;pattern&quot;</span><span class="p">:</span><span class="n">ptn</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="nb">id</span><span class="p">}</span>
+  <span class="k">return</span> <span class="n">pattern</span></div>
+
+
+<div class="viewcode-block" id="generatePatternList">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.generatePatternList">[docs]</a>
+<span class="k">def</span> <span class="nf">generatePatternList</span><span class="p">(</span><span class="n">entList</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="nb">id</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LOWER&quot;</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generate a list of entity patterns</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      entList: list, list of entities</span>
+<span class="sd">      label: str, the label name for the pattern</span>
+<span class="sd">      id: str, the id name for the pattern</span>
+<span class="sd">      attr: str, attribute used for the pattern, either &quot;LOWER&quot; or &quot;LEMMA&quot;</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      ptnList, list, list of patterns will be used by entity matcher</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">ptnList</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">entList</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="k">continue</span>
+    <span class="c1"># if default is LEMMA, we should also add LOWER to the pattern, since the lemma for &quot;Cooling System&quot;</span>
+    <span class="c1"># will be &quot;cool System&quot;, which can not capture &quot;cool system&quot;.</span>
+    <span class="n">ptn</span> <span class="o">=</span> <span class="n">generatePattern</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="nb">id</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LOWER&quot;</span><span class="p">)</span>
+    <span class="n">ptnList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ptn</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">attr</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;lemma&quot;</span><span class="p">:</span>
+      <span class="k">try</span><span class="p">:</span>
+        <span class="n">entLemma</span> <span class="o">=</span> <span class="n">extractLemma</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">nlp</span><span class="p">)</span>
+      <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Can not add to pattern list </span><span class="si">{</span><span class="n">ent</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="k">continue</span>
+      <span class="n">ptnLemma</span> <span class="o">=</span> <span class="n">generatePattern</span><span class="p">(</span><span class="n">entLemma</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="nb">id</span><span class="p">,</span> <span class="n">attr</span><span class="p">)</span>
+      <span class="c1"># print(ptnLemma)</span>
+      <span class="n">ptnList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ptnLemma</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">ptnList</span></div>
+
+
+<span class="c1">###############</span>
+<span class="c1"># methods can be used for callback in &quot;add&quot; method</span>
+<span class="c1">###############</span>
+<div class="viewcode-block" id="extendEnt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/nlp/nlp_utils/index.html#src.dackar.utils.nlp.nlp_utils.extendEnt">[docs]</a>
+<span class="k">def</span> <span class="nf">extendEnt</span><span class="p">(</span><span class="n">matcher</span><span class="p">,</span> <span class="n">doc</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">matches</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  Extend the doc&#39;s entity</span>
+
+<span class="sd">  Args:</span>
+
+<span class="sd">    matcher: spacy.Matcher, the spacy matcher instance</span>
+<span class="sd">    doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+<span class="sd">    i: int, index of the current match (matches[i])</span>
+<span class="sd">    matches: List[Tuple[int, int, int]], a list of (match_id, start, end) tuples, describing</span>
+<span class="sd">    the matches. A match tuple describes a span doc[start:end]</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="nb">id</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">matches</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+  <span class="n">ent</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="nb">id</span><span class="p">)</span>
+  <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">label_</span> <span class="o">+</span> <span class="s1">&#39; &#39;</span> <span class="o">+</span> <span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+  <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="n">filter_spans</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">)</span> <span class="o">+</span><span class="p">[</span><span class="n">ent</span><span class="p">])</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

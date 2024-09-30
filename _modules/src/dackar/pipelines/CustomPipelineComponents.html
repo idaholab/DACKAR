@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.pipelines.CustomPipelineComponents &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.pipelines.CustomPipelineComponents</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.pipelines.CustomPipelineComponents</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on March, 2022</span>
+
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">spacy</span>
+<span class="kn">from</span> <span class="nn">spacy.language</span> <span class="kn">import</span> <span class="n">Language</span>
+<span class="kn">from</span> <span class="nn">spacy.tokens</span> <span class="kn">import</span> <span class="n">Span</span>
+<span class="kn">from</span> <span class="nn">spacy.matcher</span> <span class="kn">import</span> <span class="n">Matcher</span>
+<span class="kn">from</span> <span class="nn">spacy.tokens</span> <span class="kn">import</span> <span class="n">Token</span>
+<span class="c1"># filter_spans is used to resolve the overlap issue in entities</span>
+<span class="c1"># It gives primacy to longer spans (entities)</span>
+<span class="kn">from</span> <span class="nn">spacy.util</span> <span class="kn">import</span> <span class="n">filter_spans</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<span class="c1"># use pysbd as a sentencizer component for spacy</span>
+<span class="kn">import</span> <span class="nn">pysbd</span>
+<span class="kn">from</span> <span class="nn">..config</span> <span class="kn">import</span> <span class="n">nlpConfig</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="c1"># import sys</span>
+
+<span class="c1"># sys.setrecursionlimit(10000)</span>
+
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1">#### Using spacy&#39;s Token extensions for coreferee</span>
+<span class="k">if</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;ref_n&#39;</span><span class="p">):</span>
+  <span class="n">_</span> <span class="o">=</span> <span class="n">Token</span><span class="o">.</span><span class="n">remove_extension</span><span class="p">(</span><span class="s1">&#39;ref_n&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;ref_t&#39;</span><span class="p">):</span>
+  <span class="n">_</span> <span class="o">=</span> <span class="n">Token</span><span class="o">.</span><span class="n">remove_extension</span><span class="p">(</span><span class="s1">&#39;ref_t&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;ref_t_&#39;</span><span class="p">):</span>
+<div class="viewcode-block" id="_">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents._">[docs]</a>
+  <span class="n">_</span> <span class="o">=</span> <span class="n">Token</span><span class="o">.</span><span class="n">remove_extension</span><span class="p">(</span><span class="s1">&#39;ref_t_&#39;</span><span class="p">)</span></div>
+
+<span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;ref_n&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+<span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;ref_t&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;health_status&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;health_status&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;alias&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;ref_ent&#39;</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;ref_ent&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;alias&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+
+<div class="viewcode-block" id="customLabel">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.customLabel">[docs]</a>
+<span class="n">customLabel</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;STRUCTURE&#39;</span><span class="p">,</span> <span class="s1">&#39;COMPONENT&#39;</span><span class="p">,</span> <span class="s1">&#39;SYSTEM&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="aliasLookup">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.aliasLookup">[docs]</a>
+<span class="n">aliasLookup</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<span class="k">if</span> <span class="s1">&#39;alias_file&#39;</span> <span class="ow">in</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">]:</span>
+<div class="viewcode-block" id="df">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.df">[docs]</a>
+  <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;alias_file&#39;</span><span class="p">],</span> <span class="n">index_col</span><span class="o">=</span><span class="s1">&#39;alias&#39;</span><span class="p">)</span></div>
+
+  <span class="n">aliasLookup</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()[</span><span class="s1">&#39;name&#39;</span><span class="p">])</span>
+
+<div class="viewcode-block" id="getEntID">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.getEntID">[docs]</a>
+<span class="k">def</span> <span class="nf">getEntID</span><span class="p">():</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">if</span> <span class="s1">&#39;params&#39;</span> <span class="ow">in</span> <span class="n">nlpConfig</span><span class="p">:</span>
+    <span class="n">entLabel</span> <span class="o">=</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ent_label&#39;</span><span class="p">,</span> <span class="s2">&quot;SSC&quot;</span><span class="p">)</span>
+    <span class="n">entID</span> <span class="o">=</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;params&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;ent_id&#39;</span><span class="p">,</span> <span class="s2">&quot;SSC&quot;</span><span class="p">)</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">entLabel</span> <span class="o">=</span> <span class="s2">&quot;SSC&quot;</span>
+    <span class="n">entID</span> <span class="o">=</span> <span class="s2">&quot;SSC&quot;</span>
+  <span class="k">return</span> <span class="n">entID</span><span class="p">,</span> <span class="n">entLabel</span></div>
+
+
+<span class="c1"># Use Config File to update aliasLookup Dictionary</span>
+
+<span class="c1"># orders of NLP pipeline: &#39;ner&#39; --&gt; &#39;normEntities&#39; --&gt; &#39;merge_entities&#39; --&gt; &#39;initCoref&#39;</span>
+<span class="c1"># --&gt; &#39;aliasResolver&#39; --&gt; &#39;coreferee&#39; --&gt; &#39;anaphorCoref&#39;</span>
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;normEntities&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="normEntities">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.normEntities">[docs]</a>
+<span class="k">def</span> <span class="nf">normEntities</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Normalizing Named Entities, remove the leading article and trailing particle</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after the normalizing named entities</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">ents</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">ent</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pos_</span> <span class="o">==</span> <span class="s2">&quot;DET&quot;</span><span class="p">:</span> <span class="c1"># leading article</span>
+      <span class="n">ent</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ent</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">ent</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">pos_</span> <span class="o">==</span> <span class="s2">&quot;PART&quot;</span><span class="p">:</span> <span class="c1"># trailing particle like &#39;s</span>
+        <span class="n">ent</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
+      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ent</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">ents</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ent</span><span class="p">)</span>
+  <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ents</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;initCoref&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="initCoref">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.initCoref">[docs]</a>
+<span class="k">def</span> <span class="nf">initCoref</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Initialize the coreference, assign text and label to custom extension ``ref_n`` and ``ref_t``</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after the initializing coreference</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
+    <span class="c1">#</span>
+    <span class="c1"># if e.label_ in customLabel:</span>
+    <span class="n">e</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span><span class="p">,</span> <span class="n">e</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_t</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">label_</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;aliasResolver&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="aliasResolver">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.aliasResolver">[docs]</a>
+<span class="k">def</span> <span class="nf">aliasResolver</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Lookup aliases and store result in ``alias``</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after the alias lookup</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
+    <span class="n">alias</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">alias</span> <span class="ow">in</span> <span class="n">aliasLookup</span><span class="p">:</span>
+      <span class="n">name</span> <span class="o">=</span> <span class="n">aliasLookup</span><span class="p">[</span><span class="n">alias</span><span class="p">]</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+<div class="viewcode-block" id="propagateEntType">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.propagateEntType">[docs]</a>
+<span class="k">def</span> <span class="nf">propagateEntType</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    propagate entity type stored in ``ref_t``</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after entity type extension</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">ents</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">e</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span> <span class="o">!=</span> <span class="s1">&#39;&#39;</span><span class="p">:</span> <span class="c1"># if e is a coreference</span>
+      <span class="n">e</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">e</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_t</span><span class="p">)</span>
+    <span class="n">ents</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+  <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ents</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;anaphorCoref&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="anaphorCoref">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.anaphorCoref">[docs]</a>
+<span class="k">def</span> <span class="nf">anaphorCoref</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Anaphora resolution using coreferee</span>
+<span class="sd">    This pipeline need to be added after NER.</span>
+<span class="sd">    The assumption here is: The entities need to be recognized first, then call</span>
+<span class="sd">    pipeline ``initCoref`` to assign initial custom attribute ``ref_n`` and ``ref_t``,</span>
+<span class="sd">    then call pipeline ``aliasResolver`` to resolve all the aliases used in the text.</span>
+<span class="sd">    After all these pre-processes, we can use ``anaphorCoref`` pipeline to resolve the</span>
+<span class="sd">    coreference.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after the anaphora resolution using coreferee</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;coref_chains&#39;</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">doc</span>
+  <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">doc</span><span class="p">:</span>
+    <span class="n">coref</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">coref_chains</span>
+    <span class="c1"># if token is coref and not already dereferenced</span>
+    <span class="k">if</span> <span class="n">coref</span> <span class="ow">and</span> <span class="n">token</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span> <span class="o">==</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+      <span class="c1"># check all the references, if &quot;ref_n&quot; is available (determined by NER and initCoref),</span>
+      <span class="c1"># the value of &quot;ref_n&quot; will be assigned to current totken</span>
+      <span class="k">for</span> <span class="n">chain</span> <span class="ow">in</span> <span class="n">coref</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">ref</span> <span class="ow">in</span> <span class="n">chain</span><span class="p">:</span>
+          <span class="n">refToken</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">ref</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+          <span class="k">if</span> <span class="n">refToken</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span> <span class="o">!=</span> <span class="s1">&#39;&#39;</span><span class="p">:</span>
+            <span class="n">token</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span> <span class="o">=</span> <span class="n">refToken</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span>
+            <span class="n">token</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_t</span> <span class="o">=</span> <span class="n">refToken</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_t</span>
+            <span class="k">break</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;anaphorEntCoref&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="anaphorEntCoref">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.anaphorEntCoref">[docs]</a>
+<span class="k">def</span> <span class="nf">anaphorEntCoref</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Anaphora resolution using coreferee for Entities</span>
+<span class="sd">    This pipeline need to be added after NER.</span>
+<span class="sd">    The assumption here is: The entities need to be recognized first, then call</span>
+<span class="sd">    pipeline ``initCoref`` to assign initial custom attribute ``ref_n`` and ``ref_t``,</span>
+<span class="sd">    then call pipeline ``aliasResolver`` to resolve all the aliases used in the text.</span>
+<span class="sd">    After all these pre-processes, we can use ``anaphorEntCoref`` pipeline to resolve the</span>
+<span class="sd">    coreference.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after the anaphora resolution using coreferee</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;coref_chains&#39;</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">doc</span>
+
+  <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">ent</span><span class="p">:</span>
+      <span class="n">coref</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">coref_chains</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">coref</span><span class="p">:</span>
+        <span class="k">continue</span>
+      <span class="k">for</span> <span class="n">chain</span> <span class="ow">in</span> <span class="n">coref</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">ref</span> <span class="ow">in</span> <span class="n">chain</span><span class="p">:</span>
+          <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="n">ref</span><span class="p">:</span>
+            <span class="n">refToken</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">index</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">refToken</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_ent</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+              <span class="n">refToken</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_ent</span> <span class="o">=</span> <span class="n">ent</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;expandEntities&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="expandEntities">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.expandEntities">[docs]</a>
+<span class="k">def</span> <span class="nf">expandEntities</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Expand the current entities, recursive function to extend entity with all previous NOUN</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after expansion of current entities</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">newEnts</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="n">isUpdated</span> <span class="o">=</span> <span class="kc">False</span>
+  <span class="n">entID</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">getEntID</span><span class="p">()</span>
+  <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">ent_id_</span> <span class="o">==</span> <span class="n">entID</span> <span class="ow">and</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="n">prevToken</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">ent</span><span class="o">.</span><span class="n">start</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+      <span class="k">if</span> <span class="n">prevToken</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NOUN&#39;</span><span class="p">]:</span>
+        <span class="n">newEnt</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">ent</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
+        <span class="n">newEnts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">newEnt</span><span class="p">)</span>
+        <span class="n">isUpdated</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">newEnts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ent</span><span class="p">)</span>
+  <span class="c1"># print(newEnts)</span>
+  <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="n">filter_spans</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">)</span> <span class="o">+</span>  <span class="n">newEnts</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">isUpdated</span><span class="p">:</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="n">expandEntities</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+<span class="c1"># @Language.component(&quot;mergeEntitiesWithSameID&quot;)</span>
+<span class="c1"># def mergeEntitiesWithSameID(doc):</span>
+<span class="c1">#   &quot;&quot;&quot;</span>
+<span class="c1">#     Merge the same ID entities</span>
+
+<span class="c1">#     Args:</span>
+<span class="c1">#       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="c1">#     Returns:</span>
+<span class="c1">#       doc: spacy.tokens.doc.Doc, the document after expansion of current entities</span>
+<span class="c1">#   &quot;&quot;&quot;</span>
+<span class="c1">#   newEnts = []</span>
+<span class="c1">#   isUpdated = True</span>
+<span class="c1">#   entID, _ = getEntID()</span>
+<span class="c1">#   while isUpdated:</span>
+<span class="c1">#     ents = list(doc.ents)</span>
+<span class="c1">#     if len(ents) &lt;= 1:</span>
+<span class="c1">#       isUpdated = False</span>
+<span class="c1">#     for i in range(len(ents)-1):</span>
+<span class="c1">#       if i == len(ents) - 2:</span>
+<span class="c1">#         isUpdated = False</span>
+<span class="c1">#       ent1, ent2 = ents[i], ents[i+1]</span>
+<span class="c1">#       if ent1.ent_id_ != entID:</span>
+<span class="c1">#         if i == len(ents)-2:</span>
+<span class="c1">#           isUpdated = False</span>
+<span class="c1">#       start = ent1.start</span>
+<span class="c1">#       end = ent1.end</span>
+<span class="c1">#       label = ent1.label</span>
+<span class="c1">#       alias = ent1._.alias</span>
+<span class="c1">#       # id = ent1.ent_id</span>
+
+<span class="c1">#       if start == 1:</span>
+<span class="c1">#         prev = doc[start - 1]</span>
+<span class="c1">#         if prev.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#           start = prev.i</span>
+<span class="c1">#       elif start &gt; 1:</span>
+<span class="c1">#         prev1, prev2 = doc[start-1], doc[start-2]</span>
+<span class="c1">#         if prev1.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#           start = prev1.i</span>
+<span class="c1">#         elif prev1.dep_ in [&#39;punct&#39;] and prev2.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#           start = prev2.i</span>
+<span class="c1">#       cond = ent1.root.dep_ in [&#39;pobj&#39;, &#39;dobj&#39;, &#39;iobj&#39;, &#39;obj&#39;, &#39;obl&#39;, &#39;oprd&#39;] and ent2.root.dep_ in [&#39;nsubj&#39;, &#39;nsubjpass&#39;, &#39;nsubj:pass&#39;]</span>
+<span class="c1">#       if ent2.ent_id_ == entID and ent2.start == end:</span>
+<span class="c1">#         if not cond:</span>
+<span class="c1">#           end = ent2.end</span>
+<span class="c1">#           label = ent2.label</span>
+<span class="c1">#       elif ent2.ent_id_ == entID and ent2.start - end == 1:</span>
+<span class="c1">#         if not cond and doc[end].dep_ in [&#39;punct&#39;]:</span>
+<span class="c1">#           end = ent2.end</span>
+<span class="c1">#           label = ent2.label</span>
+<span class="c1">#       if end == ent2.end:</span>
+<span class="c1">#         if ent2._.alias:</span>
+<span class="c1">#           alias = ent2._.alias</span>
+<span class="c1">#       elif end &lt; ent1.sent.end - 1:</span>
+<span class="c1">#           post1, post2 = doc[end], doc[end+1]</span>
+<span class="c1">#           if post1.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#             end = end + 1</span>
+<span class="c1">#           elif post1.dep_ in [&#39;punct&#39;] and post2.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#             end = end + 2</span>
+<span class="c1">#       elif end == ent1.sent.end:</span>
+<span class="c1">#           post = doc[end]</span>
+<span class="c1">#           if post.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#             end = end + 1</span>
+
+<span class="c1">#       if start != ent1.start or end != ent1.end:</span>
+<span class="c1">#         newEnt = Span(doc, start, end, label=label)</span>
+<span class="c1">#         newEnt._.set(&#39;alias&#39;, alias)</span>
+<span class="c1">#         newEnts.append(newEnt)</span>
+<span class="c1">#         doc.ents = filter_spans(list(doc.ents) +  newEnts)</span>
+<span class="c1">#         if i == len(ents) - 2:</span>
+<span class="c1">#           isUpdated = False</span>
+<span class="c1">#         break</span>
+<span class="c1">#       else:</span>
+<span class="c1">#         if i == len(ents) -2:</span>
+<span class="c1">#           isUpdated = False</span>
+
+<span class="c1">#   return doc</span>
+
+<span class="c1"># Recursive function has default max depth 1000, when process record by record, the number of calls</span>
+<span class="c1"># is equal the number of record, and the max depth will be reached.</span>
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;mergeEntitiesWithSameID&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="mergeEntitiesWithSameID">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.mergeEntitiesWithSameID">[docs]</a>
+<span class="k">def</span> <span class="nf">mergeEntitiesWithSameID</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Merge the same ID entities</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after expansion of current entities</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">newEnts</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="n">isUpdated</span> <span class="o">=</span> <span class="kc">False</span>
+  <span class="n">ents</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">)</span>
+  <span class="n">entID</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">getEntID</span><span class="p">()</span>
+  <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">ents</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">):</span>
+    <span class="n">ent1</span><span class="p">,</span> <span class="n">ent2</span> <span class="o">=</span> <span class="n">ents</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">ents</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">ent1</span><span class="o">.</span><span class="n">start</span>
+    <span class="n">end</span> <span class="o">=</span> <span class="n">ent1</span><span class="o">.</span><span class="n">end</span>
+    <span class="n">label</span> <span class="o">=</span> <span class="n">ent1</span><span class="o">.</span><span class="n">label</span>
+    <span class="n">alias</span> <span class="o">=</span> <span class="n">ent1</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span>
+    <span class="c1"># id = ent1.ent_id</span>
+    <span class="k">if</span> <span class="n">ent1</span><span class="o">.</span><span class="n">ent_id_</span> <span class="o">==</span> <span class="n">entID</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">isUpdated</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">start</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">prev</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">start</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">prev</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NUM&#39;</span><span class="p">]:</span>
+          <span class="n">start</span> <span class="o">=</span> <span class="n">prev</span><span class="o">.</span><span class="n">i</span>
+      <span class="k">elif</span> <span class="n">start</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">prev1</span><span class="p">,</span> <span class="n">prev2</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">start</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">doc</span><span class="p">[</span><span class="n">start</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">prev1</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NUM&#39;</span><span class="p">]:</span>
+          <span class="n">start</span> <span class="o">=</span> <span class="n">prev1</span><span class="o">.</span><span class="n">i</span>
+        <span class="k">elif</span> <span class="n">prev1</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;punct&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">prev2</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NUM&#39;</span><span class="p">]:</span>
+          <span class="n">start</span> <span class="o">=</span> <span class="n">prev2</span><span class="o">.</span><span class="n">i</span>
+      <span class="k">if</span> <span class="n">ent2</span><span class="o">.</span><span class="n">ent_id_</span> <span class="o">==</span> <span class="n">entID</span><span class="p">:</span>
+        <span class="n">cond</span> <span class="o">=</span> <span class="n">ent1</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">ent2</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj:pass&#39;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cond</span><span class="p">:</span>
+          <span class="k">if</span> <span class="n">end</span> <span class="o">==</span> <span class="n">ent2</span><span class="o">.</span><span class="n">start</span> <span class="ow">or</span> <span class="p">(</span><span class="n">end</span> <span class="o">==</span> <span class="n">ent2</span><span class="o">.</span><span class="n">start</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">doc</span><span class="p">[</span><span class="n">end</span><span class="p">]</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;punct&#39;</span><span class="p">]):</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">ent2</span><span class="o">.</span><span class="n">end</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="n">ent2</span><span class="o">.</span><span class="n">label</span>
+            <span class="k">if</span> <span class="n">ent2</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">:</span>
+              <span class="n">alias</span> <span class="o">=</span> <span class="n">ent2</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span>
+            <span class="c1"># id = ent2.ent_id</span>
+      <span class="k">if</span> <span class="n">end</span> <span class="o">==</span> <span class="n">ent1</span><span class="o">.</span><span class="n">end</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">end</span> <span class="o">&lt;</span> <span class="n">ent1</span><span class="o">.</span><span class="n">sent</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="mi">1</span><span class="p">:</span>
+          <span class="n">post1</span><span class="p">,</span> <span class="n">post2</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">end</span><span class="p">],</span> <span class="n">doc</span><span class="p">[</span><span class="n">end</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+          <span class="k">if</span> <span class="n">post1</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NUM&#39;</span><span class="p">]:</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">end</span> <span class="o">+</span> <span class="mi">1</span>
+          <span class="k">elif</span> <span class="n">post1</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;punct&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">post2</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NUM&#39;</span><span class="p">]:</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">end</span> <span class="o">+</span> <span class="mi">2</span>
+        <span class="k">elif</span> <span class="n">end</span> <span class="o">==</span> <span class="n">ent1</span><span class="o">.</span><span class="n">sent</span><span class="o">.</span><span class="n">end</span><span class="p">:</span>
+          <span class="n">post</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[</span><span class="n">end</span><span class="p">]</span>
+          <span class="k">if</span> <span class="n">post</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;NUM&#39;</span><span class="p">]:</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">end</span> <span class="o">+</span> <span class="mi">1</span>
+
+      <span class="k">if</span> <span class="n">start</span> <span class="o">!=</span> <span class="n">ent1</span><span class="o">.</span><span class="n">start</span> <span class="ow">or</span> <span class="n">end</span> <span class="o">!=</span> <span class="n">ent1</span><span class="o">.</span><span class="n">end</span><span class="p">:</span>
+        <span class="n">isUpdated</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">newEnts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">newEnts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">start</span> <span class="o">&gt;=</span> <span class="n">newEnts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">end</span><span class="p">):</span>
+          <span class="n">newEnt</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
+          <span class="n">newEnt</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">,</span> <span class="n">alias</span><span class="p">)</span>
+          <span class="c1"># print(newEnt, newEnt.ent_id_, newEnt.label_, newEnt._.alias)</span>
+          <span class="n">newEnts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">newEnt</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">newEnts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">start</span> <span class="o">&lt;</span> <span class="n">newEnts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">end</span><span class="p">:</span>
+          <span class="n">preEnt</span> <span class="o">=</span> <span class="n">newEnts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+          <span class="n">newEnt</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">preEnt</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">)</span>
+          <span class="n">alias</span> <span class="o">=</span> <span class="n">newEnt</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span> <span class="k">if</span> <span class="n">alias</span> <span class="k">else</span> <span class="n">preEnt</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span>
+          <span class="n">newEnt</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">,</span> <span class="n">alias</span><span class="p">)</span>
+          <span class="n">newEnts</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">newEnt</span>
+        <span class="c1"># The following can not resolve span attributes</span>
+
+        <span class="c1"># with doc.retokenize() as retokenizer:</span>
+        <span class="c1">#   attrs = {</span>
+        <span class="c1">#     &quot;tag&quot;: newEnt.root.tag,</span>
+        <span class="c1">#     &quot;dep&quot;: newEnt.root.dep,</span>
+        <span class="c1">#     &quot;ent_type&quot;: label,</span>
+        <span class="c1">#     &quot;ent_id&quot;: id,</span>
+        <span class="c1">#     &quot;_&quot;: {</span>
+        <span class="c1">#           &quot;alias&quot;: alias</span>
+        <span class="c1">#           },</span>
+        <span class="c1">#   }</span>
+        <span class="c1">#   retokenizer.merge(newEnt, attrs=attrs)</span>
+        <span class="c1"># newEnts.append(doc[start:start+1])</span>
+        <span class="c1"># print(&quot;======&gt;: &quot;, newEnts[0], newEnts[0]._.alias)</span>
+    <span class="c1"># if isUpdated:</span>
+    <span class="c1">#   break</span>
+
+  <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="n">filter_spans</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">)</span> <span class="o">+</span>  <span class="n">newEnts</span><span class="p">)</span>
+  <span class="c1"># if isUpdated:</span>
+  <span class="c1">#   doc = mergeEntitiesWithSameID(doc)</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+<span class="c1"># Recursive Functions</span>
+<span class="c1"># @Language.component(&quot;mergeEntitiesWithSameID&quot;)</span>
+<span class="c1"># def mergeEntitiesWithSameID(doc):</span>
+<span class="c1">#   &quot;&quot;&quot;</span>
+<span class="c1">#     Merge the same ID entities</span>
+
+<span class="c1">#     Args:</span>
+<span class="c1">#       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="c1">#     Returns:</span>
+<span class="c1">#       doc: spacy.tokens.doc.Doc, the document after expansion of current entities</span>
+<span class="c1">#   &quot;&quot;&quot;</span>
+<span class="c1">#   newEnts = []</span>
+<span class="c1">#   isUpdated = False</span>
+<span class="c1">#   ents = list(doc.ents)</span>
+<span class="c1">#   entID, _ = getEntID()</span>
+<span class="c1">#   for i in range(len(ents)-1):</span>
+<span class="c1">#     ent1, ent2 = ents[i], ents[i+1]</span>
+<span class="c1">#     start = ent1.start</span>
+<span class="c1">#     end = ent1.end</span>
+<span class="c1">#     label = ent1.label</span>
+<span class="c1">#     alias = ent1._.alias</span>
+<span class="c1">#     # id = ent1.ent_id</span>
+<span class="c1">#     if ent1.ent_id_ == entID and not isUpdated:</span>
+<span class="c1">#       if start == 1:</span>
+<span class="c1">#         prev = doc[start - 1]</span>
+<span class="c1">#         if prev.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#           start = prev.i</span>
+<span class="c1">#       elif start &gt; 1:</span>
+<span class="c1">#         prev1, prev2 = doc[start-1], doc[start-2]</span>
+<span class="c1">#         if prev1.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#           start = prev1.i</span>
+<span class="c1">#         elif prev1.dep_ in [&#39;punct&#39;] and prev2.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#           start = prev2.i</span>
+<span class="c1">#       if ent2.ent_id_ == entID:</span>
+<span class="c1">#         cond = ent1.root.dep_ in [&#39;pobj&#39;, &#39;dobj&#39;, &#39;iobj&#39;, &#39;obj&#39;, &#39;obl&#39;, &#39;oprd&#39;] and ent2.root.dep_ in [&#39;nsubj&#39;, &#39;nsubjpass&#39;, &#39;nsubj:pass&#39;]</span>
+<span class="c1">#         if not cond:</span>
+<span class="c1">#           if end == ent2.start or (end == ent2.start - 1 and doc[end].dep_ in [&#39;punct&#39;]):</span>
+<span class="c1">#             end = ent2.end</span>
+<span class="c1">#             label = ent2.label</span>
+<span class="c1">#             if ent2._.alias:</span>
+<span class="c1">#               alias = ent2._.alias</span>
+<span class="c1">#             # id = ent2.ent_id</span>
+<span class="c1">#       if end == ent1.end:</span>
+<span class="c1">#         if end &lt; ent1.sent.end - 1:</span>
+<span class="c1">#           post1, post2 = doc[end], doc[end+1]</span>
+<span class="c1">#           if post1.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#             end = end + 1</span>
+<span class="c1">#           elif post1.dep_ in [&#39;punct&#39;] and post2.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#             end = end + 2</span>
+<span class="c1">#         elif end == ent1.sent.end:</span>
+<span class="c1">#           post = doc[end]</span>
+<span class="c1">#           if post.pos_ in [&#39;NUM&#39;]:</span>
+<span class="c1">#             end = end + 1</span>
+
+<span class="c1">#       if start != ent1.start or end != ent1.end:</span>
+<span class="c1">#         isUpdated = True</span>
+<span class="c1">#         newEnt = Span(doc, start, end, label=label)</span>
+<span class="c1">#         newEnt._.set(&#39;alias&#39;, alias)</span>
+<span class="c1">#         # print(newEnt, newEnt.ent_id_, newEnt.label_, newEnt._.alias)</span>
+<span class="c1">#         newEnts.append(newEnt)</span>
+<span class="c1">#         # The following can not resolve span attributes</span>
+
+<span class="c1">#         # with doc.retokenize() as retokenizer:</span>
+<span class="c1">#         #   attrs = {</span>
+<span class="c1">#         #     &quot;tag&quot;: newEnt.root.tag,</span>
+<span class="c1">#         #     &quot;dep&quot;: newEnt.root.dep,</span>
+<span class="c1">#         #     &quot;ent_type&quot;: label,</span>
+<span class="c1">#         #     &quot;ent_id&quot;: id,</span>
+<span class="c1">#         #     &quot;_&quot;: {</span>
+<span class="c1">#         #           &quot;alias&quot;: alias</span>
+<span class="c1">#         #           },</span>
+<span class="c1">#         #   }</span>
+<span class="c1">#         #   retokenizer.merge(newEnt, attrs=attrs)</span>
+<span class="c1">#         # newEnts.append(doc[start:start+1])</span>
+<span class="c1">#         # print(&quot;======&gt;: &quot;, newEnts[0], newEnts[0]._.alias)</span>
+<span class="c1">#     if isUpdated:</span>
+<span class="c1">#       break</span>
+
+<span class="c1">#   doc.ents = filter_spans(list(doc.ents) +  newEnts)</span>
+<span class="c1">#   if isUpdated:</span>
+<span class="c1">#     doc = mergeEntitiesWithSameID(doc)</span>
+<span class="c1">#   return doc</span>
+
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;mergePhrase&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="mergePhrase">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.mergePhrase">[docs]</a>
+<span class="k">def</span> <span class="nf">mergePhrase</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Expand the current entities</span>
+<span class="sd">    This method will keep ``DET`` or ``PART``, using pipeline ``normEntities`` after this pipeline to remove them</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after merge phrase</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">def</span> <span class="nf">isNum</span><span class="p">(</span><span class="n">nounChunks</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">nounChunks</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">elem</span><span class="o">.</span><span class="n">pos_</span> <span class="o">==</span> <span class="s1">&#39;NUM&#39;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">elem</span>
+        <span class="k">break</span>
+    <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span>
+
+  <span class="k">with</span> <span class="n">doc</span><span class="o">.</span><span class="n">retokenize</span><span class="p">()</span> <span class="k">as</span> <span class="n">retokenizer</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">np</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">noun_chunks</span><span class="p">:</span>
+      <span class="c1"># skip ents since ents are recognized by OPM model and entity_ruler</span>
+      <span class="c1"># TODO: we may expand the ents, combined with pipeline &quot;expandEntities&quot;</span>
+      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ents</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">continue</span>
+      <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">ents</span><span class="p">))</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">ents</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">label_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;causal_keywords&#39;</span><span class="p">,</span> <span class="s1">&#39;ORG&#39;</span><span class="p">,</span> <span class="s1">&#39;DATE&#39;</span><span class="p">]:</span>
+          <span class="c1"># print(np.ents[0].label_)</span>
+          <span class="k">continue</span>
+      <span class="c1"># When a number is provided, we will merge it, but keep the attributes from the number</span>
+      <span class="n">num</span><span class="p">,</span> <span class="n">elem</span> <span class="o">=</span> <span class="n">isNum</span><span class="p">(</span><span class="n">np</span><span class="p">)</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">num</span><span class="p">:</span>
+        <span class="n">attrs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;tag&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">tag_</span><span class="p">,</span>
+            <span class="s2">&quot;lemma&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">lemma_</span><span class="p">,</span>
+            <span class="s2">&quot;pos&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">pos_</span><span class="p">,</span>
+            <span class="s2">&quot;ent_type&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">ent_type_</span><span class="p">,</span>
+            <span class="s2">&quot;_&quot;</span><span class="p">:</span> <span class="p">{</span>
+                  <span class="s2">&quot;ref_n&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span><span class="p">,</span>
+                  <span class="s2">&quot;ref_t&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_t</span><span class="p">,</span>
+                  <span class="p">},</span>
+        <span class="p">}</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">attrs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;tag&quot;</span><span class="p">:</span> <span class="n">elem</span><span class="o">.</span><span class="n">tag_</span><span class="p">,</span>
+            <span class="s2">&quot;lemma&quot;</span><span class="p">:</span> <span class="n">elem</span><span class="o">.</span><span class="n">lemma_</span><span class="p">,</span>
+            <span class="s2">&quot;pos&quot;</span><span class="p">:</span><span class="n">elem</span><span class="o">.</span><span class="n">pos_</span><span class="p">,</span>
+            <span class="s2">&quot;ent_type&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">ent_type_</span><span class="p">,</span>
+            <span class="s2">&quot;_&quot;</span><span class="p">:</span> <span class="p">{</span>
+                  <span class="s2">&quot;ref_n&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_n</span><span class="p">,</span>
+                  <span class="s2">&quot;ref_t&quot;</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">ref_t</span><span class="p">,</span>
+                  <span class="p">},</span>
+        <span class="p">}</span>
+      <span class="n">retokenizer</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">np</span><span class="p">,</span> <span class="n">attrs</span><span class="o">=</span><span class="n">attrs</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">component</span><span class="p">(</span><span class="s2">&quot;pysbdSentenceBoundaries&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="pysbdSentenceBoundaries">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/CustomPipelineComponents/index.html#src.dackar.pipelines.CustomPipelineComponents.pysbdSentenceBoundaries">[docs]</a>
+<span class="k">def</span> <span class="nf">pysbdSentenceBoundaries</span><span class="p">(</span><span class="n">doc</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Use pysbd as a sentencizer component for spacy</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">      doc: spacy.tokens.doc.Doc, the document after process</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">seg</span> <span class="o">=</span> <span class="n">pysbd</span><span class="o">.</span><span class="n">Segmenter</span><span class="p">(</span><span class="n">language</span><span class="o">=</span><span class="s2">&quot;en&quot;</span><span class="p">,</span> <span class="n">clean</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">char_span</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="n">sentsCharSpans</span> <span class="o">=</span> <span class="n">seg</span><span class="o">.</span><span class="n">segment</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+  <span class="n">charSpans</span> <span class="o">=</span> <span class="p">[</span><span class="n">doc</span><span class="o">.</span><span class="n">char_span</span><span class="p">(</span><span class="n">sentSpan</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">sentSpan</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">alignment_mode</span><span class="o">=</span><span class="s2">&quot;contract&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">sentSpan</span> <span class="ow">in</span> <span class="n">sentsCharSpans</span><span class="p">]</span>
+  <span class="n">startTokenIds</span> <span class="o">=</span> <span class="p">[</span><span class="n">span</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">idx</span> <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">charSpans</span> <span class="k">if</span> <span class="n">span</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+  <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">doc</span><span class="p">:</span>
+      <span class="n">token</span><span class="o">.</span><span class="n">is_sent_start</span> <span class="o">=</span> <span class="kc">True</span> <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">idx</span> <span class="ow">in</span> <span class="n">startTokenIds</span> <span class="k">else</span> <span class="kc">False</span>
+  <span class="k">return</span> <span class="n">doc</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

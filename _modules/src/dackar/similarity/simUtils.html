@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.similarity.simUtils &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.similarity.simUtils</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.similarity.simUtils</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="kn">import</span> <span class="nn">math</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">copy</span>
+<span class="c1"># https://github.com/alvations/pywsd</span>
+<span class="kn">from</span> <span class="nn">pywsd.lesk</span> <span class="kn">import</span> <span class="n">simple_lesk</span><span class="p">,</span> <span class="n">original_lesk</span><span class="p">,</span> <span class="n">cosine_lesk</span><span class="p">,</span> <span class="n">adapted_lesk</span>
+<span class="kn">from</span> <span class="nn">pywsd</span> <span class="kn">import</span> <span class="n">disambiguate</span>
+<span class="kn">from</span> <span class="nn">pywsd.similarity</span> <span class="kn">import</span> <span class="n">max_similarity</span> <span class="k">as</span> <span class="n">maxsim</span>
+
+<span class="kn">import</span> <span class="nn">nltk</span>
+<span class="kn">from</span> <span class="nn">nltk</span> <span class="kn">import</span> <span class="n">word_tokenize</span> <span class="k">as</span> <span class="n">tokenizer</span>
+<span class="kn">from</span> <span class="nn">nltk.corpus</span> <span class="kn">import</span> <span class="n">brown</span>
+<span class="kn">from</span> <span class="nn">nltk.corpus</span> <span class="kn">import</span> <span class="n">wordnet</span> <span class="k">as</span> <span class="n">wn</span>
+
+<span class="kn">from</span> <span class="nn">.synsetUtils</span> <span class="kn">import</span> <span class="n">semanticSimilaritySynsets</span><span class="p">,</span> <span class="n">synsetsSimilarity</span>
+<span class="kn">from</span> <span class="nn">.synsetUtils</span> <span class="kn">import</span> <span class="n">semanticSimilarityUsingDisambiguatedSynsets</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  Methods proposed by: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=1644735</span>
+<span class="sd">  Codes are modified from https://github.com/anishvarsha/Sentence-Similaritity-using-corpus-statistics</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="sentenceSimilarity">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.sentenceSimilarity">[docs]</a>
+<span class="k">def</span> <span class="nf">sentenceSimilarity</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">0.85</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute sentence similarity using both semantic and word order similarity</span>
+<span class="sd">    The semantic similarity is based on maximum word similarity between one word and another sentence</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentenceA: str, first sentence used to compute sentence similarity</span>
+<span class="sd">      sentenceB: str, second sentence used to compute sentence similarity</span>
+<span class="sd">      infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors</span>
+<span class="sd">      delta: float, [0,1], similarity contribution from semantic similarity, 1-delta is the similarity</span>
+<span class="sd">      contribution from word order similarity</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      similarity: float, [0, 1], the computed similarity for given two sentences</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">similarity</span> <span class="o">=</span> <span class="n">delta</span> <span class="o">*</span> <span class="n">semanticSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">-</span><span class="n">delta</span><span class="p">)</span><span class="o">*</span> <span class="n">wordOrderSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">similarity</span></div>
+
+
+
+<div class="viewcode-block" id="wordOrderSimilaritySentences">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.wordOrderSimilaritySentences">[docs]</a>
+<span class="k">def</span> <span class="nf">wordOrderSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute sentence similarity using word order similarity</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentenceA: str, first sentence used to compute sentence similarity</span>
+<span class="sd">      sentenceB: str, second sentence used to compute sentence similarity</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      similarity: float, [0, 1], the computed word order similarity for given two sentences</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">wordsA</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">)</span>
+  <span class="n">wordsB</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">sentenceB</span><span class="p">)</span>
+  <span class="n">wordSet</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">wordsA</span><span class="p">)</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">wordsB</span><span class="p">)))</span>
+  <span class="n">index</span> <span class="o">=</span> <span class="p">{</span><span class="n">word</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span> <span class="n">word</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">wordSet</span><span class="p">)}</span>
+  <span class="n">r1</span> <span class="o">=</span> <span class="n">constructWordOrderVector</span><span class="p">(</span><span class="n">wordsA</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+  <span class="n">r2</span> <span class="o">=</span> <span class="n">constructWordOrderVector</span><span class="p">(</span><span class="n">wordsB</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+  <span class="n">srTemp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">r1</span><span class="o">-</span><span class="n">r2</span><span class="p">)</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">r1</span><span class="o">+</span><span class="n">r2</span><span class="p">)</span>
+  <span class="k">return</span> <span class="mi">1</span><span class="o">-</span><span class="n">srTemp</span></div>
+
+
+<div class="viewcode-block" id="constructWordOrderVector">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.constructWordOrderVector">[docs]</a>
+<span class="k">def</span> <span class="nf">constructWordOrderVector</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">jointWords</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Construct word order vector</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      words: set of words, a set of words for one sentence</span>
+<span class="sd">      jointWords: set of joint words, a set of joint words for both sentences</span>
+<span class="sd">      index: dict, word index in the joint set of words</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      vector: numpy.array, the word order vector</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">vector</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">jointWords</span><span class="p">))</span>
+  <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+  <span class="n">wordSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
+  <span class="k">for</span> <span class="n">jointWord</span> <span class="ow">in</span> <span class="n">jointWords</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">jointWord</span> <span class="ow">in</span> <span class="n">wordSet</span><span class="p">:</span>
+      <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span><span class="p">[</span><span class="n">jointWord</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">wordSimilar</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span> <span class="n">identifyBestSimilarWordFromWordSet</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span> <span class="mf">0.4</span><span class="p">:</span>
+        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span><span class="p">[</span><span class="n">wordSimilar</span><span class="p">]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">i</span> <span class="o">+=</span><span class="mi">1</span>
+  <span class="k">return</span> <span class="n">vector</span></div>
+
+
+<div class="viewcode-block" id="semanticSimilaritySentences">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.semanticSimilaritySentences">[docs]</a>
+<span class="k">def</span> <span class="nf">semanticSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute sentence similarity using semantic similarity</span>
+<span class="sd">    The semantic similarity is based on maximum word similarity between one word and another sentence</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentenceA: str, first sentence used to compute sentence similarity</span>
+<span class="sd">      sentenceB: str, second sentence used to compute sentence similarity</span>
+<span class="sd">      infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      semSimilarity: float, [0, 1], the computed similarity for given two sentences</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">wordsA</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">)</span>
+  <span class="n">wordsB</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">sentenceB</span><span class="p">)</span>
+  <span class="n">wordSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">wordsA</span><span class="p">)</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">wordsB</span><span class="p">))</span>
+  <span class="n">wordVectorA</span> <span class="o">=</span> <span class="n">constructSemanticVector</span><span class="p">(</span><span class="n">wordsA</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">)</span>
+  <span class="n">wordVectorB</span> <span class="o">=</span> <span class="n">constructSemanticVector</span><span class="p">(</span><span class="n">wordsB</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">)</span>
+
+  <span class="n">semSimilarity</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">wordVectorA</span><span class="p">,</span> <span class="n">wordVectorB</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">wordVectorA</span><span class="p">)</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">wordVectorB</span><span class="p">))</span>
+  <span class="k">return</span> <span class="n">semSimilarity</span></div>
+
+
+
+<div class="viewcode-block" id="constructSemanticVector">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.constructSemanticVector">[docs]</a>
+<span class="k">def</span> <span class="nf">constructSemanticVector</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">jointWords</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Construct semantic vector</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      words: set of words, a set of words for one sentence</span>
+<span class="sd">      jointWords: set of joint words, a set of joint words for both sentences</span>
+<span class="sd">      infoContentNorm: bool, consider word statistics in Brown  Corpus if True</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      vector: numpy.array, the semantic vector</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">wordSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
+  <span class="n">vector</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">jointWords</span><span class="p">))</span>
+  <span class="k">if</span> <span class="n">infoContentNorm</span><span class="p">:</span>
+    <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span> <span class="o">=</span> <span class="n">brownInfo</span><span class="p">()</span>
+  <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+  <span class="k">for</span> <span class="n">jointWord</span> <span class="ow">in</span> <span class="n">jointWords</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">jointWord</span> <span class="ow">in</span> <span class="n">wordSet</span><span class="p">:</span>
+      <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+      <span class="k">if</span> <span class="n">infoContentNorm</span><span class="p">:</span>
+        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">*</span><span class="n">math</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">content</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">similarWord</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span>  <span class="n">identifyBestSimilarWordFromWordSet</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span><span class="mf">0.2</span><span class="p">:</span>
+        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">similarity</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+      <span class="k">if</span> <span class="n">infoContentNorm</span><span class="p">:</span>
+        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">*</span><span class="n">content</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span><span class="p">)</span><span class="o">*</span> <span class="n">content</span><span class="p">(</span><span class="n">similarWord</span><span class="p">,</span> <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span><span class="p">)</span>
+    <span class="n">i</span><span class="o">+=</span><span class="mi">1</span>
+  <span class="k">return</span> <span class="n">vector</span></div>
+
+
+<div class="viewcode-block" id="brownInfo">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.brownInfo">[docs]</a>
+<span class="k">def</span> <span class="nf">brownInfo</span><span class="p">():</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute word dict and word numbers in NLTK brown corpus</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      None</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      wordCount: int, the total number of words in brown</span>
+<span class="sd">      brownDict: dict, the brown word dict, {word:count}</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">brownDict</span> <span class="o">=</span> <span class="p">{}</span>
+  <span class="n">wordCount</span> <span class="o">=</span> <span class="mi">0</span>
+  <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">brown</span><span class="o">.</span><span class="n">sents</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">sent</span><span class="p">:</span>
+      <span class="n">key</span> <span class="o">=</span> <span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+      <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">brownDict</span><span class="p">:</span>
+        <span class="n">brownDict</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+      <span class="n">brownDict</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">+=</span><span class="mi">1</span>
+      <span class="n">wordCount</span><span class="o">+=</span><span class="mi">1</span>
+  <span class="k">return</span> <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span></div>
+
+
+<div class="viewcode-block" id="content">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.content">[docs]</a>
+<span class="k">def</span> <span class="nf">content</span><span class="p">(</span><span class="n">wordData</span><span class="p">,</span> <span class="n">wordCount</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">brownDict</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Employ statistics from Brown Corpus to compute the information content of given word in the corpus</span>
+<span class="sd">    ref: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=1644735</span>
+<span class="sd">    information content I(w) = 1 - log(n+1)/log(N+1)</span>
+<span class="sd">    The significance of a word is weighted using its information content. The assumption here is</span>
+<span class="sd">    that words occur with a higher frequency (in corpus) contain less information than those</span>
+<span class="sd">    that occur with lower frequencies.</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      wordData: string, a given word</span>
+<span class="sd">      wordCount: int, the total number of words in brown corpus</span>
+<span class="sd">      brownDict: dict, the brown word dict, {word:count}</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      content: float, [0, 1], the information content of a word in the corpus</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">if</span> <span class="n">wordCount</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span> <span class="o">=</span> <span class="n">brownInfo</span><span class="p">()</span>
+  <span class="n">wordData</span> <span class="o">=</span> <span class="n">wordData</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="k">if</span> <span class="n">wordData</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">brownDict</span><span class="p">:</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="mi">0</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="n">brownDict</span><span class="p">[</span><span class="n">wordData</span><span class="p">]</span>
+  <span class="n">informationContent</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">n</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="n">math</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">wordCount</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+  <span class="k">return</span> <span class="mf">1.0</span><span class="o">-</span><span class="n">informationContent</span></div>
+
+
+<div class="viewcode-block" id="identifyBestSimilarWordFromWordSet">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.identifyBestSimilarWordFromWordSet">[docs]</a>
+<span class="k">def</span> <span class="nf">identifyBestSimilarWordFromWordSet</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Identify the best similar word in a word set for a given word</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      wordA: str, a given word that looking for the best similar word in a word set</span>
+<span class="sd">      wordSet: set/list, a pool of words</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      word: str, the best similar word in the word set for given word</span>
+<span class="sd">      similarity: float, [0, 1], similarity score between the best pair of words</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">similarity</span> <span class="o">=</span> <span class="mf">0.0</span>
+  <span class="n">word</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+  <span class="k">for</span> <span class="n">wordB</span> <span class="ow">in</span> <span class="n">wordSet</span><span class="p">:</span>
+    <span class="n">temp</span> <span class="o">=</span> <span class="n">semanticSimilarityWords</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">temp</span> <span class="o">&gt;</span> <span class="n">similarity</span><span class="p">:</span>
+      <span class="n">similarity</span> <span class="o">=</span> <span class="n">temp</span>
+      <span class="n">word</span> <span class="o">=</span> <span class="n">wordB</span>
+  <span class="k">return</span> <span class="n">word</span><span class="p">,</span> <span class="n">similarity</span></div>
+
+
+<div class="viewcode-block" id="semanticSimilarityWords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.semanticSimilarityWords">[docs]</a>
+<span class="k">def</span> <span class="nf">semanticSimilarityWords</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute the similarity between two words using semantic analysis</span>
+<span class="sd">    First identify the best similar synset pair using wordnet similarity, then compute the similarity</span>
+<span class="sd">    using both path length and depth information in wordnet</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      wordA: str, the first word</span>
+<span class="sd">      wordB: str, the second word</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      similarity: float, [0, 1], the similarity score</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">if</span> <span class="n">wordA</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">wordB</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
+    <span class="k">return</span> <span class="mf">1.0</span>
+  <span class="n">bestPair</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetPair</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">return</span> <span class="mf">0.0</span>
+  <span class="c1"># disambiguation is False since only two words is provided and there is no additional information content</span>
+  <span class="n">similarity</span> <span class="o">=</span> <span class="n">semanticSimilaritySynsets</span><span class="p">(</span><span class="n">bestPair</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">disambiguation</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">similarity</span></div>
+
+
+
+<div class="viewcode-block" id="identifyBestSimilarSynsetPair">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.identifyBestSimilarSynsetPair">[docs]</a>
+<span class="k">def</span> <span class="nf">identifyBestSimilarSynsetPair</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Identify the best synset pair for given two words using wordnet similarity analysis</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      wordA: str, the first word</span>
+<span class="sd">      wordB: str, the second word</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      bestPair: tuple, (first synset, second synset), identified best synset pair using wordnet similarity</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">similarity</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
+  <span class="n">synsetsWordA</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">wordA</span><span class="p">)</span>
+  <span class="n">synsetsWordB</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">wordB</span><span class="p">)</span>
+
+  <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">synsetsWordA</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">synsetsWordB</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">similarity</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
+    <span class="n">bestPair</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">synsetWordA</span> <span class="ow">in</span> <span class="n">synsetsWordA</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">synsetWordB</span> <span class="ow">in</span> <span class="n">synsetsWordB</span><span class="p">:</span>
+        <span class="c1"># TODO: may change to general similarity method</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">path_similarity</span><span class="p">(</span><span class="n">synsetWordA</span><span class="p">,</span> <span class="n">synsetWordB</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">temp</span> <span class="o">&gt;</span> <span class="n">similarity</span><span class="p">:</span>
+          <span class="n">similarity</span> <span class="o">=</span> <span class="n">temp</span>
+          <span class="n">bestPair</span> <span class="o">=</span> <span class="n">synsetWordA</span><span class="p">,</span> <span class="n">synsetWordB</span>
+    <span class="k">return</span> <span class="n">bestPair</span></div>
+
+
+<span class="c1">#################################################</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  Methods proposed by: https://arxiv.org/pdf/1802.05667.pdf</span>
+<span class="sd">  Codes are modified from https://github.com/nihitsaxena95/sentence-similarity-wordnet-sementic/blob/master/SentenceSimilarity.py</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="identifyNounAndVerbForComparison">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.identifyNounAndVerbForComparison">[docs]</a>
+<span class="k">def</span> <span class="nf">identifyNounAndVerbForComparison</span><span class="p">(</span><span class="n">sentence</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Taking out Noun and Verb for comparison word based</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentence: string, sentence string</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      pos: list, list of dict {token/word:pos_tag}</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">tokens</span> <span class="o">=</span> <span class="n">nltk</span><span class="o">.</span><span class="n">word_tokenize</span><span class="p">(</span><span class="n">sentence</span><span class="p">)</span>
+  <span class="n">pos</span> <span class="o">=</span> <span class="n">nltk</span><span class="o">.</span><span class="n">pos_tag</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+  <span class="n">pos</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pos</span> <span class="k">if</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;N&#39;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;V&#39;</span><span class="p">)]</span>
+  <span class="k">return</span> <span class="n">pos</span></div>
+
+
+<div class="viewcode-block" id="sentenceSenseDisambiguation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.sentenceSenseDisambiguation">[docs]</a>
+<span class="k">def</span> <span class="nf">sentenceSenseDisambiguation</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    removing the disambiguity by getting the context</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentence: str, sentence string</span>
+<span class="sd">      method: str, the method for disambiguation, this method only support simple_lesk method</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      sense: set, set of wordnet.Synset for the estimated best sense</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">pos</span> <span class="o">=</span> <span class="n">identifyNounAndVerbForComparison</span><span class="p">(</span><span class="n">sentence</span><span class="p">)</span>
+  <span class="n">sense</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pos</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;simple_lesk&#39;</span><span class="p">:</span>
+      <span class="n">sense</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">simple_lesk</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pos</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Mehtod </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2"> not implemented yet!&quot;</span><span class="p">)</span>
+  <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">sense</span><span class="p">)</span></div>
+
+
+<span class="c1">###########################################################################</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  Extended methods</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<div class="viewcode-block" id="wordsSimilarity">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.wordsSimilarity">[docs]</a>
+<span class="k">def</span> <span class="nf">wordsSimilarity</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;semantic_similarity_synsets&#39;</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    General method for compute words similarity</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      wordA: str, the first word</span>
+<span class="sd">      wordB: str, the second word</span>
+<span class="sd">      method: str, the method used to compute word similarity</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      similarity: float, [0, 1], the similarity score</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">method</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="n">wordnetSimMethod</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;path_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;wup_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;lch_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;res_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;jcn_similarity&quot;</span><span class="p">,</span> <span class="s2">&quot;lin_similarity&quot;</span><span class="p">]</span>
+  <span class="n">sematicSimMethod</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;semantic_similarity_synsets&#39;</span><span class="p">]</span>
+  <span class="k">if</span> <span class="n">method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sematicSimMethod</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">method</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;_similarity&#39;</span><span class="p">):</span>
+    <span class="n">method</span> <span class="o">=</span> <span class="n">method</span> <span class="o">+</span> <span class="s1">&#39;_similarity&#39;</span>
+  <span class="k">if</span> <span class="n">method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sematicSimMethod</span> <span class="o">+</span> <span class="n">wordnetSimMethod</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1"> is not valid, please use one of </span><span class="si">{</span><span class="n">wordnetSimMethod</span><span class="o">+</span><span class="n">sematicSimMethod</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+  <span class="n">bestPair</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetPair</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">return</span> <span class="mf">0.0</span>
+  <span class="c1"># when campare words only, we assume there is no disambiguation required.</span>
+
+  <span class="n">similarity</span> <span class="o">=</span> <span class="n">synsetsSimilarity</span><span class="p">(</span><span class="n">bestPair</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span> <span class="n">disambiguation</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">similarity</span></div>
+
+
+<span class="c1"># TODO: Utilize Spacy wordvector similarity to improve the similarity score when the POS for given synset are not the same</span>
+<span class="c1"># i.e., synsetA.name().split(&quot;.&quot;)[1] != synsetB.name().split(&quot;.&quot;)[1], the similarity will be set to 0.0</span>
+<span class="c1"># Similarity calculated by word1.similarity(word2)</span>
+<span class="c1"># calibration calibrate 0.715878</span>
+<span class="c1"># failure fail 0.6802347</span>
+<span class="c1"># replacement replace 0.73397416</span>
+<span class="c1"># leak leakage 0.652573</span>
+
+<span class="c1"># Similarity calculated by wordnet:</span>
+<span class="c1"># calibration calibrate 0.09090909090909091</span>
+<span class="c1"># failure fail 0.125</span>
+<span class="c1"># replacement replace 0.1111111111111111</span>
+<span class="c1"># leak leakage 1.0</span>
+
+
+<div class="viewcode-block" id="wordSenseDisambiguation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.wordSenseDisambiguation">[docs]</a>
+<span class="k">def</span> <span class="nf">wordSenseDisambiguation</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="n">sentence</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="s1">&#39;path&#39;</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    removing the disambiguity by getting the context</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      word: str/list/set, given word or set of words</span>
+<span class="sd">      sentence: str, sentence that will be used to disambiguate the given word</span>
+<span class="sd">      senseMethod: str, method for disambiguation, one of [&#39;simple_lesk&#39;, &#39;original_lesk&#39;, &#39;cosine_lesk&#39;, &#39;adapted_lesk&#39;, &#39;max_similarity&#39;]</span>
+<span class="sd">      simMethod: str, method for similarity analysis when &#39;max_similarity&#39; is used,</span>
+<span class="sd">      one of [&#39;path&#39;, &#39;wup&#39;, &#39;lch&#39;, &#39;res&#39;, &#39;jcn&#39;, &#39;lin&#39;]</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      sense: str/list/set, the type for given word, identified best sense for given word with disambiguation performed using given sentence</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">method</span> <span class="o">=</span> <span class="n">senseMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="n">simMethod</span> <span class="o">=</span> <span class="n">simMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="n">validMethod</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;original_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;cosine_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;adapted_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;max_similarity&#39;</span><span class="p">]</span>
+  <span class="n">validSimMethod</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;path&#39;</span><span class="p">,</span> <span class="s1">&#39;wup&#39;</span><span class="p">,</span> <span class="s1">&#39;lch&#39;</span><span class="p">,</span> <span class="s1">&#39;res&#39;</span><span class="p">,</span> <span class="s1">&#39;jcn&#39;</span><span class="p">,</span> <span class="s1">&#39;lin&#39;</span><span class="p">]</span>
+  <span class="k">if</span> <span class="n">method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">validMethod</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1"> is not valid option, please try to use one of </span><span class="si">{</span><span class="n">validMethod</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">simMethod</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">validSimMethod</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">simMethod</span><span class="si">}</span><span class="s1"> is not valid option, please try to use one of </span><span class="si">{</span><span class="n">validSimMethod</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+  <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="n">tokens</span> <span class="o">=</span> <span class="n">nltk</span><span class="o">.</span><span class="n">word_tokenize</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+  <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="nb">set</span><span class="p">):</span>
+    <span class="n">tokens</span> <span class="o">=</span> <span class="p">[</span><span class="n">nltk</span><span class="o">.</span><span class="n">word_tokenize</span><span class="p">(</span><span class="n">w</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">word</span><span class="p">]</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">word</span><span class="si">}</span><span class="s1"> format is not valid, please input string, set/list of string&#39;</span><span class="p">)</span>
+  <span class="n">pos</span> <span class="o">=</span> <span class="n">nltk</span><span class="o">.</span><span class="n">pos_tag</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+  <span class="n">sense</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pos</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;simple_lesk&#39;</span><span class="p">:</span>
+      <span class="n">sense</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">simple_lesk</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pos</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
+    <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;original_lesk&#39;</span><span class="p">:</span>
+      <span class="n">sense</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">original_lesk</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+    <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;adapted_lesk&#39;</span><span class="p">:</span>
+      <span class="n">sense</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">adapted_lesk</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pos</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
+    <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;cosine_lesk&#39;</span><span class="p">:</span>
+      <span class="n">sense</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cosine_lesk</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pos</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
+    <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;max_similarity&#39;</span><span class="p">:</span>
+      <span class="n">sense</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">maxsim</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pos</span><span class="o">=</span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">option</span><span class="o">=</span><span class="n">simMethod</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Method </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s2"> not implemented yet!&quot;</span><span class="p">)</span>
+  <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">sense</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+  <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">sense</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">sense</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># use disambiguate function to disambiguate sentences</span>
+<div class="viewcode-block" id="sentenceSenseDisambiguationPyWSD">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.sentenceSenseDisambiguationPyWSD">[docs]</a>
+<span class="k">def</span> <span class="nf">sentenceSenseDisambiguationPyWSD</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="s1">&#39;path&#39;</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Wrap for sentence sense disambiguation method from pywsd</span>
+<span class="sd">    https://github.com/alvations/pywsd</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentence: str, given sentence</span>
+<span class="sd">      senseMethod: str, method for disambiguation, one of [&#39;simple_lesk&#39;, &#39;original_lesk&#39;, &#39;cosine_lesk&#39;, &#39;adapted_lesk&#39;, &#39;max_similarity&#39;]</span>
+<span class="sd">      simMethod: str, method for similarity analysis when &#39;max_similarity&#39; is used,</span>
+<span class="sd">      one of [&#39;path&#39;, &#39;wup&#39;, &#39;lch&#39;, &#39;res&#39;, &#39;jcn&#39;, &#39;lin&#39;]</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      wordList: list, list of words from sentence that has an identified synset from wordnet</span>
+<span class="sd">      synsetList: list, list of corresponding synset for wordList</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">method</span> <span class="o">=</span> <span class="n">senseMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="n">simMethod</span> <span class="o">=</span> <span class="n">simMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="n">validMethod</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;original_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;cosine_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;adapted_lesk&#39;</span><span class="p">,</span> <span class="s1">&#39;max_similarity&#39;</span><span class="p">]</span>
+  <span class="n">validSimMethod</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;path&#39;</span><span class="p">,</span> <span class="s1">&#39;wup&#39;</span><span class="p">,</span> <span class="s1">&#39;lch&#39;</span><span class="p">,</span> <span class="s1">&#39;res&#39;</span><span class="p">,</span> <span class="s1">&#39;jcn&#39;</span><span class="p">,</span> <span class="s1">&#39;lin&#39;</span><span class="p">]</span>
+  <span class="k">if</span> <span class="n">method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">validMethod</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1"> is not valid option, please try to use one of </span><span class="si">{</span><span class="n">validMethod</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">simMethod</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">validSimMethod</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">simMethod</span><span class="si">}</span><span class="s1"> is not valid option, please try to use one of </span><span class="si">{</span><span class="n">validSimMethod</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;simple_lesk&#39;</span><span class="p">:</span>
+    <span class="n">sentSense</span> <span class="o">=</span> <span class="n">disambiguate</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">simple_lesk</span><span class="p">,</span> <span class="n">prefersNone</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">keepLemmas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;original_lesk&#39;</span><span class="p">:</span>
+    <span class="n">sentSense</span> <span class="o">=</span> <span class="n">disambiguate</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">original_lesk</span><span class="p">,</span> <span class="n">prefersNone</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">keepLemmas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;adapted_lesk&#39;</span><span class="p">:</span>
+    <span class="n">sentSense</span> <span class="o">=</span> <span class="n">disambiguate</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">adapted_lesk</span><span class="p">,</span> <span class="n">prefersNone</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">keepLemmas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;cosine_lesk&#39;</span><span class="p">:</span>
+    <span class="n">sentSense</span> <span class="o">=</span> <span class="n">disambiguate</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">cosine_lesk</span><span class="p">,</span> <span class="n">prefersNone</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="n">keepLemmas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;max_similarity&#39;</span><span class="p">:</span>
+    <span class="n">sentSense</span> <span class="o">=</span> <span class="n">disambiguate</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">maxsim</span><span class="p">,</span> <span class="n">similarity_option</span><span class="o">=</span><span class="n">simMethod</span><span class="p">,</span> <span class="n">prefersNone</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="n">keepLemmas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="c1"># sentSense: a list of tuples, [(word, lemma, wn.synset/None)]</span>
+  <span class="n">wordList</span> <span class="o">=</span> <span class="nb">list</span><span class="p">([</span><span class="n">syn</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">sentSense</span> <span class="k">if</span> <span class="n">syn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">])</span>
+  <span class="n">synsetList</span> <span class="o">=</span> <span class="nb">list</span><span class="p">([</span><span class="n">syn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">sentSense</span> <span class="k">if</span> <span class="n">syn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">])</span>
+  <span class="k">return</span> <span class="n">wordList</span><span class="p">,</span> <span class="n">synsetList</span></div>
+
+
+<span class="c1"># Sentence similarity after disambiguation</span>
+
+<div class="viewcode-block" id="sentenceSimilarityWithDisambiguation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.sentenceSimilarityWithDisambiguation">[docs]</a>
+<span class="k">def</span> <span class="nf">sentenceSimilarityWithDisambiguation</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="s1">&#39;semantic_similarity_synsets&#39;</span><span class="p">,</span> <span class="n">disambiguationSimMethod</span><span class="o">=</span><span class="s1">&#39;path&#39;</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">0.85</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Compute semantic similarity for given two sentences that disambiguation will be performed</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentenceA: str, first sentence</span>
+<span class="sd">      sentenceB: str, second sentence</span>
+<span class="sd">      senseMethod: str, method for disambiguation, one of [&#39;simple_lesk&#39;, &#39;original_lesk&#39;, &#39;cosine_lesk&#39;, &#39;adapted_lesk&#39;, &#39;max_similarity&#39;]</span>
+<span class="sd">      simMethod: str, method for similarity analysis in the construction of semantic vectors</span>
+<span class="sd">      one of [&#39;semantic_similarity_synsets&#39;, &#39;path&#39;, &#39;wup&#39;, &#39;lch&#39;, &#39;res&#39;, &#39;jcn&#39;, &#39;lin&#39;]</span>
+<span class="sd">      disambiguationSimMethod: str, method for similarity analysis when &#39;max_similarity&#39; is used,</span>
+<span class="sd">      one of [&#39;path&#39;, &#39;wup&#39;, &#39;lch&#39;, &#39;res&#39;, &#39;jcn&#39;, &#39;lin&#39;]</span>
+<span class="sd">      delta: float, [0,1], similarity contribution from semantic similarity, 1-delta is the similarity</span>
+<span class="sd">      contribution from word order similarity</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      similarity: float, [0, 1], the computed similarity for given two sentences</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">simMethod</span> <span class="o">=</span> <span class="n">simMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="n">disambiguationSimMethod</span> <span class="o">=</span> <span class="n">disambiguationSimMethod</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="k">if</span> <span class="n">disambiguationSimMethod</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;path&#39;</span><span class="p">,</span> <span class="s1">&#39;wup&#39;</span><span class="p">,</span> <span class="s1">&#39;lch&#39;</span><span class="p">,</span> <span class="s1">&#39;res&#39;</span><span class="p">,</span> <span class="s1">&#39;jcn&#39;</span><span class="p">,</span> <span class="s1">&#39;lin&#39;</span><span class="p">]:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Option for &quot;disambiguationSimMethod=</span><span class="si">{</span><span class="n">disambiguationSimMethod</span><span class="si">}</span><span class="s1">&quot; is not valid, please try one of &quot;path, wup, lch, res, jcn, lin&quot; &#39;</span><span class="p">)</span>
+  <span class="n">_</span><span class="p">,</span> <span class="n">synsetsA</span> <span class="o">=</span> <span class="n">sentenceSenseDisambiguationPyWSD</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="n">senseMethod</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="n">disambiguationSimMethod</span><span class="p">)</span>
+  <span class="n">_</span><span class="p">,</span> <span class="n">synsetsB</span> <span class="o">=</span> <span class="n">sentenceSenseDisambiguationPyWSD</span><span class="p">(</span><span class="n">sentenceB</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="n">senseMethod</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="n">disambiguationSimMethod</span><span class="p">)</span>
+  <span class="n">similarity</span> <span class="o">=</span> <span class="n">delta</span> <span class="o">*</span> <span class="n">semanticSimilarityUsingDisambiguatedSynsets</span><span class="p">(</span><span class="n">synsetsA</span><span class="p">,</span> <span class="n">synsetsB</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="n">simMethod</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">-</span><span class="n">delta</span><span class="p">)</span><span class="o">*</span> <span class="n">wordOrderSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">similarity</span></div>
+
+
+<div class="viewcode-block" id="convertSentsToSynsetsWithDisambiguation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.convertSentsToSynsetsWithDisambiguation">[docs]</a>
+<span class="k">def</span> <span class="nf">convertSentsToSynsetsWithDisambiguation</span><span class="p">(</span><span class="n">sentList</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Use sentence itself to identify the best synset</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentList: list of sentences</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      sentSynsets: list of synsets for corresponding sentences</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">sentSynsets</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">sentList</span><span class="p">:</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">bestSyn</span> <span class="o">=</span> <span class="n">sentenceSenseDisambiguationPyWSD</span><span class="p">(</span><span class="n">sent</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="s1">&#39;path&#39;</span><span class="p">)</span>
+    <span class="n">bestSyn</span> <span class="o">=</span> <span class="p">[</span><span class="n">wn</span><span class="o">.</span><span class="n">synset</span><span class="p">(</span><span class="n">syn</span><span class="o">.</span><span class="n">name</span><span class="p">())</span> <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">bestSyn</span> <span class="k">if</span> <span class="n">syn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="n">sentSynsets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bestSyn</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">sentSynsets</span></div>
+
+
+<div class="viewcode-block" id="convertToSynsets">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.convertToSynsets">[docs]</a>
+<span class="k">def</span> <span class="nf">convertToSynsets</span><span class="p">(</span><span class="n">wordSet</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Convert a list/set of words into a list of synsets</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      wordSet: list/set of words</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      wordList: list, list of words without duplications</span>
+<span class="sd">      synsets: list, list of synsets correponding wordList</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="c1"># keep the order (works for python3.7+)</span>
+  <span class="n">wordList</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">wordSet</span><span class="p">))</span>
+  <span class="n">synsets</span> <span class="o">=</span> <span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">word</span><span class="p">))</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">wordList</span><span class="p">]</span>
+  <span class="k">return</span> <span class="n">wordList</span><span class="p">,</span> <span class="n">synsets</span></div>
+
+
+<div class="viewcode-block" id="identifyBestSynset">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.identifyBestSynset">[docs]</a>
+<span class="k">def</span> <span class="nf">identifyBestSynset</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="n">jointWordList</span><span class="p">,</span> <span class="n">jointSynsetList</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Identify the best synset for given word with provided additional information (i.e., jointWordList)</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      word: str, a single word</span>
+<span class="sd">      jointWordList: list, a list of words without duplications</span>
+<span class="sd">      jointSynsetList: list, a list of synsets correponding to jointWordList</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      bestSyn: wn.synset, identified synset for given word</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">wordList</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">jointWordList</span><span class="p">)</span>
+  <span class="n">synsets</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">jointSynsetList</span><span class="p">)</span>
+  <span class="k">if</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">wordList</span><span class="p">:</span>
+    <span class="n">i</span> <span class="o">=</span> <span class="n">wordList</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+    <span class="n">wordList</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+    <span class="n">synsets</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">synsets</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+  <span class="n">synsets</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">sub</span> <span class="ow">in</span> <span class="n">synsets</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">sub</span><span class="p">]</span>
+  <span class="n">wordSyns</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+  <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">wordSyns</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="k">return</span> <span class="kc">None</span>
+  <span class="nb">max</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+  <span class="n">bestSyn</span> <span class="o">=</span> <span class="n">wordSyns</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+  <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">wordSyns</span><span class="p">:</span>
+    <span class="n">similarity</span> <span class="o">=</span> <span class="p">[</span><span class="n">wn</span><span class="o">.</span><span class="n">path_similarity</span><span class="p">(</span><span class="n">syn</span><span class="p">,</span> <span class="n">syn1</span><span class="p">)</span> <span class="k">for</span> <span class="n">syn1</span> <span class="ow">in</span> <span class="n">synsets</span><span class="p">]</span>
+    <span class="n">temp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">similarity</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">temp</span> <span class="o">&gt;</span> <span class="nb">max</span><span class="p">:</span>
+      <span class="n">bestSyn</span> <span class="o">=</span> <span class="n">syn</span>
+      <span class="nb">max</span> <span class="o">=</span> <span class="n">temp</span>
+  <span class="k">return</span> <span class="n">bestSyn</span></div>
+
+
+<div class="viewcode-block" id="convertSentsToSynsets">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.convertSentsToSynsets">[docs]</a>
+<span class="k">def</span> <span class="nf">convertSentsToSynsets</span><span class="p">(</span><span class="n">sentList</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Use sentence itself to identify the best synset</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      sentList: list, list of sentences</span>
+<span class="sd">      info: list, additional list of words that will be used to determine the synset</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      sentSynsets: list, lis of synsets correponding to provided sentList</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="n">sentSynsets</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">if</span> <span class="n">info</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">infoWordList</span><span class="p">,</span> <span class="n">infoSynsetsList</span> <span class="o">=</span> <span class="n">convertToSynsets</span><span class="p">(</span><span class="n">info</span><span class="p">)</span>
+  <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">sentList</span><span class="p">:</span>
+    <span class="n">wordList</span><span class="p">,</span> <span class="n">synsetsList</span> <span class="o">=</span> <span class="n">convertToSynsets</span><span class="p">([</span><span class="n">e</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">sent</span><span class="o">.</span><span class="n">split</span><span class="p">()])</span>
+    <span class="k">if</span> <span class="n">info</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="n">wordList</span> <span class="o">=</span> <span class="n">wordList</span> <span class="o">+</span> <span class="n">infoWordList</span>
+      <span class="n">synsetsList</span> <span class="o">=</span> <span class="n">synsetsList</span> <span class="o">+</span> <span class="n">infoSynsetsList</span>
+    <span class="n">bestSyn</span> <span class="o">=</span> <span class="p">[</span><span class="n">identifyBestSynset</span><span class="p">(</span><span class="n">word</span><span class="p">,</span> <span class="n">wordList</span><span class="p">,</span> <span class="n">synsetsList</span><span class="p">)</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">wordList</span><span class="p">]</span>
+    <span class="n">bestSyn</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">bestSyn</span><span class="p">))</span>
+    <span class="n">sentSynsets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bestSyn</span><span class="p">)</span>
+  <span class="k">return</span> <span class="n">sentSynsets</span></div>
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

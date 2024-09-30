@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.text_processing.Preprocessing &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.text_processing.Preprocessing</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.text_processing.Preprocessing</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on October, 2022</span>
+
+<span class="sd">@author: dgarrett622, wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">cytoolz</span> <span class="kn">import</span> <span class="n">functoolz</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">textacy.preprocessing</span> <span class="k">as</span> <span class="nn">preprocessing</span>
+<span class="kn">from</span> <span class="nn">numerizer</span> <span class="kn">import</span> <span class="n">numerize</span>
+<span class="kn">import</span> <span class="nn">spacy</span>
+<span class="kn">from</span> <span class="nn">spacy.vocab</span> <span class="kn">import</span> <span class="n">Vocab</span>
+
+<span class="k">try</span><span class="p">:</span>
+  <span class="kn">from</span> <span class="nn">contextualSpellCheck.contextualSpellCheck</span> <span class="kn">import</span> <span class="n">ContextualSpellCheck</span>
+<span class="k">except</span> <span class="ne">ModuleNotFoundError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+  <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;ERROR: Unable to import contextualSpellCheck&quot;</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+  <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Please try to install it via: &#39;pip install contextualSpellCheck&#39;&quot;</span><span class="p">)</span>
+<span class="k">try</span><span class="p">:</span>
+  <span class="kn">import</span> <span class="nn">autocorrect</span>
+<span class="k">except</span> <span class="ne">ModuleNotFoundError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+  <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;ERROR: Unable to import autocorrect&quot;</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+  <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Please try to install it via: &#39;pip install autocorrect&#39;&quot;</span><span class="p">)</span>
+<span class="k">try</span><span class="p">:</span>
+  <span class="kn">from</span> <span class="nn">spellchecker</span> <span class="kn">import</span> <span class="n">SpellChecker</span> <span class="k">as</span> <span class="n">PySpellChecker</span>
+<span class="k">except</span> <span class="ne">ModuleNotFoundError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+  <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;ERROR: Unable to import spellchecker&quot;</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+  <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Please try to install it via: &#39;pip install spellchecker&#39;&quot;</span><span class="p">)</span>
+
+<span class="kn">import</span> <span class="nn">itertools</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<span class="kn">from</span> <span class="nn">..similarity.simUtils</span> <span class="kn">import</span> <span class="n">wordsSimilarity</span>
+
+<span class="c1"># list of available preprocessors in textacy.preprocessing.normalize</span>
+<div class="viewcode-block" id="textacyNormalize">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.textacyNormalize">[docs]</a>
+<span class="n">textacyNormalize</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;bullet_points&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;hyphenated_words&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;quotation_marks&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;repeating_chars&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;unicode&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;whitespace&#39;</span><span class="p">]</span></div>
+
+<span class="c1"># list of available preprocessors in textacy.preprocessing.remove</span>
+<div class="viewcode-block" id="textacyRemove">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.textacyRemove">[docs]</a>
+<span class="n">textacyRemove</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;accents&#39;</span><span class="p">,</span>
+                 <span class="s1">&#39;brackets&#39;</span><span class="p">,</span>
+                 <span class="s1">&#39;html_tags&#39;</span><span class="p">,</span>
+                 <span class="s1">&#39;punctuation&#39;</span><span class="p">]</span></div>
+
+<span class="c1"># list of available preprocessors in textacy.preprocessing.replace</span>
+<div class="viewcode-block" id="textacyReplace">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.textacyReplace">[docs]</a>
+<span class="n">textacyReplace</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;currency_symbols&#39;</span><span class="p">,</span>
+                  <span class="s1">&#39;emails&#39;</span><span class="p">,</span>
+                  <span class="s1">&#39;emojis&#39;</span><span class="p">,</span>
+                  <span class="s1">&#39;hashtags&#39;</span><span class="p">,</span>
+                  <span class="s1">&#39;numbers&#39;</span><span class="p">,</span>
+                  <span class="s1">&#39;phone_numbers&#39;</span><span class="p">,</span>
+                  <span class="s1">&#39;urls&#39;</span><span class="p">,</span>
+                  <span class="s1">&#39;user_handles&#39;</span><span class="p">]</span></div>
+
+<span class="c1"># list of available preprocessors from numerizer</span>
+<div class="viewcode-block" id="numerizer">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.numerizer">[docs]</a>
+<span class="n">numerizer</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;numerize&#39;</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="preprocessorDefaultList">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.preprocessorDefaultList">[docs]</a>
+<span class="n">preprocessorDefaultList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;bullet_points&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;hyphenated_words&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;quotation_marks&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;repeating_chars&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;whitespace&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;unicode&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;accents&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;html_tags&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;punctuation&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;emails&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;emojis&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;hashtags&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;urls&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;numerize&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;whitespace&#39;</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="preprocessorDefaultOptions">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.preprocessorDefaultOptions">[docs]</a>
+<span class="n">preprocessorDefaultOptions</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;repeating_chars&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;chars&#39;</span><span class="p">:</span> <span class="s1">&#39;,&#39;</span><span class="p">,</span> <span class="s1">&#39;maxn&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">},</span>
+                        <span class="s1">&#39;unicode&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;form&#39;</span><span class="p">:</span> <span class="s1">&#39;NFKC&#39;</span><span class="p">},</span>
+                        <span class="s1">&#39;accents&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;fast&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+                        <span class="s1">&#39;punctuation&#39;</span><span class="p">:</span> <span class="p">{</span><span class="s1">&#39;only&#39;</span><span class="p">:[</span><span class="s2">&quot;*&quot;</span><span class="p">,</span><span class="s2">&quot;+&quot;</span><span class="p">,</span><span class="s2">&quot;:&quot;</span><span class="p">,</span><span class="s2">&quot;=&quot;</span><span class="p">,</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">,</span><span class="s2">&quot;^&quot;</span><span class="p">,</span><span class="s2">&quot;_&quot;</span><span class="p">,</span><span class="s2">&quot;|&quot;</span><span class="p">,</span><span class="s2">&quot;~&quot;</span><span class="p">,</span> <span class="s2">&quot;..&quot;</span><span class="p">,</span> <span class="s2">&quot;...&quot;</span><span class="p">]}}</span></div>
+
+
+<span class="c1"># TODO: replace &amp; --&gt; and, @ --&gt; at, maybe &quot;/&quot; --&gt; or</span>
+
+<div class="viewcode-block" id="Preprocessing">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing">[docs]</a>
+<span class="k">class</span> <span class="nc">Preprocessing</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    NLP Preprocessing class</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">preprocessorList</span><span class="o">=</span><span class="n">preprocessorDefaultList</span><span class="p">,</span> <span class="n">preprocessorOptions</span><span class="o">=</span><span class="n">preprocessorDefaultOptions</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Preprocessing object constructor</span>
+
+<span class="sd">      Arg:</span>
+<span class="sd">        preprocessorList: list, list of preprocessor names as strings</span>
+<span class="sd">        preprocessorOptions: dict, dictionary of dictionaries containing optional arguments for preprocessors</span>
+<span class="sd">        top level key is name of preprocessor</span>
+
+<span class="sd">      Return:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="Preprocessing.functionList">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing.functionList">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">functionList</span> <span class="o">=</span> <span class="p">[]</span> <span class="c1"># list of preprocessor functions</span></div>
+
+<div class="viewcode-block" id="Preprocessing.preprocessorNames">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing.preprocessorNames">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">preprocessorNames</span> <span class="o">=</span> <span class="n">textacyNormalize</span> <span class="o">+</span> <span class="n">textacyRemove</span> <span class="o">+</span> <span class="n">textacyReplace</span> <span class="o">+</span> <span class="n">numerizer</span></div>
+
+
+    <span class="c1"># collect preprocessor functions in a list</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">preprocessorList</span><span class="p">:</span>
+      <span class="c1"># strip out options for preprocessor</span>
+      <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">preprocessorOptions</span><span class="p">:</span>
+        <span class="n">options</span> <span class="o">=</span> <span class="n">preprocessorOptions</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">options</span> <span class="o">=</span> <span class="p">{}</span>
+      <span class="c1"># build the function to do the preprocessing</span>
+      <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">textacyNormalize</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">createTextacyNormalizeFunction</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">textacyRemove</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">createTextacyRemoveFunction</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">textacyReplace</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">createTextacyReplaceFunction</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">options</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">numerizer</span><span class="p">:</span>
+        <span class="c1"># create function to store in functionList</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">functionList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">numerize</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">ignore</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;a &#39;</span><span class="p">,</span> <span class="s1">&#39;A&#39;</span><span class="p">,</span> <span class="s1">&#39;second&#39;</span><span class="p">]))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1"> is ignored! </span><span class="se">\n</span><span class="s1">Available preprocessors: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">preprocessorNames</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+    <span class="c1"># create the preprocessor pipeline (composition of functionList)</span>
+<div class="viewcode-block" id="Preprocessing.pipeline">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing.pipeline">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">pipeline</span> <span class="o">=</span> <span class="n">functoolz</span><span class="o">.</span><span class="n">compose_left</span><span class="p">(</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">functionList</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Preprocessing.createTextacyNormalizeFunction">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing.createTextacyNormalizeFunction">[docs]</a>
+  <span class="k">def</span> <span class="nf">createTextacyNormalizeFunction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">options</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Creates a function from textacy.preprocessing.normalize such that only argument is a string</span>
+<span class="sd">      and adds it to the functionList</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        name: str, name of the preprocessor</span>
+<span class="sd">        options: dict, dictionary of preprocessor options</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># check for optional arguments</span>
+    <span class="n">useChars</span><span class="p">,</span> <span class="n">useMaxn</span><span class="p">,</span> <span class="n">useForm</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">False</span>
+    <span class="c1"># options for repeating_chars</span>
+    <span class="k">if</span> <span class="s1">&#39;chars&#39;</span> <span class="ow">in</span> <span class="n">options</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">options</span><span class="p">[</span><span class="s1">&#39;chars&#39;</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+      <span class="c1"># if chars is not str, it gets ignored</span>
+      <span class="n">useChars</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="s1">&#39;maxn&#39;</span> <span class="ow">in</span> <span class="n">options</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">options</span><span class="p">[</span><span class="s1">&#39;maxn&#39;</span><span class="p">],</span> <span class="nb">int</span><span class="p">):</span>
+      <span class="c1"># if maxn is not int, it gets ignored</span>
+      <span class="n">useMaxn</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="c1"># option for unicode</span>
+    <span class="k">if</span> <span class="s1">&#39;form&#39;</span> <span class="ow">in</span> <span class="n">options</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">options</span><span class="p">[</span><span class="s1">&#39;form&#39;</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+      <span class="c1"># if form is not str, it gets ignored</span>
+      <span class="n">useForm</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="c1"># build function for the pipeline</span>
+    <span class="k">if</span> <span class="n">useChars</span> <span class="ow">or</span> <span class="n">useMaxn</span> <span class="ow">or</span> <span class="n">useForm</span><span class="p">:</span>
+      <span class="c1"># include optional arguments</span>
+      <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">normalize</span><span class="p">,</span> <span class="n">name</span><span class="p">)(</span><span class="n">x</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="c1"># no options need to be included</span>
+      <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">normalize</span><span class="p">,</span> <span class="n">name</span><span class="p">)(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="c1"># add to the functionList</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">functionList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Preprocessing.createTextacyRemoveFunction">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing.createTextacyRemoveFunction">[docs]</a>
+  <span class="k">def</span> <span class="nf">createTextacyRemoveFunction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">options</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Creates a function from textacy.preprocessing.remove such that the only argument is a string</span>
+<span class="sd">      and adds it to the functionList</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        name: str, name of the preprocessor</span>
+<span class="sd">        options: dict, dictionary of preprocessor options</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># check for optional arguments</span>
+    <span class="n">useFast</span><span class="p">,</span> <span class="n">useOnly</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">False</span>
+    <span class="c1"># option for accents</span>
+    <span class="k">if</span> <span class="s1">&#39;fast&#39;</span> <span class="ow">in</span> <span class="n">options</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">options</span><span class="p">[</span><span class="s1">&#39;fast&#39;</span><span class="p">],</span> <span class="nb">bool</span><span class="p">):</span>
+      <span class="c1"># if fast is not bool, it gets ignored</span>
+      <span class="n">useFast</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="c1"># option for brackets and punctuation</span>
+    <span class="k">if</span> <span class="s1">&#39;only&#39;</span> <span class="ow">in</span> <span class="n">options</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">options</span><span class="p">[</span><span class="s1">&#39;only&#39;</span><span class="p">],</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+      <span class="c1"># if only is not str, list, or tuple, it gets ignored</span>
+      <span class="n">useOnly</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="c1"># build function for the pipeline</span>
+    <span class="k">if</span> <span class="n">useFast</span> <span class="ow">or</span> <span class="n">useOnly</span><span class="p">:</span>
+      <span class="c1"># include optional arguments</span>
+      <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">remove</span><span class="p">,</span> <span class="n">name</span><span class="p">)(</span><span class="n">x</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="c1"># no options need to be included</span>
+      <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">remove</span><span class="p">,</span> <span class="n">name</span><span class="p">)(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="c1"># add to the functionList</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">functionList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Preprocessing.createTextacyReplaceFunction">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing.createTextacyReplaceFunction">[docs]</a>
+  <span class="k">def</span> <span class="nf">createTextacyReplaceFunction</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">options</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Creates a function from textacy.preprocessing.replace such that the only argument is a string</span>
+<span class="sd">      and adds it to the functionList</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        name: str, name of the preprocessor</span>
+<span class="sd">        options: dict, dictionary of preprocessor options</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># check for optional arguments</span>
+    <span class="n">useRepl</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="s1">&#39;repl&#39;</span> <span class="ow">in</span> <span class="n">options</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">options</span><span class="p">[</span><span class="s1">&#39;repl&#39;</span><span class="p">],</span> <span class="nb">str</span><span class="p">):</span>
+      <span class="c1"># if repl is not str, it gets ignored</span>
+      <span class="n">useRepl</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="c1"># build function for the pipeline</span>
+    <span class="k">if</span> <span class="n">useRepl</span><span class="p">:</span>
+      <span class="c1"># include optional argument</span>
+      <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">replace</span><span class="p">,</span> <span class="n">name</span><span class="p">)(</span><span class="n">x</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="c1"># no options need to be included</span>
+      <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">preprocessing</span><span class="o">.</span><span class="n">replace</span><span class="p">,</span> <span class="n">name</span><span class="p">)(</span><span class="n">x</span><span class="p">)</span>
+
+    <span class="c1"># add to the functionList</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">functionList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">f</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Preprocessing.__call__">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.Preprocessing.__call__">[docs]</a>
+  <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Performs the preprocessing</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        text: str, string of text to preprocess</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        processed: str, string of processed text</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">processed</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)</span>
+    <span class="n">processed</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;&amp;&#39;</span><span class="p">,</span> <span class="s1">&#39; and &#39;</span><span class="p">,</span> <span class="n">processed</span><span class="p">)</span>
+    <span class="c1"># processed = re.sub(r&#39;/&#39;, &#39; and &#39;, processed)</span>
+    <span class="n">processed</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;@&#39;</span><span class="p">,</span> <span class="s1">&#39; at &#39;</span><span class="p">,</span> <span class="n">processed</span><span class="p">)</span>
+    <span class="n">processed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">pipeline</span><span class="p">(</span><span class="n">processed</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">processed</span></div>
+</div>
+
+
+<div class="viewcode-block" id="SpellChecker">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker">[docs]</a>
+<span class="k">class</span> <span class="nc">SpellChecker</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Object to find misspelled words and automatically correct spelling</span>
+
+<span class="sd">    Note: when using autocorrect, one need to conduct a spell test to identify the threshold (the word frequences)</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">checker</span><span class="o">=</span><span class="s1">&#39;autocorrect&#39;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      SpellChecker object constructor</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        checker: str, optional, spelling corrector to use (&#39;autocorrect&#39; or &#39;ContextualSpellCheck&#39;)</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="SpellChecker.checker">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.checker">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">=</span> <span class="n">checker</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+    <span class="c1"># get included and additional dictionary words and update speller dictionary</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;autocorrect&#39;</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span> <span class="o">=</span> <span class="n">autocorrect</span><span class="o">.</span><span class="n">Speller</span><span class="p">()</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">includedWords</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="n">file2open</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span> <span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span> <span class="p">,</span> <span class="s1">&#39;ac_additional_words.txt&#39;</span><span class="p">)</span>
+      <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file2open</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+        <span class="n">tmp</span> <span class="o">=</span> <span class="n">file</span><span class="o">.</span><span class="n">readlines</span><span class="p">()</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span> <span class="o">=</span> <span class="nb">list</span><span class="p">({</span><span class="n">x</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">})</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">nlp_data</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">x</span><span class="p">:</span> <span class="mi">1000000</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span><span class="p">})</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;pyspellchecker&#39;</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span> <span class="o">=</span> <span class="n">PySpellChecker</span><span class="p">()</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">includedWords</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="n">file2open</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span> <span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span> <span class="p">,</span> <span class="s1">&#39;psc_additional_words.txt&#39;</span><span class="p">)</span>
+      <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file2open</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+        <span class="n">tmp</span> <span class="o">=</span> <span class="n">file</span><span class="o">.</span><span class="n">readlines</span><span class="p">()</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span> <span class="o">=</span> <span class="nb">list</span><span class="p">({</span><span class="n">x</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">})</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">word_frequency</span><span class="o">.</span><span class="n">load_words</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;contextual spellcheck&#39;</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span> <span class="o">=</span> <span class="n">spacy</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s1">&#39;en_core_web_lg&#39;</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span> <span class="o">=</span> <span class="n">ContextualSpellCheck</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">includedWords</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">BertTokenizer</span><span class="o">.</span><span class="n">get_vocab</span><span class="p">()</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+      <span class="n">file2open</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span> <span class="p">,</span> <span class="s1">&#39;csc_additional_words.txt&#39;</span><span class="p">)</span>
+      <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file2open</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+        <span class="n">tmp</span> <span class="o">=</span> <span class="n">file</span><span class="o">.</span><span class="n">readlines</span><span class="p">()</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tmp</span><span class="p">]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">vocab</span> <span class="o">=</span> <span class="n">Vocab</span><span class="p">(</span><span class="n">strings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">includedWords</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span><span class="p">)</span>
+
+<div class="viewcode-block" id="SpellChecker.addWordsToDictionary">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.addWordsToDictionary">[docs]</a>
+  <span class="k">def</span> <span class="nf">addWordsToDictionary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">words</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Adds a list of words to the spell check dictionary</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        words: list, list of words to add to the dictionary</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;autocorrect&#39;</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">nlp_data</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">word</span><span class="p">:</span> <span class="mi">1000000</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">words</span><span class="p">})</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;pyspellchecker&#39;</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">word_frequency</span><span class="o">.</span><span class="n">load_words</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span><span class="o">+</span><span class="n">words</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">vocab</span> <span class="o">=</span> <span class="n">Vocab</span><span class="p">(</span><span class="n">strings</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">includedWords</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">addedWords</span><span class="o">+</span><span class="n">words</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SpellChecker.getMisspelledWords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.getMisspelledWords">[docs]</a>
+  <span class="k">def</span> <span class="nf">getMisspelledWords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Returns a list of words that are misspelled according to the dictionary used</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        misspelled: list, list of misspelled words</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;autocorrect&#39;</span><span class="p">:</span>
+      <span class="c1"># corrected = self.speller(text.lower())</span>
+      <span class="n">original</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;[^\s!,.?&quot;:;-]+&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+      <span class="c1"># auto = re.findall(r&#39;[^\s!,.?&quot;:;-]+&#39;, corrected)</span>
+      <span class="c1"># misspelled = list({w1 if w1.lower() != w2.lower() else None for w1, w2 in zip(original, auto)})</span>
+      <span class="n">misspelled</span> <span class="o">=</span> <span class="p">[</span><span class="n">word</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">original</span> <span class="k">if</span> <span class="n">word</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">nlp_data</span><span class="p">]</span>
+      <span class="k">if</span> <span class="kc">None</span> <span class="ow">in</span> <span class="n">misspelled</span><span class="p">:</span>
+        <span class="n">misspelled</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;pyspellchecker&#39;</span><span class="p">:</span>
+      <span class="n">original</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s1">&#39;[^\s!,.?&quot;:;-]+&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+      <span class="n">misspelled</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">unknown</span><span class="p">(</span><span class="n">original</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+      <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+      <span class="n">misspelled</span> <span class="o">=</span> <span class="nb">list</span><span class="p">({</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">suggestions_spellCheck</span><span class="o">.</span><span class="n">keys</span><span class="p">()})</span>
+
+    <span class="k">return</span> <span class="n">misspelled</span></div>
+
+
+<div class="viewcode-block" id="SpellChecker.correct">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.correct">[docs]</a>
+  <span class="k">def</span> <span class="nf">correct</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Performs automatic spelling correction and returns corrected text</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        corrected: str, spelling corrected text</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;autocorrect&#39;</span><span class="p">:</span>
+      <span class="n">corrected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">==</span> <span class="s1">&#39;pyspellchecker&#39;</span><span class="p">:</span>
+      <span class="n">l</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;([A-Za-z]+(?=\s|\.))&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+      <span class="n">corrected</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">l</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+          <span class="n">corrected</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;[^A-Za-z]+&quot;</span><span class="p">,</span><span class="n">elem</span><span class="p">):</span>
+          <span class="k">if</span> <span class="n">elem</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="p">:</span>
+            <span class="n">corrected</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
+          <span class="k">else</span><span class="p">:</span>
+            <span class="n">corrected</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="o">.</span><span class="n">correction</span><span class="p">(</span><span class="n">elem</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">corrected</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
+      <span class="n">corrected</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+      <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">speller</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+      <span class="n">corrected</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">outcome_spellCheck</span>
+
+    <span class="k">return</span> <span class="n">corrected</span></div>
+
+
+<div class="viewcode-block" id="SpellChecker.handleAbbreviations">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.handleAbbreviations">[docs]</a>
+  <span class="k">def</span> <span class="nf">handleAbbreviations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">abbrDatabase</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="nb">type</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Performs automatic correction of abbreviations and returns corrected text</span>
+<span class="sd">      This method relies on a database of abbreviations located at:</span>
+<span class="sd">      `src/nlp/data/abbreviations.xlsx`</span>
+<span class="sd">      This database contains the most common abbreviations collected from literarture and</span>
+<span class="sd">      it provides for each abbreviation its corresponding full word(s); an abbreviation might</span>
+<span class="sd">      have multple words associated. In such case the full word that makes more sense given the</span>
+<span class="sd">      context is chosen (see findOptimalOption method)</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        abbrDatabase: pandas dataframe, dataframe containing library of abbreviations</span>
+<span class="sd">        and their correspoding full expression</span>
+<span class="sd">        text: str, string of text that will be analyzed</span>
+<span class="sd">        type: string, type of abbreviation method (&#39;spellcheck&#39;,&#39;hard&#39;,&#39;mixed&#39;) that are employed</span>
+<span class="sd">        to determine which words are abbreviations that need to be expanded</span>
+<span class="sd">        * spellcheck: in this case spellchecker is used to identify words that</span>
+<span class="sd">        are not recognized</span>
+<span class="sd">        * hard: here we directly search for the abbreviations in the provided</span>
+<span class="sd">        sentence</span>
+<span class="sd">        * mixed: here we perform first a &quot;hard&quot; search followed by a &quot;spellcheck&quot;</span>
+<span class="sd">        search</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        options: list, list of corrected text options</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">abbreviationSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">abbrDatabase</span><span class="p">[</span><span class="s1">&#39;Abbreviation&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">type</span> <span class="o">==</span> <span class="s1">&#39;spellcheck&#39;</span><span class="p">:</span>
+      <span class="n">unknowns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getMisspelledWords</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">type</span> <span class="o">==</span> <span class="s1">&#39;hard&#39;</span> <span class="ow">or</span> <span class="nb">type</span><span class="o">==</span><span class="s1">&#39;mixed&#39;</span><span class="p">:</span>
+      <span class="n">unknowns</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="n">splitSent</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+      <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">splitSent</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">abbreviationSet</span><span class="p">:</span>
+          <span class="n">unknowns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+      <span class="k">if</span> <span class="nb">type</span><span class="o">==</span><span class="s1">&#39;mixed&#39;</span><span class="p">:</span>
+        <span class="n">set1</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">getMisspelledWords</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
+        <span class="n">set2</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">unknowns</span><span class="p">)</span>
+        <span class="n">unknowns</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">set1</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">set2</span><span class="p">))</span>
+
+    <span class="n">corrections</span><span class="o">=</span><span class="p">{}</span>
+    <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">unknowns</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">abbrDatabase</span><span class="p">[</span><span class="s1">&#39;Abbreviation&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">:</span>
+        <span class="n">locs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">abbrDatabase</span><span class="p">[</span><span class="s1">&#39;Abbreviation&#39;</span><span class="p">][</span><span class="n">abbrDatabase</span><span class="p">[</span><span class="s1">&#39;Abbreviation&#39;</span><span class="p">]</span><span class="o">==</span><span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">locs</span><span class="p">:</span>
+          <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]</span> <span class="o">=</span> <span class="n">abbrDatabase</span><span class="p">[</span><span class="s1">&#39;Full&#39;</span><span class="p">][</span><span class="n">locs</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="nb">print</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Here we are addressing the fact that the abbreviation database will never be complete</span>
+        <span class="c1"># Given an abbreviation that is not part of the abbreviation database, we are looking for a</span>
+        <span class="c1"># a subset of abbreviations the abbreviation database that are close enough (and consider</span>
+        <span class="c1"># them as possible candidates</span>
+        <span class="kn">from</span> <span class="nn">difflib</span> <span class="kn">import</span> <span class="n">SequenceMatcher</span>
+        <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">abbreviationDS</span> <span class="o">=</span> <span class="n">abbrDatabase</span><span class="p">[</span><span class="s1">&#39;Abbreviation&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+        <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">abbr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">abbreviationDS</span><span class="p">):</span>
+          <span class="k">if</span> <span class="n">SequenceMatcher</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">word</span><span class="p">,</span> <span class="n">abbr</span><span class="p">)</span><span class="o">.</span><span class="n">ratio</span><span class="p">()</span><span class="o">&gt;</span><span class="mf">0.8</span><span class="p">:</span>
+            <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">abbrDatabase</span><span class="p">[</span><span class="s1">&#39;Full&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="n">index</span><span class="p">])</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]:</span>
+        <span class="n">corrections</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+
+    <span class="n">combinations</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="nb">list</span><span class="p">(</span><span class="n">corrections</span><span class="o">.</span><span class="n">values</span><span class="p">())))</span>
+    <span class="n">options</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">comb</span> <span class="ow">in</span> <span class="n">combinations</span><span class="p">:</span>
+      <span class="n">corrected</span> <span class="o">=</span> <span class="n">text</span>
+      <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">key</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">corrections</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+        <span class="n">corrected</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b</span><span class="si">%s</span><span class="s2">\b&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="p">,</span> <span class="n">comb</span><span class="p">[</span><span class="n">index</span><span class="p">],</span> <span class="n">corrected</span><span class="p">)</span>
+      <span class="n">options</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">options</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">text</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">bestOpt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findOptimalOption</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+      <span class="k">return</span> <span class="n">bestOpt</span></div>
+
+
+<div class="viewcode-block" id="SpellChecker.generateAbbrDict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.generateAbbrDict">[docs]</a>
+  <span class="k">def</span> <span class="nf">generateAbbrDict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">abbrDatabase</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Generates an AbbrDict that can be used by handleAbbreviationsDict</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        abbrDatabase: pandas dataframe, dataframe containing library of abbreviations</span>
+<span class="sd">        and their correspoding full expression</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        abbrDict: dictionary, a abbreviations dictionary</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">abbrDict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="c1">#There may be a more efficient way to do the following</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">abbrDatabase</span><span class="o">.</span><span class="n">itertuples</span><span class="p">():</span>
+      <span class="n">abbrs</span> <span class="o">=</span> <span class="n">abbrDict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">Abbreviation</span><span class="p">,[])</span>
+      <span class="n">abbrs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">Full</span><span class="p">)</span>
+      <span class="n">abbrDict</span><span class="p">[</span><span class="n">row</span><span class="o">.</span><span class="n">Abbreviation</span><span class="p">]</span> <span class="o">=</span> <span class="n">abbrs</span>
+    <span class="k">return</span> <span class="n">abbrDict</span></div>
+
+
+<div class="viewcode-block" id="SpellChecker.handleAbbreviationsDict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.handleAbbreviationsDict">[docs]</a>
+  <span class="k">def</span> <span class="nf">handleAbbreviationsDict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">abbrDict</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="nb">type</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Performs automatic correction of abbreviations and returns corrected text</span>
+<span class="sd">      This method relies on a database of abbreviations located at:</span>
+<span class="sd">      src/nlp/data/abbreviations.xlsx</span>
+<span class="sd">      This database contains the most common abbreviations collected from literarture and</span>
+<span class="sd">      it provides for each abbreviation its corresponding full word(s); an abbreviation might</span>
+<span class="sd">      have multple words associated. In such case the full word that makes more sense given the</span>
+<span class="sd">      context is chosen (see findOptimalOption method)</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        abbrDict: dictionary, dictionary containing library of abbreviations</span>
+<span class="sd">        and their correspoding full expression</span>
+<span class="sd">        text: str, string of text that will be analyzed</span>
+<span class="sd">        type: string, type of abbreviation method (&#39;spellcheck&#39;,&#39;hard&#39;,&#39;mixed&#39;) that are employed</span>
+<span class="sd">        to determine which words are abbreviations that need to be expanded</span>
+<span class="sd">        * spellcheck: in this case spellchecker is used to identify words that</span>
+<span class="sd">        are not recognized</span>
+<span class="sd">        * hard: here we directly search for the abbreviations in the provided</span>
+<span class="sd">        sentence</span>
+<span class="sd">        * mixed: here we perform first a &quot;hard&quot; search followed by a &quot;spellcheck&quot;</span>
+<span class="sd">        search</span>
+
+<span class="sd">      Return:</span>
+<span class="sd">        options: list, list of corrected text options</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">type</span> <span class="o">==</span> <span class="s1">&#39;spellcheck&#39;</span><span class="p">:</span>
+      <span class="n">unknowns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getMisspelledWords</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">type</span> <span class="o">==</span> <span class="s1">&#39;hard&#39;</span> <span class="ow">or</span> <span class="nb">type</span><span class="o">==</span><span class="s1">&#39;mixed&#39;</span><span class="p">:</span>
+      <span class="n">unknowns</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="n">splitSent</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+      <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">splitSent</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">abbrDict</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+          <span class="n">unknowns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+      <span class="k">if</span> <span class="nb">type</span><span class="o">==</span><span class="s1">&#39;mixed&#39;</span><span class="p">:</span>
+        <span class="n">set1</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">getMisspelledWords</span><span class="p">(</span><span class="n">text</span><span class="p">))</span>
+        <span class="n">set2</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">unknowns</span><span class="p">)</span>
+        <span class="n">unknowns</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">set1</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">set2</span><span class="p">))</span>
+
+    <span class="n">corrections</span><span class="o">=</span><span class="p">{}</span>
+    <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">unknowns</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">abbrDict</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">abbrDict</span><span class="p">[</span><span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()])</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+          <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]</span> <span class="o">=</span> <span class="n">abbrDict</span><span class="p">[</span><span class="n">word</span><span class="o">.</span><span class="n">lower</span><span class="p">()]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Here we are addressing the fact that the abbreviation database will never be complete</span>
+        <span class="c1"># Given an abbreviation that is not part of the abbreviation database, we are looking for a</span>
+        <span class="c1"># a subset of abbreviations the abbreviation database that are close enough (and consider</span>
+        <span class="c1"># them as possible candidates</span>
+        <span class="kn">from</span> <span class="nn">difflib</span> <span class="kn">import</span> <span class="n">SequenceMatcher</span>
+        <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">abbreviationDS</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">abbrDict</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">abbr</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">abbreviationDS</span><span class="p">):</span>
+          <span class="n">val</span><span class="o">=</span><span class="mi">0</span>
+          <span class="n">newVal</span> <span class="o">=</span> <span class="n">SequenceMatcher</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">word</span><span class="p">,</span> <span class="n">abbr</span><span class="p">)</span><span class="o">.</span><span class="n">ratio</span><span class="p">()</span>
+          <span class="k">if</span> <span class="n">newVal</span><span class="o">&gt;=</span><span class="mf">0.75</span> <span class="ow">and</span> <span class="n">newVal</span><span class="o">&gt;</span><span class="n">val</span><span class="p">:</span>
+            <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]</span> <span class="o">=</span> <span class="n">abbrDict</span><span class="p">[</span><span class="n">abbr</span><span class="p">]</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">newVal</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">corrections</span><span class="p">[</span><span class="n">word</span><span class="p">]:</span>
+        <span class="n">corrections</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+
+    <span class="n">combinations</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">product</span><span class="p">(</span><span class="o">*</span><span class="nb">list</span><span class="p">(</span><span class="n">corrections</span><span class="o">.</span><span class="n">values</span><span class="p">())))</span>
+    <span class="n">options</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">comb</span> <span class="ow">in</span> <span class="n">combinations</span><span class="p">:</span>
+      <span class="n">corrected</span> <span class="o">=</span> <span class="n">text</span>
+      <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">key</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">corrections</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+        <span class="n">corrected</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b</span><span class="si">%s</span><span class="s2">\b&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="p">,</span> <span class="n">comb</span><span class="p">[</span><span class="n">index</span><span class="p">],</span> <span class="n">corrected</span><span class="p">)</span>
+      <span class="n">options</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">options</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">text</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">bestOpt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">findOptimalOption</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+      <span class="k">return</span> <span class="n">bestOpt</span></div>
+
+
+<div class="viewcode-block" id="SpellChecker.findOptimalOption">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.SpellChecker.findOptimalOption">[docs]</a>
+  <span class="k">def</span> <span class="nf">findOptimalOption</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">options</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method to handle abbreviation with multiple meanings</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        options: list, list of sentence options</span>
+
+<span class="sd">      Return:</span>
+<span class="sd">        optimalOpt: string, option from the provided options list that fits more the</span>
+<span class="sd">        possible</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nOpt</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+    <span class="n">combScore</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nOpt</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">opt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">options</span><span class="p">):</span>
+      <span class="n">listOpt</span> <span class="o">=</span> <span class="n">opt</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+      <span class="k">for</span> <span class="n">i</span><span class="p">,</span><span class="n">word</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">listOpt</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="nb">len</span><span class="p">(</span><span class="n">listOpt</span><span class="p">)):</span>
+          <span class="n">combScore</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="n">combScore</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">+</span> <span class="n">wordsSimilarity</span><span class="p">(</span><span class="n">word</span><span class="p">,</span><span class="n">listOpt</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+    <span class="n">optIndex</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">combScore</span><span class="p">)</span>
+    <span class="n">optimalOpt</span> <span class="o">=</span> <span class="n">options</span><span class="p">[</span><span class="n">optIndex</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">optimalOpt</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="AbbrExpander">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander">[docs]</a>
+<span class="k">class</span> <span class="nc">AbbrExpander</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class to expand abbreviations</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">abbreviationsFilename</span><span class="p">,</span> <span class="n">checkerType</span><span class="o">=</span><span class="s1">&#39;autocorrect&#39;</span><span class="p">,</span> <span class="n">abbrType</span><span class="o">=</span><span class="s1">&#39;mixed&#39;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Abbreviation expander constructor</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        abbreviationsFilename: string, filename of abbreviations data</span>
+
+<span class="sd">      Return:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="AbbrExpander.abbrType">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.abbrType">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">abbrType</span> <span class="o">=</span> <span class="n">abbrType</span></div>
+
+<div class="viewcode-block" id="AbbrExpander.checkerType">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.checkerType">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">checkerType</span> <span class="o">=</span> <span class="n">checkerType</span></div>
+
+
+<div class="viewcode-block" id="AbbrExpander.abbrList">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.abbrList">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">abbrList</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="n">abbreviationsFilename</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AbbrExpander.preprocessorList">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.preprocessorList">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">preprocessorList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;hyphenated_words&#39;</span><span class="p">,</span>
+                             <span class="s1">&#39;whitespace&#39;</span><span class="p">,</span>
+                             <span class="s1">&#39;numerize&#39;</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="AbbrExpander.preprocess">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.preprocess">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">preprocess</span> <span class="o">=</span> <span class="n">Preprocessing</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">preprocessorList</span><span class="p">,</span> <span class="p">{})</span></div>
+
+<div class="viewcode-block" id="AbbrExpander.checker">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.checker">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">checker</span> <span class="o">=</span> <span class="n">SpellChecker</span><span class="p">(</span><span class="n">checker</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">checkerType</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="AbbrExpander.abbrDict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.abbrDict">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span><span class="o">.</span><span class="n">generateAbbrDict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">abbrList</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="AbbrExpander.abbrProcess">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Preprocessing/index.html#src.dackar.text_processing.Preprocessing.AbbrExpander.abbrProcess">[docs]</a>
+  <span class="k">def</span> <span class="nf">abbrProcess</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">splitToList</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Expands the abbreviations in text</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        text: string, the text to expand</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        expandedText: string, the text with abbreviations expanded</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preprocess</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">splitToList</span><span class="p">:</span>
+      <span class="n">expandedText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span><span class="o">.</span><span class="n">handleAbbreviationsDict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span><span class="p">,</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="nb">type</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">abbrType</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+      <span class="n">textList</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)]</span>
+      <span class="n">expandedText</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">textList</span><span class="p">:</span>
+        <span class="n">cleanedText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">checker</span><span class="o">.</span><span class="n">handleAbbreviationsDict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span><span class="p">,</span> <span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="nb">type</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">abbrType</span><span class="p">)</span>
+        <span class="n">expandedText</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cleanedText</span><span class="p">)</span>
+      <span class="n">expandedText</span> <span class="o">=</span> <span class="s1">&#39;. &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">expandedText</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">expandedText</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

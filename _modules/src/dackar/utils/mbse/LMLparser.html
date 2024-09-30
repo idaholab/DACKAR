@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.utils.mbse.LMLparser &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.utils.mbse.LMLparser</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.utils.mbse.LMLparser</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on February, 2024</span>
+
+<span class="sd">@author: mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="c1"># External Imports</span>
+<span class="kn">import</span> <span class="nn">xml.etree.ElementTree</span> <span class="k">as</span> <span class="nn">ET</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+
+<div class="viewcode-block" id="LMLobject">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject">[docs]</a>
+<span class="k">class</span> <span class="nc">LMLobject</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class designed to process the MBSE model developed in Lifecycle Modeling Language (LML) using Innoslate.</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Initialization method for the LMLobject class</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        filename: file, file in xml containing the MBSE model deveolped in LML using Innoslate</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="LMLobject.filename">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.filename">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span></div>
+
+<div class="viewcode-block" id="LMLobject.entities">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.entities">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">entities</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="LMLobject.linkEntities">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.linkEntities">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">linkEntities</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="LMLobject.embEntities">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.embEntities">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">embEntities</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="LMLobject.LMLgraph">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.LMLgraph">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="LMLobject.acronyms">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.acronyms">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">acronyms</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="LMLobject.listIDs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.listIDs">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">listIDs</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="LMLobject.linkToMBSEmodels">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.linkToMBSEmodels">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">linkToMBSEmodels</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+
+<div class="viewcode-block" id="LMLobject.LMLparser">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.LMLparser">[docs]</a>
+  <span class="k">def</span> <span class="nf">LMLparser</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">diagramName</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method is designed to parse the xml file containing the MBSE model, to create its corresponding graph</span>
+<span class="sd">      and to populate:</span>
+
+<span class="sd">      * the set of entities: dictionary of assets in the form of &#39;LML_ID&#39;: (&#39;asset name&#39;, &#39;asset ID&#39;)</span>
+
+<span class="sd">      * the set of links: list containing the LML-IDs of all links between assets</span>
+
+<span class="sd">      * the set of embedded entities: dictionary of the components that have been specified in the description text of the</span>
+<span class="sd">        LML asset or link (e.g., [comp1,comp2,comp3]) in the form of &#39;LML_ID&#39;: [comp1,comp2,comp3]</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        diagramName: string, original name of the diagram; it is used to remove the correposing node in the graph</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">diagramName</span> <span class="o">=</span> <span class="n">diagramName</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">MultiDiGraph</span><span class="p">()</span>
+
+    <span class="n">tree</span> <span class="o">=</span> <span class="n">ET</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">tree</span><span class="o">.</span><span class="n">getroot</span><span class="p">()</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">DBnode</span> <span class="o">=</span> <span class="n">root</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;database&#39;</span><span class="p">)</span>
+
+    <span class="c1">#  Identify entities and links</span>
+    <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">DBnode</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">tag</span><span class="o">==</span><span class="s1">&#39;entity&#39;</span><span class="p">:</span>
+        <span class="n">nametxt</span> <span class="o">=</span> <span class="n">child</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;name&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+        <span class="k">if</span> <span class="s1">&#39; to &#39;</span> <span class="ow">in</span> <span class="n">nametxt</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">parseLinkEntity</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">parseAssetEntity</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">connetGraph</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="LMLobject.connetGraph">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.connetGraph">[docs]</a>
+  <span class="k">def</span> <span class="nf">connetGraph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method is designed to actually link the asset entities identified in the OPLparser method</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">DBnode</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">tag</span><span class="o">==</span><span class="s1">&#39;relationship&#39;</span><span class="p">:</span>
+        <span class="n">sourceID</span>  <span class="o">=</span> <span class="n">child</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;sourceId&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+        <span class="n">targetID</span>  <span class="o">=</span> <span class="n">child</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;targetId&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+        <span class="n">attrNode</span>  <span class="o">=</span> <span class="n">child</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;booleanAttribute&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">attrNode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+          <span class="n">attribute</span> <span class="o">=</span> <span class="n">attrNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;booleanValue&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+
+          <span class="k">if</span> <span class="n">sourceID</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">linkEntities</span> <span class="ow">and</span> <span class="n">targetID</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">attribute</span><span class="o">==</span><span class="s1">&#39;true&#39;</span><span class="p">:</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="p">[</span><span class="n">targetID</span><span class="p">],</span> <span class="n">sourceID</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;k&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;link&#39;</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">attribute</span><span class="o">==</span><span class="s1">&#39;false&#39;</span><span class="p">:</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">sourceID</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="p">[</span><span class="n">targetID</span><span class="p">],</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;k&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;link&#39;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+               <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s1">&#39;LMLobject object: booleanValue for edge connecting &quot;</span><span class="si">{}</span><span class="s1">&quot; and &quot;</span><span class="si">{}</span><span class="s1">&quot; is not defined&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">sourceID</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="p">[</span><span class="n">targetID</span><span class="p">]))</span></div>
+
+
+
+<div class="viewcode-block" id="LMLobject.parseLinkEntity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.parseLinkEntity">[docs]</a>
+  <span class="k">def</span> <span class="nf">parseLinkEntity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">linkNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method extracts all required information of the link from the provided xml node.</span>
+<span class="sd">      It populates the self.linkEntities and the self.embEntities variables.</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">          linkNode: xml node, xml node containing containing all the information of a single link generated</span>
+<span class="sd">          in LML using Innoslate</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">linkID</span> <span class="o">=</span> <span class="n">linkNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;globalId&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">linkEntities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">linkID</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">linkID</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;b&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;entity&#39;</span><span class="p">)</span>
+
+    <span class="c1"># Parse description</span>
+    <span class="k">if</span> <span class="n">linkNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;description&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span><span class="p">:</span>
+      <span class="n">entityDescr</span> <span class="o">=</span> <span class="n">linkNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;description&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+      <span class="n">elemList</span> <span class="o">=</span> <span class="n">parseEntityDescription</span><span class="p">(</span><span class="n">entityDescr</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>    <span class="c1"># No link to MBSE models allowed for links</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">embEntities</span><span class="p">[</span><span class="n">linkID</span><span class="p">]</span> <span class="o">=</span> <span class="n">elemList</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">listIDs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">listIDs</span> <span class="o">+</span> <span class="n">elemList</span>
+
+      <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">elemList</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;m&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;entity_emb&#39;</span><span class="p">)</span>
+      <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">elemList</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">linkID</span><span class="p">,</span> <span class="n">elem</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;k&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;assoc&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="LMLobject.parseAssetEntity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.parseAssetEntity">[docs]</a>
+  <span class="k">def</span> <span class="nf">parseAssetEntity</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entityNode</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method extracts all required information of the asset from the provided xml node.</span>
+<span class="sd">      It populates the self.entities and the self.embEntities variables.</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">          linkNode: xml node, xml node containing containing all the information of a single link generated</span>
+<span class="sd">          in LML using Innoslate</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">assetID</span>     <span class="o">=</span> <span class="n">entityNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;number&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+    <span class="n">entityID</span>    <span class="o">=</span> <span class="n">entityNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;globalId&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+    <span class="n">entityName</span>  <span class="o">=</span> <span class="n">entityNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;name&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">cleanedName</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s1">&#39; +&#39;</span><span class="p">,</span> <span class="s1">&#39; &#39;</span><span class="p">,</span> <span class="n">entityName</span><span class="p">)</span>
+
+    <span class="n">elemList</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">MBSElink</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">entityName</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">diagramName</span><span class="p">:</span> <span class="k">return</span>
+
+    <span class="c1"># Parse description</span>
+    <span class="n">entityDescr</span> <span class="o">=</span> <span class="n">entityNode</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s1">&#39;description&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">text</span>
+    <span class="k">if</span> <span class="n">entityDescr</span><span class="p">:</span>
+      <span class="p">(</span><span class="n">elemList</span><span class="p">,</span><span class="n">MBSElink</span><span class="p">)</span> <span class="o">=</span> <span class="n">parseEntityDescription</span><span class="p">(</span><span class="n">entityDescr</span><span class="p">)</span>
+
+      <span class="k">if</span> <span class="n">elemList</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embEntities</span><span class="p">[</span><span class="n">entityID</span><span class="p">]</span> <span class="o">=</span> <span class="n">elemList</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">listIDs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">listIDs</span> <span class="o">+</span> <span class="n">elemList</span>
+        <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">elemList</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;entity_emb&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">MBSElink</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">MBSElink</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;g&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;MBSE_linked_ent&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">assetID</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="p">[</span><span class="n">entityID</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">entityName</span><span class="p">,</span><span class="n">assetID</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">listIDs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">assetID</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">((</span><span class="n">entityName</span><span class="p">,</span><span class="n">assetID</span><span class="p">),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;m&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;entity&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">elemList</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">elemList</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">((</span><span class="n">entityName</span><span class="p">,</span><span class="n">assetID</span><span class="p">),</span> <span class="n">elem</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;k&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;assoc&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">MBSElink</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">((</span><span class="n">entityName</span><span class="p">,</span><span class="n">assetID</span><span class="p">),</span> <span class="n">MBSElink</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;g&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;MBSElink&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="p">[</span><span class="n">entityID</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">entityName</span><span class="p">,</span><span class="kc">None</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">((</span><span class="n">entityName</span><span class="p">,</span><span class="kc">None</span><span class="p">),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;m&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;entity&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">elemList</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">elemList</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">((</span><span class="n">entityName</span><span class="p">,</span><span class="kc">None</span><span class="p">),</span> <span class="n">elem</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;k&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;assoc&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">MBSElink</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">((</span><span class="n">entityName</span><span class="p">,</span><span class="kc">None</span><span class="p">),</span> <span class="n">MBSElink</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;g&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;MBSElink&#39;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LMLobject.returnGraph">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.returnGraph">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnGraph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method returns the networkx graph</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        self.LMLgraph: networkx object, graph containing entities specified in the LML MBSE model</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span></div>
+
+
+<div class="viewcode-block" id="LMLobject.returnEntities">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.returnEntities">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnEntities</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method returns the the dictionaries of entities and embedded entities specified in the MBSE model</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">          self.entities     : dict, dict of entities</span>
+<span class="sd">          self.embEntities : dict, dict of embedded entities</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">entities</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">embEntities</span></div>
+
+
+<div class="viewcode-block" id="LMLobject.returnListIDs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.returnListIDs">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnListIDs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method returns the list of asset IDs</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        self.listIDs: list, list of asset IDs specified in the LML MBSE model</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">rmv</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">40</span><span class="p">)]</span>
+    <span class="n">cleaned</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">listIDs</span><span class="p">)</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">rmv</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">cleaned</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LMLobject.cleanedGraph">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.cleanedGraph">[docs]</a>
+  <span class="k">def</span> <span class="nf">cleanedGraph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      This method is designed to clean the complete MBSE graph by removing the links which are represented as nodes</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        None</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        g: networkx object, cleaned graph containing only asset entities specified in the LML MBSE model</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">cleanedGraph</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">node</span><span class="p">,</span><span class="n">degree</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleanedGraph</span><span class="o">.</span><span class="n">degree</span><span class="p">():</span>
+      <span class="k">if</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">linkEntities</span><span class="p">:</span>
+        <span class="n">a0</span><span class="p">,</span><span class="n">b0</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cleanedGraph</span><span class="o">.</span><span class="n">in_edges</span><span class="p">(</span><span class="n">node</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">a1</span><span class="p">,</span><span class="n">b1</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cleanedGraph</span><span class="o">.</span><span class="n">out_edges</span><span class="p">(</span><span class="n">node</span><span class="p">))[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="n">e0</span> <span class="o">=</span> <span class="n">a0</span> <span class="k">if</span> <span class="n">a0</span><span class="o">!=</span><span class="n">node</span> <span class="k">else</span> <span class="n">b0</span>
+        <span class="n">e1</span> <span class="o">=</span> <span class="n">a1</span> <span class="k">if</span> <span class="n">a1</span><span class="o">!=</span><span class="n">node</span> <span class="k">else</span> <span class="n">b1</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cleanedGraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">e0</span><span class="p">,</span> <span class="n">e1</span><span class="p">)</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">cleanedGraph</span><span class="o">.</span><span class="n">remove_nodes_from</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">linkEntities</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">cleanedGraph</span></div>
+
+
+
+<div class="viewcode-block" id="LMLobject.createNeo4jGraph">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.LMLobject.createNeo4jGraph">[docs]</a>
+  <span class="k">def</span> <span class="nf">createNeo4jGraph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+    <span class="n">NXnodes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">nodes</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+    <span class="n">NXedges</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">LMLgraph</span><span class="o">.</span><span class="n">edges</span><span class="p">)</span>
+
+    <span class="n">mapping</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="n">nodes</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;nodeId&quot;</span><span class="p">:</span> <span class="p">[],</span>
+            <span class="s2">&quot;labels&quot;</span><span class="p">:</span> <span class="p">[],</span>
+            <span class="s2">&quot;ID&quot;</span><span class="p">:</span> <span class="p">[],</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="p">[]</span>
+            <span class="p">}</span>
+
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">node</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">NXnodes</span><span class="p">):</span>
+      <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;nodeId&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+      <span class="n">nodeInfo</span> <span class="o">=</span> <span class="n">node</span>
+
+      <span class="n">mapping</span><span class="p">[</span><span class="n">node</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span>
+
+      <span class="k">if</span> <span class="n">nodeInfo</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;labels&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nodeInfo</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;ID&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nodeInfo</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+      <span class="k">elif</span> <span class="n">nodeInfo</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;labels&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nodeInfo</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;ID&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nodeInfo</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;labels&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nodeInfo</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;ID&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nodeInfo</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+
+      <span class="n">nodes</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">[</span><span class="mi">1</span><span class="p">][</span><span class="s1">&#39;key&#39;</span><span class="p">])</span>
+
+    <span class="n">nodes</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">nodes</span><span class="p">)</span>
+
+    <span class="n">relationships</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;sourceNodeId&quot;</span><span class="p">:</span> <span class="p">[],</span>
+            <span class="s2">&quot;targetNodeId&quot;</span><span class="p">:</span> <span class="p">[],</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="p">[]</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">edge</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">NXedges</span><span class="p">):</span>
+      <span class="n">relationships</span><span class="p">[</span><span class="s1">&#39;sourceNodeId&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mapping</span><span class="p">[</span><span class="n">edge</span><span class="p">[</span><span class="mi">0</span><span class="p">]])</span>
+      <span class="n">relationships</span><span class="p">[</span><span class="s1">&#39;targetNodeId&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mapping</span><span class="p">[</span><span class="n">edge</span><span class="p">[</span><span class="mi">1</span><span class="p">]])</span>
+      <span class="n">relationships</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">edge</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    self.G = gds.graph.construct(</span>
+<span class="sd">        &quot;my-graph&quot;,      # Graph name</span>
+<span class="sd">        nodes,           # One or more dataframes containing node data</span>
+<span class="sd">        relationships    # One or more dataframes containing relationship data</span>
+<span class="sd">    )&#39;&#39;&#39;</span>
+
+    <span class="k">return</span> <span class="n">nodes</span><span class="p">,</span> <span class="n">relationships</span></div>
+</div>
+
+
+
+
+<div class="viewcode-block" id="parseEntityDescription">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/mbse/LMLparser/index.html#src.dackar.utils.mbse.LMLparser.parseEntityDescription">[docs]</a>
+<span class="k">def</span> <span class="nf">parseEntityDescription</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This method is designed to extract the elements specified in square brackets that are specified in</span>
+<span class="sd">    the description node of the MBSE model of a link or entity</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      text: str, text contained in the description node of the MBSE model</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">        out: tuple, tuple containing the list of elements specified in square brackets and separated</span>
+<span class="sd">        by commas (e.g., [&#39;FV304,&#39;305&#39;]) and the link to an external MBSE model</span>
+<span class="sd">        (e.g., (&#39;centrifugalPumpFull&#39;, &#39;body&#39;))</span>
+
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">if</span> <span class="s1">&#39;[&#39;</span> <span class="ow">in</span> <span class="n">text</span><span class="p">:</span>
+    <span class="n">txtPortion1</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;[&quot;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;]&quot;</span><span class="p">)]</span>
+    <span class="n">listOfElems</span> <span class="o">=</span> <span class="n">txtPortion1</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;;&#39;</span><span class="p">)</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">listOfElems</span> <span class="o">=</span> <span class="kc">None</span>
+
+  <span class="k">if</span> <span class="s1">&#39;{&#39;</span> <span class="ow">in</span> <span class="n">text</span><span class="p">:</span>
+    <span class="n">MBSElink</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;{&quot;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;}&quot;</span><span class="p">)]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;:&#39;</span><span class="p">)</span>
+    <span class="n">MBSEinstance</span> <span class="o">=</span> <span class="p">(</span><span class="n">MBSElink</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">MBSElink</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">MBSEinstance</span> <span class="o">=</span> <span class="kc">None</span>
+
+  <span class="n">out</span> <span class="o">=</span> <span class="p">(</span><span class="n">listOfElems</span><span class="p">,</span><span class="n">MBSEinstance</span><span class="p">)</span>
+
+  <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

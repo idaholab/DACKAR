@@ -1,0 +1,308 @@
+src.dackar.similarity.simUtils
+==============================
+
+.. py:module:: src.dackar.similarity.simUtils
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.similarity.simUtils.sentenceSimilarity
+   src.dackar.similarity.simUtils.wordOrderSimilaritySentences
+   src.dackar.similarity.simUtils.constructWordOrderVector
+   src.dackar.similarity.simUtils.semanticSimilaritySentences
+   src.dackar.similarity.simUtils.constructSemanticVector
+   src.dackar.similarity.simUtils.brownInfo
+   src.dackar.similarity.simUtils.content
+   src.dackar.similarity.simUtils.identifyBestSimilarWordFromWordSet
+   src.dackar.similarity.simUtils.semanticSimilarityWords
+   src.dackar.similarity.simUtils.identifyBestSimilarSynsetPair
+   src.dackar.similarity.simUtils.identifyNounAndVerbForComparison
+   src.dackar.similarity.simUtils.sentenceSenseDisambiguation
+   src.dackar.similarity.simUtils.wordsSimilarity
+   src.dackar.similarity.simUtils.wordSenseDisambiguation
+   src.dackar.similarity.simUtils.sentenceSenseDisambiguationPyWSD
+   src.dackar.similarity.simUtils.sentenceSimilarityWithDisambiguation
+   src.dackar.similarity.simUtils.convertSentsToSynsetsWithDisambiguation
+   src.dackar.similarity.simUtils.convertToSynsets
+   src.dackar.similarity.simUtils.identifyBestSynset
+   src.dackar.similarity.simUtils.convertSentsToSynsets
+
+
+Module Contents
+---------------
+
+.. py:function:: sentenceSimilarity(sentenceA, sentenceB, infoContentNorm=False, delta=0.85)
+
+   Compute sentence similarity using both semantic and word order similarity
+   The semantic similarity is based on maximum word similarity between one word and another sentence
+
+   :param sentenceA: str, first sentence used to compute sentence similarity
+   :param sentenceB: str, second sentence used to compute sentence similarity
+   :param infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors
+   :param delta: float, [0,1], similarity contribution from semantic similarity, 1-delta is the similarity
+   :param contribution from word order similarity:
+
+   :returns: float, [0, 1], the computed similarity for given two sentences
+   :rtype: similarity
+
+
+.. py:function:: wordOrderSimilaritySentences(sentenceA, sentenceB)
+
+   Compute sentence similarity using word order similarity
+
+   :param sentenceA: str, first sentence used to compute sentence similarity
+   :param sentenceB: str, second sentence used to compute sentence similarity
+
+   :returns: float, [0, 1], the computed word order similarity for given two sentences
+   :rtype: similarity
+
+
+.. py:function:: constructWordOrderVector(words, jointWords, index)
+
+   Construct word order vector
+
+   :param words: set of words, a set of words for one sentence
+   :param jointWords: set of joint words, a set of joint words for both sentences
+   :param index: dict, word index in the joint set of words
+
+   :returns: numpy.array, the word order vector
+   :rtype: vector
+
+
+.. py:function:: semanticSimilaritySentences(sentenceA, sentenceB, infoContentNorm)
+
+   Compute sentence similarity using semantic similarity
+   The semantic similarity is based on maximum word similarity between one word and another sentence
+
+   :param sentenceA: str, first sentence used to compute sentence similarity
+   :param sentenceB: str, second sentence used to compute sentence similarity
+   :param infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors
+
+   :returns: float, [0, 1], the computed similarity for given two sentences
+   :rtype: semSimilarity
+
+
+.. py:function:: constructSemanticVector(words, jointWords, infoContentNorm)
+
+   Construct semantic vector
+
+   :param words: set of words, a set of words for one sentence
+   :param jointWords: set of joint words, a set of joint words for both sentences
+   :param infoContentNorm: bool, consider word statistics in Brown  Corpus if True
+
+   :returns: numpy.array, the semantic vector
+   :rtype: vector
+
+
+.. py:function:: brownInfo()
+
+   Compute word dict and word numbers in NLTK brown corpus
+
+   :param None:
+
+   :returns: int, the total number of words in brown
+             brownDict: dict, the brown word dict, {word:count}
+   :rtype: wordCount
+
+
+.. py:function:: content(wordData, wordCount=0, brownDict=None)
+
+   Employ statistics from Brown Corpus to compute the information content of given word in the corpus
+   ref: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=1644735
+   information content I(w) = 1 - log(n+1)/log(N+1)
+   The significance of a word is weighted using its information content. The assumption here is
+   that words occur with a higher frequency (in corpus) contain less information than those
+   that occur with lower frequencies.
+
+   :param wordData: string, a given word
+   :param wordCount: int, the total number of words in brown corpus
+   :param brownDict: dict, the brown word dict, {word:count}
+
+   :returns: float, [0, 1], the information content of a word in the corpus
+   :rtype: content
+
+
+.. py:function:: identifyBestSimilarWordFromWordSet(wordA, wordSet)
+
+   Identify the best similar word in a word set for a given word
+
+   :param wordA: str, a given word that looking for the best similar word in a word set
+   :param wordSet: set/list, a pool of words
+
+   :returns: str, the best similar word in the word set for given word
+             similarity: float, [0, 1], similarity score between the best pair of words
+   :rtype: word
+
+
+.. py:function:: semanticSimilarityWords(wordA, wordB)
+
+   Compute the similarity between two words using semantic analysis
+   First identify the best similar synset pair using wordnet similarity, then compute the similarity
+   using both path length and depth information in wordnet
+
+   :param wordA: str, the first word
+   :param wordB: str, the second word
+
+   :returns: float, [0, 1], the similarity score
+   :rtype: similarity
+
+
+.. py:function:: identifyBestSimilarSynsetPair(wordA, wordB)
+
+   Identify the best synset pair for given two words using wordnet similarity analysis
+
+   :param wordA: str, the first word
+   :param wordB: str, the second word
+
+   :returns: tuple, (first synset, second synset), identified best synset pair using wordnet similarity
+   :rtype: bestPair
+
+
+.. py:function:: identifyNounAndVerbForComparison(sentence)
+
+   Taking out Noun and Verb for comparison word based
+
+   :param sentence: string, sentence string
+
+   :returns: list, list of dict {token/word:pos_tag}
+   :rtype: pos
+
+
+.. py:function:: sentenceSenseDisambiguation(sentence, method='simple_lesk')
+
+   removing the disambiguity by getting the context
+
+   :param sentence: str, sentence string
+   :param method: str, the method for disambiguation, this method only support simple_lesk method
+
+   :returns: set, set of wordnet.Synset for the estimated best sense
+   :rtype: sense
+
+
+.. py:function:: wordsSimilarity(wordA, wordB, method='semantic_similarity_synsets')
+
+   General method for compute words similarity
+
+   :param wordA: str, the first word
+   :param wordB: str, the second word
+   :param method: str, the method used to compute word similarity
+
+   :returns: float, [0, 1], the similarity score
+   :rtype: similarity
+
+
+.. py:function:: wordSenseDisambiguation(word, sentence, senseMethod='simple_lesk', simMethod='path')
+
+   removing the disambiguity by getting the context
+
+   :param word: str/list/set, given word or set of words
+   :param sentence: str, sentence that will be used to disambiguate the given word
+   :param senseMethod: str, method for disambiguation, one of ['simple_lesk', 'original_lesk', 'cosine_lesk', 'adapted_lesk', 'max_similarity']
+   :param simMethod: str, method for similarity analysis when 'max_similarity' is used,
+   :param one of ['path':
+   :param 'wup':
+   :param 'lch':
+   :param 'res':
+   :param 'jcn':
+   :param 'lin']:
+
+   :returns: str/list/set, the type for given word, identified best sense for given word with disambiguation performed using given sentence
+   :rtype: sense
+
+
+.. py:function:: sentenceSenseDisambiguationPyWSD(sentence, senseMethod='simple_lesk', simMethod='path')
+
+   Wrap for sentence sense disambiguation method from pywsd
+   https://github.com/alvations/pywsd
+
+   :param sentence: str, given sentence
+   :param senseMethod: str, method for disambiguation, one of ['simple_lesk', 'original_lesk', 'cosine_lesk', 'adapted_lesk', 'max_similarity']
+   :param simMethod: str, method for similarity analysis when 'max_similarity' is used,
+   :param one of ['path':
+   :param 'wup':
+   :param 'lch':
+   :param 'res':
+   :param 'jcn':
+   :param 'lin']:
+
+   :returns: list, list of words from sentence that has an identified synset from wordnet
+             synsetList: list, list of corresponding synset for wordList
+   :rtype: wordList
+
+
+.. py:function:: sentenceSimilarityWithDisambiguation(sentenceA, sentenceB, senseMethod='simple_lesk', simMethod='semantic_similarity_synsets', disambiguationSimMethod='path', delta=0.85)
+
+   Compute semantic similarity for given two sentences that disambiguation will be performed
+
+   :param sentenceA: str, first sentence
+   :param sentenceB: str, second sentence
+   :param senseMethod: str, method for disambiguation, one of ['simple_lesk', 'original_lesk', 'cosine_lesk', 'adapted_lesk', 'max_similarity']
+   :param simMethod: str, method for similarity analysis in the construction of semantic vectors
+   :param one of ['semantic_similarity_synsets':
+   :param 'path':
+   :param 'wup':
+   :param 'lch':
+   :param 'res':
+   :param 'jcn':
+   :param 'lin']:
+   :param disambiguationSimMethod: str, method for similarity analysis when 'max_similarity' is used,
+   :param one of ['path':
+   :param 'wup':
+   :param 'lch':
+   :param 'res':
+   :param 'jcn':
+   :param 'lin']:
+   :param delta: float, [0,1], similarity contribution from semantic similarity, 1-delta is the similarity
+   :param contribution from word order similarity:
+
+   :returns: float, [0, 1], the computed similarity for given two sentences
+   :rtype: similarity
+
+
+.. py:function:: convertSentsToSynsetsWithDisambiguation(sentList)
+
+   Use sentence itself to identify the best synset
+
+   :param sentList: list of sentences
+
+   :returns: list of synsets for corresponding sentences
+   :rtype: sentSynsets
+
+
+.. py:function:: convertToSynsets(wordSet)
+
+   Convert a list/set of words into a list of synsets
+
+   :param wordSet: list/set of words
+
+   :returns: list, list of words without duplications
+             synsets: list, list of synsets correponding wordList
+   :rtype: wordList
+
+
+.. py:function:: identifyBestSynset(word, jointWordList, jointSynsetList)
+
+   Identify the best synset for given word with provided additional information (i.e., jointWordList)
+
+   :param word: str, a single word
+   :param jointWordList: list, a list of words without duplications
+   :param jointSynsetList: list, a list of synsets correponding to jointWordList
+
+   :returns: wn.synset, identified synset for given word
+   :rtype: bestSyn
+
+
+.. py:function:: convertSentsToSynsets(sentList, info=None)
+
+   Use sentence itself to identify the best synset
+
+   :param sentList: list, list of sentences
+   :param info: list, additional list of words that will be used to determine the synset
+
+   :returns: list, lis of synsets correponding to provided sentList
+   :rtype: sentSynsets
+
+

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.text_processing.Abbreviation &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.text_processing.Abbreviation</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.text_processing.Abbreviation</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on March, 2024</span>
+
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">from</span> <span class="nn">..config</span> <span class="kn">import</span> <span class="n">nlpConfig</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="not_acronyms">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.not_acronyms">[docs]</a>
+<span class="n">not_acronyms</span> <span class="o">=</span> <span class="p">[</span>
+     <span class="s1">&#39;was&#39;</span><span class="p">,</span> <span class="s1">&#39;for&#39;</span><span class="p">,</span> <span class="s1">&#39;by&#39;</span><span class="p">,</span>  <span class="s1">&#39;me&#39;</span><span class="p">,</span> <span class="s1">&#39;our&#39;</span><span class="p">,</span> <span class="s1">&#39;is&#39;</span><span class="p">,</span> <span class="s1">&#39;he&#39;</span><span class="p">,</span> <span class="s1">&#39;she&#39;</span><span class="p">,</span> <span class="s1">&#39;they&#39;</span><span class="p">,</span> <span class="s1">&#39;him&#39;</span><span class="p">,</span> <span class="s1">&#39;his&#39;</span><span class="p">,</span> <span class="s1">&#39;her&#39;</span><span class="p">,</span><span class="s1">&#39;them&#39;</span><span class="p">,</span> <span class="s1">&#39;my&#39;</span><span class="p">,</span><span class="s1">&#39;mine&#39;</span><span class="p">,</span><span class="s1">&#39;min&#39;</span><span class="p">,</span><span class="s1">&#39;max&#39;</span><span class="p">,</span>
+     <span class="s1">&#39;us&#39;</span><span class="p">,</span> <span class="s1">&#39;an&#39;</span><span class="p">,</span> <span class="s1">&#39;had&#39;</span><span class="p">,</span> <span class="s1">&#39;its&#39;</span><span class="p">,</span> <span class="s1">&#39;the&#39;</span><span class="p">,</span> <span class="s1">&#39;it&#39;</span><span class="p">,</span> <span class="s1">&#39;and&#39;</span><span class="p">,</span> <span class="s1">&#39;a&#39;</span><span class="p">,</span> <span class="s1">&#39;has&#39;</span><span class="p">,</span> <span class="s1">&#39;have&#39;</span><span class="p">,</span> <span class="s1">&#39;should&#39;</span><span class="p">,</span> <span class="s1">&#39;will&#39;</span><span class="p">,</span> <span class="s1">&#39;may&#39;</span><span class="p">,</span> <span class="s1">&#39;could&#39;</span><span class="p">,</span>
+     <span class="s1">&#39;if&#39;</span><span class="p">,</span> <span class="s1">&#39;are&#39;</span><span class="p">,</span> <span class="s1">&#39;from&#39;</span><span class="p">,</span> <span class="s1">&#39;that&#39;</span><span class="p">,</span><span class="s1">&#39;can&#39;</span><span class="p">,</span> <span class="s1">&#39;in&#39;</span><span class="p">,</span> <span class="s1">&#39;on&#39;</span><span class="p">,</span> <span class="s1">&#39;above&#39;</span><span class="p">,</span> <span class="s1">&#39;when&#39;</span><span class="p">,</span> <span class="s1">&#39;where&#39;</span><span class="p">,</span> <span class="s1">&#39;who&#39;</span><span class="p">,</span> <span class="s1">&#39;why&#39;</span><span class="p">,</span> <span class="s1">&#39;were&#39;</span><span class="p">,</span> <span class="s1">&#39;their&#39;</span><span class="p">,</span>
+     <span class="s1">&#39;since&#39;</span><span class="p">,</span> <span class="s1">&#39;of&#39;</span><span class="p">,</span> <span class="s1">&#39;at&#39;</span><span class="p">,</span> <span class="s1">&#39;all&#39;</span><span class="p">,</span> <span class="s1">&#39;to&#39;</span><span class="p">,</span> <span class="s1">&#39;as&#39;</span><span class="p">,</span> <span class="s1">&#39;this&#39;</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="Abbreviation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.Abbreviation">[docs]</a>
+<span class="k">class</span> <span class="nc">Abbreviation</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class to handle abbreviations</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Abbrviation expander constructor</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        abbreviationsFilename: string, filename of abbreviations data</span>
+
+<span class="sd">      Return:</span>
+<span class="sd">        None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="Abbreviation.type">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.Abbreviation.type">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span></div>
+
+<div class="viewcode-block" id="Abbreviation.name">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.Abbreviation.name">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span></div>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Create instance of </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s1">&#39;abbreviation_file&#39;</span> <span class="ow">in</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">]:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">abbreviationsFilename</span> <span class="o">=</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;abbreviation_file&#39;</span><span class="p">]</span>
+      <span class="n">abbrList</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">abbreviationsFilename</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">abbrList</span><span class="p">[</span><span class="s1">&#39;Abbreviation&#39;</span><span class="p">],</span> <span class="n">abbrList</span><span class="p">[</span><span class="s1">&#39;Full&#39;</span><span class="p">]))</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">abbreviationsFilename</span> <span class="o">=</span> <span class="kc">None</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="Abbreviation.abbreviationSub">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.Abbreviation.abbreviationSub">[docs]</a>
+  <span class="k">def</span> <span class="nf">abbreviationSub</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Expands the abbreviations in text</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        text: string, the text to expand</span>
+
+<span class="sd">      Returns:</span>
+<span class="sd">        expandedText: string, the text with abbreviations expanded</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Substitute abbreviations with their full expansions&#39;</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">textList</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)]</span>
+    <span class="n">expandedText</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">textList</span><span class="p">:</span>
+      <span class="n">corrected</span> <span class="o">=</span> <span class="n">sent</span>
+      <span class="n">splitSent</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+      <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="n">splitSent</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">word</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">not_acronyms</span><span class="p">:</span>
+          <span class="k">if</span> <span class="n">word</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="n">full</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span><span class="p">[</span><span class="n">word</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">full</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+              <span class="n">corrected</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b</span><span class="si">%s</span><span class="s2">\b&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="p">,</span> <span class="n">full</span><span class="p">,</span> <span class="n">corrected</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">full</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">full</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+              <span class="n">corrected</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b</span><span class="si">%s</span><span class="s2">\b&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">word</span><span class="p">)</span> <span class="p">,</span> <span class="n">full</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">corrected</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+              <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Can not replace abbreviation </span><span class="si">{</span><span class="n">word</span><span class="si">}</span><span class="s1">, possible solution </span><span class="si">{</span><span class="n">full</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+      <span class="n">expandedText</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">corrected</span><span class="p">)</span>
+
+    <span class="n">expandedText</span> <span class="o">=</span> <span class="s1">&#39;. &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">expandedText</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">expandedText</span></div>
+
+
+
+<div class="viewcode-block" id="Abbreviation.updateAbbreviation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.Abbreviation.updateAbbreviation">[docs]</a>
+  <span class="k">def</span> <span class="nf">updateAbbreviation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">abbrDict</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Update existing abbreviation dictionary</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        abbrDict: dict, provided abbreviation dictionary</span>
+<span class="sd">        reset: boot, True if reset the existing abbreviation dictionary</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">updateDict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">abbrDict</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+      <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="n">updateDict</span><span class="p">[</span><span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span> <span class="o">=</span> <span class="n">v</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+      <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="n">updateDict</span><span class="p">[</span><span class="n">k</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">v</span><span class="p">]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">pass</span>
+    <span class="k">if</span> <span class="n">reset</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span> <span class="o">=</span> <span class="n">updateDict</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">updateDict</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Abbreviation.getAbbreviation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/text_processing/Abbreviation/index.html#src.dackar.text_processing.Abbreviation.Abbreviation.getAbbreviation">[docs]</a>
+  <span class="k">def</span> <span class="nf">getAbbreviation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Get the abbreviation dict</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">abbrDict</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

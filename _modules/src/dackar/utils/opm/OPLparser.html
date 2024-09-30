@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.utils.opm.OPLparser &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=fd3f3429" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="../../../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+        <script src="../../../../../_static/doctools.js?v=9a2dae69"></script>
+        <script src="../../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+        <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.utils.opm.OPLparser</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.utils.opm.OPLparser</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">Created on May 3, 2021</span>
+
+<span class="sd">@author: mandd</span>
+<span class="sd">&#39;&#39;&#39;</span>
+
+<span class="c1"># External Imports</span>
+<span class="kn">import</span> <span class="nn">xml.etree.ElementTree</span> <span class="k">as</span> <span class="nn">ET</span>
+<span class="c1"># import codecs</span>
+<span class="kn">from</span> <span class="nn">bs4</span> <span class="kn">import</span> <span class="n">BeautifulSoup</span>
+<span class="c1"># import nltk</span>
+<span class="c1"># import unicodedata</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">networkx</span> <span class="k">as</span> <span class="nn">nx</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">spacy</span>
+<span class="c1"># Internal Import</span>
+
+<div class="viewcode-block" id="OPMobject">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject">[docs]</a>
+<span class="k">class</span> <span class="nc">OPMobject</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+<div class="viewcode-block" id="OPMobject.filename">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.filename">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span></div>
+
+<div class="viewcode-block" id="OPMobject.objectList">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.objectList">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">objectList</span>  <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="OPMobject.processList">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.processList">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">processList</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="OPMobject.edge_colors">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.edge_colors">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">edge_colors</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="OPMobject.node_colors">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.node_colors">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">node_colors</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="OPMobject.sentences">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.sentences">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span>   <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="OPMobject.opmGraph">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.opmGraph">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span>    <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="OPMobject.links2OPMs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.links2OPMs">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">links2OPMs</span>  <span class="o">=</span> <span class="p">[]</span></div>
+
+<div class="viewcode-block" id="OPMobject.acronyms">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.acronyms">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">acronyms</span>    <span class="o">=</span> <span class="p">{}</span></div>
+
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">OPLentityParser</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">OPLtextParser</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">OPLparser</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="OPMobject.OPLentityParser">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.OPLentityParser">[docs]</a>
+  <span class="k">def</span> <span class="nf">OPLentityParser</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">      This method extracts all the form and function entities out of the OPL html file and it puts them in two separate lists:</span>
+
+<span class="sd">        * self.objectList</span>
+<span class="sd">        * self.processList</span>
+
+<span class="sd">      This process is performed by parsing the html file and identify color-coded entities.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+      <span class="n">soup</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">fp</span><span class="p">,</span> <span class="s2">&quot;html.parser&quot;</span><span class="p">)</span>
+      <span class="n">elements</span> <span class="o">=</span> <span class="n">soup</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;font&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">findChildren</span><span class="p">()</span>
+      <span class="k">for</span> <span class="n">element</span> <span class="ow">in</span> <span class="n">elements</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">element</span><span class="o">.</span><span class="n">has_attr</span><span class="p">(</span><span class="s1">&#39;color&#39;</span><span class="p">):</span>
+          <span class="n">elem</span> <span class="o">=</span> <span class="n">element</span><span class="o">.</span><span class="n">string</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span>
+          <span class="n">elem</span> <span class="o">=</span> <span class="n">checkAcronym</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
+          <span class="k">if</span> <span class="n">elem</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">acronyms</span><span class="p">[</span><span class="n">elem</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="n">elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+          <span class="n">elem</span> <span class="o">=</span> <span class="n">elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+          <span class="k">if</span> <span class="n">element</span><span class="p">[</span><span class="s1">&#39;color&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;#006d00&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">elem</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objectList</span><span class="p">:</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">objectList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+          <span class="k">elif</span> <span class="n">element</span><span class="p">[</span><span class="s1">&#39;color&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="s1">&#39;#000078&#39;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">elem</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">processList</span><span class="p">:</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">processList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span></div>
+
+
+
+<div class="viewcode-block" id="OPMobject.OPLtextParser">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.OPLtextParser">[docs]</a>
+  <span class="k">def</span> <span class="nf">OPLtextParser</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This method extracts all the sentences out of the OPL html file and it puts them in a list (self.sentences)</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">objects</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">functions</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">fp</span><span class="p">:</span>
+      <span class="n">soup</span> <span class="o">=</span> <span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">fp</span><span class="p">,</span> <span class="s2">&quot;html.parser&quot;</span><span class="p">)</span>
+
+      <span class="c1"># kill all script and style elements</span>
+      <span class="k">for</span> <span class="n">script</span> <span class="ow">in</span> <span class="n">soup</span><span class="p">([</span><span class="s2">&quot;script&quot;</span><span class="p">,</span> <span class="s2">&quot;style&quot;</span><span class="p">]):</span>
+          <span class="n">script</span><span class="o">.</span><span class="n">extract</span><span class="p">()</span>    <span class="c1"># rip it out</span>
+      <span class="c1"># get text</span>
+      <span class="n">text</span> <span class="o">=</span> <span class="n">soup</span><span class="o">.</span><span class="n">get_text</span><span class="p">()</span>
+      <span class="c1"># break into lines and remove leading and trailing space on each</span>
+      <span class="n">lines</span> <span class="o">=</span> <span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span>
+      <span class="c1"># break multi-headlines into a line each</span>
+      <span class="n">chunks</span> <span class="o">=</span> <span class="p">(</span><span class="n">phrase</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span> <span class="k">for</span> <span class="n">phrase</span> <span class="ow">in</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;  &quot;</span><span class="p">))</span>
+      <span class="c1"># drop blank lines</span>
+      <span class="n">text</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">chunk</span> <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">chunks</span> <span class="k">if</span> <span class="n">chunk</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)</span>
+
+      <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">sentence</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">[</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">[</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\xa0</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">[</span><span class="n">index</span><span class="p">]</span><span class="o">.</span><span class="n">lstrip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+      <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="OPMobject.OPLparser">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.OPLparser">[docs]</a>
+  <span class="k">def</span> <span class="nf">OPLparser</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This method translates all the sentences (see self.sentences) and creates a graph structure (self.opmGraph)</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span> <span class="o">=</span> <span class="n">nx</span><span class="o">.</span><span class="n">MultiDiGraph</span><span class="p">()</span>
+
+    <span class="c1"># These are 4 sets of OPL keywords</span>
+    <span class="n">OPLattributes</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;environmental&#39;</span><span class="p">,</span><span class="s1">&#39;physical&#39;</span><span class="p">,</span><span class="s1">&#39;informatical&#39;</span><span class="p">]</span>
+    <span class="n">OPLkeywordsDefinition</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;is an instance of &#39;</span><span class="p">,</span><span class="s1">&#39;is an&#39;</span><span class="p">,</span><span class="s1">&#39;is&#39;</span><span class="p">]</span>
+    <span class="n">OPLkeywordsObjects</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;consists of&#39;</span><span class="p">]</span>
+    <span class="n">OPLkeywordsProcess</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;consumes&#39;</span><span class="p">,</span><span class="s1">&#39;yields&#39;</span><span class="p">,</span><span class="s1">&#39;requires&#39;</span><span class="p">,</span><span class="s1">&#39;affects&#39;</span><span class="p">,</span> <span class="s1">&#39;feed&#39;</span><span class="p">]</span>
+    <span class="n">OPLkeywordsStates</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;can be&#39;</span><span class="p">]</span>
+    <span class="n">OPLkeywordsAttributes</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;exhibits&#39;</span><span class="p">]</span>
+    <span class="n">OPLkeywordsAction</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;changes&#39;</span><span class="p">]</span>
+
+    <span class="n">colorMatches</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;consists of&#39;</span><span class="p">:</span><span class="s1">&#39;r&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;consumes&#39;</span>   <span class="p">:</span><span class="s1">&#39;b&#39;</span> <span class="p">,</span>
+                    <span class="s1">&#39;yields&#39;</span>     <span class="p">:</span><span class="s1">&#39;k&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;requires&#39;</span>   <span class="p">:</span><span class="s1">&#39;m&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;affects&#39;</span>    <span class="p">:</span><span class="s1">&#39;g&#39;</span><span class="p">,</span>
+                    <span class="s1">&#39;feed&#39;</span>       <span class="p">:</span><span class="s1">&#39;y&#39;</span><span class="p">}</span>
+
+    <span class="k">for</span> <span class="n">sentence</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">sentences</span><span class="p">:</span>
+      <span class="n">sentence</span> <span class="o">=</span> <span class="n">removeAcronym</span><span class="p">(</span><span class="n">sentence</span><span class="p">)</span>
+      <span class="c1"># create new elements in the graph from each sentence</span>
+      <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">OPLkeywordsObjects</span><span class="o">+</span><span class="n">OPLkeywordsProcess</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">sentence</span><span class="p">:</span>
+          <span class="n">partitions</span> <span class="o">=</span> <span class="n">sentence</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
+          <span class="n">subj</span> <span class="o">=</span> <span class="n">partitions</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+          <span class="n">conjs</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;and |, &#39;</span><span class="p">,</span><span class="n">partitions</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+          <span class="k">if</span> <span class="s1">&#39;&#39;</span> <span class="ow">in</span> <span class="n">conjs</span><span class="p">:</span>
+            <span class="n">conjs</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+          <span class="k">for</span> <span class="n">conj</span> <span class="ow">in</span> <span class="n">conjs</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">subj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">conj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">color</span><span class="o">=</span><span class="n">colorMatches</span><span class="p">[</span><span class="n">elem</span><span class="p">],</span> <span class="n">key</span><span class="o">=</span><span class="n">elem</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">edge_colors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">colorMatches</span><span class="p">[</span><span class="n">elem</span><span class="p">])</span>
+
+      <span class="c1"># remove elements from &quot;exhibits&quot;</span>
+      <span class="k">if</span> <span class="n">OPLkeywordsAttributes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="n">sentence</span><span class="p">:</span>
+        <span class="n">partitions</span> <span class="o">=</span> <span class="n">sentence</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="n">OPLkeywordsAttributes</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="n">partitions</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">conjs</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;and |, &#39;</span><span class="p">,</span><span class="n">partitions</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">conj</span> <span class="ow">in</span> <span class="n">conjs</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">conj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;g&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;attribute&#39;</span><span class="p">)</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">objectList</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">conj</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">subj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">conj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;b&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;exhibits&#39;</span><span class="p">)</span>
+
+      <span class="c1"># address &quot;changes&quot;</span>
+      <span class="k">if</span> <span class="n">OPLkeywordsAction</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="n">sentence</span><span class="p">:</span>
+        <span class="n">partitions</span> <span class="o">=</span> <span class="n">sentence</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="n">OPLkeywordsAction</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="n">partitions</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">conj</span> <span class="o">=</span> <span class="n">partitions</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s1">&#39; from &#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">subj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">conj</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;g&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;changes&#39;</span><span class="p">)</span>
+
+      <span class="c1"># address &#39;is instance of a&#39;</span>
+      <span class="k">if</span> <span class="s1">&#39;is instance of a&#39;</span> <span class="ow">in</span> <span class="n">sentence</span><span class="p">:</span>
+        <span class="n">partitions</span> <span class="o">=</span> <span class="n">sentence</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s1">&#39;is instance of a&#39;</span><span class="p">)</span>
+        <span class="n">subj</span> <span class="o">=</span> <span class="n">partitions</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">conj</span> <span class="o">=</span> <span class="n">partitions</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">subj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">conj</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;c&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;changes&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">links2OPMs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">conj</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+
+    <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">objectList</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;m&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;object&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">processList</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">elem</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;k&#39;</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="s1">&#39;process&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="OPMobject.returnsExternalLinks">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.returnsExternalLinks">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnsExternalLinks</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This method returns the links to other external OPM models</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">links2OPMs</span></div>
+
+
+<div class="viewcode-block" id="OPMobject.returnGraph">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.returnGraph">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnGraph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This method returns the networkx graph</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span></div>
+
+
+<div class="viewcode-block" id="OPMobject.returnObjectList">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.returnObjectList">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnObjectList</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This method returns the the list of objects</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">objectNodes</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">nodes</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">y</span><span class="p">[</span><span class="s1">&#39;key&#39;</span><span class="p">]</span><span class="o">==</span><span class="s1">&#39;object&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">objectNodes</span></div>
+
+
+<div class="viewcode-block" id="OPMobject.returnProcessList">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.returnProcessList">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnProcessList</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This method returns the the list of processes</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">processNodes</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">nodes</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">y</span><span class="p">[</span><span class="s1">&#39;key&#39;</span><span class="p">]</span><span class="o">==</span><span class="s1">&#39;process&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">processNodes</span></div>
+
+
+<div class="viewcode-block" id="OPMobject.returnAttributeList">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.returnAttributeList">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnAttributeList</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This method returns the the list of attributes</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">attributeNodes</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">opmGraph</span><span class="o">.</span><span class="n">nodes</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="n">y</span><span class="p">[</span><span class="s1">&#39;key&#39;</span><span class="p">]</span><span class="o">==</span><span class="s1">&#39;attribute&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">attributeNodes</span></div>
+
+
+<div class="viewcode-block" id="OPMobject.returnAcronym">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.OPMobject.returnAcronym">[docs]</a>
+  <span class="k">def</span> <span class="nf">returnAcronym</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">acronyms</span></div>
+</div>
+
+
+<div class="viewcode-block" id="checkAcronym">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.checkAcronym">[docs]</a>
+<span class="k">def</span> <span class="nf">checkAcronym</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">  This method separates an OPM object if an acronym is defined</span>
+<span class="sd">  For example:</span>
+
+<span class="sd">    &#39;travelling screen (TWS)&#39;  --&gt; (&#39;travelling screen&#39;, &#39;TWS&#39;)</span>
+<span class="sd">    &#39;travelling screen&#39;        --&gt; (&#39;travelling screen&#39;, None)</span>
+<span class="sd">  &#39;&#39;&#39;</span>
+  <span class="k">if</span> <span class="s1">&#39;(&#39;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
+      <span class="n">acronym</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;(&quot;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">s</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;)&quot;</span><span class="p">)]</span>
+      <span class="n">label</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="n">s</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;(&quot;</span><span class="p">)]</span>
+      <span class="k">return</span> <span class="p">(</span><span class="n">label</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span><span class="n">acronym</span><span class="p">)</span>
+  <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="p">(</span><span class="n">s</span><span class="p">,</span><span class="kc">None</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="removeAcronym">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/utils/opm/OPLparser/index.html#src.dackar.utils.opm.OPLparser.removeAcronym">[docs]</a>
+<span class="k">def</span> <span class="nf">removeAcronym</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">  This method returns only the OPM object if an acronym is defined</span>
+<span class="sd">  For example: &#39;travelling screen (TWS) failed&#39;  --&gt; &#39;travelling screen failed&#39;</span>
+<span class="sd">  &#39;&#39;&#39;</span>
+  <span class="k">if</span> <span class="s1">&#39;(&#39;</span> <span class="ow">in</span> <span class="n">s</span><span class="p">:</span>
+      <span class="n">acronym</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;(&quot;</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">s</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;)&quot;</span><span class="p">)]</span>
+      <span class="n">cleaned</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;(&quot;</span><span class="o">+</span><span class="n">acronym</span><span class="o">+</span><span class="s2">&quot;)&quot;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span>
+      <span class="k">return</span> <span class="n">cleaned</span>
+  <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">s</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

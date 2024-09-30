@@ -1,0 +1,272 @@
+src.dackar.workflows.RuleBasedMatcher
+=====================================
+
+.. py:module:: src.dackar.workflows.RuleBasedMatcher
+
+.. autoapi-nested-parse::
+
+   Created on March, 2022
+
+   @author: wangc, mandd
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.workflows.RuleBasedMatcher.logger
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.workflows.RuleBasedMatcher.RuleBasedMatcher
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:class:: RuleBasedMatcher(nlp, entID='SSC', causalKeywordID='causal', *args, **kwargs)
+
+   Bases: :py:obj:`src.dackar.workflows.WorkflowBase.WorkflowBase`
+
+
+   Rule Based Matcher Class
+
+
+   .. py:method:: reset()
+
+      Reset rule-based matcher
+
+
+
+   .. py:method:: extractInformation()
+
+      Extract information
+
+      :param None:
+
+      :returns: None
+
+
+
+   .. py:method:: extractHealthStatus(matchedSents, predSynonyms=[], exclPrepos=[])
+
+      Extract health status and relation
+
+      :param matchedSents: list, the matched sentences
+      :param predSynonyms: list, predicate synonyms
+      :param exclPrepos: list, exclude the prepositions
+
+
+
+   .. py:method:: findHealthStatus(root, deps)
+
+      Return first child of root (included) that matches
+      dependency list by breadth first search.
+      Search stops after first dependency match if firstDepOnly
+      (used for subject search - do not "jump" over subjects)
+
+      :param root: spacy.tokens.Token, the root token
+      :param deps: list, the dependency list
+
+      :returns: token, the token represents the health status
+      :rtype: child
+
+
+
+   .. py:method:: isValidCausalEnts(ent)
+
+      Check the entity if it belongs to the valid causal entities
+
+        Args:
+
+          ent: list, list of entities
+
+        Returns:
+
+          valid: bool, valid cansual ent if True
+
+
+
+   .. py:method:: getSSCEnt(entList, index, direction='left')
+
+      Get the closest group of SSC entities
+
+      :param entList: list, list of entities
+      :param index: int, the start location of entity
+      :param direction: str, 'left' or 'right', the search direction
+
+      :returns: the closest group of SSC entities
+      :rtype: ent
+
+
+
+   .. py:method:: extractRelDep(matchedSents)
+
+      :param matchedSents: list, the list of matched sentences
+
+      :returns: generator, the extracted causal relation
+      :rtype: (subject tuple, predicate, object tuple)
+
+
+
+   .. py:method:: identifyCauseEffectForNsuj(cRoot, cEntsIndex, causalEnts, orderedEnts, validRightSSCEnts, reverse=False)
+
+      Identify the cause effect pairs for nsubj
+
+      :param cRoot: Token, the root of causal entity
+      :param cEntsIndex: int, the index for the causal entity
+      :param causalEnts: list, the list of causal entities
+      :param orderedEnts: list, the entities ordered by their locations in the Doc
+      :param validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+      :param reverse: bool, reverse the cause effect relation if True
+
+      :returns: cause effect pairs, tuple, (causeList, effectList, skipCEnts)
+
+
+
+   .. py:method:: identifyCauseEffectForAttr(cRoot, validLeftSSCEnts, validRightSSCEnts, reverse=False)
+
+      Identify the cause effect pairs for attr
+
+      :param cRoot: Token, the root of causal entity
+      :param validLeftSSCEnts: list, the valid list of entities on the left of given causal entity
+      :param validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+      :param reverse: bool, reverse the cause effect relation if True
+
+      :returns: cause effect pairs, tuple, (causeList, effectList)
+
+
+
+   .. py:method:: identifyCauseEffectForClauseModifier(cRoot, rootCause, validLeftSSCEnts, validRightSSCEnts, reverse=False)
+
+      Identify the cause effect pairs for clause modifier
+
+      :param cRoot: Token, the root of causal entity
+      :param rootCause: tuple, list of causes
+      :param validLeftSSCEnts: list, the valid list of entities on the left of given causal entity
+      :param validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+      :param reverse: bool, reverse the cause effect relation if True
+
+      :returns: cause effect pairs, tuple, (causeList, effectList)
+
+
+
+   .. py:method:: splitEntsFollowingNounCausal(cRoot, validRightSSCEnts)
+
+      Spit the entities into cause, effect
+
+      :param cRoot: Token, the root of causal entity
+      :param validRightSSCEnts: list, the valid list of entities on the right of given causal entity
+
+      :returns: cause effect pairs, tuple, (cause, effect)
+
+
+
+   .. py:method:: getRightSSCEnts(cEnt, orderedEnts)
+
+      Get the SSC ents on the right of causal entity
+
+      :param cEnt: Span, causal entity
+      :param orderedEnts: list, the entities ordered by their locations in the Doc
+
+      :returns: list, list of SSC entities
+      :rtype: selEnts
+
+
+
+   .. py:method:: getLeftSSCEnts(cEnt, orderedEnts)
+
+      Get the SSC ents on the left of causal entity
+
+      :param cEnt: Span, causal entity
+      :param orderedEnts: list, the entities ordered by their locations in the Doc
+
+      :returns: list, list of SSC entities
+      :rtype: selEnts
+
+
+
+   .. py:method:: selectValidEnts(ents, cEnt)
+
+      Select the valide ents that are within subtree of causal entity
+
+      :param ents: list, the list of entities
+      :param cEnt: Span, causal entity
+
+      :returns: list, list of valid entities
+      :rtype: validEnts
+
+
+
+   .. py:method:: collectExtactedCausals(cause, effect, causalKeyword, sent, conjecture=None)
+
+      Collect the extracted causal relations
+
+      :param cause: list, list of causes
+      :param effect: list, list of effects
+      :param causalKeyword: str, causal keyword
+      :param sent: spacy.tokens.Span, sentence with identified causal relations
+
+      :returns: None
+
+
+
+   .. py:method:: collectCauseEffectSents(doc)
+
+      Collect data of matched sentences that contain cause-effect keywords
+
+      :param doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+
+
+   .. py:method:: getHealthStatusForPobj(ent, include=False)
+
+      Get the status for ent root pos ``pobj``
+
+      :param ent: Span, the span of entity
+      :param include: bool, ent will be included in returned status if True
+
+      :returns: Span or Token, the identified health status
+
+
+
+   .. py:method:: getHealthStatusForSubj(ent, entHS, sent, causalStatus, predSynonyms, include=False)
+
+      Get the status for nsubj/nsubjpass ent
+
+      :param ent: Span, the nsubj/nsubjpass ent that will be used to search status
+      :param entHS: Span, the entHS that the status will be associated with
+      :param sent: Span, the sent that includes the ent, entHS and status
+      :param causalStatus: bool, the causal status for the ent
+      :param predSynonyms: list, predicate synonyms
+      :param include: bool, include ent in the returned expression if True
+
+      :returns: Span or Token, the identified status
+      :rtype: healthStatus
+
+
+
+   .. py:method:: getHealthStatusForObj(ent, entHS, sent, causalStatus, predSynonyms, include=False)
+
+      Get the status for pobj/dobj ent
+
+      :param ent: Span, the pobj/dobj ent that will be used to search status
+      :param entHS: Span, the entHS that the status will be associated with
+      :param sent: Span, the sent that includes the ent, entHS and status
+      :param causalStatus: bool, the causal status for the ent
+      :param predSynonyms: list, predicate synonyms
+      :param include: bool, include ent in the returned expression if True
+
+      :returns: Span or Token, the identified status
+      :rtype: healthStatus
+
+
+
