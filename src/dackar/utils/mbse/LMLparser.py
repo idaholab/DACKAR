@@ -251,10 +251,10 @@ class LMLobject(object):
     self.cleanedGraph.remove_nodes_from(self.linkEntities)
 
     return self.cleanedGraph
-  
+
   def printOnFile(self, name, csv=True):
     """
-      This method is designed to print on file the graph from networkx. 
+      This method is designed to print on file the graph from networkx.
       This is to test a method to import a graph into neo4j as indicated in:
       https://stackoverflow.com/questions/52210619/how-to-import-a-networkx-graph-to-neo4j
       Args:
@@ -324,7 +324,7 @@ class LMLobject(object):
                     "targetNodeId": [],
                     "type"        : []
                     }
-    
+
     for index,edge in enumerate(NXedges):
       father = [key for key, val in mapping.items() if val == edge[0]][0]
       child  = [key for key, val in mapping.items() if val == edge[1]][0]
