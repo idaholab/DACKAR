@@ -42,10 +42,13 @@ class LMLobject(object):
     """
       This method is designed to parse the xml file containing the MBSE model, to create its corresponding graph
       and to populate:
-      - the set of entities: dictionary of assets in the form of 'LML_ID': ('asset name', 'asset ID')
-      - the set of links: list containing the LML-IDs of all links between assets
-      - the set of embedded entities: dictionary of the components that have been specified in the description text of the
-                                      LML asset or link (e.g., [comp1,comp2,comp3]) in the form of 'LML_ID': [comp1,comp2,comp3]
+
+      * the set of entities: dictionary of assets in the form of 'LML_ID': ('asset name', 'asset ID')
+
+      * the set of links: list containing the LML-IDs of all links between assets
+
+      * the set of embedded entities: dictionary of the components that have been specified in the description text of the
+        LML asset or link (e.g., [comp1,comp2,comp3]) in the form of 'LML_ID': [comp1,comp2,comp3]
 
       Args:
 
@@ -100,8 +103,8 @@ class LMLobject(object):
 
       Args:
 
-        linkNode: xml node, xml node containing containing all the information of a single link generated
-                            in LML using Innoslate
+          linkNode: xml node, xml node containing containing all the information of a single link generated
+          in LML using Innoslate
 
       Returns:
 
@@ -131,8 +134,8 @@ class LMLobject(object):
 
       Args:
 
-        linkNode: xml node, xml node containing containing all the information of a single link generated
-                            in LML using Innoslate
+          linkNode: xml node, xml node containing containing all the information of a single link generated
+          in LML using Innoslate
 
       Returns:
 
@@ -203,8 +206,8 @@ class LMLobject(object):
 
       Returns:
 
-        self.entities     : dict, dict of entities
-        self.embEntities : dict, dict of embedded entities
+          self.entities     : dict, dict of entities
+          self.embEntities : dict, dict of embedded entities
     """
     return self.entities, self.embEntities
 
@@ -348,11 +351,10 @@ def parseEntityDescription(text):
       text: str, text contained in the description node of the MBSE model
 
     Returns:
-
-      out: tuple, tuple containing the list of elements specified in square brackets and separated
-           by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
-           (e.g., ('centrifugalPumpFull', 'body'))
-
+    
+        out: tuple, tuple containing the list of elements specified in square brackets and separated
+        by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
+        (e.g., ('centrifugalPumpFull', 'body'))
   """
 
   if '[' in text:
