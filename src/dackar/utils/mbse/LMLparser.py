@@ -328,20 +328,11 @@ class LMLobject(object):
     for index,edge in enumerate(NXedges):
       father = [key for key, val in mapping.items() if val == edge[0]][0]
       child  = [key for key, val in mapping.items() if val == edge[1]][0]
-      relationships['sourceNodeId'].append(father) # mapping[edge[0]]
-      relationships['targetNodeId'].append(child) #mapping[edge[1]]
+      relationships['sourceNodeId'].append(father) 
+      relationships['targetNodeId'].append(child) 
       relationships['type'].append(edge[2])
 
     relationships = pd.DataFrame(relationships)
-
-    '''
-    self.G = gds.graph.construct(
-        name,            # Graph name
-        nodes,           # One or more dataframes containing node data
-        relationships    # One or more dataframes containing relationship data
-    )
-
-    return self.G'''
 
     nodes.to_csv(name+'_nodes.csv')
     relationships.to_csv(name+'_edges.csv')
@@ -358,9 +349,9 @@ def parseEntityDescription(text):
 
     Returns:
 
-      out     : tuple, tuple containing the list of elements specified in square brackets and separated
-                       by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
-                       (e.g., ('centrifugalPumpFull', 'body'))
+      out: tuple, tuple containing the list of elements specified in square brackets and separated
+           by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
+           (e.g., ('centrifugalPumpFull', 'body'))
 
   """
 
