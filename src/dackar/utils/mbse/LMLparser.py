@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 import re
 import networkx as nx
 import pandas as pd
-import graphdatascience as gds
+import csv
 
 class LMLobject(object):
   """
@@ -276,7 +276,7 @@ class LMLobject(object):
       nx.write_graphml(self.LMLgraph, name)
 
 
-  def dumpDGSgraph(self, name):
+  def dumpNodesEdgesFiles(self, name):
     """
       This method is designed to save the graph structure into gds entity
       See Example 3.2 in https://neo4j.com/docs/graph-data-science-client/current/graph-object/
@@ -290,35 +290,39 @@ class LMLobject(object):
     """
     NXnodes = list(self.LMLgraph.nodes(data=True))
     NXedges = list(self.LMLgraph.edges)
-
     mapping = {}
 
     nodes = {
             "nodeId": [],
-            "labels": [],
+            "label": [],
             "ID": [],
             "type": []
             }
 
     for index,node in enumerate(NXnodes):
       nodes['nodeId'].append(index)
-      nodeInfo = node
 
       mapping[index] = node[0]
+      nodeInfo = node[0]
+      
+      if len(nodeInfo)==2:
+        if nodeInfo[0] == 'None':
+          nodes['label'].append(nodeInfo[1])
+          nodes['ID'].append(nodeInfo[1])
 
-      if nodeInfo[0] is None:
-        nodes['labels'].append(nodeInfo[1])
-        nodes['ID'].append(nodeInfo[1])
+        elif nodeInfo[1] is None:
+          nodes['label'].append(nodeInfo[0])
+          nodes['ID'].append('None')
 
-      elif nodeInfo[1] is None:
-        nodes['labels'].append(nodeInfo[0])
-        nodes['ID'].append(nodeInfo[0])
-
+        else:
+          nodes['label'].append(nodeInfo[0])
+          nodes['ID'].append(nodeInfo[1])
+        
+        nodes['type'].append(node[1]['key'])
       else:
-        nodes['labels'].append(nodeInfo[0])
-        nodes['ID'].append(nodeInfo[1])
-
-      nodes['type'].append(node[1]['key'])
+        nodes['label'].append('pipe')
+        nodes['ID'].append(nodeInfo)
+        nodes['type'].append('LML_link')
 
     nodes = pd.DataFrame(nodes)
 
@@ -337,8 +341,8 @@ class LMLobject(object):
 
     relationships = pd.DataFrame(relationships)
 
-    nodes.to_csv(name+'_nodes.csv')
-    relationships.to_csv(name+'_edges.csv')
+    nodes.to_csv(name+'_nodes.csv',index=False, quoting=csv.QUOTE_NONE)
+    relationships.to_csv(name+'_edges.csv',index=False)
 
 
 def parseEntityDescription(text):
@@ -358,8 +362,12 @@ def parseEntityDescription(text):
   """
 
   if '[' in text:
+    listOfElems = []
     txtPortion1 = text[text.find("[")+1:text.find("]")]
-    listOfElems = txtPortion1.split(';')
+    listOfElemstemp = txtPortion1.split(';')
+    for elem in listOfElemstemp:
+      temp=elem[elem.find("(")+1:elem.find(")")].split(',')
+      listOfElems.append((temp[0],temp[1]))
   else:
     listOfElems = None
 
