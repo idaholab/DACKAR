@@ -26,7 +26,6 @@ class MatrixProfile(AnomalyBase):
       AnomalyBase (_type_): _description_
   """
 
-
   def __init__(self, m, normalize='robust', method='normal', approx_percentage=0.1, sub_sequence_normalize=False, excl_zone_denom=4):
     """Constructor
     """
@@ -39,7 +38,7 @@ class MatrixProfile(AnomalyBase):
     # the distance computed in the exclusion zone is set to np.inf before the matrix profile value is extracted
     if excl_zone_denom != 4 and isinstance(excl_zone_denom, int):
       config.STUMPY_EXCL_ZONE_DENOM = excl_zone_denom
-    self._mp = None # store calculated matrix profile values
+    self._mp = {} # store calculated matrix profile values
     self._avail_method = ['normal', 'parallel', 'approx', 'incremental', 'gpu']
     if method.lower() not in self._avail_method:
       raise IOError(f'Unrecognized calculation method: {method}, please choose from {self._avail_method}')
@@ -55,48 +54,65 @@ class MatrixProfile(AnomalyBase):
     """perform fitting
 
     Args:
-        X (array-like): (n_samples, n_features)
-        y (array-like, optional): ignored, (n_samples, n_features). Defaults to None.
+        X (pandas.DataFrame): (n_time_steps, n_features)
+        y (pandas.DataFrame, optional): ignored, (n_time_steps, n_features). Defaults to None.
     """
     n_T = X.shape[0]
-    if X.shape[1] != 1:
-      raise IOError('Multiple dimension time series are provided, this is not supported currently!')
 
-    X_ = X[X.columns[0]]
-    if y is not None:
-      y_ = y[y.columns[0]]
-    else:
-      y_ = None
+    for i, var in enumerate(X.columns):
+      X_ = X[var]
+      if y is not None:
+        if y.shape[1] == 1:
+          y_ = y[y.columns[0]]
+        elif y.shape[1] == X.shape[1]:
+          y_ = y[y.columns[i]]
+        else:
+          raise IOError('Provided data and annotated data are not aligned! Please check your data.')
+      else:
+        y_ = None
 
-    if n_T <= 10000 and self._method == 'approx':
-      self._method = 'normal'
-      logger.warning('Reset calculation method form "approx" to "normal" due to small size of time series!')
+      self._mp[var] = self._compute_mp(X_, y_)
+
+    self._current_idx.append(n_T-1)
+
+
+  def _compute_mp(self, X_, y_=None):
+    """compute matrix profile
+
+    Args:
+        X_ (pandas.DataFrame): (n_time_steps, n_features)
+        y_ (pandas.DataFrame, optional): ignored, (n_time_steps, n_features). Defaults to None.
+    """
+    _mp = None
     if self._method == 'normal':
-      self._mp = stumpy.stump(T_A=X_, m=self._m, T_B=y_, normalize=self._sub_norm)
+      _mp = stumpy.stump(T_A=X_, m=self._m, T_B=y_, normalize=self._sub_norm)
     elif self._method == 'parallel':
       if not DASK_CLIENT_AVAIL:
         raise IOError('Dask is not available, please try to install Dask before use the distributed and parallel implementation')
       with Client() as dask_client:
-        self._mp = stumpy.stumped(dask_client, T_A=X_, m=self._m, T_B=y_, normalize=self._sub_norm)
+        _mp = stumpy.stumped(dask_client, T_A=X_, m=self._m, T_B=y_, normalize=self._sub_norm)
     elif self._method == 'approx':
-      self._mp = stumpy.scrump(T_A=X_, m=self._m, T_B=y_, percentage = self._scrump_percentage, pre_scrump=True, normalize=self._sub_norm)
+      _mp = stumpy.scrump(T_A=X_, m=self._m, T_B=y_, percentage = self._scrump_percentage, pre_scrump=True, normalize=self._sub_norm)
     elif self._method == 'incremental':
-      if y is not None:
+      if y_ is not None:
         logger.warning('The annotated time series will not be used for incremental calculation!')
-      self._mp = stumpy.stumpi(T=X_, m=self._m, egress=False, normalize=self._sub_norm)
+      _mp = stumpy.stumpi(T=X_, m=self._m, egress=False, normalize=self._sub_norm)
 
-    self._current_idx.append(n_T-1)
+    return _mp
+
 
 
   def _evaluate(self, X):
     """perform evaluation
 
     Args:
-        X (array-like): (n_samples, n_features)
+        X_ (pandas.DataFrame): (n_time_steps, n_features)
     """
     self._current_idx.append(X.shape[0]+self._current_idx[-1])
+
     if self._method == 'incremental':
-      self._mp.update(X)
+      for var in X.columns:
+        self._mp[var].update(X[var])
     else:
       raise NotImplementedError('Evaluate method is not implemented yet!')
 
@@ -114,27 +130,31 @@ class MatrixProfile(AnomalyBase):
   def get_mp(self):
     """get matrix profile value
     """
-    if self._mp is not None:
-      return self._mp.P_
-    return None
+    data = {}
+    for var, _mp in self._mp.items():
+      data[var] = _mp.P_
+    return data
 
   def get_mp_index(self):
     """get matrix profile index
     """
-    if self._mp is not None:
-      return self._mp.I_
-    return None
+    data = {}
+    for var, _mp in self._mp.items():
+      data[var] = _mp.I_
+    return data
 
   def get_mp_left_index(self):
     """get left matrix profile index
     """
-    if self._mp is not None:
-      return self._mp.left_I_
-    return None
+    data = {}
+    for var, _mp in self._mp.items():
+      data[var] = _mp.left_I_
+    return data
 
   def get_mp_right_index(self):
     """get right matrix profile index
     """
-    if self._mp is not None:
-      return self._mp.right_I_
-    return None
+    data = {}
+    for var, _mp in self._mp.items():
+      data[var] = _mp.right_I_
+    return data
