@@ -9,6 +9,7 @@ import abc
 from sklearn.base import BaseEstimator
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import RobustScaler
+import pandas as pd
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,26 +84,42 @@ class AnomalyBase(BaseEstimator):
     """
     logger.info('Train model.')
     self.is_fitted = True
+    if not isinstance(X, pd.DataFrame):
+      raise IOError(f'Pandas.DataFrame is required, but get {type(X)}!')
+    if y is not None and not isinstance(y, pd.DataFrame):
+      raise IOError(f'Pandas.DataFrame is required, but get {type(y)}!')
     self._features = X
     self._targets = y
     X_transform = self._scalar.fit_transform(X)
+    X_transform = pd.DataFrame(X_transform, columns=X.columns)
     fit_obj = self._fit(X_transform, y)
     return fit_obj
 
-  def predict(self, X):
-    """perform prediction
+  def evaluate(self, X):
+    """perform evaluation
 
     Args:
         X (array-like): (n_samples, n_features)
     """
     logger.info('Perform model forecast.')
     X_transform = self._scalar.fit_transform(X)
-    y_new = self._predict(X_transform)
+    X_transform = pd.DataFrame(X_transform, columns=X.columns)
+    y_new = self.evaluate(X_transform)
 
     return y_new
 
+  def plot(self):
+    """plot data
+    """
+
+
   #################################################################################
   # To be implemented in subclasses
+
+  @abc.abstractmethod
+  def get_anomalies(self):
+    """get the anomalies
+    """
 
   @abc.abstractmethod
   def _fit(self, X, y=None):
@@ -115,8 +132,8 @@ class AnomalyBase(BaseEstimator):
 
 
   @abc.abstractmethod
-  def _predict(self, X):
-    """perform prediction
+  def _evaluate(self, X):
+    """perform evaluation
 
     Args:
         X (array-like): (n_samples, n_features)
