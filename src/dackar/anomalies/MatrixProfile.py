@@ -16,6 +16,7 @@ try:
   DASK_CLIENT_AVAIL = True
 except ImportError:
   logger.error('Importing dask.distributed.Client failed. Parallel calculation will not work!')
+  logger.info('Try to install "pip install dask distributed"')
 
 
 
