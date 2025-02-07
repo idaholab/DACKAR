@@ -10,6 +10,7 @@ from sklearn.base import BaseEstimator
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import RobustScaler
 import pandas as pd
+import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,10 @@ class AnomalyBase(BaseEstimator):
       logger.warning('Unrecognized value for param "norm", using default "RobustScalar"')
       self._scalar = RobustScaler()
     self._meta = {}
+    self._xindex = None # store index for provided data
+    self._yindex = None
+    self._xcolumns = None
+    self._ycolumns = None
 
   def reset(self):
     """reset
@@ -84,16 +89,12 @@ class AnomalyBase(BaseEstimator):
     """
     logger.info('Train model.')
     self.is_fitted = True
-    if not isinstance(X, pd.DataFrame):
-      raise IOError(f'Pandas.DataFrame is required, but get {type(X)}!')
-    if y is not None and not isinstance(y, pd.DataFrame):
-      raise IOError(f'Pandas.DataFrame is required, but get {type(y)}!')
-    self._features = X
-    self._targets = y
-    X_transform = self._scalar.fit_transform(X)
-    X_transform = pd.DataFrame(X_transform, columns=X.columns)
-    fit_obj = self._fit(X_transform, y)
-    return fit_obj
+    self._features, self._xindex, self._xcolumns = self.check_data(X)
+    if y is not None:
+      self._targets, self._yindex, self._ycolumns = self.check_data(y)
+    X_transform = self._scalar.fit_transform(self._features)
+    self._fit(X_transform, y)
+
 
   def evaluate(self, X):
     """perform evaluation
@@ -102,11 +103,12 @@ class AnomalyBase(BaseEstimator):
         X (array-like): (n_samples, n_features)
     """
     logger.info('Perform model forecast.')
-    X_transform = self._scalar.fit_transform(X)
-    X_transform = pd.DataFrame(X_transform, columns=X.columns)
-    y_new = self.evaluate(X_transform)
-
-    return y_new
+    X, index, columns = self.check_data(X)
+    assert columns == self._xcolumns, 'Evaluated data should have the same number of columns!'
+    X_transform = self._scalar.transform(X)
+    self._xindex = np.hstack((self._xindex, index))
+    self._features = np.vstack((self._features, X))
+    self._evaluate(X_transform)
 
   def plot(self):
     """plot data
@@ -138,3 +140,34 @@ class AnomalyBase(BaseEstimator):
     Args:
         X (array-like): (n_samples, n_features)
     """
+
+  @staticmethod
+  def check_data(data):
+    """Check the format of data
+
+    Args:
+        data (_type_): list, numpy.ndarray or pandas.DataFrame
+    """
+    index = None
+    columns = None
+    data_ = None
+    if isinstance(data, list):
+      data_ = np.atleast_1d(data)
+      index = np.arange(data_.shape[0])
+      columns = np.arange(data_.shape[1])
+    elif isinstance(data, np.ndarray):
+      data_ = data
+      index = np.arange(data_.shape[0])
+      columns = np.arange(data_.shape[1])
+    elif isinstance(data, pd.Series):
+      data_ = data.to_numpy()
+      index = data.index
+      columns = [data.name] if data.name is not None else [0]
+    elif isinstance(data, pd.DataFrame):
+      data_ = data.to_numpy()
+      index = data.index
+      columns = data.columns
+    else:
+      raise IOError(f'The data with type {type(data)} cannot be accepted, please try to provide data with type of "list, numpy.array, pandas.Series or pandas.DataFrame"!')
+
+    return data_, index, columns

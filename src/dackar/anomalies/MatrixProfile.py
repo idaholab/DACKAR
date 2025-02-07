@@ -60,13 +60,13 @@ class MatrixProfile(AnomalyBase):
     """
     n_T = X.shape[0]
 
-    for i, var in enumerate(X.columns):
-      X_ = X[var]
+    for i, var in enumerate(self._xcolumns):
+      X_ = X[:,i]
       if y is not None:
         if y.shape[1] == 1:
-          y_ = y[y.columns[0]]
+          y_ = y
         elif y.shape[1] == X.shape[1]:
-          y_ = y[y.columns[i]]
+          y_ = y[:,i]
         else:
           raise IOError('Provided data and annotated data are not aligned! Please check your data.')
       else:
@@ -112,8 +112,9 @@ class MatrixProfile(AnomalyBase):
     self._current_idx.append(X.shape[0]+self._current_idx[-1])
 
     if self._method == 'incremental':
-      for var in X.columns:
-        self._mp[var].update(X[var])
+      for j, var in enumerate(self._xcolumns):
+        for i in range(X.shape[0]):
+          self._mp[var].update(X[i,j])
     else:
       raise NotImplementedError('Evaluate method is not implemented yet!')
 
@@ -124,7 +125,7 @@ class MatrixProfile(AnomalyBase):
     X_transform = self._features.copy()
     if self._norm_plot:
       X_transform = self._scalar.fit_transform(self._features)
-      X_transform = pd.DataFrame(X_transform, columns=self._features.columns)
+      X_transform = pd.DataFrame(X_transform, index=self._xindex, columns=self._xcolumns)
     return plot_data(X_transform, self._mp) # Input time series data should be stored in pandas.DataFrame
 
 
