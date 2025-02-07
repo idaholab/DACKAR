@@ -35,13 +35,12 @@ def plot_data(df, mp, title='Data vs. Matrix Profile', sharex=True, gridspec_kw=
     axs[i*2].set_xlabel('Time', fontsize=fontsize)
     axs[i*2].plot(df.index, df[ylabel[i]], label=ylabel[i])
     j = i*2 + 1
-    axs[j].set_ylabel('MP'+' for '+ylabel[i], fontsize=fontsize)
+    axs[j].set_ylabel('MP'+' for '+str(ylabel[i]), fontsize=fontsize)
     # axs[i].legend()
     axs[j].set_xlabel('Time', fontsize=fontsize)
     P_ = mp[ylabel[i]].P_
     axs[j].plot(df.index[0:len(P_)], P_, c='orange', label=f'Matrix Profile for {ylabel[i]}')
     # axs[j].legend()
-
 
   fig.tight_layout()
   return fig

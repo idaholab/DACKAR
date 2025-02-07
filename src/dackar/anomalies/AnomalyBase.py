@@ -153,14 +153,18 @@ class AnomalyBase(BaseEstimator):
     data_ = None
     if isinstance(data, list):
       data_ = np.atleast_1d(data)
+      if len(data_.shape) == 1:
+        data_ = data_.reshape(data_.shape[0], 1)
       index = np.arange(data_.shape[0])
       columns = np.arange(data_.shape[1])
     elif isinstance(data, np.ndarray):
       data_ = data
+      if len(data_.shape) == 1:
+        data_ = data_.reshape(data_.shape[0], 1)
       index = np.arange(data_.shape[0])
       columns = np.arange(data_.shape[1])
     elif isinstance(data, pd.Series):
-      data_ = data.to_numpy()
+      data_ = data.to_numpy().reshape(len(data),1)
       index = data.index
       columns = [data.name] if data.name is not None else [0]
     elif isinstance(data, pd.DataFrame):
