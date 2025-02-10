@@ -45,6 +45,28 @@ def plot_data(df, mp, title='Data vs. Matrix Profile', sharex=True, gridspec_kw=
   fig.tight_layout()
   return fig
 
+
+def plot_kdp(df, title='K-Dimensional Profile', sharex=True, gridspec_kw={'hspace':0}):
+  """plot K-dimensional profile from pandas dataframe (column-wise)
+
+  Args:
+      df (pandas.dataframe): K-dimensional profile
+      title (str, optional): title for the plot. Defaults to ''.
+      sharex (bool, optional): share x-axis. Defaults to True.
+      gridspec_kw (dict, optional): grid option for plots. Defaults to {'hspace':0}.
+  """
+  fig, axs = plt.subplots(df.shape[1], sharex=sharex, gridspec_kw=gridspec_kw, figsize=(8, df.shape[1]*2))
+  plt.suptitle(title, fontsize=fontsize)
+  ylabel = df.columns
+
+  for i in range(df.shape[1]):
+    axs[i].set_ylabel(ylabel[i], fontsize=fontsize)
+    axs[i].set_xlabel('Time', fontsize=fontsize)
+    axs[i].plot(df.index, df[ylabel[i]], label=ylabel[i], c='orange')
+  fig.tight_layout()
+  return fig
+
+
 def plot_anomaly(df, mps, anomalies_idx, m, title=None, sharex=True, gridspec_kw={'hspace':0}):
   """Plot anomalies for given data
 

@@ -4,7 +4,7 @@ from stumpy import config
 import pandas as pd
 
 from .AnomalyBase import AnomalyBase
-from .plotUtils import plot_data
+from .plotUtils import plot_data, plot_kdp
 
 import logging
 
@@ -27,7 +27,7 @@ class MatrixProfile(AnomalyBase):
       AnomalyBase (_type_): _description_
   """
 
-  def __init__(self, m, normalize='robust', method='normal', approx_percentage=0.1, sub_sequence_normalize=False, excl_zone_denom=4):
+  def __init__(self, m, normalize='robust', method='normal', kdp=False, approx_percentage=0.1, sub_sequence_normalize=False, excl_zone_denom=4):
     """Constructor
     """
     super().__init__(norm=normalize)
@@ -49,6 +49,8 @@ class MatrixProfile(AnomalyBase):
       raise NotImplementedError('Method "gpu" is not implemented yet!')
     self._current_idx = [] # the index for the last entry of current matrix profile
     self._norm_plot = True
+    self._compute_kdp = kdp
+    self._kdp = {}
 
 
   def _fit(self, X, y=None):
@@ -75,6 +77,21 @@ class MatrixProfile(AnomalyBase):
       self._mp[var] = self._compute_mp(X_, y_)
 
     self._current_idx.append(n_T-1)
+
+    if self._compute_kdp:
+      keys = list(self._mp)
+      mps = [self._mp[key].P_ for key in keys]
+      mps = np.asarray(mps).T
+      kdps = np.sort(mps, axis=1)
+      kdps_idx = np.argsort(mps, axis=1)
+      kdps = np.flip(kdps, axis=1) # flip, sort from max to min
+      kdps_idx = np.flip(kdps_idx, axis=1)
+      colm = [f'{k+1}-DP' for k in range(len(keys))]
+      idx = self._xindex[:kdps.shape[0]]
+      self._kdp['kdp'] = pd.DataFrame(kdps, index=idx, columns=colm) # with dimension (time, variable)
+      self._kdp['idx'] = pd.DataFrame(kdps_idx, index=idx, columns=colm)  # with dimension (time, variable)
+      self._kdp['var'] = keys
+
 
 
   def _compute_mp(self, X_, y_=None):
@@ -128,6 +145,10 @@ class MatrixProfile(AnomalyBase):
       X_transform = pd.DataFrame(X_transform, index=self._xindex, columns=self._xcolumns)
     return plot_data(X_transform, self._mp) # Input time series data should be stored in pandas.DataFrame
 
+  def plot_kdp(self):
+    """plot data
+    """
+    return plot_kdp(self._kdp['kdp'])
 
   def get_mp(self):
     """get matrix profile value
