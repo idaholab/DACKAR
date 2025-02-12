@@ -1,0 +1,1 @@
+Insert in this folder methods to generate textual data and the generated data

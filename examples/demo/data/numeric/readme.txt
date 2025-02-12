@@ -1,0 +1,1 @@
+Insert in this folder methods to generate numeric data and the generated data
