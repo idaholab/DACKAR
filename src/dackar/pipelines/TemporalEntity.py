@@ -173,23 +173,34 @@ class Temporal(object):
         "year", "years"
       ]
 
+    # pattern = [
+    #     {"LOWER": {"in": terms1}, "OP": "?"},
+    #     {"LEMMA": {"in": terms2}, "OP": "?"},
+    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+    #     {"TEXT": ",", "OP": "?"},
+    #     {"LOWER": {"in": terms1}, "OP": "?"},
+    #     {"LEMMA": {"in": terms2}, "OP": "?"},
+    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+    #     {"LEMMA": {"in": terms3}, "OP": "?"},
+    #     {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"},
+    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+    #   ]
+
+
     pattern = [
-        {"LOWER": {"in": terms1}, "OP": "?"},
-        {"LEMMA": {"in": terms2}, "OP": "?"},
-        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-        {"TEXT": ",", "OP": "?"},
-        {"LOWER": {"in": terms1}, "OP": "?"},
-        {"LEMMA": {"in": terms2}, "OP": "?"},
-        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-        {"LEMMA": {"in": terms3}, "OP": "?"},
-        {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"},
-        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+        [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "+"}],
+        [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "?"}, {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"}],
+        [{"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"}, {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "+"}],
+        [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "?"}, {"LEMMA": {"in": terms3}, "OP": "+"}],
+        [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "?"}, {"LEMMA": {"in": terms3}, "OP": "?"}, {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "+"}],
+        [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "?"}, {"LEMMA": {"in": terms3}, "OP": "?"}, {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"}, {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "+"}]
       ]
 
-    self.matcher = SimpleEntityMatcher(nlp, label='Temporal', terms=[pattern])
+
+    self.matcher = SimpleEntityMatcher(nlp, label='Temporal', terms=pattern)
     self.asSpan = True
 
 
