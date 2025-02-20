@@ -1,11 +1,13 @@
 # Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 
 # The code is adapted from https://github.com/wjbmattingly/date-spacy
+# and https://github.com/AliSeyedkav/SMS-TEXT-Time-Date-Recognition-
 
 import re
 from spacy.tokens import Span
 from spacy.language import Language
 from spacy.util import filter_spans
+from .SimpleEntityMatcher import SimpleEntityMatcher
 
 # dateparse: python parser for human readable dates: https://dateparser.readthedocs.io/en/latest/
 # May be adapted in the future
@@ -156,6 +158,41 @@ class Temporal(object):
         )
     """
 
+    #
+    terms1 = [
+        "next", "last", "after", "every"
+      ]
+
+    terms2 = [
+        "today", "tomorrow", "year", "Monday", "Tuesday", "Wednesday", "Thursday",
+        "Friday", "Saturday", "Sunday"
+      ]
+
+    terms3 = [
+        "morning", "afternoon", "evening", "night", "week", "weeks", "month", "months",
+        "year", "years"
+      ]
+
+    pattern = [
+        {"LOWER": {"in": terms1}, "OP": "?"},
+        {"LEMMA": {"in": terms2}, "OP": "?"},
+        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+        {"TEXT": ",", "OP": "?"},
+        {"LOWER": {"in": terms1}, "OP": "?"},
+        {"LEMMA": {"in": terms2}, "OP": "?"},
+        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+        {"LEMMA": {"in": terms3}, "OP": "?"},
+        {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"},
+        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+        {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
+      ]
+
+    self.matcher = SimpleEntityMatcher(nlp, label='Temporal', terms=[pattern])
+    self.asSpan = True
+
+
   def __call__(self, doc):
     """
     Args:
@@ -199,5 +236,8 @@ class Temporal(object):
         #   newEnts.append(ent)
     # Combine the new entities with existing entities, ensuring no overlap
 
-    doc.ents = list(doc.ents) + newEnts
+    doc.ents = filter_spans(list(doc.ents) + newEnts)
+    # Using SimpleEntityMatcher
+    doc = self.matcher(doc)
+
     return doc

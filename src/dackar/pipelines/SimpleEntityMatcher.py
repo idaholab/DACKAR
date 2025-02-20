@@ -67,5 +67,6 @@ class SimpleEntityMatcher(object):
         spans.append(span)
     else:
       spans.extend(matches)
-    doc.ents = filter_spans(list(doc.ents)+spans)
+    # order matters here, for duplicated entities, only the first one will keep.
+    doc.ents = filter_spans(spans+list(doc.ents))
     return doc

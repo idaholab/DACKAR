@@ -72,7 +72,7 @@ def resetPipeline(nlp, pipes):
   """
   customPipes = [pipe for (pipe, _) in nlp.pipeline
                   if pipe not in ['tagger', 'parser',
-                                  'tok2vec', 'attribute_ruler', 'lemmatizer']]
+                                  'tok2vec', 'attribute_ruler', 'lemmatizer', 'ner']]
   for pipe in customPipes:
     _ = nlp.remove_pipe(pipe)
   # re-add specified pipes
