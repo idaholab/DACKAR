@@ -53,11 +53,12 @@ class SimpleEntityMatcher(object):
     self.matcher.add(label, terms, on_match=callback)
     self.asSpan = asSpan
 
-  def __call__(self, doc):
+  def __call__(self, doc, replace=False):
     """
     Args:
 
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+      replace (bool): if True, relabel duplicated entity with new label
     """
     matches = self.matcher(doc, as_spans=self.asSpan)
     spans = []
@@ -68,5 +69,8 @@ class SimpleEntityMatcher(object):
     else:
       spans.extend(matches)
     # order matters here, for duplicated entities, only the first one will keep.
-    doc.ents = filter_spans(spans+list(doc.ents))
+    if replace:
+      doc.ents = filter_spans(spans+list(doc.ents))
+    else:
+      doc.ents = filter_spans(list(doc.ents)+spans)
     return doc

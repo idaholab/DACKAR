@@ -71,6 +71,13 @@ class Temporal(object):
 
     ordinalPattern = r"\b(?:" + "|".join(ordinals) + r")\b"
 
+    exceptions = [
+        "hour", "hours", "minute", "minutes", "day", "days", "decade", "decades", "century", "centuries", "week", "weeks", "month",
+        "months", "year", "years"
+      ]
+
+    exceptionsPattern = r"(?:" + "|".join(exceptions) + r")\b"
+
     # A regex pattern to capture a variety of date formats
     self.datePattern = r"""
         # Day-Month-Year
@@ -156,6 +163,12 @@ class Temporal(object):
                 \d{4}                   # Year
             )?
         )
+        |
+        (?:
+            \d+
+            (?:\-|\s+)?
+            """ + exceptionsPattern + """
+        )
     """
 
     #
@@ -164,31 +177,14 @@ class Temporal(object):
       ]
 
     terms2 = [
-        "today", "tomorrow", "year", "Monday", "Tuesday", "Wednesday", "Thursday",
+        "today", "tomorrow", "year", "Monday", "Tuesday", "Wednesday", "Thursday", "yesterday", "weekend",
         "Friday", "Saturday", "Sunday"
       ]
 
     terms3 = [
-        "morning", "afternoon", "evening", "night", "week", "weeks", "month", "months",
+        "morning", "afternoon", "noon", "dawn", "midnight", "dusk", "sunrise", "sunset", "evening", "night", "week", "weeks", "month", "months",
         "year", "years"
       ]
-
-    # pattern = [
-    #     {"LOWER": {"in": terms1}, "OP": "?"},
-    #     {"LEMMA": {"in": terms2}, "OP": "?"},
-    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-    #     {"TEXT": ",", "OP": "?"},
-    #     {"LOWER": {"in": terms1}, "OP": "?"},
-    #     {"LEMMA": {"in": terms2}, "OP": "?"},
-    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-    #     {"LEMMA": {"in": terms3}, "OP": "?"},
-    #     {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"},
-    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-    #     {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "?"},
-    #   ]
-
 
     pattern = [
         [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "+"}],
@@ -199,9 +195,9 @@ class Temporal(object):
         [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "?"}, {"LEMMA": {"in": terms3}, "OP": "?"}, {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"}, {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "+"}]
       ]
 
-
     self.matcher = SimpleEntityMatcher(nlp, label='Temporal', terms=pattern)
     self.asSpan = True
+
 
 
   def __call__(self, doc):
@@ -247,8 +243,8 @@ class Temporal(object):
         #   newEnts.append(ent)
     # Combine the new entities with existing entities, ensuring no overlap
 
-    doc.ents = filter_spans(list(doc.ents) + newEnts)
+    doc.ents = filter_spans(newEnts+list(doc.ents))
     # Using SimpleEntityMatcher
-    doc = self.matcher(doc)
+    doc = self.matcher(doc, replace=True)
 
     return doc
