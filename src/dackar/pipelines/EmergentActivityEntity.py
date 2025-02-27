@@ -54,5 +54,7 @@ class EmergentActivity(object):
 
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
-    doc = self.matcher(doc)
+    # 'replace' keyword can be used to prefer the new identified entity when duplicates exist.
+    # doc = self.matcher(doc, replace=True)
+    doc = self.matcher(doc, replace=False)
     return doc

@@ -69,8 +69,24 @@ class SimpleEntityMatcher(object):
     else:
       spans.extend(matches)
     # order matters here, for duplicated entities, only the first one will keep.
+    # TODO: reorder entities as [existing.ner, new.ner, spacy.ner]
+    # In this order, spacy.ner will be always replaced with custom ner, while the existing custom ner is preferred over
+    # new custom ner.
+    old = []
+    ner = []
+    spacyNERLabel = ["PERSON", "NORP", "FAC", "ORG", "GPE", "LOC", "PRODUCT", "EVENT", "WORK_OF_ART",
+                     "LAW", "LANGUAGE", "DATE", "TIME", "PERCENT", "MONEY", "QUANTITY", "ORDINAL",
+                     "CARDINAL"]
+    for span in doc.ents:
+      if span.label_ in spacyNERLabel:
+        ner.append(span)
+      else:
+        old.append(span)
+
     if replace:
       doc.ents = filter_spans(spans+list(doc.ents))
     else:
-      doc.ents = filter_spans(list(doc.ents)+spans)
+      # directly filtering will not replace existing spacy NERs.
+      # doc.ents = filter_spans(list(doc.ents)+spans)
+      doc.ents = filter_spans(old+spans+ner)
     return doc
