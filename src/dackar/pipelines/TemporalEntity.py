@@ -173,7 +173,7 @@ class Temporal(object):
 
     #
     terms1 = [
-        "next", "last", "after", "every"
+        "next", "last", "after", "every", "before", "during"
       ]
 
     terms2 = [
