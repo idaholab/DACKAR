@@ -5,8 +5,8 @@ Created on March, 2022
 @author: wangc, mandd
 """
 import pandas as pd
-import spacy
-import re
+from spacy.tokenizer import Tokenizer
+from spacy.util import compile_infix_regex
 from spacy.tokens import Span
 # filter_spans is used to resolve the overlap issue in entities
 # It gives primacy to longer spans (entities)
@@ -72,7 +72,7 @@ def resetPipeline(nlp, pipes):
   """
   customPipes = [pipe for (pipe, _) in nlp.pipeline
                   if pipe not in ['tagger', 'parser',
-                                  'tok2vec', 'attribute_ruler', 'lemmatizer']]
+                                  'tok2vec', 'attribute_ruler', 'lemmatizer', 'ner']]
   for pipe in customPipes:
     _ = nlp.remove_pipe(pipe)
   # re-add specified pipes
@@ -238,3 +238,26 @@ def extendEnt(matcher, doc, i, matches):
   ent = Span(doc, start, end, label=id)
   logger.debug(ent.label_ + ' ' + ent.text)
   doc.ents = filter_spans(list(doc.ents) +[ent])
+
+
+def customTokenizer(nlp):
+  """custom tokenizer to keep hyphens between letters and digits
+
+  Args:
+      nlp (spacy nlp model): spacy nlp model
+
+  Returns:
+      nlp: nlp with custom tokenizer
+  """
+  inf = list(nlp.Defaults.infixes)               # Default infixes
+  inf.remove(r"(?<=[0-9])[+\-\*^](?=[0-9-])")    # Remove the generic op between numbers or between a number and a -
+  inf = tuple(inf)                               # Convert inf to tuple
+  infixes = inf + tuple([r"(?<=[0-9])[+\*^](?=[0-9-])", r"(?<=[0-9])-(?=-)"])  # Add the removed rule after subtracting (?<=[0-9])-(?=[0-9]) pattern
+  infixes = [x for x in infixes if '-|–|—|--|---|——|~' not in x] # Remove - between letters rule
+  infix_re = compile_infix_regex(infixes)
+  nlp.tokenizer = Tokenizer(nlp.vocab, prefix_search=nlp.tokenizer.prefix_search,
+                            suffix_search=nlp.tokenizer.suffix_search,
+                            infix_finditer=infix_re.finditer,
+                            token_match=nlp.tokenizer.token_match,
+                            rules=nlp.Defaults.tokenizer_exceptions)
+  return nlp
