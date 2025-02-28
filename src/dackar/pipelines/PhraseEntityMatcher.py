@@ -48,11 +48,12 @@ class PhraseEntityMatcher(object):
     self.matcher.add(label, patterns, on_match=callback)
     self.asSpan = asSpan
 
-  def __call__(self, doc):
+  def __call__(self, doc, replace=False):
     """
     Args:
 
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+      replace (bool): if True, relabel duplicated entity with new label
     """
     matches = self.matcher(doc, as_spans=self.asSpan)
     spans = []
@@ -62,5 +63,9 @@ class PhraseEntityMatcher(object):
         spans.append(span)
     else:
       spans.extend(matches)
-    doc.ents = filter_spans(list(doc.ents)+spans)
+    # order matters here, for duplicated entities, only the first one will keep.
+    if replace:
+      doc.ents = filter_spans(spans+list(doc.ents))
+    else:
+      doc.ents = filter_spans(list(doc.ents)+spans)
     return doc

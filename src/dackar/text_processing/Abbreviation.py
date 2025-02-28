@@ -61,15 +61,24 @@ class Abbreviation(object):
       corrected = sent
       splitSent = sent.split()
       for word in splitSent:
-        if word not in not_acronyms:
-          if word in self.abbrDict.keys():
-            full = self.abbrDict[word]
-            if isinstance(full, str):
-              corrected = re.sub(r"\b%s\b" % str(word) , full, corrected)
-            elif isinstance(full, list) and len(full) == 1:
-              corrected = re.sub(r"\b%s\b" % str(word) , full[0], corrected)
-            else:
-              logger.info(f'Can not replace abbreviation {word}, possible solution {full}')
+        full = None
+        if word in self.abbrDict and word not in not_acronyms:
+          full = self.abbrDict[word]
+        else:
+          splitWord = re.split(r'[-\d+]', word) # split word if word contains '-' or numbers
+          checkAbbr = word if len(splitWord) == 1 else splitWord[-1]
+          if checkAbbr not in not_acronyms:
+            if checkAbbr in self.abbrDict.keys():
+              full = self.abbrDict[checkAbbr]
+              # correct the word with the full name if the abbreviation presented in the word
+              full = re.sub(r'%s$' %str(checkAbbr), full, word)
+        if full is not None:
+          if isinstance(full, str):
+            corrected = re.sub(r"\b%s\b" % str(word) , full, corrected)
+          elif isinstance(full, list) and len(full) == 1:
+            corrected = re.sub(r"\b%s\b" % str(word) , full[0], corrected)
+          else:
+            logger.info(f'Can not replace abbreviation {word}, possible solution {full}')
       expandedText.append(corrected)
 
     expandedText = '. '.join(expandedText)
