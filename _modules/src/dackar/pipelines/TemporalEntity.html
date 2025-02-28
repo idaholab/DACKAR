@@ -1,0 +1,387 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.pipelines.TemporalEntity &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.pipelines.TemporalEntity</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.pipelines.TemporalEntity</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="c1"># The code is adapted from https://github.com/wjbmattingly/date-spacy</span>
+<span class="c1"># and https://github.com/AliSeyedkav/SMS-TEXT-Time-Date-Recognition-</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.tokens</span><span class="w"> </span><span class="kn">import</span> <span class="n">Span</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.language</span><span class="w"> </span><span class="kn">import</span> <span class="n">Language</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">filter_spans</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.SimpleEntityMatcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimpleEntityMatcher</span>
+
+<span class="c1"># dateparse: python parser for human readable dates: https://dateparser.readthedocs.io/en/latest/</span>
+<span class="c1"># May be adapted in the future</span>
+<span class="c1"># import dateparser</span>
+
+<span class="c1"># Set up a date extension on the span</span>
+<span class="c1"># Span.set_extension(&quot;Temporal&quot;, default=None, force=True)</span>
+
+
+<span class="nd">@Language</span><span class="o">.</span><span class="n">factory</span><span class="p">(</span><span class="s2">&quot;Temporal&quot;</span><span class="p">)</span>
+<div class="viewcode-block" id="find_temporal">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.find_temporal">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_temporal</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+  <span class="k">return</span> <span class="n">Temporal</span><span class="p">(</span><span class="n">nlp</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Temporal">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.Temporal">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Temporal</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    How to use it:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">      from TemporalEnity import Temporal</span>
+<span class="sd">      nlp = spacy.load(&quot;en_core_web_sm&quot;)</span>
+<span class="sd">      pmatcher = Temporal(nlp)</span>
+<span class="sd">      doc = nlp(&quot;The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.&quot;)</span>
+<span class="sd">      updatedDoc = pmatcher(doc)</span>
+
+<span class="sd">    or:</span>
+
+<span class="sd">    .. code-block:: python</span>
+
+<span class="sd">      nlp.add_pipe(&#39;Temporal&#39;)</span>
+<span class="sd">      newDoc = nlp(doc.text)</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">      nlp: spacy nlp model</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="Temporal.name">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.Temporal.name">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s1">&#39;Temporal&#39;</span></div>
+
+<div class="viewcode-block" id="Temporal.ordinalToNumber">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.Temporal.ordinalToNumber">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">ordinalToNumber</span> <span class="o">=</span> <span class="p">{</span>
+      <span class="s2">&quot;first&quot;</span><span class="p">:</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span> <span class="s2">&quot;second&quot;</span><span class="p">:</span> <span class="s2">&quot;2&quot;</span><span class="p">,</span> <span class="s2">&quot;third&quot;</span><span class="p">:</span> <span class="s2">&quot;3&quot;</span><span class="p">,</span> <span class="s2">&quot;fourth&quot;</span><span class="p">:</span> <span class="s2">&quot;4&quot;</span><span class="p">,</span> <span class="s2">&quot;fifth&quot;</span><span class="p">:</span> <span class="s2">&quot;5&quot;</span><span class="p">,</span>
+      <span class="s2">&quot;sixth&quot;</span><span class="p">:</span> <span class="s2">&quot;6&quot;</span><span class="p">,</span> <span class="s2">&quot;seventh&quot;</span><span class="p">:</span> <span class="s2">&quot;7&quot;</span><span class="p">,</span> <span class="s2">&quot;eighth&quot;</span><span class="p">:</span> <span class="s2">&quot;8&quot;</span><span class="p">,</span> <span class="s2">&quot;ninth&quot;</span><span class="p">:</span> <span class="s2">&quot;9&quot;</span><span class="p">,</span> <span class="s2">&quot;tenth&quot;</span><span class="p">:</span> <span class="s2">&quot;10&quot;</span><span class="p">,</span>
+      <span class="s2">&quot;eleventh&quot;</span><span class="p">:</span> <span class="s2">&quot;11&quot;</span><span class="p">,</span> <span class="s2">&quot;twelfth&quot;</span><span class="p">:</span> <span class="s2">&quot;12&quot;</span><span class="p">,</span> <span class="s2">&quot;thirteenth&quot;</span><span class="p">:</span> <span class="s2">&quot;13&quot;</span><span class="p">,</span> <span class="s2">&quot;fourteenth&quot;</span><span class="p">:</span> <span class="s2">&quot;14&quot;</span><span class="p">,</span>
+      <span class="s2">&quot;fifteenth&quot;</span><span class="p">:</span> <span class="s2">&quot;15&quot;</span><span class="p">,</span> <span class="s2">&quot;sixteenth&quot;</span><span class="p">:</span> <span class="s2">&quot;16&quot;</span><span class="p">,</span> <span class="s2">&quot;seventeenth&quot;</span><span class="p">:</span> <span class="s2">&quot;17&quot;</span><span class="p">,</span> <span class="s2">&quot;eighteenth&quot;</span><span class="p">:</span> <span class="s2">&quot;18&quot;</span><span class="p">,</span>
+      <span class="s2">&quot;nineteenth&quot;</span><span class="p">:</span> <span class="s2">&quot;19&quot;</span><span class="p">,</span> <span class="s2">&quot;twentieth&quot;</span><span class="p">:</span> <span class="s2">&quot;20&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-first&quot;</span><span class="p">:</span> <span class="s2">&quot;21&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-second&quot;</span><span class="p">:</span> <span class="s2">&quot;22&quot;</span><span class="p">,</span>
+      <span class="s2">&quot;twenty-third&quot;</span><span class="p">:</span> <span class="s2">&quot;23&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-fourth&quot;</span><span class="p">:</span> <span class="s2">&quot;24&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-fifth&quot;</span><span class="p">:</span> <span class="s2">&quot;25&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-sixth&quot;</span><span class="p">:</span> <span class="s2">&quot;26&quot;</span><span class="p">,</span>
+      <span class="s2">&quot;twenty-seventh&quot;</span><span class="p">:</span> <span class="s2">&quot;27&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-eighth&quot;</span><span class="p">:</span> <span class="s2">&quot;28&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-ninth&quot;</span><span class="p">:</span> <span class="s2">&quot;29&quot;</span><span class="p">,</span> <span class="s2">&quot;thirtieth&quot;</span><span class="p">:</span> <span class="s2">&quot;30&quot;</span><span class="p">,</span>
+      <span class="s2">&quot;thirty-first&quot;</span><span class="p">:</span> <span class="s2">&quot;31&quot;</span>
+    <span class="p">}</span></div>
+
+    <span class="c1"># Ordinals</span>
+    <span class="n">ordinals</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;first&quot;</span><span class="p">,</span> <span class="s2">&quot;second&quot;</span><span class="p">,</span> <span class="s2">&quot;third&quot;</span><span class="p">,</span> <span class="s2">&quot;fourth&quot;</span><span class="p">,</span> <span class="s2">&quot;fifth&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;sixth&quot;</span><span class="p">,</span> <span class="s2">&quot;seventh&quot;</span><span class="p">,</span> <span class="s2">&quot;eighth&quot;</span><span class="p">,</span> <span class="s2">&quot;ninth&quot;</span><span class="p">,</span> <span class="s2">&quot;tenth&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;eleventh&quot;</span><span class="p">,</span> <span class="s2">&quot;twelfth&quot;</span><span class="p">,</span> <span class="s2">&quot;thirteenth&quot;</span><span class="p">,</span> <span class="s2">&quot;fourteenth&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;fifteenth&quot;</span><span class="p">,</span> <span class="s2">&quot;sixteenth&quot;</span><span class="p">,</span> <span class="s2">&quot;seventeenth&quot;</span><span class="p">,</span> <span class="s2">&quot;eighteenth&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;nineteenth&quot;</span><span class="p">,</span> <span class="s2">&quot;twentieth&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-first&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-second&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;twenty-third&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-fourth&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-fifth&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-sixth&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;twenty-seventh&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-eighth&quot;</span><span class="p">,</span> <span class="s2">&quot;twenty-ninth&quot;</span><span class="p">,</span> <span class="s2">&quot;thirtieth&quot;</span><span class="p">,</span> <span class="s2">&quot;thirty-first&quot;</span>
+    <span class="p">]</span>
+
+    <span class="n">ordinalPattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;\b(?:&quot;</span> <span class="o">+</span> <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ordinals</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;)\b&quot;</span>
+
+    <span class="n">exceptions</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;hour&quot;</span><span class="p">,</span> <span class="s2">&quot;hours&quot;</span><span class="p">,</span> <span class="s2">&quot;minute&quot;</span><span class="p">,</span> <span class="s2">&quot;minutes&quot;</span><span class="p">,</span> <span class="s2">&quot;day&quot;</span><span class="p">,</span> <span class="s2">&quot;days&quot;</span><span class="p">,</span> <span class="s2">&quot;decade&quot;</span><span class="p">,</span> <span class="s2">&quot;decades&quot;</span><span class="p">,</span> <span class="s2">&quot;century&quot;</span><span class="p">,</span> <span class="s2">&quot;centuries&quot;</span><span class="p">,</span> <span class="s2">&quot;week&quot;</span><span class="p">,</span> <span class="s2">&quot;weeks&quot;</span><span class="p">,</span> <span class="s2">&quot;month&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;months&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">,</span> <span class="s2">&quot;years&quot;</span>
+      <span class="p">]</span>
+
+    <span class="n">exceptionsPattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;(?:&quot;</span> <span class="o">+</span> <span class="s2">&quot;|&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">exceptions</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">&quot;)\b&quot;</span>
+
+    <span class="c1"># A regex pattern to capture a variety of date formats</span>
+<div class="viewcode-block" id="Temporal.datePattern">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.Temporal.datePattern">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">datePattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        # Day-Month-Year</span>
+<span class="s2">        (?:</span>
+<span class="s2">            \d{1,2}(?:st|nd|rd|th)?     # Day with optional st, nd, rd, th suffix</span>
+<span class="s2">            \s+</span>
+<span class="s2">            (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* # Month name</span>
+<span class="s2">            (?:                         # Year is optional</span>
+<span class="s2">                \s+</span>
+<span class="s2">                \d</span><span class="si">{4}</span><span class="s2">                   # Year</span>
+<span class="s2">            )?</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        # Day/Month/Year</span>
+<span class="s2">        (?:</span>
+<span class="s2">            \d{1,2}                     # Day</span>
+<span class="s2">            [/-]</span>
+<span class="s2">            \d{1,2}                     # Month</span>
+<span class="s2">            (?:                         # Year is optional</span>
+<span class="s2">                [/-]</span>
+<span class="s2">                \d{2,4}                 # Year</span>
+<span class="s2">            )?</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        # Year-Month-Day</span>
+<span class="s2">        (?:</span>
+<span class="s2">            \d</span><span class="si">{4}</span><span class="s2">                       # Year</span>
+<span class="s2">            [-/]</span>
+<span class="s2">            \d{1,2}                     # Month</span>
+<span class="s2">            [-/]</span>
+<span class="s2">            \d{1,2}                     # Day</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        # Month-Day-Year</span>
+<span class="s2">        (?:</span>
+<span class="s2">            (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* # Month name</span>
+<span class="s2">            \s+</span>
+<span class="s2">            \d{1,2}(?:st|nd|rd|th)?     # Day with optional st, nd, rd, th suffix</span>
+<span class="s2">            (?:                         # Year is optional</span>
+<span class="s2">                ,?</span>
+<span class="s2">                \s+</span>
+<span class="s2">                \d</span><span class="si">{4}</span><span class="s2">                   # Year</span>
+<span class="s2">            )?</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        # Month-Year</span>
+<span class="s2">        (?:</span>
+<span class="s2">            (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* # Month name</span>
+<span class="s2">            \s+</span>
+<span class="s2">            \d</span><span class="si">{4}</span><span class="s2">                       # Year</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        # Ordinal-Day-Month-Year</span>
+<span class="s2">        (?:</span>
+<span class="s2">            &quot;&quot;&quot;</span> <span class="o">+</span> <span class="n">ordinalPattern</span> <span class="o">+</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">            \s+</span>
+<span class="s2">            (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* # Month name</span>
+<span class="s2">            (?:                         # Year is optional</span>
+<span class="s2">                \s+</span>
+<span class="s2">                \d</span><span class="si">{4}</span><span class="s2">                   # Year</span>
+<span class="s2">            )?</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        (?:</span>
+<span class="s2">            &quot;&quot;&quot;</span> <span class="o">+</span> <span class="n">ordinalPattern</span> <span class="o">+</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">            \s+</span>
+<span class="s2">            of</span>
+<span class="s2">            \s+</span>
+<span class="s2">            (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*  # Month name</span>
+<span class="s2">            (?:                         # Year is optional</span>
+<span class="s2">                \s+</span>
+<span class="s2">                \d</span><span class="si">{4}</span><span class="s2">                   # Year</span>
+<span class="s2">            )?</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        # Month Ordinal</span>
+<span class="s2">        (?:</span>
+<span class="s2">            (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*  # Month name</span>
+<span class="s2">            \s+</span>
+<span class="s2">            &quot;&quot;&quot;</span> <span class="o">+</span> <span class="n">ordinalPattern</span> <span class="o">+</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">            (?:                         # Year is optional</span>
+<span class="s2">                \s+</span>
+<span class="s2">                \d</span><span class="si">{4}</span><span class="s2">                   # Year</span>
+<span class="s2">            )?</span>
+<span class="s2">        )</span>
+<span class="s2">        |</span>
+<span class="s2">        (?:</span>
+<span class="s2">            \d+</span>
+<span class="s2">            (?:\-|\s+)?</span>
+<span class="s2">            &quot;&quot;&quot;</span> <span class="o">+</span> <span class="n">exceptionsPattern</span> <span class="o">+</span> <span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        )</span>
+<span class="s2">    &quot;&quot;&quot;</span></div>
+
+
+    <span class="c1">#</span>
+    <span class="n">terms1</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;next&quot;</span><span class="p">,</span> <span class="s2">&quot;last&quot;</span><span class="p">,</span> <span class="s2">&quot;after&quot;</span><span class="p">,</span> <span class="s2">&quot;every&quot;</span><span class="p">,</span> <span class="s2">&quot;before&quot;</span><span class="p">,</span> <span class="s2">&quot;during&quot;</span>
+      <span class="p">]</span>
+
+    <span class="n">terms2</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;today&quot;</span><span class="p">,</span> <span class="s2">&quot;tomorrow&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">,</span> <span class="s2">&quot;Monday&quot;</span><span class="p">,</span> <span class="s2">&quot;Tuesday&quot;</span><span class="p">,</span> <span class="s2">&quot;Wednesday&quot;</span><span class="p">,</span> <span class="s2">&quot;Thursday&quot;</span><span class="p">,</span> <span class="s2">&quot;yesterday&quot;</span><span class="p">,</span> <span class="s2">&quot;weekend&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;Friday&quot;</span><span class="p">,</span> <span class="s2">&quot;Saturday&quot;</span><span class="p">,</span> <span class="s2">&quot;Sunday&quot;</span>
+      <span class="p">]</span>
+
+    <span class="n">terms3</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;morning&quot;</span><span class="p">,</span> <span class="s2">&quot;afternoon&quot;</span><span class="p">,</span> <span class="s2">&quot;noon&quot;</span><span class="p">,</span> <span class="s2">&quot;dawn&quot;</span><span class="p">,</span> <span class="s2">&quot;midnight&quot;</span><span class="p">,</span> <span class="s2">&quot;dusk&quot;</span><span class="p">,</span> <span class="s2">&quot;sunrise&quot;</span><span class="p">,</span> <span class="s2">&quot;sunset&quot;</span><span class="p">,</span> <span class="s2">&quot;evening&quot;</span><span class="p">,</span> <span class="s2">&quot;night&quot;</span><span class="p">,</span> <span class="s2">&quot;week&quot;</span><span class="p">,</span> <span class="s2">&quot;weeks&quot;</span><span class="p">,</span> <span class="s2">&quot;month&quot;</span><span class="p">,</span> <span class="s2">&quot;months&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;year&quot;</span><span class="p">,</span> <span class="s2">&quot;years&quot;</span>
+      <span class="p">]</span>
+
+    <span class="n">pattern</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">[{</span><span class="s2">&quot;LOWER&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms1</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms2</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;+&quot;</span><span class="p">}],</span>
+        <span class="p">[{</span><span class="s2">&quot;LOWER&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms1</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms2</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;ENT_TYPE&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;DATE&quot;</span><span class="p">,</span> <span class="s2">&quot;TIME&quot;</span><span class="p">]},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">}],</span>
+        <span class="p">[{</span><span class="s2">&quot;LOWER&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;at&quot;</span><span class="p">,</span> <span class="s2">&quot;on&quot;</span><span class="p">,</span> <span class="s2">&quot;by&quot;</span><span class="p">,</span> <span class="s2">&quot;from&quot;</span><span class="p">,</span> <span class="s2">&quot;to&quot;</span><span class="p">,</span> <span class="s2">&quot;before&quot;</span><span class="p">,</span> <span class="s2">&quot;after&quot;</span><span class="p">,</span> <span class="s2">&quot;between&quot;</span><span class="p">,</span> <span class="s2">&quot;during&quot;</span><span class="p">,</span> <span class="s2">&quot;in&quot;</span><span class="p">]},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;ENT_TYPE&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;DATE&quot;</span><span class="p">,</span> <span class="s2">&quot;TIME&quot;</span><span class="p">]},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;+&quot;</span><span class="p">}],</span>
+        <span class="p">[{</span><span class="s2">&quot;LOWER&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms1</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms2</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms3</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;+&quot;</span><span class="p">}],</span>
+        <span class="p">[{</span><span class="s2">&quot;LOWER&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms1</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms2</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms3</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;ENT_TYPE&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;DATE&quot;</span><span class="p">,</span> <span class="s2">&quot;TIME&quot;</span><span class="p">]},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;+&quot;</span><span class="p">}],</span>
+        <span class="p">[{</span><span class="s2">&quot;LOWER&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms1</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms2</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="n">terms3</span><span class="p">},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;LOWER&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;at&quot;</span><span class="p">,</span> <span class="s2">&quot;on&quot;</span><span class="p">,</span> <span class="s2">&quot;by&quot;</span><span class="p">,</span> <span class="s2">&quot;from&quot;</span><span class="p">,</span> <span class="s2">&quot;to&quot;</span><span class="p">,</span> <span class="s2">&quot;before&quot;</span><span class="p">,</span> <span class="s2">&quot;after&quot;</span><span class="p">,</span> <span class="s2">&quot;between&quot;</span><span class="p">,</span> <span class="s2">&quot;during&quot;</span><span class="p">,</span> <span class="s2">&quot;in&quot;</span><span class="p">]},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;?&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;ENT_TYPE&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;in&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;DATE&quot;</span><span class="p">,</span> <span class="s2">&quot;TIME&quot;</span><span class="p">]},</span> <span class="s2">&quot;OP&quot;</span><span class="p">:</span> <span class="s2">&quot;+&quot;</span><span class="p">}]</span>
+      <span class="p">]</span>
+
+<div class="viewcode-block" id="Temporal.matcher">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.Temporal.matcher">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matcher</span> <span class="o">=</span> <span class="n">SimpleEntityMatcher</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;Temporal&#39;</span><span class="p">,</span> <span class="n">terms</span><span class="o">=</span><span class="n">pattern</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Temporal.asSpan">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.Temporal.asSpan">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">asSpan</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+
+
+<div class="viewcode-block" id="Temporal.__call__">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/TemporalEntity/index.html#src.dackar.pipelines.TemporalEntity.Temporal.__call__">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">matches</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">datePattern</span><span class="p">,</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">VERBOSE</span><span class="p">))</span>
+    <span class="n">newEnts</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">:</span>
+      <span class="n">startChar</span><span class="p">,</span> <span class="n">endChar</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">span</span><span class="p">()</span>
+      <span class="c1"># Convert character offsets to token offsets</span>
+      <span class="n">startToken</span> <span class="o">=</span> <span class="kc">None</span>
+      <span class="n">endToken</span> <span class="o">=</span> <span class="kc">None</span>
+      <span class="k">for</span> <span class="n">token</span> <span class="ow">in</span> <span class="n">doc</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">idx</span> <span class="o">==</span> <span class="n">startChar</span><span class="p">:</span>
+          <span class="n">startToken</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">i</span>
+        <span class="k">if</span> <span class="n">token</span><span class="o">.</span><span class="n">idx</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">token</span><span class="o">.</span><span class="n">text</span><span class="p">)</span> <span class="o">==</span> <span class="n">endChar</span><span class="p">:</span>
+          <span class="n">endToken</span> <span class="o">=</span> <span class="n">token</span><span class="o">.</span><span class="n">i</span>
+      <span class="k">if</span> <span class="n">startToken</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">endToken</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># hitText = doc.text[startChar:endChar]</span>
+        <span class="n">ent</span> <span class="o">=</span> <span class="n">Span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">startToken</span><span class="p">,</span> <span class="n">endToken</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Temporal&quot;</span><span class="p">)</span>
+        <span class="n">newEnts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ent</span><span class="p">)</span>
+
+        <span class="c1">## Following is used to add a custom attribute to indicate Temporal</span>
+        <span class="c1"># parsed_date = dateparser.parse(hitText)</span>
+        <span class="c1"># if parsed_date:  # Ensure the matched string is a valid date</span>
+        <span class="c1">#   ent = Span(doc, startToken, endToken + 1, label=&quot;Temporal&quot;)</span>
+        <span class="c1">#   ent._.date = parsed_date</span>
+        <span class="c1">#   newEnts.append(ent)</span>
+        <span class="c1"># else:</span>
+        <span class="c1">#   # Replace each ordinal in hitText with its numeric representation</span>
+        <span class="c1">#   for ordinal, number in self.ordinalToNumber.items():</span>
+        <span class="c1">#     hitText = hitText.replace(ordinal, number)</span>
+
+        <span class="c1">#   # Remove the word &quot;of&quot; from hitText</span>
+        <span class="c1">#   new_date = hitText.replace(&quot; of &quot;, &quot; &quot;)</span>
+
+        <span class="c1">#   parsed_date = dateparser.parse(new_date)</span>
+        <span class="c1">#   ent = Span(doc, startToken, endToken + 1, label=&quot;Temporal&quot;)</span>
+        <span class="c1">#   ent._.date = parsed_date</span>
+        <span class="c1">#   newEnts.append(ent)</span>
+    <span class="c1"># Combine the new entities with existing entities, ensuring no overlap</span>
+
+    <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="n">filter_spans</span><span class="p">(</span><span class="n">newEnts</span><span class="o">+</span><span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">))</span>
+    <span class="c1"># Using SimpleEntityMatcher</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">matcher</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">doc</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

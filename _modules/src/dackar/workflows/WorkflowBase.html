@@ -6,7 +6,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>src.dackar.workflows.WorkflowBase &mdash; DACKAR 0.1 documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=80d5e7a1" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
@@ -87,35 +87,35 @@
 
 <span class="sd">@author: wangc, mandd</span>
 <span class="sd">&quot;&quot;&quot;</span>
-<span class="kn">import</span> <span class="nn">abc</span>
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">copy</span>
-<span class="kn">import</span> <span class="nn">spacy</span>
-<span class="kn">from</span> <span class="nn">spacy.matcher</span> <span class="kn">import</span> <span class="n">Matcher</span>
-<span class="kn">from</span> <span class="nn">spacy.tokens</span> <span class="kn">import</span> <span class="n">Token</span>
-<span class="kn">from</span> <span class="nn">spacy.tokens</span> <span class="kn">import</span> <span class="n">Span</span>
-<span class="kn">from</span> <span class="nn">spacy</span> <span class="kn">import</span> <span class="n">displacy</span>
-<span class="kn">from</span> <span class="nn">spacy.matcher</span> <span class="kn">import</span> <span class="n">PhraseMatcher</span>
-<span class="kn">from</span> <span class="nn">spacy.matcher</span> <span class="kn">import</span> <span class="n">DependencyMatcher</span>
-<span class="kn">from</span> <span class="nn">spacy.util</span> <span class="kn">import</span> <span class="n">filter_spans</span>
-<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">deque</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">abc</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spacy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.matcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">Matcher</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.tokens</span><span class="w"> </span><span class="kn">import</span> <span class="n">Token</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.tokens</span><span class="w"> </span><span class="kn">import</span> <span class="n">Span</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy</span><span class="w"> </span><span class="kn">import</span> <span class="n">displacy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.matcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhraseMatcher</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.matcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">DependencyMatcher</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">filter_spans</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">deque</span>
 <span class="c1"># filter_spans is used to resolve the overlap issue in entities</span>
 <span class="c1"># It gives primacy to longer spans (entities)</span>
 
-<span class="kn">from</span> <span class="nn">..utils.nlp.nlp_utils</span> <span class="kn">import</span> <span class="n">displayNER</span><span class="p">,</span> <span class="n">resetPipeline</span><span class="p">,</span> <span class="n">printDepTree</span>
-<span class="kn">from</span> <span class="nn">..utils.nlp.nlp_utils</span> <span class="kn">import</span> <span class="n">extendEnt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils.nlp.nlp_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">displayNER</span><span class="p">,</span> <span class="n">resetPipeline</span><span class="p">,</span> <span class="n">printDepTree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils.nlp.nlp_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">extendEnt</span>
 <span class="c1">## import pipelines</span>
-<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">normEntities</span>
-<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">initCoref</span>
-<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">aliasResolver</span>
-<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">anaphorCoref</span>
-<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">anaphorEntCoref</span>
-<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">mergePhrase</span>
-<span class="kn">from</span> <span class="nn">..pipelines.CustomPipelineComponents</span> <span class="kn">import</span> <span class="n">pysbdSentenceBoundaries</span>
-<span class="kn">from</span> <span class="nn">..config</span> <span class="kn">import</span> <span class="n">nlpConfig</span>
-<span class="kn">from</span> <span class="nn">..text_processing.Preprocessing</span> <span class="kn">import</span> <span class="n">Preprocessing</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">normEntities</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">initCoref</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">aliasResolver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">anaphorCoref</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">anaphorEntCoref</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">mergePhrase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">pysbdSentenceBoundaries</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..config</span><span class="w"> </span><span class="kn">import</span> <span class="n">nlpConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..text_processing.Preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Preprocessing</span>
 
 <div class="viewcode-block" id="logger">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.logger">[docs]</a>
@@ -135,7 +135,7 @@
 
 <span class="k">try</span><span class="p">:</span>
   <span class="c1"># check the current version spacy&gt;=3.0.0,&lt;=3.3.0</span>
-  <span class="kn">from</span> <span class="nn">packaging.version</span> <span class="kn">import</span> <span class="n">Version</span>
+  <span class="kn">from</span><span class="w"> </span><span class="nn">packaging.version</span><span class="w"> </span><span class="kn">import</span> <span class="n">Version</span>
 <div class="viewcode-block" id="ver">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.ver">[docs]</a>
   <span class="n">ver</span> <span class="o">=</span> <span class="n">spacy</span><span class="o">.</span><span class="n">__version__</span></div>
@@ -143,7 +143,7 @@
   <span class="n">valid</span> <span class="o">=</span> <span class="n">Version</span><span class="p">(</span><span class="n">ver</span><span class="p">)</span><span class="o">&gt;=</span><span class="n">Version</span><span class="p">(</span><span class="s1">&#39;3.0.0&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">Version</span><span class="p">(</span><span class="n">ver</span><span class="p">)</span><span class="o">&lt;=</span><span class="n">Version</span><span class="p">(</span><span class="s1">&#39;3.3.0&#39;</span><span class="p">)</span>
   <span class="k">if</span> <span class="n">valid</span><span class="p">:</span>
     <span class="c1"># https://github.com/msg-systems/coreferee</span>
-    <span class="kn">import</span> <span class="nn">coreferee</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">coreferee</span>
     <span class="n">_corefAvail</span> <span class="o">=</span> <span class="kc">True</span>
   <span class="k">else</span><span class="p">:</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Module coreferee is not compatible with spacy version </span><span class="si">{</span><span class="n">ver</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
@@ -225,11 +225,11 @@
 
 <div class="viewcode-block" id="WorkflowBase">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase">[docs]</a>
-<span class="k">class</span> <span class="nc">WorkflowBase</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WorkflowBase</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Base Class for Workflow Analysis</span>
 <span class="sd">  &quot;&quot;&quot;</span>
-  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="s1">&#39;SSC&#39;</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="s1">&#39;causal&#39;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="s1">&#39;SSC&#39;</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="s1">&#39;causal&#39;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Construct</span>
 
@@ -416,7 +416,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.reset">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.reset">[docs]</a>
-  <span class="k">def</span> <span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Reset rule-based matcher</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -434,7 +434,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.textProcess">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.textProcess">[docs]</a>
-  <span class="k">def</span> <span class="nf">textProcess</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">textProcess</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Function to clean text</span>
 
@@ -453,7 +453,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getKeywords">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getKeywords">[docs]</a>
-  <span class="k">def</span> <span class="nf">getKeywords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">columnNames</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getKeywords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">,</span> <span class="n">columnNames</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get the keywords from given file</span>
 
@@ -478,7 +478,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.extractLemma">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.extractLemma">[docs]</a>
-  <span class="k">def</span> <span class="nf">extractLemma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varList</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">extractLemma</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">varList</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Lammatize the variable list</span>
 
@@ -499,7 +499,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.addKeywords">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.addKeywords">[docs]</a>
-  <span class="k">def</span> <span class="nf">addKeywords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keywords</span><span class="p">,</span> <span class="n">ktype</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">addKeywords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keywords</span><span class="p">,</span> <span class="n">ktype</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Method to update self._causalKeywords or self._statusKeywords</span>
 
@@ -532,7 +532,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.addEntityPattern">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.addEntityPattern">[docs]</a>
-  <span class="k">def</span> <span class="nf">addEntityPattern</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">patternList</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">addEntityPattern</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">patternList</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Add entity pattern, to extend doc.ents, similar function to self.extendEnt</span>
 
@@ -564,7 +564,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.__call__">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.__call__">[docs]</a>
-  <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">extract</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">screen</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">extract</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">screen</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Find all token sequences matching the supplied pattern</span>
 
@@ -608,7 +608,7 @@
   <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
 <div class="viewcode-block" id="WorkflowBase.extractInformation">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.extractInformation">[docs]</a>
-  <span class="k">def</span> <span class="nf">extractInformation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">extractInformation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      extract information</span>
 
@@ -624,7 +624,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.visualize">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.visualize">[docs]</a>
-  <span class="k">def</span> <span class="nf">visualize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">visualize</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Visualize the processed document</span>
 
@@ -651,7 +651,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.isPassive">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isPassive">[docs]</a>
-  <span class="k">def</span> <span class="nf">isPassive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">isPassive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Check the passiveness of the token</span>
 
@@ -673,7 +673,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.isConjecture">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isConjecture">[docs]</a>
-  <span class="k">def</span> <span class="nf">isConjecture</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">isConjecture</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Check the conjecture of the token</span>
 
@@ -701,7 +701,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.isNegation">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isNegation">[docs]</a>
-  <span class="k">def</span> <span class="nf">isNegation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">isNegation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Check negation status of given token</span>
 
@@ -737,7 +737,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.findVerb">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findVerb">[docs]</a>
-  <span class="k">def</span> <span class="nf">findVerb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">findVerb</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Find the first verb in the doc</span>
 
@@ -758,7 +758,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getCustomEnts">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getCustomEnts">[docs]</a>
-  <span class="k">def</span> <span class="nf">getCustomEnts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ents</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getCustomEnts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ents</span><span class="p">,</span> <span class="n">labels</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get the custom entities</span>
 
@@ -779,7 +779,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getPhrase">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getPhrase">[docs]</a>
-  <span class="k">def</span> <span class="nf">getPhrase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getPhrase</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get the phrase for ent with all left children</span>
 
@@ -804,7 +804,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getAmod">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getAmod">[docs]</a>
-  <span class="k">def</span> <span class="nf">getAmod</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getAmod</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">include</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get amod tokens for ent</span>
 
@@ -835,7 +835,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getAmodOnly">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getAmodOnly">[docs]</a>
-  <span class="k">def</span> <span class="nf">getAmodOnly</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getAmodOnly</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get amod tokens texts for ent</span>
 
@@ -853,7 +853,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getCompoundOnly">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getCompoundOnly">[docs]</a>
-  <span class="k">def</span> <span class="nf">getCompoundOnly</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">headEnt</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getCompoundOnly</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">headEnt</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get the compounds for headEnt except ent</span>
 
@@ -877,7 +877,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getNbor">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getNbor">[docs]</a>
-  <span class="k">def</span> <span class="nf">getNbor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getNbor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">token</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Method to get the nbor from token, return None if nbor is not exist</span>
 
@@ -901,7 +901,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.validSent">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.validSent">[docs]</a>
-  <span class="k">def</span> <span class="nf">validSent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sent</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">validSent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sent</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Check if the sentence has valid structure, either contains subject or object</span>
 
@@ -928,7 +928,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.findLeftSubj">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findLeftSubj">[docs]</a>
-  <span class="k">def</span> <span class="nf">findLeftSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">passive</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">findLeftSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">passive</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Find closest subject in predicates left subtree or</span>
 <span class="sd">      predicates parent&#39;s left subtree (recursive).</span>
@@ -958,7 +958,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.findRightObj">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findRightObj">[docs]</a>
-  <span class="k">def</span> <span class="nf">findRightObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">findRightObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Find closest object in predicates right subtree.</span>
 <span class="sd">      Skip prepositional objects if the preposition is in exclude list.</span>
@@ -979,7 +979,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.findRightKeyword">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findRightKeyword">[docs]</a>
-  <span class="k">def</span> <span class="nf">findRightKeyword</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">findRightKeyword</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Find</span>
 <span class="sd">      Skip prepositional objects if the preposition is in exclude list.</span>
@@ -1001,7 +1001,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.findHealthStatus">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findHealthStatus">[docs]</a>
-  <span class="k">def</span> <span class="nf">findHealthStatus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">findHealthStatus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Return first child of root (included) that matches</span>
 <span class="sd">      dependency list by breadth first search.</span>
@@ -1041,7 +1041,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.isValidCausalEnts">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isValidCausalEnts">[docs]</a>
-  <span class="k">def</span> <span class="nf">isValidCausalEnts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">isValidCausalEnts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Check the entity if it belongs to the valid causal entities</span>
 
@@ -1065,7 +1065,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getIndex">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getIndex">[docs]</a>
-  <span class="k">def</span> <span class="nf">getIndex</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">entList</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getIndex</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">entList</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get index for ent in entList</span>
 
@@ -1092,7 +1092,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getConjuncts">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getConjuncts">[docs]</a>
-  <span class="k">def</span> <span class="nf">getConjuncts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entList</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getConjuncts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entList</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get a list of conjuncts from entity list</span>
 
@@ -1124,7 +1124,7 @@
   <span class="c1"># @staticmethod</span>
 <div class="viewcode-block" id="WorkflowBase.collectSents">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.collectSents">[docs]</a>
-  <span class="k">def</span> <span class="nf">collectSents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">collectSents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    collect data of matched sentences that can be used for visualization</span>
 
@@ -1156,7 +1156,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.extract">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.extract">[docs]</a>
-  <span class="k">def</span> <span class="nf">extract</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sents</span><span class="p">,</span> <span class="n">predSynonyms</span><span class="o">=</span><span class="p">[],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">extract</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sents</span><span class="p">,</span> <span class="n">predSynonyms</span><span class="o">=</span><span class="p">[],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      General extraction method</span>
 
@@ -1195,7 +1195,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.bfs">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.bfs">[docs]</a>
-  <span class="k">def</span> <span class="nf">bfs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">bfs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">root</span><span class="p">,</span> <span class="n">deps</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Return first child of root (included) that matches</span>
 <span class="sd">      entType and dependency list by breadth first search.</span>
@@ -1229,7 +1229,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.findSubj">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findSubj">[docs]</a>
-  <span class="k">def</span> <span class="nf">findSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">passive</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">findSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">passive</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Find closest subject in predicates left subtree or</span>
 <span class="sd">      predicates parent&#39;s left subtree (recursive).</span>
@@ -1257,7 +1257,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.findObj">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.findObj">[docs]</a>
-  <span class="k">def</span> <span class="nf">findObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">findObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pred</span><span class="p">,</span> <span class="n">deps</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Find closest object in predicates right subtree.</span>
 <span class="sd">      Skip prepositional objects if the preposition is in exclude list.</span>
@@ -1281,7 +1281,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.isValidKeyword">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.isValidKeyword">[docs]</a>
-  <span class="k">def</span> <span class="nf">isValidKeyword</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">,</span> <span class="n">keywords</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">isValidKeyword</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">,</span> <span class="n">keywords</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 
 <span class="sd">      Args:</span>
@@ -1303,7 +1303,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getStatusForSubj">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getStatusForSubj">[docs]</a>
-  <span class="k">def</span> <span class="nf">getStatusForSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getStatusForSubj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get the status for nsubj/nsubjpass ent</span>
 
@@ -1388,7 +1388,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getStatusForObj">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getStatusForObj">[docs]</a>
-  <span class="k">def</span> <span class="nf">getStatusForObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getStatusForObj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Get the status for pobj/dobj ent</span>
 
@@ -1472,7 +1472,7 @@
 
 <div class="viewcode-block" id="WorkflowBase.getStatusForPobj">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowBase/index.html#src.dackar.workflows.WorkflowBase.WorkflowBase.getStatusForPobj">[docs]</a>
-  <span class="k">def</span> <span class="nf">getStatusForPobj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getStatusForPobj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Get the status for ent root pos ``pobj``</span>
 
 <span class="sd">      Args:</span>
