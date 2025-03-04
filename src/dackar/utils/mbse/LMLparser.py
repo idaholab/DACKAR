@@ -304,7 +304,7 @@ class LMLobject(object):
 
       mapping[index] = node[0]
       nodeInfo = node[0]
-      
+
       if len(nodeInfo)==2:
         if nodeInfo[0] == 'None':
           nodes['label'].append(nodeInfo[1])
@@ -317,7 +317,7 @@ class LMLobject(object):
         else:
           nodes['label'].append(nodeInfo[0])
           nodes['ID'].append(nodeInfo[1])
-        
+
         nodes['type'].append(node[1]['key'])
       else:
         nodes['label'].append('pipe')
@@ -335,8 +335,8 @@ class LMLobject(object):
     for index,edge in enumerate(NXedges):
       father = [key for key, val in mapping.items() if val == edge[0]][0]
       child  = [key for key, val in mapping.items() if val == edge[1]][0]
-      relationships['sourceNodeId'].append(father) 
-      relationships['targetNodeId'].append(child) 
+      relationships['sourceNodeId'].append(father)
+      relationships['targetNodeId'].append(child)
       relationships['type'].append(edge[2])
 
     relationships = pd.DataFrame(relationships)
@@ -355,7 +355,7 @@ def parseEntityDescription(text):
       text: str, text contained in the description node of the MBSE model
 
     Returns:
-    
+
         out: tuple, tuple containing the list of elements specified in square brackets and separated
         by commas (e.g., ['FV304,'305']) and the link to an external MBSE model
         (e.g., ('centrifugalPumpFull', 'body'))
