@@ -22,11 +22,11 @@ class AnomalyBase(BaseEstimator):
   def __init__(self, norm='robust'):
     """Constructor
     """
-    self.print_tag = type(self).__name__
-    self.is_fitted = False
-    self._features = None
-    self._targets = None
-    self._norm = norm
+    self.print_tag = type(self).__name__ # print Class name
+    self.is_fitted = False # True if the model is already fitted
+    self._features = None # User provided input data, reformatted into numpy array
+    self._targets = None # User provided output data, reformatted into numpy array, the purpose of this data is depended on the algorithm
+    self._norm = norm # type of normalization, either 'robust' or 'standard (z-score)'
     if norm is None:
       logger.info('Use standard scalar (z-score) to transform input data.')
       self._scalar = StandardScaler()
@@ -36,11 +36,11 @@ class AnomalyBase(BaseEstimator):
     else:
       logger.warning('Unrecognized value for param "norm", using default "RobustScalar"')
       self._scalar = RobustScaler()
-    self._meta = {}
-    self._xindex = None # store index for provided data
-    self._yindex = None
-    self._xcolumns = None
-    self._ycolumns = None
+    self._meta = {} # dictionary to store algorithm generated meta data
+    self._xindex = None # store index for provided input data
+    self._yindex = None # store index for provided output data
+    self._xcolumns = None # store column names for provided x data
+    self._ycolumns = None # store columns names for provided y data
 
   def reset(self):
     """reset

@@ -48,9 +48,9 @@ class MatrixProfile(AnomalyBase):
     if self._method == 'gpu':
       raise NotImplementedError('Method "gpu" is not implemented yet!')
     self._current_idx = [] # the index for the last entry of current matrix profile
-    self._norm_plot = True
-    self._compute_kdp = kdp
-    self._kdp = {}
+    self._norm_plot = True # Plot normalized data if True
+    self._compute_kdp = kdp # Compute KDP profile if True
+    self._kdp = {} # Dictionary to store KDP profile data
 
 
   def _fit(self, X, y=None):
