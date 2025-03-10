@@ -5,7 +5,7 @@ def binaryProfile(freqFact=None,
                   sigmaAnomaly=None,
                   ampAnomaly=None,
                   nullLoc=None, nullDur=None,
-                  offsetLoc=None, offsetDur=None, offsetVar=None,
+                  offsetVar=None,
                   impLoc=None,    impVal=None):
 
     t = np.linspace(0, 3, 500, endpoint=False)
@@ -28,8 +28,8 @@ def binaryProfile(freqFact=None,
     if nullLoc is not None:
         data[nullLoc:(nullLoc+nullDur)] = 0  
         
-    if offsetLoc is not None:
-        data[offsetLoc:(offsetLoc+offsetDur)] = data[offsetLoc:(offsetLoc+offsetDur)] + offsetVar
+    if offsetVar is not None:
+        data = data + offsetVar
 
     if impLoc is not None:
         data[impLoc] = data[impLoc] + impVal
