@@ -11,15 +11,9 @@ import pandas as pd
 import logging
 
 logger = logging.getLogger("my logger")
-
-# Create a handler
 c_handler = logging.StreamHandler()
-
-# link handler to logger
 logger.addHandler(c_handler)
-
-# Set logging level to the logger
-logger.setLevel(logging.DEBUG) # <-- THIS!
+logger.setLevel(logging.DEBUG) 
 
 class customMBSEobject(object):
     """
