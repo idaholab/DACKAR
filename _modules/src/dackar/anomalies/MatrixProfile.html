@@ -1,0 +1,365 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.anomalies.MatrixProfile &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.anomalies.MatrixProfile</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.anomalies.MatrixProfile</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">stumpy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">stumpy</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.AnomalyBase</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnomalyBase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.plotUtils</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_data</span><span class="p">,</span> <span class="n">plot_kdp</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="n">DASK_CLIENT_AVAIL</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="k">try</span><span class="p">:</span>
+  <span class="kn">from</span><span class="w"> </span><span class="nn">dask.distributed</span><span class="w"> </span><span class="kn">import</span> <span class="n">Client</span>
+<div class="viewcode-block" id="DASK_CLIENT_AVAIL">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.DASK_CLIENT_AVAIL">[docs]</a>
+  <span class="n">DASK_CLIENT_AVAIL</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+  <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s1">&#39;Importing dask.distributed.Client failed. Parallel calculation will not work!&#39;</span><span class="p">)</span>
+  <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Try to install &quot;pip install dask distributed&quot;&#39;</span><span class="p">)</span>
+
+
+
+<div class="viewcode-block" id="MatrixProfile">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MatrixProfile</span><span class="p">(</span><span class="n">AnomalyBase</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;_summary_</span>
+
+<span class="sd">  Args:</span>
+<span class="sd">      AnomalyBase (_type_): _description_</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="s1">&#39;robust&#39;</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;normal&#39;</span><span class="p">,</span> <span class="n">kdp</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">approx_percentage</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">sub_sequence_normalize</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">excl_zone_denom</span><span class="o">=</span><span class="mi">4</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Constructor</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">norm</span><span class="o">=</span><span class="n">normalize</span><span class="p">)</span>
+<div class="viewcode-block" id="MatrixProfile._m">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._m">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_m</span> <span class="o">=</span> <span class="n">m</span> <span class="c1"># size of slide window</span></div>
+
+<div class="viewcode-block" id="MatrixProfile._norm">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._norm">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_norm</span> <span class="o">=</span> <span class="n">normalize</span> <span class="c1"># perform normalization on times series</span></div>
+
+<div class="viewcode-block" id="MatrixProfile._sub_norm">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._sub_norm">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_sub_norm</span> <span class="o">=</span> <span class="n">sub_sequence_normalize</span> <span class="c1"># perform normalization on subsequence time series when calculuate matrix profile distance</span></div>
+
+    <span class="c1"># setup exclusion zone for stumpy: i +/- int(np.ceil(m/excl_zone_denom)), default excl_zone_denom = 4</span>
+    <span class="c1"># this can avoid nearby subsequences since they are likely highly similar</span>
+    <span class="c1"># the distance computed in the exclusion zone is set to np.inf before the matrix profile value is extracted</span>
+    <span class="k">if</span> <span class="n">excl_zone_denom</span> <span class="o">!=</span> <span class="mi">4</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">excl_zone_denom</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+      <span class="n">config</span><span class="o">.</span><span class="n">STUMPY_EXCL_ZONE_DENOM</span> <span class="o">=</span> <span class="n">excl_zone_denom</span>
+<div class="viewcode-block" id="MatrixProfile._mp">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._mp">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span> <span class="o">=</span> <span class="p">{}</span> <span class="c1"># store calculated matrix profile values</span></div>
+
+<div class="viewcode-block" id="MatrixProfile._avail_method">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._avail_method">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_avail_method</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;normal&#39;</span><span class="p">,</span> <span class="s1">&#39;parallel&#39;</span><span class="p">,</span> <span class="s1">&#39;approx&#39;</span><span class="p">,</span> <span class="s1">&#39;incremental&#39;</span><span class="p">,</span> <span class="s1">&#39;gpu&#39;</span><span class="p">]</span></div>
+
+    <span class="k">if</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_avail_method</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unrecognized calculation method: </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1">, please choose from </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_avail_method</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+<div class="viewcode-block" id="MatrixProfile._method">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._method">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="MatrixProfile._scrump_percentage">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._scrump_percentage">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_scrump_percentage</span> <span class="o">=</span> <span class="n">approx_percentage</span></div>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">==</span> <span class="s1">&#39;gpu&#39;</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Method &quot;gpu&quot; is not implemented yet!&#39;</span><span class="p">)</span>
+<div class="viewcode-block" id="MatrixProfile._current_idx">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._current_idx">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_current_idx</span> <span class="o">=</span> <span class="p">[]</span> <span class="c1"># the index for the last entry of current matrix profile</span></div>
+
+<div class="viewcode-block" id="MatrixProfile._norm_plot">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._norm_plot">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_norm_plot</span> <span class="o">=</span> <span class="kc">True</span> <span class="c1"># Plot normalized data if True</span></div>
+
+<div class="viewcode-block" id="MatrixProfile._compute_kdp">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._compute_kdp">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_compute_kdp</span> <span class="o">=</span> <span class="n">kdp</span> <span class="c1"># Compute KDP profile if True</span></div>
+
+<div class="viewcode-block" id="MatrixProfile._kdp">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._kdp">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_kdp</span> <span class="o">=</span> <span class="p">{}</span> <span class="c1"># Dictionary to store KDP profile data</span></div>
+
+
+
+<div class="viewcode-block" id="MatrixProfile._fit">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._fit">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">_fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;perform fitting</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        X (pandas.DataFrame): (n_time_steps, n_features)</span>
+<span class="sd">        y (pandas.DataFrame, optional): ignored, (n_time_steps, n_features). Defaults to None.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n_T</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">var</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_xcolumns</span><span class="p">):</span>
+      <span class="n">X_</span> <span class="o">=</span> <span class="n">X</span><span class="p">[:,</span><span class="n">i</span><span class="p">]</span>
+      <span class="k">if</span> <span class="n">y</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+          <span class="n">y_</span> <span class="o">=</span> <span class="n">y</span>
+        <span class="k">elif</span> <span class="n">y</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+          <span class="n">y_</span> <span class="o">=</span> <span class="n">y</span><span class="p">[:,</span><span class="n">i</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s1">&#39;Provided data and annotated data are not aligned! Please check your data.&#39;</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">y_</span> <span class="o">=</span> <span class="kc">None</span>
+
+      <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_mp</span><span class="p">(</span><span class="n">X_</span><span class="p">,</span> <span class="n">y_</span><span class="p">)</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_current_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">n_T</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_kdp</span><span class="p">:</span>
+      <span class="n">keys</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="p">)</span>
+      <span class="n">mps</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">P_</span> <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">]</span>
+      <span class="n">mps</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">mps</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+      <span class="n">kdps</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">mps</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+      <span class="n">kdps_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">argsort</span><span class="p">(</span><span class="n">mps</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+      <span class="n">kdps</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">kdps</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># flip, sort from max to min</span>
+      <span class="n">kdps_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">flip</span><span class="p">(</span><span class="n">kdps_idx</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+      <span class="n">colm</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">k</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s1">-DP&#39;</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">keys</span><span class="p">))]</span>
+      <span class="n">idx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xindex</span><span class="p">[:</span><span class="n">kdps</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_kdp</span><span class="p">[</span><span class="s1">&#39;kdp&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">kdps</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">idx</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">colm</span><span class="p">)</span> <span class="c1"># with dimension (time, variable)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_kdp</span><span class="p">[</span><span class="s1">&#39;idx&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">kdps_idx</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">idx</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">colm</span><span class="p">)</span>  <span class="c1"># with dimension (time, variable)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_kdp</span><span class="p">[</span><span class="s1">&#39;var&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">keys</span></div>
+
+
+
+
+<div class="viewcode-block" id="MatrixProfile._compute_mp">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._compute_mp">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">_compute_mp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X_</span><span class="p">,</span> <span class="n">y_</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;compute matrix profile</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        X_ (pandas.DataFrame): (n_time_steps, n_features)</span>
+<span class="sd">        y_ (pandas.DataFrame, optional): ignored, (n_time_steps, n_features). Defaults to None.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">_mp</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">==</span> <span class="s1">&#39;normal&#39;</span><span class="p">:</span>
+      <span class="n">_mp</span> <span class="o">=</span> <span class="n">stumpy</span><span class="o">.</span><span class="n">stump</span><span class="p">(</span><span class="n">T_A</span><span class="o">=</span><span class="n">X_</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_m</span><span class="p">,</span> <span class="n">T_B</span><span class="o">=</span><span class="n">y_</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_sub_norm</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">==</span> <span class="s1">&#39;parallel&#39;</span><span class="p">:</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">DASK_CLIENT_AVAIL</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s1">&#39;Dask is not available, please try to install Dask before use the distributed and parallel implementation&#39;</span><span class="p">)</span>
+      <span class="k">with</span> <span class="n">Client</span><span class="p">()</span> <span class="k">as</span> <span class="n">dask_client</span><span class="p">:</span>
+        <span class="n">_mp</span> <span class="o">=</span> <span class="n">stumpy</span><span class="o">.</span><span class="n">stumped</span><span class="p">(</span><span class="n">dask_client</span><span class="p">,</span> <span class="n">T_A</span><span class="o">=</span><span class="n">X_</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_m</span><span class="p">,</span> <span class="n">T_B</span><span class="o">=</span><span class="n">y_</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_sub_norm</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">==</span> <span class="s1">&#39;approx&#39;</span><span class="p">:</span>
+      <span class="n">_mp</span> <span class="o">=</span> <span class="n">stumpy</span><span class="o">.</span><span class="n">scrump</span><span class="p">(</span><span class="n">T_A</span><span class="o">=</span><span class="n">X_</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_m</span><span class="p">,</span> <span class="n">T_B</span><span class="o">=</span><span class="n">y_</span><span class="p">,</span> <span class="n">percentage</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scrump_percentage</span><span class="p">,</span> <span class="n">pre_scrump</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_sub_norm</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">==</span> <span class="s1">&#39;incremental&#39;</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">y_</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;The annotated time series will not be used for incremental calculation!&#39;</span><span class="p">)</span>
+      <span class="n">_mp</span> <span class="o">=</span> <span class="n">stumpy</span><span class="o">.</span><span class="n">stumpi</span><span class="p">(</span><span class="n">T</span><span class="o">=</span><span class="n">X_</span><span class="p">,</span> <span class="n">m</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_m</span><span class="p">,</span> <span class="n">egress</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">normalize</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_sub_norm</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">_mp</span></div>
+
+
+
+
+<div class="viewcode-block" id="MatrixProfile._evaluate">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile._evaluate">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">_evaluate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;perform evaluation</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        X_ (pandas.DataFrame): (n_time_steps, n_features)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_current_idx</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">_current_idx</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method</span> <span class="o">==</span> <span class="s1">&#39;incremental&#39;</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">var</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_xcolumns</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="p">[</span><span class="n">var</span><span class="p">]</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">X</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;Evaluate method is not implemented yet!&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MatrixProfile.plot">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile.plot">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">plot</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;plot data</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">X_transform</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_features</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_norm_plot</span><span class="p">:</span>
+      <span class="n">X_transform</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scalar</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_features</span><span class="p">)</span>
+      <span class="n">X_transform</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">X_transform</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_xindex</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_xcolumns</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">plot_data</span><span class="p">(</span><span class="n">X_transform</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="p">)</span> <span class="c1"># Input time series data should be stored in pandas.DataFrame</span></div>
+
+
+<div class="viewcode-block" id="MatrixProfile.plot_kdp">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile.plot_kdp">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">plot_kdp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;plot data</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">plot_kdp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kdp</span><span class="p">[</span><span class="s1">&#39;kdp&#39;</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="MatrixProfile.get_mp">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile.get_mp">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">get_mp</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;get matrix profile value</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">var</span><span class="p">,</span> <span class="n">_mp</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+      <span class="n">data</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">_mp</span><span class="o">.</span><span class="n">P_</span>
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="MatrixProfile.get_mp_index">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile.get_mp_index">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">get_mp_index</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;get matrix profile index</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">var</span><span class="p">,</span> <span class="n">_mp</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+      <span class="n">data</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">_mp</span><span class="o">.</span><span class="n">I_</span>
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="MatrixProfile.get_mp_left_index">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile.get_mp_left_index">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">get_mp_left_index</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;get left matrix profile index</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">var</span><span class="p">,</span> <span class="n">_mp</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+      <span class="n">data</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">_mp</span><span class="o">.</span><span class="n">left_I_</span>
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="MatrixProfile.get_mp_right_index">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/MatrixProfile/index.html#src.dackar.anomalies.MatrixProfile.MatrixProfile.get_mp_right_index">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">get_mp_right_index</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;get right matrix profile index</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">var</span><span class="p">,</span> <span class="n">_mp</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mp</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+      <span class="n">data</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">_mp</span><span class="o">.</span><span class="n">right_I_</span>
+    <span class="k">return</span> <span class="n">data</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
