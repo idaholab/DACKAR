@@ -243,6 +243,8 @@ class customMBSEobject(object):
 
             self.list_IDs, list, list of IDs specified in the MBSE model
         """  
+        self.nodes_df = self.nodes_df.replace('NAN', None)
+        self.edges_df = self.edges_df.replace('NAN', None)
         self.nodes_df.to_csv(nodes_file, index=False)
         self.edges_df.to_csv(edges_file, index=False)
 
