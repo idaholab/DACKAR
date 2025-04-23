@@ -39,8 +39,8 @@ class customMBSEobject(object):
         self.allowed_node_types = ['ENTITY']
         self.allowed_edge_types = ['LINK','COMPOSITION','SUPPORT'] # to be developed: 'opm_instance'
 
-        self.allowed_node_cols = ['label','ID','type','description']
-        self.allowed_edge_cols = ['sourceNodeId','targetNodeId','type','medium','description']
+        self.allowed_node_cols = ['label','ID','type']
+        self.allowed_edge_cols = ['sourceNodeId','targetNodeId','type','medium']
 
         self.parseFiles()
         self.checkNodes()
@@ -102,7 +102,7 @@ class customMBSEobject(object):
         # Check all columns are present
         cols = self.nodes_df.columns.tolist()
         if set(cols)!=set(self.allowed_node_cols):
-            raise IOError('Node file structure check - Error: wrong set of provided columns (allowed: nodeID, label, ID, type)')
+            raise IOError('Node file structure check - Error: wrong set of provided columns ' + str(cols) + ' (allowed: label, ID, type)')
         else:
              logger.info('Node file structure check - Pass')
 
