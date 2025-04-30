@@ -77,7 +77,6 @@ class PyGDS:
 
         try:
             response =self.__driver.run_cypher(query, params=params, database=database)
-            print(response)
         except Exception as e:
             logger.error("Query failed: %s", e)
 
@@ -102,7 +101,7 @@ class PyGDS:
         return graph, result
 
 
-    def load_dataframe(self, graph_name, nodes, relationships):
+    def load_dataframe(self, graph_name, nodes, relationships, write=False):
         """Constructing a graph from pandas.DataFrames
 
         Args:
@@ -135,6 +134,11 @@ class PyGDS:
         """
         graph = self.__driver.graph.construct(graph_name, nodes, relationships)
         self.__graph.append(graph)
+        # if write:
+            # self.__driver.graph.nodeProperties.write(graph,list(nodes['labels'].unique()))
+            # self.__driver.graph.relationship.write(graph,list(relationships['relationshipType'].unique()))
+            # self.__driver.graph.export(graph, dbName = self.__database)
+
         return graph
 
     def check(self):

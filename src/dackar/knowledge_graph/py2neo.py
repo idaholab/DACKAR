@@ -265,3 +265,53 @@ class Py2Neo:
         # result = [record.values() for record in result]
         return result
 
+    def load_dataframe_for_nodes(self, df, label, properties):
+        """Load pandas dataframe to create nodes
+
+        Args:
+            df (pandas.DataFrame): DataFrame for loading
+            label (str): node label
+            properties (list): node properties from the dataframe column names
+        """
+        assert set(properties).issubset(set(df.columns))
+        for _, row in df.iterrows():
+            query = f"""
+            MERGE (e:${label} {{ {', '.join([f'{k}: ${k}' for k in properties])} }});
+            """
+            self.query(query, parameters=row.to_dict())
+
+    # Load csv function to create relations
+    def load_dataframe_for_relations(self, df, l1='sourceLabel', p1='sourceNodeId', l2='targetLabel', p2='targetNodeId', lr='relationshipType', pr=None):
+        """Load dataframe to create node relations
+
+        Args:
+            df (pandas.DataFrame): DataFrame for relationships
+            l1 (str): first node label
+            p1 (str): first node ID
+            l2 (str): second node label
+            P2 (str): second node ID
+            lr (str): relationship label
+            pr (list, optional): of attributes for relation. Defaults to None.
+        """
+        # label (l1/l2), properties (p1/p2), and relation label (lr), relation properties (pr)
+
+        valid = [l1, p1, l2, p2, lr]
+
+        for _, row in df.iterrows():
+            if pr is not None:
+                valid.extend(pr)
+                assert set(valid).issubset(set(df.columns))
+                query = f"""
+                    MERGE (l1:${l1} {{ {f'{p1}:${p1}'} }})
+                    MERGE (l2:${l2} {{ {f'{p2}:${p2}'} }})
+                    MERGE (l1)-[r:${lr} {{ {', '.join([f'{k}: ${k}' for k in pr])} }} ]->(l2)
+                """
+
+            else:
+                assert set(valid).issubset(set(df.columns))
+                query = f"""
+                    MERGE (l1:${l1} {{ {f'{p1}:${p1}'} }})
+                    MERGE (l2:${l2} {{ {f'{p2}:${p2}'} }})
+                    MERGE (l1)-[r:${lr}]->(l2)
+                """
+            self.query(query, parameters=row.to_dict())
