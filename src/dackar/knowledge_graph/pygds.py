@@ -137,6 +137,7 @@ class PyGDS:
         # if write:
             # self.__driver.graph.nodeProperties.write(graph,list(nodes['labels'].unique()))
             # self.__driver.graph.relationship.write(graph,list(relationships['relationshipType'].unique()))
+            # Note: the export can only be used to write the data into a new database
             # self.__driver.graph.export(graph, dbName = self.__database)
 
         return graph

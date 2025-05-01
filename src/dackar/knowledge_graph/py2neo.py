@@ -229,7 +229,7 @@ class Py2Neo:
 
         try:
             session = self.__driver.session(database=db) if db is not None else self.__driver.session()
-            response = list(session.run(query, parameters))
+            response = list(session.run(query, **parameters))
         except Exception as e:
             print("Query failed:", e)
         finally:
@@ -265,20 +265,17 @@ class Py2Neo:
         # result = [record.values() for record in result]
         return result
 
-    def load_dataframe_for_nodes(self, df, label, properties):
+    def load_dataframe_for_nodes(self, df, labels, properties):
         """Load pandas dataframe to create nodes
 
         Args:
             df (pandas.DataFrame): DataFrame for loading
-            label (str): node label
+            labels (str): node label
             properties (list): node properties from the dataframe column names
         """
         assert set(properties).issubset(set(df.columns))
         for _, row in df.iterrows():
-            query = f"""
-            MERGE (e:${label} {{ {', '.join([f'{k}: ${k}' for k in properties])} }});
-            """
-            self.query(query, parameters=row.to_dict())
+            self.create_node(labels, row.to_dict())
 
     # Load csv function to create relations
     def load_dataframe_for_relations(self, df, l1='sourceLabel', p1='sourceNodeId', l2='targetLabel', p2='targetNodeId', lr='relationshipType', pr=None):
@@ -293,25 +290,26 @@ class Py2Neo:
             lr (str): relationship label
             pr (list, optional): of attributes for relation. Defaults to None.
         """
+        # FIXME: this function is not complete, it can generate duplicate nodes due to limited properties
+        # for nodes. Future development need to be performed.
         # label (l1/l2), properties (p1/p2), and relation label (lr), relation properties (pr)
+        valid = []
+        valid.extend([l1, l2, lr, p1, p2])
+        if pr is not None:
+            valid.extend(pr)
+        assert set(valid).issubset(set(df.columns))
 
-        valid = [l1, p1, l2, p2, lr]
+        with self.__driver.session() as session:
+            for _, row in df.iterrows():
+                l1_ = row[l1]
+                p1_ = {'nodeId': row[p1]}
+                l2_ = row[l2]
+                p2_ = {'nodeId': row[p2]}
+                lr_ = row[lr]
+                if pr is not None:
+                    pr_ = row[pr].to_dict()
+                else:
+                    pr_ = None
+                session.execute_write(self._create_relation, l1_, p1_, l2_, p2_, lr_, pr_)
 
-        for _, row in df.iterrows():
-            if pr is not None:
-                valid.extend(pr)
-                assert set(valid).issubset(set(df.columns))
-                query = f"""
-                    MERGE (l1:${l1} {{ {f'{p1}:${p1}'} }})
-                    MERGE (l2:${l2} {{ {f'{p2}:${p2}'} }})
-                    MERGE (l1)-[r:${lr} {{ {', '.join([f'{k}: ${k}' for k in pr])} }} ]->(l2)
-                """
 
-            else:
-                assert set(valid).issubset(set(df.columns))
-                query = f"""
-                    MERGE (l1:${l1} {{ {f'{p1}:${p1}'} }})
-                    MERGE (l2:${l2} {{ {f'{p2}:${p2}'} }})
-                    MERGE (l1)-[r:${lr}]->(l2)
-                """
-            self.query(query, parameters=row.to_dict())
