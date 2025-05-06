@@ -4,9 +4,14 @@ import math
 import numpy as np
 import copy
 # https://github.com/alvations/pywsd
-from pywsd.lesk import simple_lesk, original_lesk, cosine_lesk, adapted_lesk
-from pywsd import disambiguate
-from pywsd.similarity import max_similarity as maxsim
+
+from ..contrib.lazy import lazy_loader
+
+pywsd = lazy_loader.LazyLoader('pywsd', globals(), 'pywsd')
+
+# from pywsd.lesk import simple_lesk, original_lesk, cosine_lesk, adapted_lesk
+# from pywsd import disambiguate
+# from pywsd.similarity import max_similarity as maxsim
 
 import nltk
 from nltk import word_tokenize as tokenizer
@@ -327,7 +332,7 @@ def sentenceSenseDisambiguation(sentence, method='simple_lesk'):
   sense = []
   for p in pos:
     if method.lower() == 'simple_lesk':
-      sense.append(simple_lesk(sentence, p[0], pos=p[1][0].lower()))
+      sense.append(pywsd.simple_lesk(sentence, p[0], pos=p[1][0].lower()))
     else:
       raise NotImplementedError(f"Mehtod {method} not implemented yet!")
   return set(sense)
@@ -415,15 +420,15 @@ def wordSenseDisambiguation(word, sentence, senseMethod='simple_lesk', simMethod
   sense = []
   for p in pos:
     if method == 'simple_lesk':
-      sense.append(simple_lesk(sentence, p[0], pos=p[1][0].lower()))
+      sense.append(pywsd.simple_lesk(sentence, p[0], pos=p[1][0].lower()))
     elif method == 'original_lesk':
-      sense.append(original_lesk(sentence, p[0]))
+      sense.append(pywsd.original_lesk(sentence, p[0]))
     elif method == 'adapted_lesk':
-      sense.append(adapted_lesk(sentence, p[0], pos=p[1][0].lower()))
+      sense.append(pywsd.adapted_lesk(sentence, p[0], pos=p[1][0].lower()))
     elif method == 'cosine_lesk':
-      sense.append(cosine_lesk(sentence, p[0], pos=p[1][0].lower()))
+      sense.append(pywsd.cosine_lesk(sentence, p[0], pos=p[1][0].lower()))
     elif method == 'max_similarity':
-      sense.append(maxsim(sentence, p[0], pos=p[1][0].lower(), option=simMethod))
+      sense.append(pywsd.similarity.maxsim(sentence, p[0], pos=p[1][0].lower(), option=simMethod))
     else:
       raise NotImplementedError(f"Method {method} not implemented yet!")
   if isinstance(word, str):
@@ -461,15 +466,15 @@ def sentenceSenseDisambiguationPyWSD(sentence, senseMethod='simple_lesk', simMet
   if simMethod not in validSimMethod:
     raise ValueError(f'{simMethod} is not valid option, please try to use one of {validSimMethod}')
   if method == 'simple_lesk':
-    sentSense = disambiguate(sentence, simple_lesk, prefersNone=True, keepLemmas=True)
+    sentSense = pywsd.disambiguate(sentence, pywsd.simple_lesk, prefersNone=True, keepLemmas=True)
   elif method == 'original_lesk':
-    sentSense = disambiguate(sentence, original_lesk, prefersNone=True, keepLemmas=True)
+    sentSense = pywsd.disambiguate(sentence, pywsd.original_lesk, prefersNone=True, keepLemmas=True)
   elif method == 'adapted_lesk':
-    sentSense = disambiguate(sentence, adapted_lesk, prefersNone=True, keepLemmas=True)
+    sentSense = pywsd.disambiguate(sentence, pywsd.adapted_lesk, prefersNone=True, keepLemmas=True)
   elif method == 'cosine_lesk':
-    sentSense = disambiguate(sentence, cosine_lesk, prefersNone=True,  keepLemmas=True)
+    sentSense = pywsd.disambiguate(sentence, pywsd.cosine_lesk, prefersNone=True,  keepLemmas=True)
   elif method == 'max_similarity':
-    sentSense = disambiguate(sentence, maxsim, similarity_option=simMethod, prefersNone=True,  keepLemmas=True)
+    sentSense = pywsd.disambiguate(sentence, pywsd.similarity.maxsim, similarity_option=simMethod, prefersNone=True,  keepLemmas=True)
   # sentSense: a list of tuples, [(word, lemma, wn.synset/None)]
   wordList = list([syn[0] for syn in sentSense if syn[-1] is not None])
   synsetList = list([syn[-1] for syn in sentSense if syn[-1] is not None])
