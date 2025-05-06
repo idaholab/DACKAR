@@ -428,7 +428,7 @@ def wordSenseDisambiguation(word, sentence, senseMethod='simple_lesk', simMethod
     elif method == 'cosine_lesk':
       sense.append(pywsd.cosine_lesk(sentence, p[0], pos=p[1][0].lower()))
     elif method == 'max_similarity':
-      sense.append(pywsd.similarity.maxsim(sentence, p[0], pos=p[1][0].lower(), option=simMethod))
+      sense.append(pywsd.similarity.max_similarity(sentence, p[0], pos=p[1][0].lower(), option=simMethod))
     else:
       raise NotImplementedError(f"Method {method} not implemented yet!")
   if isinstance(word, str):
@@ -474,7 +474,7 @@ def sentenceSenseDisambiguationPyWSD(sentence, senseMethod='simple_lesk', simMet
   elif method == 'cosine_lesk':
     sentSense = pywsd.disambiguate(sentence, pywsd.cosine_lesk, prefersNone=True,  keepLemmas=True)
   elif method == 'max_similarity':
-    sentSense = pywsd.disambiguate(sentence, pywsd.similarity.maxsim, similarity_option=simMethod, prefersNone=True,  keepLemmas=True)
+    sentSense = pywsd.disambiguate(sentence, pywsd.similarity.max_similarity, similarity_option=simMethod, prefersNone=True,  keepLemmas=True)
   # sentSense: a list of tuples, [(word, lemma, wn.synset/None)]
   wordList = list([syn[0] for syn in sentSense if syn[-1] is not None])
   synsetList = list([syn[-1] for syn in sentSense if syn[-1] is not None])
