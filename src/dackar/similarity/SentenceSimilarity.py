@@ -9,14 +9,14 @@ import logging
 
 from . import simUtils
 
-log_format = "%(asctime)s %(message)s"
-logging.basicConfig(
-    filename="sentence_similarity_computing.log",
-    filemode="a",
-    level=logging.INFO,
-    format=log_format,
-    datefmt="%m/%d %I:%M:%S %p",
-)
+# log_format = "%(asctime)s %(message)s"
+# logging.basicConfig(
+#     filename="sentence_similarity_computing.log",
+#     filemode="a",
+#     level=logging.INFO,
+#     format=log_format,
+#     datefmt="%m/%d %I:%M:%S %p",
+# )
 logger = logging.getLogger("SentenceSimilarity")
 
 class SentenceSimilarity:
