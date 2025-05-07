@@ -60,9 +60,9 @@ def wordOrderSimilaritySentences(sentenceA, sentenceB):
 
       similarity: float, [0, 1], the computed word order similarity for given two sentences
   """
-  wordsA = tokenizer(sentenceA)
-  wordsB = tokenizer(sentenceB)
-  wordSet = list(set(wordsA).union(set(wordsB)))
+  wordsA = tokenizer(sentenceA.lower())
+  wordsB = tokenizer(sentenceB.lower())
+  wordSet = combineListsRemoveDuplicates(wordsA, wordsB)
   index = {word[1]: word[0] for word in enumerate(wordSet)}
   r1 = constructWordOrderVector(wordsA, wordSet, index)
   r2 = constructWordOrderVector(wordsB, wordSet, index)
@@ -113,9 +113,9 @@ def semanticSimilaritySentences(sentenceA, sentenceB, infoContentNorm):
 
       semSimilarity: float, [0, 1], the computed similarity for given two sentences
   """
-  wordsA = tokenizer(sentenceA)
-  wordsB = tokenizer(sentenceB)
-  wordSet = set(wordsA).union(set(wordsB))
+  wordsA = tokenizer(sentenceA.lower())
+  wordsB = tokenizer(sentenceB.lower())
+  wordSet = combineListsRemoveDuplicates(wordsA, wordsB)
   wordVectorA = constructSemanticVector(wordsA, wordSet, infoContentNorm)
   wordVectorB = constructSemanticVector(wordsB, wordSet, infoContentNorm)
 
@@ -608,3 +608,23 @@ def convertSentsToSynsets(sentList, info=None):
     sentSynsets.append(bestSyn)
   return sentSynsets
 
+def combineListsRemoveDuplicates(list1, list2):
+  """combine two lists and remove duplicates
+
+  Args:
+      list1 (list): the first list of words
+      list2 (list): the second list of words
+
+  Returns:
+      list: the combined list of words
+  """
+  combinedList = list1 + list2
+  seen = set()
+  result = []
+
+  for item in combinedList:
+      if item not in seen:
+          seen.add(item)
+          result.append(item)
+
+  return result
