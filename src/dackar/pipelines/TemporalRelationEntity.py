@@ -4,7 +4,7 @@ from spacy.language import Language
 import pandas as pd
 
 from ..utils.nlp.nlp_utils import generatePatternList
-# from .config import nlpConfig
+from ..config import nlpConfig
 
 import logging
 logger = logging.getLogger(__name__)
@@ -44,8 +44,7 @@ class TemporalRelationEntity(object):
     self.name = 'temporal_relation_entity'
     if patterns is None:
       # update to use config file instead
-      # filename = nlpConfig['files']['time_relation_file']
-      filename = '~/projects/raven/plugins/SR2ML/src/nlp/data/time_relation_keywords.csv'
+      filename = nlpConfig['files']['time_relation_file']
       entLists = pd.read_csv(filename, header=0)
       orderList = entLists['order'].dropna().values.ravel().tolist()
       reverseOrderList = entLists['reverse-order'].dropna().values.ravel().tolist()

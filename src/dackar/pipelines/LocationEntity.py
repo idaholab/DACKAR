@@ -4,6 +4,7 @@ from spacy.language import Language
 import pandas as pd
 
 from ..utils.nlp.nlp_utils import generatePatternList
+from ..config import nlpConfig
 
 import logging
 logger = logging.getLogger(__name__)
@@ -43,8 +44,7 @@ class LocationEntity(object):
     self.name = 'location_entity'
     if patterns is None:
       # update to use config file instead
-      # filename = nlpConfig['files']['location_file']
-      filename = '~/projects/raven/plugins/SR2ML/src/nlp/data/location_keywords.csv'
+      filename = nlpConfig['files']['location_file']
       entLists = pd.read_csv(filename, header=0)
       proxList = entLists['proximity'].dropna().values.ravel().tolist()
       upList = entLists['up'].dropna().values.ravel().tolist()

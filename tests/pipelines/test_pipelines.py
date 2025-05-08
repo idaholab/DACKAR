@@ -79,17 +79,20 @@ class TestPipelines:
     assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', 'E08D-34r', 'A218']
 
 
-  # def test_location_entity(self, nlp_obj):
-  #   patterns = {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}
-  #   matcher = LocationEntity(nlp_obj, patterns)
-  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
-  #   updated_doc = matcher(doc)
-  #   ents = self.get_entity(updated_doc, label='conjecture')
-  #   assert ents == ['seems']
+  def test_location_entity(self, nlp_obj):
+    patterns = {'label': 'location', 'pattern': [{'LOWER': 'nearby'}], 'id': 'location'}
+    matcher = LocationEntity(nlp_obj, patterns)
+    doc = nlp_obj("The oil is found nearby the pump motor.")
+    updated_doc = matcher(doc)
+    ents = self.get_entity(updated_doc, label='location')
+    assert ents == ['nearby']
 
-  # def test_location_entity_pipeline(self, nlp_obj):
-  #   patterns = {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}
-  #   nlp_obj.add_pipe('conjecture_entity', config={"patterns":patterns})
-  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
-  #   ents = self.get_entity(doc, label='conjecture')
-  #   assert ents == ['seems']
+  def test_location_entity_pipeline(self, nlp_obj):
+    nlp_obj.add_pipe('location_entity')
+    doc = nlp_obj("The oil is found nearby the pump motor. The condenser is behind the pump. The debris is found on top of the rotor")
+    ent_proximity = self.get_entity(doc, label='location_proximity')
+    ent_up = self.get_entity(doc, label='location_up')
+    ent_down = self.get_entity(doc, label='location_down')
+    assert ent_proximity == ['nearby']
+    assert ent_up == ['on top of']
+    assert ent_down == ['behind']

@@ -3,7 +3,7 @@
 from spacy.language import Language
 
 from ..utils.nlp.CreatePatterns import CreatePatterns
-# from .config import nlpConfig
+from ..config import nlpConfig
 
 import logging
 logger = logging.getLogger(__name__)
