@@ -113,3 +113,24 @@ class TestPipelines:
     entDATE = self.get_entity(doc, label='DATE')
     assert ents == ['about']
     assert entDATE == ['twenty-nine years old', 'almost twice a week']
+
+  def test_temporal_entity(self, nlp_obj):
+    matcher = Temporal(nlp_obj)
+    content = """The event is scheduled for 25th August 2023.
+                We also have a meeting on 10 September and another one on the twelfth of October and a final one on January fourth.
+                yesterday afternoon, before 2022, after 12/2024."""
+    doc = nlp_obj(content)
+    updated_doc = matcher(doc)
+    ents = self.get_entity(updated_doc, label='Temporal')
+    print(ents)
+    assert ents == ['25th August 2023', 'on 10 September', 'October', 'on January fourth', 'yesterday afternoon', 'before 2022', 'after 12/2024']
+
+  def test_temporal_entity_pipeline(self, nlp_obj):
+    nlp_obj.add_pipe('Temporal')
+    content = """The event is scheduled for 25th August 2023.
+            We also have a meeting on 10 September and another one on the twelfth of October and a final one on January fourth.
+            yesterday afternoon, before 2022, after 12/2024."""
+    doc = nlp_obj(content)
+    ents = self.get_entity(doc, label='Temporal')
+    assert ents == ['25th August 2023', 'on 10 September', 'October', 'on January fourth', 'yesterday afternoon', 'before 2022', 'after 12/2024']
+
