@@ -78,7 +78,6 @@ class TestPipelines:
     assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106']
     assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', 'E08D-34r', 'A218']
 
-
   def test_location_entity(self, nlp_obj):
     patterns = {'label': 'location', 'pattern': [{'LOWER': 'nearby'}], 'id': 'location'}
     matcher = LocationEntity(nlp_obj, patterns)
@@ -96,3 +95,21 @@ class TestPipelines:
     assert ent_proximity == ['nearby']
     assert ent_up == ['on top of']
     assert ent_down == ['behind']
+
+  def test_temporal_attribute_entity(self, nlp_obj):
+    patterns = {'label': 'temporal_attribute', 'pattern': [{'LOWER': 'approximately'}], 'id': 'temporal_attribute'}
+    matcher = TemporalAttributeEntity(nlp_obj, patterns)
+    doc = nlp_obj("It is approximately 5pm.")
+    updated_doc = matcher(doc)
+    ents = self.get_entity(updated_doc, label='temporal_attribute')
+    entTIME = self.get_entity(updated_doc, label='TIME')
+    assert ents == []
+    assert entTIME == ['approximately 5pm']
+
+  def test_temporal_attribute_entity_pipeline(self, nlp_obj):
+    nlp_obj.add_pipe('temporal_attribute_entity')
+    doc = nlp_obj("The valve is about a twenty-nine years old. The event occurred almost twice a week")
+    ents = self.get_entity(doc, label='temporal_attribute')
+    entDATE = self.get_entity(doc, label='DATE')
+    assert ents == ['about']
+    assert entDATE == ['twenty-nine years old', 'almost twice a week']
