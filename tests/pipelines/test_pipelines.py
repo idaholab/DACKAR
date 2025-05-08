@@ -43,6 +43,12 @@ class TestPipelines:
     ents = self.get_entity(doc, label='conjecture')
     assert ents == ['seems']
 
+  def test_conjecture_entity_no_pattern_pipeline(self, nlp_obj):
+    nlp_obj.add_pipe('conjecture_entity')
+    doc = nlp_obj("Vibration is unlikely coming from the shaft.")
+    ents = self.get_entity(doc, label='conjecture')
+    assert ents == ['unlikely']
+
   def test_emergent_activity_entity(self, nlp_obj):
     matcher = EmergentActivity(nlp_obj)
     content = """ wo101 wo 102  wo# 103 , wo#104 or wo #105 wo # 106 or a 107 wrong wo .
@@ -72,3 +78,18 @@ class TestPipelines:
     assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106']
     assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', 'E08D-34r', 'A218']
 
+
+  # def test_location_entity(self, nlp_obj):
+  #   patterns = {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}
+  #   matcher = LocationEntity(nlp_obj, patterns)
+  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
+  #   updated_doc = matcher(doc)
+  #   ents = self.get_entity(updated_doc, label='conjecture')
+  #   assert ents == ['seems']
+
+  # def test_location_entity_pipeline(self, nlp_obj):
+  #   patterns = {'label': 'location', 'pattern': [{'LOWER': 'follow'}], 'id': 'location'}
+  #   nlp_obj.add_pipe('conjecture_entity', config={"patterns":patterns})
+  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
+  #   ents = self.get_entity(doc, label='conjecture')
+  #   assert ents == ['seems']
