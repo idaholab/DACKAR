@@ -8,7 +8,7 @@ from dackar.pipelines.TemporalAttributeEntity import TemporalAttributeEntity
 from dackar.pipelines.TemporalEntity import Temporal
 from dackar.pipelines.TemporalRelationEntity import TemporalRelationEntity
 from dackar.pipelines.UnitEntity import UnitEntity
-from dackar.utils.nlp.nlp_utils import resetPipeline
+# from dackar.utils.nlp.nlp_utils import resetPipeline
 
 import spacy
 import pytest
@@ -164,7 +164,7 @@ class TestPipelines:
   def test_unit_entity(self, nlp_obj):
     matcher = UnitEntity(nlp_obj)
     content = """I want a gallon of beer.
-              The LHC smashes proton beams at 12.8–13.0 TeV,
+              The LHC smashes proton beams at 12.8-13.0 TeV,
               The LHC smashes proton beams at 12.9±0.1 TeV.
               Sound travels at 0.34 km/s,
               I want 2 liters of wine.
@@ -174,12 +174,12 @@ class TestPipelines:
     doc = nlp_obj(content)
     updated_doc = matcher(doc)
     ents = self.get_entity(updated_doc, label='unit')
-    assert ents == ['a gallon', '12.8–13.0 TeV', '12.9±0.1 TeV.', '0.34 km/s', '2 liters', '20 pounds', '5.5x10-3 kg/cm³', '10e9 GW']
+    assert ents == ['a gallon', '12.8-13.0 TeV', '12.9±0.1 TeV.', '0.34 km/s', '2 liters', '20 pounds', '5.5x10-3 kg/cm³', '10e9 GW']
 
   def test_unit_entity_pipeline(self, nlp_obj):
     nlp_obj.add_pipe('unit_entity')
     content = """I want a gallon of beer.
-              The LHC smashes proton beams at 12.8–13.0 TeV,
+              The LHC smashes proton beams at 12.8-13.0 TeV,
               The LHC smashes proton beams at 12.9±0.1 TeV.
               Sound travels at 0.34 km/s,
               I want 2 liters of wine.
@@ -188,5 +188,37 @@ class TestPipelines:
               Gimme 10e9 GW now!"""
     doc = nlp_obj(content)
     ents = self.get_entity(doc, label='unit')
-    assert ents == ['a gallon', '12.8–13.0 TeV', '12.9±0.1 TeV.', '0.34 km/s', '2 liters', '20 pounds', '5.5x10-3 kg/cm³', '10e9 GW']
+    assert ents == ['a gallon', '12.8-13.0 TeV', '12.9±0.1 TeV.', '0.34 km/s', '2 liters', '20 pounds', '5.5x10-3 kg/cm³', '10e9 GW']
 
+  def test_simple_entity(self, nlp_obj):
+    patterns = [[{"LOWER": "safety"}, {"LOWER": "cage"}],[{"LOWER": "shaft"}],[{"LOWER": "pump"}]]
+    content = """The shaft deflection is causing the safety cage to rattle.
+              Pump not experiencing enough flow during test. Shaft made noise.
+              Vibration seems like it is coming from the shaft."""
+    matcher = SimpleEntityMatcher(nlp_obj,label='simple', patterns=patterns)
+    doc = nlp_obj(content)
+    updated_doc = matcher(doc)
+    ents = self.get_entity(updated_doc, label='simple')
+    assert ents == ['shaft', 'safety cage', 'Pump', 'Shaft', 'shaft']
+
+  # def test_simple_entity_pipeline(self, nlp_obj):
+  #   patterns = {'label': 'conjecture', 'pattern': [{'LOWER': 'seems'}], 'id': 'conjecture'}
+  #   nlp_obj.add_pipe('conjecture_entity', config={"patterns":patterns})
+  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
+  #   ents = self.get_entity(doc, label='conjecture')
+  #   assert ents == ['seems']
+
+  # def test_conjecture_entity(self, nlp_obj):
+  #   patterns = {'label': 'conjecture', 'pattern': [{'LOWER': 'seems'}], 'id': 'conjecture'}
+  #   matcher = ConjectureEntity(nlp_obj, patterns)
+  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
+  #   updated_doc = matcher(doc)
+  #   ents = self.get_entity(updated_doc, label='conjecture')
+  #   assert ents == ['seems']
+
+  # def test_conjecture_entity_pipeline(self, nlp_obj):
+  #   patterns = {'label': 'conjecture', 'pattern': [{'LOWER': 'seems'}], 'id': 'conjecture'}
+  #   nlp_obj.add_pipe('conjecture_entity', config={"patterns":patterns})
+  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
+  #   ents = self.get_entity(doc, label='conjecture')
+  #   assert ents == ['seems']

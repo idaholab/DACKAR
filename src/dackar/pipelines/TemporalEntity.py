@@ -195,7 +195,7 @@ class Temporal(object):
         [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "?"}, {"LEMMA": {"in": terms3}, "OP": "?"}, {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"}, {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "+"}]
       ]
 
-    self.matcher = SimpleEntityMatcher(nlp, label='Temporal', terms=pattern)
+    self.matcher = SimpleEntityMatcher(nlp, label='Temporal', patterns=pattern)
     self.asSpan = True
 
 
