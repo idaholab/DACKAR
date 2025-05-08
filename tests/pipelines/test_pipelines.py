@@ -160,3 +160,33 @@ class TestPipelines:
     assert ent == ['earlier']
     assert ent_reverse == ['following']
     assert ent_con == ['along']
+
+  def test_unit_entity(self, nlp_obj):
+    matcher = UnitEntity(nlp_obj)
+    content = """I want a gallon of beer.
+              The LHC smashes proton beams at 12.8–13.0 TeV,
+              The LHC smashes proton beams at 12.9±0.1 TeV.
+              Sound travels at 0.34 km/s,
+              I want 2 liters of wine.
+              I spent 20 pounds on this!
+              The average density of the Earth is about 5.5x10-3 kg/cm³,
+              Gimme 10e9 GW now!"""
+    doc = nlp_obj(content)
+    updated_doc = matcher(doc)
+    ents = self.get_entity(updated_doc, label='unit')
+    assert ents == ['a gallon', '12.8–13.0 TeV', '12.9±0.1 TeV.', '0.34 km/s', '2 liters', '20 pounds', '5.5x10-3 kg/cm³', '10e9 GW']
+
+  def test_unit_entity_pipeline(self, nlp_obj):
+    nlp_obj.add_pipe('unit_entity')
+    content = """I want a gallon of beer.
+              The LHC smashes proton beams at 12.8–13.0 TeV,
+              The LHC smashes proton beams at 12.9±0.1 TeV.
+              Sound travels at 0.34 km/s,
+              I want 2 liters of wine.
+              I spent 20 pounds on this!
+              The average density of the Earth is about 5.5x10-3 kg/cm³,
+              Gimme 10e9 GW now!"""
+    doc = nlp_obj(content)
+    ents = self.get_entity(doc, label='unit')
+    assert ents == ['a gallon', '12.8–13.0 TeV', '12.9±0.1 TeV.', '0.34 km/s', '2 liters', '20 pounds', '5.5x10-3 kg/cm³', '10e9 GW']
+
