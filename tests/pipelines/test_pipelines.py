@@ -134,3 +134,29 @@ class TestPipelines:
     ents = self.get_entity(doc, label='Temporal')
     assert ents == ['25th August 2023', 'on 10 September', 'October', 'on January fourth', 'yesterday afternoon', 'before 2022', 'after 12/2024']
 
+  def test_temporal_relation_entity(self, nlp_obj):
+    matcher = TemporalRelationEntity(nlp_obj)
+    content = """The system failed following the pump failure.
+              The pump stopped earlier than the shutoff of the system.
+              The pump failed along the broke of pipe."""
+    doc = nlp_obj(content)
+    updated_doc = matcher(doc)
+    ent_reverse = self.get_entity(updated_doc, label='temporal_relation_reverse_order')
+    ent = self.get_entity(updated_doc, label='temporal_relation_order')
+    ent_con = self.get_entity(updated_doc, label='temporal_relation_concurrency')
+    assert ent == ['earlier']
+    assert ent_reverse == ['following']
+    assert ent_con == ['along']
+
+  def test_temporal_relation_entity_pipeline(self, nlp_obj):
+    nlp_obj.add_pipe('temporal_relation_entity')
+    content = """The system failed following the pump failure.
+              The pump stopped earlier than the shutoff of the system.
+              The pump failed along the broke of pipe."""
+    doc = nlp_obj(content)
+    ent_reverse = self.get_entity(doc, label='temporal_relation_reverse_order')
+    ent = self.get_entity(doc, label='temporal_relation_order')
+    ent_con = self.get_entity(doc, label='temporal_relation_concurrency')
+    assert ent == ['earlier']
+    assert ent_reverse == ['following']
+    assert ent_con == ['along']
