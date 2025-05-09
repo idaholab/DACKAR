@@ -229,3 +229,26 @@ class TestPipelines:
     doc = nlp_obj(content)
     ents = self.get_entity(doc, label='phrase')
     assert ents == ['shaft', 'safety cage', 'Pump']
+
+  def test_general_entity(self, nlp_obj):
+    patterns = [{'label': 'general', 'pattern': [{'LOWER': 'shaft'}], 'id': 'general'}, {'label': 'other', 'pattern': [{'LOWER': 'pump'}], 'id': 'other'}]
+    matcher = GeneralEntity(nlp_obj, patterns=patterns)
+    content = """The shaft deflection is causing the safety cage to rattle.
+              Pump not experiencing enough flow during test."""
+    doc = nlp_obj(content)
+    updated_doc = matcher(doc)
+    ents_general = self.get_entity(updated_doc, label='general')
+    ents_other = self.get_entity(updated_doc, label='other')
+    assert ents_general == ['shaft']
+    assert ents_other == ['Pump']
+
+  def test_general_entity_pipeline(self, nlp_obj):
+    patterns = {"patterns":[{'label': 'general', 'pattern': [{'LOWER': 'shaft'}], 'id': 'general'}, {'label': 'other', 'pattern': [{'LOWER': 'pump'}], 'id': 'other'}]}
+    nlp_obj.add_pipe('general_entity', config=patterns)
+    content = """The shaft deflection is causing the safety cage to rattle.
+              Pump not experiencing enough flow during test."""
+    doc = nlp_obj(content)
+    ents_general = self.get_entity(doc, label='general')
+    ents_other = self.get_entity(doc, label='other')
+    assert ents_general == ['shaft']
+    assert ents_other == ['Pump']
