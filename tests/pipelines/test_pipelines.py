@@ -201,12 +201,15 @@ class TestPipelines:
     ents = self.get_entity(updated_doc, label='simple')
     assert ents == ['shaft', 'safety cage', 'Pump', 'Shaft', 'shaft']
 
-  # def test_simple_entity_pipeline(self, nlp_obj):
-  #   patterns = {'label': 'conjecture', 'pattern': [{'LOWER': 'seems'}], 'id': 'conjecture'}
-  #   nlp_obj.add_pipe('conjecture_entity', config={"patterns":patterns})
-  #   doc = nlp_obj("Vibration seems like it is coming from the shaft.")
-  #   ents = self.get_entity(doc, label='conjecture')
-  #   assert ents == ['seems']
+  def test_simple_entity_pipeline(self, nlp_obj):
+    patterns = [[{"LOWER": "safety"}, {"LOWER": "cage"}],[{"LOWER": "shaft"}],[{"LOWER": "pump"}]]
+    nlp_obj.add_pipe('simple_entity_matcher', config={"label":"simple","patterns":patterns})
+    content = """The shaft deflection is causing the safety cage to rattle.
+            Pump not experiencing enough flow during test. Shaft made noise.
+            Vibration seems like it is coming from the shaft."""
+    doc = nlp_obj(content)
+    ents = self.get_entity(doc, label='simple')
+    assert ents == ['shaft', 'safety cage', 'Pump', 'Shaft', 'shaft']
 
   # def test_conjecture_entity(self, nlp_obj):
   #   patterns = {'label': 'conjecture', 'pattern': [{'LOWER': 'seems'}], 'id': 'conjecture'}
