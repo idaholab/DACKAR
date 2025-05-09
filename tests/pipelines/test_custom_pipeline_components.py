@@ -1,13 +1,12 @@
 from dackar.pipelines.CustomPipelineComponents import aliasResolver
-from dackar.pipelines.CustomPipelineComponents import normEntities
-from dackar.pipelines.CustomPipelineComponents import anaphorCoref
-from dackar.pipelines.CustomPipelineComponents import anaphorEntCoref
-from dackar.pipelines.CustomPipelineComponents import expandEntities
-from dackar.pipelines.CustomPipelineComponents import mergeEntitiesWithSameID
-from dackar.pipelines.CustomPipelineComponents import mergePhrase
-from dackar.pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
+# from dackar.pipelines.CustomPipelineComponents import normEntities
+# from dackar.pipelines.CustomPipelineComponents import anaphorCoref
+# from dackar.pipelines.CustomPipelineComponents import anaphorEntCoref
+# from dackar.pipelines.CustomPipelineComponents import expandEntities
+# from dackar.pipelines.CustomPipelineComponents import mergeEntitiesWithSameID
+# from dackar.pipelines.CustomPipelineComponents import mergePhrase
+# from dackar.pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 
-from dackar.utils.nlp.nlp_utils import resetPipeline
 from dackar.utils.nlp.nlp_utils import generatePatternList
 from dackar.pipelines.GeneralEntity import GeneralEntity
 
