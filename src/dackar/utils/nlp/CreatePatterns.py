@@ -5,6 +5,7 @@ import spacy
 import pandas as pd
 
 from .nlp_utils import generatePatternList
+from ...config import nlpConfig
 
 
 class CreatePatterns(object):
@@ -21,7 +22,8 @@ class CreatePatterns(object):
       self.id = entID
     self.entities = self.readFile()
     if nlp is None:
-      self.nlp = spacy.load("en_core_web_lg", exclude=[])
+      language = nlpConfig['params']['spacy_language_pipeline']
+      self.nlp = spacy.load(language, exclude=[])
     else:
       self.nlp = nlp
     self.patterns = self.generatePatterns()
