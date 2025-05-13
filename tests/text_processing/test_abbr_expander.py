@@ -1,10 +1,11 @@
 from dackar.text_processing.AbbrExpander import AbbrExpander
+from dackar.config import nlpConfig
 import os
 
 
 class TestAbbrExpander:
 
-  abbreviation_file = os.path.join(os.getcwd(), os.pardir, os.pardir, 'data', 'abbreviations.xlsx')
+  abbreviation_file = nlpConfig['files']['abbreviation_file']
   abbreviation = AbbrExpander(abbreviation_file)
   content = """Perf ann sens calib of cyl.
         High conc of hydrogen obs.
