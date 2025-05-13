@@ -5,6 +5,8 @@ Created on October, 2022
 @author: mandd, wangc
 """
 import re
+import itertools
+import numpy as np
 import spacy
 from spacy.vocab import Vocab
 import logging
@@ -14,26 +16,22 @@ logger = logging.getLogger(__name__)
 try:
   from contextualSpellCheck.contextualSpellCheck import ContextualSpellCheck
 except ModuleNotFoundError as error:
-  logger.error("Unable to import contextualSpellCheck", error)
+  logger.error(f"Unable to import contextualSpellCheck: {error}")
   logger.info("Please try to install it via: 'pip install contextualSpellCheck'")
 try:
   import autocorrect
 except ModuleNotFoundError as error:
-  logger.error("Unable to import autocorrect", error)
+  logger.error(f"Unable to import autocorrect: {error}")
   logger.info("Please try to install it via: 'pip install autocorrect'")
 try:
   from spellchecker import SpellChecker as PySpellChecker
 except ModuleNotFoundError as error:
-  logger.error("Unable to import spellchecker", error)
+  logger.error(f"Unable to import spellchecker: {error}")
   logger.info("Please try to install it via: 'pip install spellchecker'")
 
-import itertools
-import os
-import numpy as np
 
 from ..similarity.simUtils import wordsSimilarity
 from ..config import nlpConfig
-
 
 class SpellChecker(object):
   """
