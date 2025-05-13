@@ -179,10 +179,10 @@ class entityLibrary():
           entity.append(elem.replace('-',' '))
           category.append(key)
           alias.append(elem)
-        else:
-          entity.append(elem)
-          category.append(key)
-          alias.append(elem)
+
+        entity.append(elem)
+        category.append(key)
+        alias.append(elem)
         
 
     library_dict = {'entity'   : entity,
@@ -194,7 +194,7 @@ class entityLibrary():
   def searchEntityInfo(self, entity):
     if entity in self.library_df['entity'].to_list():
       row = self.library_df[self.library_df['entity']==entity]
-      return (row['alias'].to_list()[0] , row['category'].to_list())
+      return (row['alias'].to_list()[0] , list(set(row['category'].to_list())))
     else:
       print('The entity "' + str(entity) + '" is not part of the entitylibrary')
       return (entity, '')
