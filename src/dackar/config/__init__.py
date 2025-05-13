@@ -24,10 +24,17 @@ def getConfig(configFileName):
   return config
 
 # get the config dictionary
-nlpConfig = getConfig(configFileName)
 nlpConfigDefault = getConfig(configDefault)
+nlpConfig = getConfig(configFileName)
+
 # update the config dictionary with default config
 for file in nlpConfigDefault['files']:
   if file not in nlpConfig['files']:
     nlpConfig['files'].update({file: nlpConfigDefault['files'][file]})
 
+if 'params' not in nlpConfig:
+  nlpConfig['params'] = nlpConfigDefault['params']
+else:
+  for p in nlpConfigDefault['params']:
+    if p not in nlpConfig['params']:
+      nlpConfig['params'].update({p:nlpConfigDefault['params'][p]})
