@@ -20,9 +20,9 @@ def getOnlyWords(s):
       string with only the words
   """
   # [-A-Za-z0-9#]+ pattern for any combinations "-", "A-Z", "a-z", "0-9", "#" and "/"
-  l = re.split("([-A-Za-z0-9#/%]+)", s)
+  l = re.split(r"([-A-Za-z0-9#/%]+)", s)
   # only remove strings that contain "-" or numbers
-  return "".join([x for x in l if not re.search("[-0-9]+",x)])
+  return "".join([x for x in l if not re.search(r"[-0-9]+",x)])
 
 def getShortAcronym(s):
   """
