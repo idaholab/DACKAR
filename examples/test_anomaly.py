@@ -3,8 +3,7 @@ import pandas as pd
 import os
 import sys
 
-# cwd = os.getcwd()
-cwd = '/Users/wangc/projects/DACKAR/examples'
+cwd = os.getcwd()
 
 frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, 'src'))
 sys.path.append(frameworkDir)

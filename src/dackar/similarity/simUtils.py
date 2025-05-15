@@ -9,10 +9,6 @@ from ..contrib.lazy import lazy_loader
 
 pywsd = lazy_loader.LazyLoader('pywsd', globals(), 'pywsd')
 
-# from pywsd.lesk import simple_lesk, original_lesk, cosine_lesk, adapted_lesk
-# from pywsd import disambiguate
-# from pywsd.similarity import max_similarity as maxsim
-
 import nltk
 from nltk import word_tokenize as tokenizer
 from nltk.corpus import brown
