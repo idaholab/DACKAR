@@ -36,8 +36,8 @@ class customMBSEobject(object):
         self.edges_filename = edges_filename
         self.list_IDs = []
 
-        self.allowed_node_types = ['ENTITY']
-        self.allowed_edge_types = ['LINK','COMPOSITION','SUPPORT'] # to be developed: 'opm_instance'
+        self.allowed_node_types = ['entity']
+        self.allowed_edge_types = ['link','composition','support'] # to be developed: 'opm_instance'
 
         self.allowed_node_cols = ['label','ID','type']
         self.allowed_edge_cols = ['sourceNodeId','targetNodeId','type','medium']
@@ -45,6 +45,14 @@ class customMBSEobject(object):
         self.parseFiles()
         self.checkNodes()
         self.checkEdges()
+
+        nodes_file_split =  self.nodes_filename.split('.')
+        nodes_file_kg = nodes_file_split[0] + '_kg.' + nodes_file_split[1]
+
+        edges_file_split =  self.edges_filename.split('.')
+        edges_file_kg = edges_file_split[0] + '_kg.' + edges_file_split[1]
+
+        self.printOnFiles(nodes_file_kg,edges_file_kg)
     
     def checkModel(self):
         """
@@ -76,14 +84,14 @@ class customMBSEobject(object):
         # parse nodes
         self.nodes_df = pd.read_csv(self.nodes_filename, sep=',', skip_blank_lines=True, dtype=str)
         self.nodes_df.dropna(how='all', inplace=True)
-        self.nodes_df = self.nodes_df.apply(lambda x: x.astype(str).str.upper())
+        self.nodes_df = self.nodes_df.apply(lambda x: x.astype(str).str.lower())
 
         self.list_IDs = self.nodes_df['ID'].dropna().to_list()
         
         # parse edges
         self.edges_df = pd.read_csv(self.edges_filename, sep=',', skip_blank_lines=True, dtype=str)
         self.edges_df.dropna(how='all', inplace=True)
-        self.edges_df = self.edges_df.apply(lambda x: x.astype(str).str.upper())
+        self.edges_df = self.edges_df.apply(lambda x: x.astype(str).str.lower())
 
 
     def checkNodes(self):
@@ -180,8 +188,9 @@ class customMBSEobject(object):
                 logger.info(row)
                 raise IOError('Edge ' + str(index) + ' in edge file: Error - link does not have a medium specified')
 
-            if row['type']=='support' and not pd.isnull(row['medium']):
-                logger.info(row)
+            if row['type']=='support' and row['medium']!='nan':
+                logger.info(row['medium'])
+                logger.info(type(row['medium']))
                 raise IOError('Edge ' + str(index) + ' in edge file: Error - support does not support medium keyword; specified:' +str(row['medium']))
 
         # check that entities in the node file have been mentioned in edge file
@@ -243,8 +252,7 @@ class customMBSEobject(object):
 
             self.list_IDs, list, list of IDs specified in the MBSE model
         """  
-        self.nodes_df = self.nodes_df.replace('NAN', None)
-        self.edges_df = self.edges_df.replace('NAN', None)
+
         self.nodes_df.to_csv(nodes_file, index=False)
         self.edges_df.to_csv(edges_file, index=False)
 
