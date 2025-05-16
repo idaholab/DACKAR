@@ -203,3 +203,21 @@ For this project, the users can try the following steps:
 ```bash
   pip install contextualSpellCheck
 ```
+
+
+## Test
+
+### Test functions with ```__pytest__```
+
+- Run the following command in your command line to install pytest:
+
+```bash
+pip install -U pytest
+```
+
+- The tests can be run with:
+
+```bash
+cd tests
+pytest
+```

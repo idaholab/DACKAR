@@ -3,7 +3,7 @@
 from spacy.language import Language
 
 from ..utils.nlp.CreatePatterns import CreatePatterns
-# from .config import nlpConfig
+from ..config import nlpConfig
 
 import logging
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class TemporalAttributeEntity(object):
       from TemporalAttributeEntity import TemporalAttributeEntity
       nlp = spacy.load("en_core_web_sm")
       patterns = {'label': 'temporal_attribute', 'pattern': [{'LOWER': 'about'}], 'id': 'temporal_attribute'}
-      cmatcher = ConjectureEntity(nlp, patterns)
+      cmatcher = TemporalAttributeEntity(nlp, patterns)
       doc = nlp("It is close to 5pm.")
       updatedDoc = cmatcher(doc)
 
@@ -44,8 +44,7 @@ class TemporalAttributeEntity(object):
     self.name = 'temporal_attribute_entity'
     if patterns is None:
       # update to use config file instead
-      # filename = nlpConfig['files']['time_keywords_file']
-      filename = '~/projects/raven/plugins/SR2ML/src/nlp/data/time_keywords.csv'
+      filename = nlpConfig['files']['time_keywords_file']
       temporalPatterns = CreatePatterns(filename, entLabel='temporal_attribute', nlp=nlp)
       patterns = temporalPatterns.getPatterns()
     if not isinstance(patterns, list) and isinstance(patterns, dict):

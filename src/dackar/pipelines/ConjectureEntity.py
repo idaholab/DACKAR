@@ -3,7 +3,7 @@
 from spacy.language import Language
 
 from ..utils.nlp.CreatePatterns import CreatePatterns
-# from .config import nlpConfig
+from ..config import nlpConfig
 
 import logging
 logger = logging.getLogger(__name__)
@@ -44,8 +44,7 @@ class ConjectureEntity(object):
     self.name = 'conjecture_entity'
     if patterns is None:
       # update to use config file instead
-      # filename = nlpConfig['files']['conjecture_keywords_file']
-      filename = '~/projects/raven/plugins/SR2ML/src/nlp/data/conjecture_keywords.csv'
+      filename = nlpConfig['files']['conjecture_keywords_file']
       conjecturePatterns = CreatePatterns(filename, entLabel='conjecture', nlp=nlp)
       patterns = conjecturePatterns.getPatterns()
     if not isinstance(patterns, list) and isinstance(patterns, dict):

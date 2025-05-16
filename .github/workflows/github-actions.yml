@@ -15,57 +15,91 @@ jobs:
     # runs-on: ${{ fromJSON('["ubuntu-latest", "self-hosted"]')[github.repository == 'github/docs-internal'] }}
     runs-on: ubuntu-latest
     steps:
-      - uses: conda-incubator/setup-miniconda@v3
+      - name: Setup Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
           miniconda-version: "latest"
           channels: conda-forge, defaults
           use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
           auto-update-conda: true
           auto-activate-base: true
-      - run: echo " The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo " This job is now running on a ${{ runner.os }} server"
-      - run: echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
+
+      - name: Job Information
+        run: |
+          echo " The job was automatically triggered by a ${{ github.event_name }} event."
+          echo " This job is now running on a ${{ runner.os }} server"
+          echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+
+      - name: Fetch and Branch
         uses: actions/checkout@v3
-      - run: pwd
-      - run: |
+
+      - name: Install DACKAR Required Libraries
+        # Either fix scikit-learn==1.5 to allow quantulum3 to use the pretrained classifier or
+        # Run "quantulum3-training -s" to retrain classifier
+        run: |
+          pwd
           conda create -n dackar_libs python=3.11
           conda init bash && source ~/.bashrc && conda activate dackar_libs
-          pip install spacy==3.5 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install pytest
           python3 -m spacy download en_core_web_lg
           python3 -m coreferee install en
           python3 -m nltk.downloader all
+          quantulum3-training -s
+
+      - name: Test
+        run: |
+          cd tests
+          conda init bash && source ~/.bashrc && conda activate dackar_libs
+          pytest
 
 
   Test-DACKAR-Macos:
     runs-on: macos-latest
     steps:
-      - uses: conda-incubator/setup-miniconda@v3
+      - name: Setup Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
           miniconda-version: "latest"
           channels: conda-forge, defaults
           use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
           auto-update-conda: true
           auto-activate-base: true
-      - run: echo " The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo " This job is now running on a ${{ runner.os }} server"
-      - run: echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
+
+      - name: Job Information
+        run: |
+          echo " The job was automatically triggered by a ${{ github.event_name }} event."
+          echo " This job is now running on a ${{ runner.os }} server"
+          echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+
+      - name: Fetch and Branch
         uses: actions/checkout@v3
-      - run: pwd
-      - run: |
+
+      - name: Install DACKAR Required Libraries
+        run: |
+          pwd
           conda create -n dackar_libs python=3.11
           conda init zsh && source ~/.zshrc && conda activate dackar_libs
-          pip install spacy==3.5 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install pytest
           python3 -m spacy download en_core_web_lg
           python3 -m coreferee install en
           python3 -m nltk.downloader all
+          quantulum3-training -s
+
+
+      - name: Test
+        run: |
+          cd tests
+          conda init zsh && source ~/.zshrc && conda activate dackar_libs
+          pytest
 
 
   Test-DACKAR-Windows:
     runs-on: windows-latest
     steps:
-      - uses: conda-incubator/setup-miniconda@v3
+      - name: Setup Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
           miniconda-version: "latest"
           channels: conda-forge, defaults
@@ -73,22 +107,33 @@ jobs:
           activate-environment: dackar_libs
           auto-update-conda: true
           auto-activate-base: false
-      - run: echo " The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo " This job is now running on a ${{ runner.os }} server"
-      - run: echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
+      - name: Job Information
+        run: |
+          echo " The job was automatically triggered by a ${{ github.event_name }} event."
+          echo " This job is now running on a ${{ runner.os }} server"
+          echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+
+      - name: Fetch and Branch
         uses: actions/checkout@v3
-      - run: pwd
-      - run: |
+
+      - name: Install DACKAR Required Libraries
+        run: |
           echo " Create dackar_libs"
           conda install python=3.11
           echo " Conda information"
           conda info
           echo " Activate Dackar conda environment"
-          pip install spacy==3.5 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install pytest
           conda list
           which python
           python -m spacy download en_core_web_lg
           python -m coreferee install en
           python -m nltk.downloader all
+          quantulum3-training -s
+
+      - name: Test
+        run: |
+          cd tests
+          pytest
 

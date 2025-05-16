@@ -10,9 +10,9 @@ from spacy.util import filter_spans
 import logging
 logger = logging.getLogger(__name__)
 
-@Language.factory("phrase_entity_matcher", default_config={"label": "ssc", "terms":["safety cage", "pump"], "asSpan":True})
-def create_phrase_matcher_component(nlp, name, label, terms, asSpan):
-  return PhraseEntityMatcher(nlp, label, terms, asSpan=asSpan)
+@Language.factory("phrase_entity_matcher", default_config={"label": "ssc", "patterns":["safety cage", "pump"], "asSpan":True})
+def create_phrase_matcher_component(nlp, name, label, patterns, asSpan):
+  return PhraseEntityMatcher(nlp, label, patterns, asSpan=asSpan)
 
 class PhraseEntityMatcher(object):
   """
@@ -31,20 +31,20 @@ class PhraseEntityMatcher(object):
 
     .. code-block:: python
 
-      nlp.add_pipe('phrase_entity_matcher', config={"label": "ssc", "terms":["safety cage", "pump"], "asSpan":True})
+      nlp.add_pipe('phrase_entity_matcher', config={"label": "ssc", "patterns":["safety cage", "pump"], "asSpan":True})
       newDoc = nlp(doc.text)
   """
 
-  def __init__(self, nlp, label, terms, asSpan=True, callback=None):
+  def __init__(self, nlp, label, patterns, asSpan=True, callback=None):
     """
     Args:
 
-      label: str, the name/label for the patterns in terms
-      terms: list, the phrase list, for example, phraseList = ["hello", "world"]
+      label: str, the name/label for the patterns in patterns
+      patterns: list, the phrase list, for example, phraseList = ["hello", "world"]
     """
     self.name = 'phrase_entity_matcher'
     self.matcher = PhraseMatcher(nlp.vocab, attr='LOWER')
-    patterns = [nlp.make_doc(text) for text in terms]
+    patterns = [nlp.make_doc(text) for text in patterns]
     self.matcher.add(label, patterns, on_match=callback)
     self.asSpan = asSpan
 
