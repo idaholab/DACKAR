@@ -1,0 +1,413 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.utils.tagKeywordListReader &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation with Spacy 3.5</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install.html">Installation with Spacy 3.1 (Archived)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../contributors.html">Contributors</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.utils.tagKeywordListReader</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.utils.tagKeywordListReader</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2020, Battelle Energy Alliance, LLC</span>
+<span class="c1"># ALL RIGHTS RESERVED</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">  These methods are designed to process the file tag_keywords_lists.xlsx</span>
+<span class="sd">  This file contains several keywords grouped into classes (e.g., material, components, etc)</span>
+<span class="sd">  For each class, a tag is defined: during the NLP analysis, when these keywords are identified,</span>
+<span class="sd">  this tag will be associated to such word.</span>
+<span class="sd">  These methods are designed to run in sequence just once at the beginning of the NLP</span>
+<span class="sd">  pipeline), e.g.:</span>
+<span class="sd">    tagsDict = keyWordListGenerator(&#39;../../nlp/data/tag_keywords_lists.xlsx&#39;)</span>
+<span class="sd">    unitDict = extractUnits(&#39;../../nlp/data/tag_keywords_lists.xlsx&#39;)</span>
+<span class="sd">    tagsDictCleaned, acronymsDict = cleanTagDict(tagsDict)</span>
+<span class="sd">&#39;&#39;&#39;</span>
+
+<div class="viewcode-block" id="ERschema">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.ERschema">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ERschema</span><span class="p">():</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  Class designed to codify the equipment reliability (ER) schema and classify content of a clause/sentence</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Initialization method</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">      None</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="ERschema.matchDict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.ERschema.matchDict">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;surv_tool&#39;</span><span class="p">]</span>        <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;surv_tool&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;inspection&#39;</span><span class="p">]</span>       <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;surv_ops&#39;</span><span class="p">,</span><span class="s1">&#39;HS_neut&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;diagnosis&#39;</span><span class="p">]</span>        <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;diagn&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;maintenance&#39;</span><span class="p">]</span>      <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;mnt_ops&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;maint_tool&#39;</span><span class="p">]</span>       <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;mnt_tool&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;location&#39;</span><span class="p">]</span>         <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;arch&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;material&#39;</span><span class="p">]</span>         <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;chem_cmpd&#39;</span><span class="p">,</span><span class="s1">&#39;chem_elem&#39;</span><span class="p">,</span><span class="s1">&#39;mat&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;reaction&#39;</span><span class="p">]</span>         <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;chem_rx&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;env_agent&#39;</span><span class="p">]</span>        <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;ext_agent&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;degradation&#39;</span><span class="p">]</span>      <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;deg_mech&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;function&#39;</span><span class="p">]</span>         <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;opd_elt&#39;</span><span class="p">,</span><span class="s1">&#39;opd_hyd_pne&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;qual_asmnt&#39;</span><span class="p">]</span>       <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;qual_asmnt&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;asset[anomalous]&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;HS_neg&#39;</span><span class="p">,</span><span class="s1">&#39;fail_type_n&#39;</span><span class="p">,</span><span class="s1">&#39;fail_type_v&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;asset[OK]&#39;</span><span class="p">]</span>        <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;HS_pos&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="s1">&#39;asset&#39;</span><span class="p">]</span>            <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;comp_mech_fact&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;comp_mech_rot&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;comp_mech_struct&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;comp_mech_spec&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;comp_elt/n&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;comp_hyd/pne&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;ast_mech&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;ast_elt&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;ast_hyd_pne&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;ast_eln&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;ast_I&amp;C&#39;</span><span class="p">,</span>
+                                          <span class="s1">&#39;ast_fuel&#39;</span><span class="p">]</span>
+
+<div class="viewcode-block" id="ERschema.invMatchDict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.ERschema.invMatchDict">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">invMatchDict</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+      <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">matchDict</span><span class="p">[</span><span class="n">key</span><span class="p">]:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">invMatchDict</span><span class="p">[</span><span class="n">elem</span><span class="p">]</span> <span class="o">=</span> <span class="n">key</span>
+
+<div class="viewcode-block" id="ERschema.returnERnature">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.ERschema.returnERnature">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">returnERnature</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">labelList</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Initialization method</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">      labelList, list, list that contains labels identified in a text</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      nature, list, list that contains the corresponding elements in the ER schema for each label contained in labelList</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">nature</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">labelList</span><span class="p">:</span>
+      <span class="n">nature</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">invMatchDict</span><span class="p">[</span><span class="n">elem</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">nature</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="entityLibrary">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">entityLibrary</span><span class="p">():</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  Class designed to contain all nuclear related entities listed in nlp/data/tag_keywords_lists.xlsx</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">fileName</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Initialization method</span>
+<span class="sd">    Args:</span>
+
+<span class="sd">      fileName, string, file containing nuclear related entities</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="entityLibrary.library">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary.library">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">library</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">keyWordListGenerator</span><span class="p">(</span><span class="n">fileName</span><span class="p">)</span></div>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">cleanTagDict</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">expander</span><span class="p">()</span>
+
+<div class="viewcode-block" id="entityLibrary.checker">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary.checker">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">checker</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Method designed to check the structure of the set of nuclear related entities and identify entities</span>
+<span class="sd">    that might share multiple labels</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      None</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">key1</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+      <span class="k">for</span> <span class="n">key2</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+        <span class="n">commonElements</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">key1</span><span class="p">])</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">key2</span><span class="p">]))</span>
+        <span class="k">if</span> <span class="n">key1</span><span class="o">!=</span><span class="n">key2</span> <span class="ow">and</span> <span class="n">commonElements</span><span class="p">:</span>
+          <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Elements in common between &#39;</span> <span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">key1</span><span class="p">)</span><span class="o">+</span> <span class="s1">&#39; and &#39;</span> <span class="o">+</span><span class="nb">str</span><span class="p">(</span><span class="n">key2</span><span class="p">)</span><span class="o">+</span> <span class="s1">&#39; are:&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">commonElements</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="entityLibrary.getLibrary">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary.getLibrary">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getLibrary</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Method designed to return self.library</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      None</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      self.library, dict, dictionary containing for each label a list of entities</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span></div>
+
+
+<div class="viewcode-block" id="entityLibrary.getAcronymsDict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary.getAcronymsDict">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getAcronymsDict</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Method designed to return self.acronymsDict</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      None</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      self.acronymsDict, dict, dictionary containing the acronyms contained in the library</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">acronymsDict</span></div>
+
+
+<div class="viewcode-block" id="entityLibrary.expander">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary.expander">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">expander</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Method designed to treat those entities that are compounds of two words which are identified as word1-word2.</span>
+<span class="sd">    These compond words can be written in multiple forms: &quot;word1-word2&quot;, &quot;word1word2&quot;, &quot;word1 word2&quot;.</span>
+<span class="sd">    Here, these forms are generated for each identified compund word (when &#39;-&#39; is identified in the entity)</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      None</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+      <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">key</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="s1">&#39;-&#39;</span> <span class="ow">in</span> <span class="n">elem</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">,</span><span class="s1">&#39;&#39;</span><span class="p">))</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">elem</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">&#39;-&#39;</span><span class="p">,</span><span class="s1">&#39; &#39;</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="entityLibrary.keyWordListGenerator">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary.keyWordListGenerator">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">keyWordListGenerator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fileName</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Method designed to read the file and generate a dictionary which contains, for each tag,</span>
+<span class="sd">    the set of keywords that should be associate to such tag.</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      fileName, string, file containing nuclear related entities</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      tagsDict, dict, dictionary containing for each label a list of entities</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="n">fileName</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="c1"># retrieve list of sheets in excel file</span>
+    <span class="n">sheetList</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+
+    <span class="n">tagsDict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">sheet</span> <span class="ow">in</span> <span class="n">sheetList</span><span class="p">:</span>
+      <span class="c1"># retrieve columns of each sheet</span>
+      <span class="n">cols</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">sheet</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+      <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cols</span><span class="p">:</span>
+        <span class="c1"># retrieve TAG of each column; it should be contained in square brackets [tag]</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;[&quot;</span><span class="p">)</span>
+        <span class="n">second</span> <span class="o">=</span> <span class="n">col</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;]&quot;</span><span class="p">)</span>
+        <span class="n">tagID</span> <span class="o">=</span> <span class="n">col</span><span class="p">[</span><span class="n">first</span><span class="o">+</span><span class="mi">1</span><span class="p">:</span><span class="n">second</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">tagID</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;prop&#39;</span><span class="p">,</span><span class="s1">&#39;unit&#39;</span><span class="p">]:</span>
+          <span class="n">keywordsList</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">sheet</span><span class="p">][</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+          <span class="n">keywordsList</span> <span class="o">=</span> <span class="p">[[</span><span class="n">i</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">keywordsList</span> <span class="k">if</span> <span class="n">i</span><span class="p">]</span>
+          <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">keyword</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">keywordsList</span><span class="p">):</span>
+            <span class="k">if</span> <span class="s1">&#39;,&#39;</span> <span class="ow">in</span> <span class="n">keyword</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+              <span class="n">keywordsList</span><span class="p">[</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="n">keyword</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+          <span class="n">tagsDict</span><span class="p">[</span><span class="n">tagID</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">itertools</span><span class="o">.</span><span class="n">chain</span><span class="p">(</span><span class="o">*</span><span class="n">keywordsList</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">tagsDict</span></div>
+
+
+
+<div class="viewcode-block" id="entityLibrary.cleanTagDict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/utils/tagKeywordListReader/index.html#src.dackar.utils.tagKeywordListReader.entityLibrary.cleanTagDict">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">cleanTagDict</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Method designed to clean the dictionary generated by the method keyWordListGenerator(.)</span>
+<span class="sd">    Here, specific characters or sub strings are removed.</span>
+<span class="sd">    In addition, if an acronym is defined (within round parentheses), then the acronyms_dict is</span>
+<span class="sd">    populated {acronym: acronym_definition}</span>
+
+<span class="sd">    Args:</span>
+
+<span class="sd">      None</span>
+
+<span class="sd">    Returns:</span>
+
+<span class="sd">      None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">acronymsDict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">n_keywords</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">index</span><span class="p">,</span><span class="n">elem</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">tag</span><span class="p">]):</span>
+        <span class="c1"># clean string</span>
+        <span class="n">cleanElem</span> <span class="o">=</span> <span class="n">elem</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">cleanElem</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lstrip</span><span class="p">()</span>
+        <span class="n">cleanElem</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\xa0</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span>
+        <span class="n">cleanElem</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span>
+
+        <span class="c1"># retrieve acronym if defined</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;(&quot;</span><span class="p">)</span>
+        <span class="n">second</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">&quot;)&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">first</span><span class="o">==-</span><span class="mi">1</span> <span class="ow">and</span> <span class="n">second</span><span class="o">&gt;=</span><span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">second</span><span class="o">==-</span><span class="mi">1</span> <span class="ow">and</span> <span class="n">first</span><span class="o">&gt;=</span><span class="mi">0</span><span class="p">):</span>
+          <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Error of acronym definition&#39;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">first</span><span class="o">&gt;=</span><span class="mi">0</span> <span class="ow">and</span> <span class="n">second</span><span class="o">&gt;=</span><span class="mi">0</span><span class="p">):</span>
+          <span class="n">acronym</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="p">[</span><span class="n">first</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span><span class="n">second</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lstrip</span><span class="p">()</span>
+          <span class="n">toReplace</span> <span class="o">=</span> <span class="s2">&quot;(&quot;</span> <span class="o">+</span> <span class="n">acronym</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span>
+          <span class="n">cleanElem</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">toReplace</span><span class="p">,</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+          <span class="n">cleanElem</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cleanElem</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+          <span class="c1"># save acronym into its own dictionary</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">acronymsDict</span><span class="p">[</span><span class="n">acronym</span><span class="p">]</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lstrip</span><span class="p">()</span>
+          <span class="c1"># remove acronym from tags_dict</span>
+          <span class="n">toReplace</span> <span class="o">=</span> <span class="s2">&quot;(&quot;</span> <span class="o">+</span> <span class="n">acronym</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span>
+          <span class="n">cleanElem</span> <span class="o">=</span> <span class="n">cleanElem</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">toReplace</span><span class="p">,</span><span class="s1">&#39;&#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">cleanElem</span> <span class="o">=</span> <span class="n">cleanElem</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">tag</span><span class="p">][</span><span class="n">index</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cleanElem</span><span class="o">.</span><span class="n">split</span><span class="p">())</span> <span class="c1"># clean_elem</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">tag</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">tag</span><span class="p">]</span> <span class="k">if</span> <span class="n">i</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">:</span>
+      <span class="n">nKeywords</span> <span class="o">=</span> <span class="n">n_keywords</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">library</span><span class="p">[</span><span class="n">tag</span><span class="p">])</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Number of listed keywords: &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nKeywords</span><span class="p">))</span></div>
+</div>
+
+
+
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
