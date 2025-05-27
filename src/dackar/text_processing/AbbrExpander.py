@@ -51,6 +51,7 @@ class AbbrExpander(object):
 
       Args:
         text: string, the text to expand
+        splitToList: bool, True if splitting the text into sentences, default is False
 
       Returns:
         expandedText: string, the text with abbreviations expanded
