@@ -37,7 +37,7 @@ class SpellChecker(object):
   """
     Object to find misspelled words and automatically correct spelling
 
-    Note: when using autocorrect, one need to conduct a spell test to identify the threshold (the word frequences)
+    Note: when using autocorrect, one need to conduct a spell test to identify the threshold (the word frequencies)
   """
 
   def __init__(self, checker='autocorrect'):
@@ -156,14 +156,14 @@ class SpellChecker(object):
       Performs automatic correction of abbreviations and returns corrected text
       This method relies on a database of abbreviations located at:
       `src/nlp/data/abbreviations.xlsx`
-      This database contains the most common abbreviations collected from literarture and
+      This database contains the most common abbreviations collected from literature and
       it provides for each abbreviation its corresponding full word(s); an abbreviation might
-      have multple words associated. In such case the full word that makes more sense given the
+      have multiple words associated. In such case the full word that makes more sense given the
       context is chosen (see findOptimalOption method)
 
       Args:
         abbrDatabase: pandas dataframe, dataframe containing library of abbreviations
-        and their correspoding full expression
+        and their corresponding full expression
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
         to determine which words are abbreviations that need to be expanded
@@ -233,7 +233,7 @@ class SpellChecker(object):
 
       Args:
         abbrDatabase: pandas dataframe, dataframe containing library of abbreviations
-        and their correspoding full expression
+        and their corresponding full expression
 
       Returns:
         abbrDict: dictionary, a abbreviations dictionary
@@ -251,14 +251,14 @@ class SpellChecker(object):
       Performs automatic correction of abbreviations and returns corrected text
       This method relies on a database of abbreviations located at:
       src/nlp/data/abbreviations.xlsx
-      This database contains the most common abbreviations collected from literarture and
+      This database contains the most common abbreviations collected from literature and
       it provides for each abbreviation its corresponding full word(s); an abbreviation might
       have multple words associated. In such case the full word that makes more sense given the
       context is chosen (see findOptimalOption method)
 
       Args:
         abbrDict: dictionary, dictionary containing library of abbreviations
-        and their correspoding full expression
+        and their corresponding full expression
         text: str, string of text that will be analyzed
         type: string, type of abbreviation method ('spellcheck','hard','mixed') that are employed
         to determine which words are abbreviations that need to be expanded
