@@ -94,7 +94,6 @@ def copy_notebooks() -> None:
     for filename in Path("../examples").glob("*.ipynb"):
         shutil.copy2(str(filename), "notebooks")
 
-
 copy_notebooks()
 
 

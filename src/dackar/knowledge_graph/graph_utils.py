@@ -36,20 +36,20 @@ def set_neo4j_import_folder(config_file_path, import_folder_path):
         lines = file.readlines()
 
     with open(config_file_path, 'w') as file:
-        # found_dbms = False
-        found_server = False
+        found_dbms = False
+        # found_server = False
         for line in lines:
-            # if line.startswith('dbms.directories.import='):
-            #     file.write(f'dbms.directories.import={import_folder_path}\n')
-            #     found_dbms = True
-            if line.startswith('server.directories.import='):
-                file.write(f'server.directories.import={import_folder_path}\n')
-                found_server = True
+            if line.startswith('dbms.directories.import='):
+                file.write(f'dbms.directories.import={import_folder_path}\n')
+                found_dbms = True
+            # if line.startswith('server.directories.import='):
+            #     file.write(f'server.directories.import={import_folder_path}\n')
+            #     found_server = True
             else:
                 file.write(line)
-        # if not found_dbms:
-        #     file.write('\n')
-        #     file.write(f'dbms.directories.import={import_folder_path}\n')
-        if not found_server:
+        if not found_dbms:
             file.write('\n')
-            file.write(f'server.directories.import={import_folder_path}\n')
+            file.write(f'dbms.directories.import={import_folder_path}\n')
+        # if not found_server:
+        #     file.write('\n')
+        #     file.write(f'server.directories.import={import_folder_path}\n')
