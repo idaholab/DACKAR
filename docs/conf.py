@@ -93,6 +93,8 @@ def setup(app) -> None:
 def copy_notebooks() -> None:
     for filename in Path("../examples").glob("*.ipynb"):
         shutil.copy2(str(filename), "notebooks")
+    for filename in Path("../examples/images").glob("*.png"):
+        shutil.copy2(str(filename), "notebooks/images")
 
 copy_notebooks()
 
@@ -102,3 +104,8 @@ copy_notebooks()
 nbsphinx_execute = "never"
 
 autodoc_inherit_docstrings = False
+
+latex_engine = "xelatex"
+latex_elements = {
+    'printindex': r'\def\twocolumn[#1]{#1}\printindex',
+}
