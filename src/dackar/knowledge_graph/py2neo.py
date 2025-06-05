@@ -11,6 +11,9 @@ Created on March, 2025
 # https://github.com/neo4j/neo4j-python-driver
 # pip install neo4j
 
+# Notes for Neo4j
+# Use ":config initialNodeDisplay: 1000" to set the limit of nodes for display in Neo4j Browser
+
 
 from neo4j import GraphDatabase
 

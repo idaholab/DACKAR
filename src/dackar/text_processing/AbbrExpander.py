@@ -19,7 +19,16 @@ class AbbrExpander(object):
       Abbreviation expander constructor
 
       Args:
-        abbreviationsFilename: string, filename of abbreviations data
+        abbreviationsFilename: str, filename of abbreviations data
+        checkerType: str, type for spell checker class, i.e., 'autocorrect', 'pyspellchecker', and 'contextual spellcheck', default is 'autocorrect'
+        abbrType: str, type of abbreviation method ('spellcheck','hard','mixed') that are employed
+        to determine which words are abbreviations that need to be expanded
+        * spellcheck: in this case spellchecker is used to identify words that
+        are not recognized
+        * hard: here we directly search for the abbreviations in the provided
+        sentence
+        * mixed: here we perform first a "hard" search followed by a "spellcheck"
+        search
 
       Return:
         None
@@ -42,6 +51,7 @@ class AbbrExpander(object):
 
       Args:
         text: string, the text to expand
+        splitToList: bool, True if splitting the text into sentences, default is False
 
       Returns:
         expandedText: string, the text with abbreviations expanded
