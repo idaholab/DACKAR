@@ -83,6 +83,23 @@
              
   <section id="Test-Anomaly-Modules-Using-Matrix-Profile">
 <h1>Test Anomaly Modules Using Matrix Profile<a class="headerlink" href="#Test-Anomaly-Modules-Using-Matrix-Profile" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p>Both New York taxi data and steam generator data are used</p></li>
+<li><p>Demonstrate a couple of functions of matrix profile:</p>
+<ul>
+<li><p>normal: calculate matrix profile of each time series</p></li>
+<li><p>approx: compute an approximate matrix profile</p></li>
+<li><p>incremental: compute incremental matrix profile for streaming time series data</p></li>
+<li><p>kdp: identify the best K out of N time series that have detected anomalies at the same time slot using k-dimensional profile</p></li>
+</ul>
+</li>
+</ul>
+<section id="Anomaly-types-and-matrix-profile-can-convert-different-types-fo-anomalies-into-outliers">
+<h2>Anomaly types and matrix profile can convert different types fo anomalies into outliers<a class="headerlink" href="#Anomaly-types-and-matrix-profile-can-convert-different-types-fo-anomalies-into-outliers" title="Link to this heading">¶</a></h2>
+<img alt="Anomaly Types" src="notebooks/images/anomaly_types.png" />
+</section>
+<section id="Set-up-paths-and-load-matrix-profile-module">
+<h2>Set up paths and load matrix profile module<a class="headerlink" href="#Set-up-paths-and-load-matrix-profile-module" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
@@ -91,43 +108,43 @@
 import pandas as pd
 import os
 import sys
-
+import warnings
+warnings.filterwarnings(&quot;ignore&quot;)
+# set up DACKAR path
 cwd = os.getcwd()
 frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, &#39;src&#39;))
 sys.path.append(frameworkDir)
-
+# set up data path
 data_path = os.path.abspath(os.path.join(cwd, os.pardir, &#39;data&#39;))
-
-taxi_data_file = os.path.abspath(os.path.join(data_path, &#39;nyc_taxi_passengers.csv&#39;))
-
+# Load MatrixProfile module for anomaly detection
 from dackar.anomalies.MatrixProfile import MatrixProfile
 </pre></div>
 </div>
 </div>
 </section>
-<section id="Load-NY-taxi-data">
-<h1>Load NY taxi data<a class="headerlink" href="#Load-NY-taxi-data" title="Link to this heading">¶</a></h1>
+<section id="Calculate-the-matrix-profiles-for-NY-taxi-data">
+<h2>Calculate the matrix profiles for NY taxi data<a class="headerlink" href="#Calculate-the-matrix-profiles-for-NY-taxi-data" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Anomalies occur during Columbus day, Daylight savings and Thanksgiving</p></li>
+</ul>
+<img alt="NY taxi data" src="notebooks/images/ny_taxi_data.png" />
+<img alt="NY taxi data matrix profile" src="notebooks/images/ny_taxi_mp.png" />
+<p>Link: <a class="reference external" href="https://stumpy.readthedocs.io/en/latest/Tutorial_STUMPY_Basics.html">https://stumpy.readthedocs.io/en/latest/Tutorial_STUMPY_Basics.html</a></p>
+<ul class="simple">
+<li><p>Load NY taxi data</p></li>
+</ul>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><br/><span></span>taxi_df = pd.read_csv(taxi_data_file, index_col=&#39;timestamp&#39;)
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Load taxi data
+taxi_data_file = os.path.abspath(os.path.join(data_path, &#39;nyc_taxi_passengers.csv&#39;))
+taxi_df = pd.read_csv(taxi_data_file, index_col=&#39;timestamp&#39;)
 taxi_df[&#39;value&#39;] = taxi_df[&#39;value&#39;].astype(np.float64)
 taxi_df.index = pd.to_datetime(taxi_df.index, errors=&#39;ignore&#39;)
 taxi_df.head()
 </pre></div>
 </div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/var/folders/7s/fr8pr05118g9qnw_gf5_dyfhz5v12v/T/ipykernel_17966/1468471238.py:3: FutureWarning: errors=&#39;ignore&#39; is deprecated and will raise in a future version. Use to_datetime without passing `errors` and catch exceptions explicitly instead
-  taxi_df.index = pd.to_datetime(taxi_df.index, errors=&#39;ignore&#39;)
-/var/folders/7s/fr8pr05118g9qnw_gf5_dyfhz5v12v/T/ipykernel_17966/1468471238.py:3: UserWarning: Could not infer format, so each element will be parsed individually, falling back to `dateutil`. To ensure parsing is consistent and as-expected, please specify a format.
-  taxi_df.index = pd.to_datetime(taxi_df.index, errors=&#39;ignore&#39;)
-</pre></div></div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
@@ -184,14 +201,15 @@ taxi_df.head()
 </table>
 </div></div>
 </div>
-</section>
-<section id="Compute-the-Matrix-Profile-for-NY-taxi-data">
-<h1>Compute the Matrix Profile for NY taxi data<a class="headerlink" href="#Compute-the-Matrix-Profile-for-NY-taxi-data" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p>Compute the Matrix Profile for NY taxi data</p></li>
+</ul>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>m = 48
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># set up sliding window side to 48 hours
+m = 48
 mpObj = MatrixProfile(m, normalize=&#39;robust&#39;, method=&#39;normal&#39;)
 mpObj.fit(taxi_df)
 fig = mpObj.plot()
@@ -210,12 +228,15 @@ OMP: Info #276: omp_set_nested routine deprecated, please use omp_set_max_active
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_5_1.png" src="../_images/notebooks_test_anomalies_5_1.png" />
+<img alt="../_images/notebooks_test_anomalies_7_1.png" src="../_images/notebooks_test_anomalies_7_1.png" />
 </div>
 </div>
 </section>
-<section id="Load-Steam-Generator-Data">
-<h1>Load Steam Generator Data<a class="headerlink" href="#Load-Steam-Generator-Data" title="Link to this heading">¶</a></h1>
+<section id="Calculate-matrix-profile-for-steam-generator-data">
+<h2>Calculate matrix profile for steam generator data<a class="headerlink" href="#Calculate-matrix-profile-for-steam-generator-data" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Load data</p></li>
+</ul>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
@@ -295,9 +316,9 @@ steam_df.head()
 </table>
 </div></div>
 </div>
-</section>
-<section id="Compute-Matrix-Profile-for-Steam-Generator-Data">
-<h1>Compute Matrix Profile for Steam Generator Data<a class="headerlink" href="#Compute-Matrix-Profile-for-Steam-Generator-Data" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p>Compute matrix profile for steam generator data</p></li>
+</ul>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
@@ -313,26 +334,14 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_9_0.png" src="../_images/notebooks_test_anomalies_9_0.png" />
-</div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>## Working but slow, need to figure the issue
-# m = 48
-# mpObj = MatrixProfile(m, normalize=&#39;robust&#39;, method=&#39;parallel&#39;)
-# mpObj.fit(steam_df)
-# fig = mpObj.plot()
-</pre></div>
+<img alt="../_images/notebooks_test_anomalies_11_0.png" src="../_images/notebooks_test_anomalies_11_0.png" />
 </div>
 </div>
 </section>
 <section id="Testing-'approx'-method-to-compute-matrix-profile">
-<h1>Testing ‘approx’ method to compute matrix profile<a class="headerlink" href="#Testing-'approx'-method-to-compute-matrix-profile" title="Link to this heading">¶</a></h1>
+<h2>Testing ‘approx’ method to compute matrix profile<a class="headerlink" href="#Testing-'approx'-method-to-compute-matrix-profile" title="Link to this heading">¶</a></h2>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>m = 48
@@ -346,14 +355,17 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_12_0.png" src="../_images/notebooks_test_anomalies_12_0.png" />
+<img alt="../_images/notebooks_test_anomalies_13_0.png" src="../_images/notebooks_test_anomalies_13_0.png" />
 </div>
 </div>
 </section>
 <section id="Enable-Streaming,-use-'evaluate'-function-for-streaming-data">
-<h1>Enable Streaming, use ‘evaluate’ function for streaming data<a class="headerlink" href="#Enable-Streaming,-use-'evaluate'-function-for-streaming-data" title="Link to this heading">¶</a></h1>
+<h2>Enable Streaming, use ‘evaluate’ function for streaming data<a class="headerlink" href="#Enable-Streaming,-use-'evaluate'-function-for-streaming-data" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Compute matrix profile for first 1000 data points</p></li>
+</ul>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>m = 48
@@ -367,11 +379,14 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_14_0.png" src="../_images/notebooks_test_anomalies_14_0.png" />
+<img alt="../_images/notebooks_test_anomalies_16_0.png" src="../_images/notebooks_test_anomalies_16_0.png" />
 </div>
 </div>
+<ul class="simple">
+<li><p>Evaluate more data points to demonstrate data streaming</p></li>
+</ul>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>mpObj.evaluate(taxi_df.iloc[1000:])
@@ -383,14 +398,17 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_15_0.png" src="../_images/notebooks_test_anomalies_15_0.png" />
+<img alt="../_images/notebooks_test_anomalies_18_0.png" src="../_images/notebooks_test_anomalies_18_0.png" />
 </div>
 </div>
 </section>
-<section id="Test-different-data-structure,-i.e.,-numpy.ndarray">
-<h1>Test different data structure, i.e., numpy.ndarray<a class="headerlink" href="#Test-different-data-structure,-i.e.,-numpy.ndarray" title="Link to this heading">¶</a></h1>
+<section id="Test-different-data-structure">
+<h2>Test different data structure<a class="headerlink" href="#Test-different-data-structure" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Data structure: numpy.ndarray</p></li>
+</ul>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>m = 48
@@ -404,14 +422,14 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_17_0.png" src="../_images/notebooks_test_anomalies_17_0.png" />
+<img alt="../_images/notebooks_test_anomalies_21_0.png" src="../_images/notebooks_test_anomalies_21_0.png" />
 </div>
 </div>
-</section>
-<section id="Test-1-D-array-data">
-<h1>Test 1-D array data<a class="headerlink" href="#Test-1-D-array-data" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p>Data structure: 1-D array data</p></li>
+</ul>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>m = 48
@@ -425,14 +443,14 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_19_0.png" src="../_images/notebooks_test_anomalies_19_0.png" />
+<img alt="../_images/notebooks_test_anomalies_23_0.png" src="../_images/notebooks_test_anomalies_23_0.png" />
 </div>
 </div>
-</section>
-<section id="Test-pandas.Series-data">
-<h1>Test pandas.Series data<a class="headerlink" href="#Test-pandas.Series-data" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p>Data structure: pandas.Series data</p></li>
+</ul>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>m = 48
@@ -446,25 +464,20 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_21_0.png" src="../_images/notebooks_test_anomalies_21_0.png" />
+<img alt="../_images/notebooks_test_anomalies_25_0.png" src="../_images/notebooks_test_anomalies_25_0.png" />
 </div>
 </div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>### Test Multi-Dimensional Anomaly Detection: Identify Best K out of N Anomalies
-</pre></div>
-</div>
-</div>
+</section>
+<section id="Test-Multi-Dimensional-Anomaly-Detection:-Identify-Best-K-out-of-N-Anomalies">
+<h2>Test Multi-Dimensional Anomaly Detection: Identify Best K out of N Anomalies<a class="headerlink" href="#Test-Multi-Dimensional-Anomaly-Detection:-Identify-Best-K-out-of-N-Anomalies" title="Link to this heading">¶</a></h2>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>m = 48
 mpObj = MatrixProfile(m, normalize=&#39;robust&#39;, method=&#39;normal&#39;, kdp=True)
 mpObj.fit(steam_df)
-fig = mpObj.plot()
+fig = mpObj.plot_kdp()
 <br/></pre></div>
 </div>
 </div>
@@ -472,40 +485,10 @@ fig = mpObj.plot()
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_23_0.png" src="../_images/notebooks_test_anomalies_23_0.png" />
+<img alt="../_images/notebooks_test_anomalies_27_0.png" src="../_images/notebooks_test_anomalies_27_0.png" />
 </div>
 </div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>fig = mpObj.plot_kdp()
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/notebooks_test_anomalies_24_0.png" src="../_images/notebooks_test_anomalies_24_0.png" />
-</div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
-</pre></div>
-</div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
-</pre></div>
-</div>
-</div>
+</section>
 </section>
 
 

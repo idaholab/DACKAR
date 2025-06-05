@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Abbreviation handler demo &mdash; DACKAR 0.1 documentation</title>
+  <title>Abbreviation Handler Demo &mdash; DACKAR 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -23,8 +23,8 @@
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Custom pipelines" href="nlp_custom_pipes.html" />
-    <link rel="prev" title="Demo For NLP Workflow: Based on branch wangc/nlp" href="Workflow_Demo.html" /> 
+    <link rel="next" title="Custom Pipelines Demo" href="nlp_custom_pipes.html" />
+    <link rel="prev" title="Demo For NLP Workflow" href="Workflow_Demo.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -54,11 +54,10 @@
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Notebooks</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html">Preprocessing demo</a></li>
 <li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html#Coherent-text-example-with-Autocorrect-and-ContextualSpellCheck-spelling-correction">Coherent text example with Autocorrect and ContextualSpellCheck spelling correction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html#Time-Autocorrect-workflow">Time Autocorrect workflow</a></li>
-<li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html#Time-ContextualSpellCheck-workflow">Time ContextualSpellCheck workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="Workflow_Demo.html">Workflow Demo</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Abbreviation Handler Demo</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#Abbreviation-handling-class">Abbreviation handling class</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#AbbrExpander-class">AbbrExpander class</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Abbreviation-class">Abbreviation class</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="nlp_custom_pipes.html">Pipelines</a></li>
@@ -87,7 +86,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="index.html">Usage Notebooks</a></li>
-      <li class="breadcrumb-item active">Abbreviation handler demo</li>
+      <li class="breadcrumb-item active">Abbreviation Handler Demo</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/notebooks/abbreviationHandlerDemo.ipynb.txt" rel="nofollow"> View page source</a>
       </li>
@@ -97,41 +96,38 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="Abbreviation-handler-demo">
-<h1>Abbreviation handler demo<a class="headerlink" href="#Abbreviation-handler-demo" title="Link to this heading">¶</a></h1>
-<div class="nbinput docutils container">
+  <section id="Abbreviation-Handler-Demo">
+<h1>Abbreviation Handler Demo<a class="headerlink" href="#Abbreviation-Handler-Demo" title="Link to this heading">¶</a></h1>
+<p>Abbreviation classes are used to substitute abbreviations with full expansions, and there are two internal developed classes:</p>
+<ul class="simple">
+<li><p>Abbreviation class: it is used to directly substitute the abbreviations with full expansions. Users can provide their own abbreviation dictionary.</p></li>
+<li><p>AbbrExpander class: it utilizes a more sophisticated method, i.e., spell checking with word similarity search, to identify abbreviations and substitute them with full expansions.</p></li>
+</ul>
+<section id="AbbrExpander-class">
+<h2>AbbrExpander class<a class="headerlink" href="#AbbrExpander-class" title="Link to this heading">¶</a></h2>
+<div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>import numpy as np
-import pandas as pd
-import os, sys, time
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>import pandas as pd
+import os, sys
+import time
 
 cwd = os.getcwd()
 frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, &#39;src&#39;))
 sys.path.append(frameworkDir)
 
-from dackar.text_processing.Preprocessing import Preprocessing
-from dackar.text_processing.Preprocessing import SpellChecker
-from dackar.text_processing.Preprocessing import AbbrExpander
+# Load AbbrExpander from DACKAR
+from dackar.text_processing.AbbrExpander import AbbrExpander
 <br/></pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-/Users/wangc/miniconda3/envs/dackar_libs/lib/python3.11/site-packages/tqdm/auto.py:21: TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See https://ipywidgets.readthedocs.io/en/stable/user_install.html
-  from .autonotebook import tqdm as notebook_tqdm
-Warming up PyWSD (takes ~10 secs)... took 4.628759145736694 secs.
-</pre></div></div>
 </div>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>test = &quot;&quot;&quot;Perf ann sens calib of cyl.
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Text example
+test = &quot;&quot;&quot;Perf ann sens calib of cyl.
           High conc of hydrogen obs.
           High conc of hydrogen obs every wk.
           Prfr chann calib of chan.
@@ -140,16 +136,9 @@ Warming up PyWSD (takes ~10 secs)... took 4.628759145736694 secs.
           perform thermography survey of pzr htr terminations.
           plant mods comp iso mode prep.
           drain &amp; rmv pipe.&quot;&quot;&quot;
-# pre-processing
 test = test.lower()
-<br/></pre></div>
-</div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>text = &quot;&quot;&quot;A leak was noticed from the pump.
+
+text = &quot;&quot;&quot;A leak was noticed from the pump.
             RCP pump 1A pressure gauge was found not operating.
             RCP pump 1A pressure gauge was found inoperative.
             RCP pump 1A pressure gauge was not functional.
@@ -168,14 +157,85 @@ text = text.lower()
 </div>
 </div>
 <div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># import pre-generated abbreviation list
+filename = os.path.join(os.getcwd(), os.pardir, &#39;data&#39;, &#39;abbreviations.xlsx&#39;)
+abbrList = pd.read_excel(filename)
+abbrList.head()
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="output_area rendered_html docutils container">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>Abbreviation</th>
+      <th>Full</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>&amp;</td>
+      <td>and</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>ab</td>
+      <td>as built</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>abl</td>
+      <td>ablative</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>abol</td>
+      <td>abolition</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>abs</td>
+      <td>absolute</td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
+</div>
+<div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># import abbreviation list
-abbrList = pd.read_excel(&#39;../data/abbreviations.xlsx&#39;)
-# Make sure the library does not contain duplicate rows
-print(abbrList[abbrList.duplicated()])
-<br/></pre></div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Utilize AbbrExpander to replace abbreviations
+AbbrExp = AbbrExpander(filename)
+cleanedTest = AbbrExp.abbrProcess(test, splitToList=&#39;True&#39;)
+print(&#39;Test:\n&#39;, cleanedTest)
+
+cleanedText = AbbrExp.abbrProcess(text)
+print(&#39;Text:\n&#39;, cleanedText)
+</pre></div>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
@@ -183,113 +243,33 @@ print(abbrList[abbrList.duplicated()])
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-    Abbreviation     Full
-614          brg  bearing
-630         rplc  replace
+Test:
+ perform annual sensor calibration of cylinder. high concentration of hydrogen observe. high concentration of hydrogen observe every week. perform channel calibration of channel. esf pump room and fuel building test. calibration pressure transmitter sit elevation. perform thermography survey of pressurizer heater terminations. plant modifications composition iso mode preparation. drain and remove pipe.
+Text:
+ 1 leak was noticed from the pump.
+ rcp pump 1a pressure gauge was found not operating.
+ rcp pump 1a pressure gauge was found inoperative.
+ rcp pump 1a pressure gauge was not functional.
+ rupture of pump bearings caused shaft degradation.
+ rupture of pump bearings caused shaft degradation and consequent flow reduction.
+ pump power supply has been found burnout.
+ pump test failed due to power supply failure.
+ pump inspection revealed excessive impeller degradation.
+ pump inspection revealed excessive impeller degradation likely due to cavitation.
+ oil puddle was found in proximity of rcp pump 1a.
+ anomalous vibrations were observed for rcp pump 1a.
+ several cracks on pump shaft were observed; they could have caused pump failure within few days.
 </pre></div></div>
 </div>
+</section>
+<section id="Abbreviation-class">
+<h2>Abbreviation class<a class="headerlink" href="#Abbreviation-class" title="Link to this heading">¶</a></h2>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>filename = os.path.join(os.getcwd(), os.pardir, &#39;data&#39;, &#39;abbreviations.xlsx&#39;)
-AbbrExp = AbbrExpander(filename)
-cleanedText = AbbrExp.abbrProcess(test, splitToList=&#39;True&#39;)
-print(cleanedText)
-<br/></pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-perform annual sensor calibration of cylinder. high concentration of hydrogen observe. high concentration of hydrogen observe every week. perform channel calibration of channel. esf pump room and fuel building test. calibration pressure transmitter sit elevation. perform thermography survey of pressurizer heater terminations. plant modifications composition iso mode preparation. drain and remove pipe.
-</pre></div></div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>from dackar.text_processing.Preprocessing import AbbrExpander
-import os
-import time
-
-filename = os.path.join(os.getcwd(), os.pardir, &#39;data&#39;, &#39;abbreviations.xlsx&#39;)
-AbbrExp = AbbrExpander(filename)
-<br/></pre></div>
-</div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>st = time.time()
-cleanedText = AbbrExp.abbrProcess(text)
-et = time.time()
-print(&#39;Time elapse:&#39;, et-st)
-<br/></pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Time elapse: 8.979063749313354
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>textList = [t.strip() for t in text.split(&#39;\n&#39;)]
-newList = []
-st = time.time()
-for t in textList:
-    cleanedT = AbbrExp.abbrProcess(t)
-    newList.append(cleanedT)
-et = time.time()
-print(&#39;Time elapse:&#39;, et-st)
-<br/></pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Time elapse: 0.7309439182281494
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>st = time.time()
-cleanedText2 = AbbrExp.abbrProcess(text, splitToList=&#39;True&#39;)
-print(cleanedText2)
-et = time.time()
-print(&#39;Time elapse:&#39;, et-st)
-<br/></pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-1 leak was noticed from the pump. rcp pump 1a pressure gauge was found not operating. rcp pump 1a pressure gauge was found inoperative. rcp pump 1a pressure gauge was not functional. rupture of pump bearings caused shaft degradation. rupture of pump bearings caused shaft degradation and consequent flow reduction. pump power supply has been found burnout. pump test failed due to power supply failure. pump inspection revealed excessive impeller degradation. pump inspection revealed excessive impeller degradation likely due to cavitation. oil puddle was found in proximity of rcp pump 1a. anomalous vibrations were observed for rcp pump 1a. several cracks on pump shaft were observed; they could have caused pump failure within few days.
-Time elapse: 0.858644962310791
-</pre></div></div>
-</div>
-<section id="Abbreviation-handling-class">
-<h2>Abbreviation handling class<a class="headerlink" href="#Abbreviation-handling-class" title="Link to this heading">¶</a></h2>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>from dackar.text_processing.Abbreviation import Abbreviation
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Load Abbreviation from DACKAR
+from dackar.text_processing.Abbreviation import Abbreviation
 
 abbreviation = Abbreviation()
 abbrDict = abbreviation.getAbbreviation()
@@ -302,15 +282,16 @@ print(abbrDict)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-{&#39;&amp;&#39;: &#39;and&#39;, &#39;ab&#39;: &#39;as built&#39;, &#39;abl&#39;: &#39;ablative&#39;, &#39;abol&#39;: &#39;abolition&#39;, &#39;abs&#39;: &#39;absolute&#39;, &#39;absol&#39;: &#39;absolute&#39;, &#39;abst&#39;: &#39;abstract&#39;, &#39;abstr&#39;: &#39;abstract&#39;, &#39;accep&#39;: &#39;acceptance&#39;, &#39;accom&#39;: &#39;accomodation&#39;, &#39;accomm&#39;: &#39;accomodation&#39;, &#39;admin&#39;: &#39;administrative&#39;, &#39;adv&#39;: &#39;advanced&#39;, &#39;afl&#39;: &#39;above floor level\xa0&#39;, &#39;agl&#39;: &#39;above ground level&#39;, &#39;agst&#39;: &#39;against&#39;, &#39;ah&#39;: &#39;after hours&#39;, &#39;amer&#39;: &#39;american&#39;, &#39;anal&#39;: &#39;analysis&#39;, &#39;analyt&#39;: &#39;analytic&#39;, &#39;ann&#39;: &#39;annual&#39;, &#39;answ&#39;: &#39;answer&#39;, &#39;app&#39;: &#39;apperently&#39;, &#39;approx&#39;: &#39;approximate&#39;, &#39;appt&#39;: &#39;appointment&#39;, &#39;apr&#39;: &#39;april&#39;, &#39;aql&#39;: &#39;acceptable quality level&#39;, &#39;ar&#39;: &#39;as required&#39;, &#39;arch&#39;: &#39;architecture&#39;, &#39;arrgt&#39;: &#39;arrangement&#39;, &#39;artic&#39;: &#39;articulation&#39;, &#39;asap&#39;: &#39;as soon as possible&#39;, &#39;ass&#39;: &#39;assembly&#39;, &#39;assem&#39;: &#39;assembly&#39;, &#39;assy&#39;: &#39;assembly&#39;, &#39;attrib&#39;: &#39;attribute&#39;, &#39;aug&#39;: &#39;august&#39;, &#39;auto&#39;: &#39;automatic&#39;, &#39;aux&#39;: &#39;auxiliary&#39;, &#39;avg&#39;: &#39;average&#39;, &#39;batt&#39;: &#39;battery&#39;, &#39;bc&#39;: &#39;bolt circle&#39;, &#39;bef&#39;: &#39;before&#39;, &#39;betw&#39;: &#39;between&#39;, &#39;bhc&#39;: &#39;bolt hole circle&#39;, &#39;bldg&#39;: &#39;building&#39;, &#39;blk&#39;: &#39;block&#39;, &#39;bof&#39;: &#39;bottom of foundation&#39;, &#39;bom&#39;: &#39;bill of materials&#39;, &#39;bord&#39;: &#39;border&#39;, &#39;bot&#39;: &#39;bottom&#39;, &#39;bp&#39;: &#39;blueprint&#39;, &#39;brg&#39;: &#39;bearing&#39;, &#39;brz&#39;: &#39;bronze&#39;, &#39;bsc&#39;: &#39;basic&#39;, &#39;btm&#39;: &#39;bottom&#39;, &#39;btw&#39;: &#39;between&#39;, &#39;btwn&#39;: &#39;between&#39;, &#39;bw&#39;: &#39;both ways&#39;, &#39;c-c&#39;: &#39;center to center&#39;, &#39;c/o&#39;: &#39;care of&#39;, &#39;cad&#39;: &#39;computer-aided design&#39;, &#39;cal&#39;: &#39;calibration&#39;, &#39;calib&#39;: &#39;calibration&#39;, &#39;calibr&#39;: &#39;calibration&#39;, &#39;cap&#39;: &#39;capacity&#39;, &#39;cat&#39;: &#39;category&#39;, &#39;catal&#39;: &#39;catalogue&#39;, &#39;cda&#39;: &#39;current design activity&#39;, &#39;cent&#39;: &#39;centrifugal&#39;, &#39;centrif&#39;: &#39;centrifugal&#39;, &#39;cert&#39;: &#39;certificate&#39;, &#39;certif&#39;: &#39;certificate&#39;, &#39;cfw&#39;: &#39;continuous fillet weld&#39;, &#39;ch&#39;: &#39;channel&#39;, &#39;cham&#39;: &#39;chamfer&#39;, &#39;chamb&#39;: &#39;chamber&#39;, &#39;chan&#39;: &#39;channel&#39;, &#39;chann&#39;: &#39;channel&#39;, &#39;chap&#39;: &#39;chapter&#39;, &#39;chem&#39;: &#39;chemistry&#39;, &#39;circ&#39;: &#39;circulation&#39;, &#39;cl&#39;: &#39;center line&#39;, &#39;classif&#39;: &#39;classification&#39;, &#39;clr&#39;: &#39;clearance&#39;, &#39;cmu&#39;: &#39;cement masonry unit&#39;, &#39;cndct&#39;: &#39;conductivity&#39;, &#39;cntmnt&#39;: &#39;containment&#39;, &#39;cntmt&#39;: &#39;containment&#39;, &#39;coef &#39;: &#39;coefficient&#39;, &#39;coeff&#39;: &#39;coefficient&#39;, &#39;col&#39;: &#39;column&#39;, &#39;comb&#39;: &#39;combination&#39;, &#39;comm&#39;: &#39;communications&#39;, &#39;comms&#39;: &#39;communications&#39;, &#39;communic&#39;: &#39;communication&#39;, &#39;comp&#39;: &#39;composite&#39;, &#39;conc&#39;: &#39;concentration&#39;, &#39;concent&#39;: &#39;concentration&#39;, &#39;concr&#39;: &#39;concrete&#39;, &#39;cond&#39;: &#39;conduct&#39;, &#39;conn&#39;: &#39;connection&#39;, &#39;const&#39;: &#39;constant&#39;, &#39;cont&#39;: &#39;continuous&#39;, &#39;coupl&#39;: &#39;coupling&#39;, &#39;cr&#39;: &#39;controlled radius&#39;, &#39;crnr&#39;: &#39;corner&#39;, &#39;ct&#39;: &#39;controller&#39;, &#39;ctmt&#39;: &#39;containment&#39;, &#39;ctr&#39;: &#39;center &#39;, &#39;ctrl&#39;: &#39;control&#39;, &#39;cvr&#39;: &#39;cover&#39;, &#39;cyl&#39;: &#39;cylinder&#39;, &#39;dec&#39;: &#39;december&#39;, &#39;decon&#39;: &#39;decontamination&#39;, &#39;def&#39;: &#39;definition&#39;, &#39;dept&#39;: &#39;department&#39;, &#39;descr&#39;: &#39;description&#39;, &#39;det&#39;: &#39;determine&#39;, &#39;determ&#39;: &#39;determine&#39;, &#39;dia&#39;: &#39;diameter &#39;, &#39;diam&#39;: &#39;diameter&#39;, &#39;diaph&#39;: &#39;diaphragm&#39;, &#39;dir&#39;: &#39;directorate&#39;, &#39;discov&#39;: &#39;discovery&#39;, &#39;disp&#39;: &#39;displacement&#39;, &#39;displ&#39;: &#39;displacement&#39;, &#39;distill&#39;: &#39;distillation&#39;, &#39;diy&#39;: &#39;do it yourself&#39;, &#39;dn&#39;: &#39;diameter nominal&#39;, &#39;doz&#39;: &#39;dozen&#39;, &#39;dp&#39;: &#39;downpipe&#39;, &#39;dwg&#39;: &#39;drawing&#39;, &#39;econ&#39;: &#39;economic&#39;, &#39;eff&#39;: &#39;efficiency&#39;, &#39;elec &#39;: &#39;electrical&#39;, &#39;electr&#39;: &#39;electric&#39;, &#39;elem&#39;: &#39;element&#39;, &#39;elev&#39;: &#39;elevation&#39;, &#39;elv&#39;: &#39;elevation&#39;, &#39;eng&#39;: &#39;engineer&#39;, &#39;engin&#39;: &#39;engineering&#39;, &#39;engr&#39;: &#39;engineer&#39;, &#39;engrg&#39;: &#39;engineering&#39;, &#39;eq &#39;: &#39;equal&#39;, &#39;eql&#39;: &#39;equal&#39;, &#39;equip&#39;: &#39;equipment&#39;, &#39;equiv&#39;: &#39;equivalent&#39;, &#39;esp&#39;: &#39;especially&#39;, &#39;est&#39;: &#39;established&#39;, &#39;establ&#39;: &#39;established&#39;, &#39;eta&#39;: &#39;estimated time of arrival&#39;, &#39;etc&#39;: &#39;etcetera&#39;, &#39;evid&#39;: &#39;evidence&#39;, &#39;ew&#39;: &#39;each way&#39;, &#39;exec&#39;: &#39;execution&#39;, &#39;expl&#39;: &#39;explanation&#39;, &#39;explan&#39;: &#39;explanation&#39;, &#39;ext&#39;: &#39;external&#39;, &#39;fam&#39;: &#39;familiar&#39;, &#39;famil&#39;: &#39;familiar&#39;, &#39;feb&#39;: &#39;february&#39;, &#39;fig&#39;: &#39;figure&#39;, &#39;fitt&#39;: &#39;fitting&#39;, &#39;fl&#39;: &#39;fluid&#39;, &#39;flg&#39;: &#39;flange&#39;, &#39;flng&#39;: &#39;flange&#39;, &#39;flnge&#39;: &#39;flange&#39;, &#39;flngs&#39;: &#39;flanges&#39;, &#39;fob&#39;: &#39;free on board&#39;, &#39;fos&#39;: &#39;factor of safety&#39;, &#39;freq&#39;: &#39;frequency&#39;, &#39;fs&#39;: &#39;far side&#39;, &#39;fsbw&#39;: &#39;full strength butt weld&#39;, &#39;ftg&#39;: &#39;fitting&#39;, &#39;ftp&#39;: &#39;file transfer protocol&#39;, &#39;fut&#39;: &#39;future&#39;, &#39;fw&#39;: &#39;feedwater&#39;, &#39;galv&#39;: &#39;galvanized&#39;, &#39;gen&#39;: &#39;general&#39;, &#39;geo&#39;: &#39;geography&#39;, &#39;geog&#39;: &#39;geography&#39;, &#39;gloss&#39;: &#39;glossary&#39;, &#39;gn&#39;: &#39;general note&#39;, &#39;gov&#39;: &#39;government&#39;, &#39;govt&#39;: &#39;government&#39;, &#39;hd&#39;: &#39;head&#39;, &#39;hex&#39;: &#39;hexagon&#39;, &#39;hist &#39;: &#39;historical&#39;, &#39;hor&#39;: &#39;horizontal&#39;, &#39;horiz&#39;: &#39;horizontal&#39;, &#39;hp&#39;: &#39;high pressure&#39;, &#39;hr&#39;: &#39;human resources&#39;, &#39;hs&#39;: &#39;high strength&#39;, &#39;hw&#39;: &#39;hardware&#39;, &#39;hyd&#39;: &#39;hydraulic&#39;, &#39;hydr&#39;: &#39;hydraulic&#39;, &#39;hydr &#39;: &#39;hydraulic&#39;, &#39;hydraul&#39;: &#39;hydraulic&#39;, &#39;i/o&#39;: &#39;input and output&#39;, &#39;iaw&#39;: &#39;in accordance with&#39;, &#39;id&#39;: &#39;indentity&#39;, &#39;imit&#39;: &#39;imitation&#39;, &#39;imp&#39;: &#39;implementation&#39;, &#39;impf&#39;: &#39;imperfect&#39;, &#39;impr&#39;: &#39;improved&#39;, &#39;ind&#39;: &#39;induction&#39;, &#39;indef&#39;: &#39;indefinite&#39;, &#39;indic&#39;: &#39;indicator&#39;, &#39;indir&#39;: &#39;indirect&#39;, &#39;indust&#39;: &#39;industrial&#39;, &#39;industr&#39;: &#39;industrial&#39;, &#39;inf&#39;: &#39;infinite&#39;, &#39;infl&#39;: &#39;influence&#39;, &#39;inj&#39;: &#39;injection&#39;, &#39;inorg&#39;: &#39;inorganic&#39;, &#39;inq&#39;: &#39;inquiry&#39;, &#39;insp&#39;: &#39;inspection&#39;, &#39;inspec&#39;: &#39;inspection&#39;, &#39;inst&#39;: &#39;instrumental&#39;, &#39;instl&#39;: &#39;install&#39;, &#39;instr&#39;: &#39;instruction&#39;, &#39;insul&#39;: &#39;insulation&#39;, &#39;int &#39;: &#39;internal&#39;, &#39;interj&#39;: &#39;interjection&#39;, &#39;intl&#39;: &#39;internal&#39;, &#39;intro&#39;: &#39;introduction&#39;, &#39;introd&#39;: &#39;introduction&#39;, &#39;inv&#39;: &#39;inverter&#39;, &#39;io&#39;: &#39;inspection opening&#39;, &#39;jan&#39;: &#39;jannuary&#39;, &#39;jt&#39;: &#39;joint&#39;, &#39;junc&#39;: &#39;junction&#39;, &#39;kj&#39;: &#39;key joint&#39;, &#39;lab&#39;: &#39;laboratory&#39;, &#39;lf&#39;: &#39;left hand&#39;, &#39;lg&#39;: &#39;length&#39;, &#39;lh&#39;: &#39;left hand&#39;, &#39;lhs&#39;: &#39;left hand side&#39;, &#39;lm&#39;: &#39;list of material&#39;, &#39;ln&#39;: &#39;line&#39;, &#39;lp&#39;: &#39;low pressure&#39;, &#39;m/c&#39;: &#39;machine&#39;, &#39;mach&#39;: &#39;machine&#39;, &#39;mag&#39;: &#39;magnetic&#39;, &#39;magn&#39;: &#39;magnetic&#39;, &#39;maj&#39;: &#39;major&#39;, &#39;man&#39;: &#39;manual&#39;, &#39;matl&#39;: &#39;material&#39;, &#39;max&#39;: &#39;maximum&#39;, &#39;mbp&#39;: &#39;measurement between pins&#39;, &#39;mbw&#39;: &#39;measurement between wires&#39;, &#39;meas&#39;: &#39;measure&#39;, &#39;measurem&#39;: &#39;measurement&#39;, &#39;mech&#39;: &#39;mechanical&#39;, &#39;mem&#39;: &#39;memory&#39;, &#39;metall&#39;: &#39;metallurgy&#39;, &#39;meth&#39;: &#39;method&#39;, &#39;mf&#39;: &#39;make from&#39;, &#39;mfd&#39;: &#39;manufactured&#39;, &#39;mfg&#39;: &#39;manufacturing&#39;, &#39;mfr&#39;: &#39;manufacturer&#39;, &#39;mgmt&#39;: &#39;management&#39;, &#39;mgt&#39;: &#39;management&#39;, &#39;min&#39;: &#39;minimum&#39;, &#39;misc&#39;: &#39;miscellaneous&#39;, &#39;mngmnt&#39;: &#39;management&#39;, &#39;mngmt&#39;: &#39;management&#39;, &#39;mngt&#39;: &#39;management&#39;, &#39;mod&#39;: &#39;modification&#39;, &#39;mom&#39;: &#39;moment&#39;, &#39;mop&#39;: &#39;measurement between pins&#39;, &#39;mow&#39;: &#39;measurement between wires&#39;, &#39;mrp&#39;: &#39;material requirements planning&#39;, &#39;ms&#39;: &#39;mild steep&#39;, &#39;mtg&#39;: &#39;meeting&#39;, &#39;nat&#39;: &#39;natural&#39;, &#39;nc&#39;: &#39;numerical control&#39;, &#39;ncm&#39;: &#39;nonconforming material&#39;, &#39;ncr&#39;: &#39;nonconformance report&#39;, &#39;ne&#39;: &#39;north-east&#39;, &#39;neg&#39;: &#39;negative&#39;, &#39;net&#39;: &#39;network&#39;, &#39;nl&#39;: &#39;note list&#39;, &#39;no&#39;: &#39;number&#39;, &#39;nom&#39;: &#39;nominal&#39;, &#39;norm&#39;: &#39;normalized&#39;, &#39;normd&#39;: &#39;normalized&#39;, &#39;nov&#39;: &#39;November&#39;, &#39;noz&#39;: &#39;nozzle&#39;, &#39;npr&#39;: &#39;new product release&#39;, &#39;ns&#39;: &#39;nominal size&#39;, &#39;nts&#39;: &#39;not to scale&#39;, &#39;nuc&#39;: &#39;nuclear&#39;, &#39;nucl&#39;: &#39;nuclear&#39;, &#39;nw&#39;: &#39;north-west&#39;, &#39;obj&#39;: &#39;object&#39;, &#39;Obs&#39;: &#39;observation&#39;, &#39;obs&#39;: &#39;observe&#39;, &#39;observ&#39;: &#39;observation&#39;, &#39;obsrv&#39;: &#39;observe&#39;, &#39;occ&#39;: &#39;occurrence&#39;, &#39;occas&#39;: &#39;occasionally&#39;, &#39;occurr&#39;: &#39;occurrence&#39;, &#39;oct&#39;: &#39;octagon&#39;, &#39;od&#39;: &#39;outer diameter&#39;, &#39;op&#39;: &#39;operation&#39;, &#39;oper&#39;: &#39;operator&#39;, &#39;opp&#39;: &#39;opposed&#39;, &#39;ops&#39;: &#39;operations&#39;, &#39;opt&#39;: &#39;option&#39;, &#39;ord&#39;: &#39;order&#39;, &#39;org&#39;: &#39;organization&#39;, &#39;orig&#39;: &#39;original&#39;, &#39;parab&#39;: &#39;parabolic&#39;, &#39;patt&#39;: &#39;pattern&#39;, &#39;pc &#39;: &#39;piece&#39;, &#39;pcd&#39;: &#39;pitch circle diameter&#39;, &#39;pck&#39;: &#39;pack&#39;, &#39;pcs&#39;: &#39;pieces&#39;, &#39;perf&#39;: &#39;perform&#39;, &#39;perh&#39;: &#39;perhaps&#39;, &#39;period&#39;: &#39;periodic&#39;, &#39;pers&#39;: &#39;personal&#39;, &#39;pfc&#39;: &#39;parallel flange channel&#39;, &#39;pl&#39;: &#39;plural&#39;, &#39;plm&#39;: &#39;plant lifecycle management&#39;, &#39;plur&#39;: &#39;plural&#39;, &#39;pmp&#39;: &#39;pump&#39;, &#39;pn&#39;: &#39;part number&#39;, &#39;poi&#39;: &#39;point of intersection&#39;, &#39;pop&#39;: &#39;popular&#39;, &#39;pos&#39;: &#39;positive&#39;, &#39;posn&#39;: &#39;position&#39;, &#39;pract&#39;: &#39;practice&#39;, &#39;pred&#39;: &#39;prediction&#39;, &#39;predic&#39;: &#39;prediction&#39;, &#39;predict&#39;: &#39;prediction&#39;, &#39;pref&#39;: &#39;prefix&#39;, &#39;prep&#39;: &#39;prepare&#39;, &#39;preps&#39;: &#39;preparations&#39;, &#39;pres&#39;: &#39;pressure&#39;, &#39;press&#39;: &#39;pressure&#39;, &#39;prob&#39;: &#39;probably&#39;, &#39;probab&#39;: &#39;probability&#39;, &#39;probl&#39;: &#39;problem&#39;, &#39;prog&#39;: &#39;progress&#39;, &#39;prop&#39;: &#39;property&#39;, &#39;prox&#39;: &#39;proximity&#39;, &#39;pwr&#39;: &#39;power&#39;, &#39;pzr&#39;: &#39;pressurizer&#39;, &#39;qc&#39;: &#39;quality control&#39;, &#39;qnty&#39;: &#39;quantity&#39;, &#39;qty&#39;: &#39;quantity&#39;, &#39;rad&#39;: &#39;radiation&#39;, &#39;rd&#39;: &#39;round&#39;, &#39;reas&#39;: &#39;reason&#39;, &#39;rec&#39;: &#39;recirculation&#39;, &#39;recirc&#39;: &#39;recirculation&#39;, &#39;rect&#39;: &#39;rectangular&#39;, &#39;red&#39;: &#39;reduce&#39;, &#39;ref&#39;: &#39;reference&#39;, &#39;refr&#39;: &#39;reference&#39;, &#39;refurb&#39;: &#39;refurbish&#39;, &#39;regist&#39;: &#39;register&#39;, &#39;regr&#39;: &#39;regression&#39;, &#39;reinf&#39;: &#39;reinforcement&#39;, &#39;reinf &#39;: &#39;reinforce &#39;, &#39;reinst&#39;: &#39;reinstall&#39;, &#39;rel&#39;: &#39;relative&#39;, &#39;remv&#39;: &#39;remove&#39;, &#39;rep&#39;: &#39;report&#39;, &#39;repck&#39;: &#39;repack&#39;, &#39;rept&#39;: &#39;report&#39;, &#39;req&#39;: &#39;required&#39;, &#39;reqd&#39;: &#39;required&#39;, &#39;res&#39;: &#39;research&#39;, &#39;resrvr&#39;: &#39;reservoir&#39;, &#39;reterm&#39;: &#39;retermination&#39;, &#39;rev&#39;: &#39;revised&#39;, &#39;rh&#39;: &#39;right hand &#39;, &#39;rhs&#39;: &#39;right hand side&#39;, &#39;rms&#39;: &#39;root mean square&#39;, &#39;rmv&#39;: &#39;remove&#39;, &#39;rnd&#39;: &#39;round&#39;, &#39;rsvr&#39;: &#39;reservoir&#39;, &#39;rx&#39;: &#39;reactor&#39;, &#39;s/g&#39;: &#39;steam generator&#39;, &#39;sec&#39;: &#39;security&#39;, &#39;sect&#39;: &#39;section&#39;, &#39;sel&#39;: &#39;selected&#39;, &#39;select&#39;: &#39;selection&#39;, &#39;sens&#39;: &#39;sensor&#39;, &#39;sept&#39;: &#39;september&#39;, &#39;sg&#39;: &#39;steam generator&#39;, &#39;sh&#39;: &#39;sheet&#39;, &#39;shcs&#39;: &#39;socket head cap screw&#39;, &#39;shss&#39;: &#39;socket head set screw&#39;, &#39;shwn&#39;: &#39;shown&#39;, &#39;sim&#39;: &#39;simulation&#39;, &#39;sk&#39;: &#39;sketch&#39;, &#39;sn&#39;: &#39;serial number&#39;, &#39;spec&#39;: &#39;specimen&#39;, &#39;sq&#39;: &#39;square&#39;, &#39;ss&#39;: &#39;stainless steel&#39;, &#39;stat&#39;: &#39;statistical&#39;, &#39;statist&#39;: &#39;statistical&#39;, &#39;std&#39;: &#39;standard&#39;, &#39;stdrd&#39;: &#39;standard&#39;, &#39;stk&#39;: &#39;stock&#39;, &#39;str&#39;: &#39;strong&#39;, &#39;struct&#39;: &#39;structural&#39;, &#39;subj&#39;: &#39;subject&#39;, &#39;supp&#39;: &#39;suppression&#39;, &#39;suppress&#39;: &#39;suppression&#39;, &#39;surf&#39;: &#39;surface&#39;, &#39;surv&#39;: &#39;survey&#39;, &#39;susp&#39;: &#39;suspension&#39;, &#39;sw&#39;: &#39;switchyard&#39;, &#39;swch&#39;: &#39;switch&#39;, &#39;symm&#39;: &#39;symmetry&#39;, &#39;sys&#39;: &#39;system&#39;, &#39;syst&#39;: &#39;system&#39;, &#39;tc&#39;: &#39;tungsten carbide&#39;, &#39;tdp&#39;: &#39;technical data package&#39;, &#39;tech&#39;: &#39;technology&#39;, &#39;tech specs&#39;: &#39;technical specifications&#39;, &#39;techn&#39;: &#39;technical&#39;, &#39;technol&#39;: &#39;technology&#39;, &#39;tel&#39;: &#39;telephone&#39;, &#39;telecom&#39;: &#39;telecommunications&#39;, &#39;telecomm&#39;: &#39;telecommunications&#39;, &#39;temp&#39;: &#39;temporary&#39;, &#39;thd&#39;: &#39;thread&#39;, &#39;theor&#39;: &#39;theoretical&#39;, &#39;theoret&#39;: &#39;theoretical&#39;, &#39;thk&#39;: &#39;thick&#39;, &#39;thru&#39;: &#39;through&#39;, &#39;tir&#39;: &#39;total indicator reading&#39;, &#39;tol&#39;: &#39;tolerance&#39;, &#39;toll&#39;: &#39;tollerance&#39;, &#39;trans&#39;: &#39;transaction&#39;, &#39;transf&#39;: &#39;transformer&#39;, &#39;transl&#39;: &#39;translation&#39;, &#39;transm&#39;: &#39;transmission&#39;, &#39;treat&#39;: &#39;treatment&#39;, &#39;treatm&#39;: &#39;treatment&#39;, &#39;troub&#39;: &#39;troublesome&#39;, &#39;ty&#39;: &#39;type&#39;, &#39;typ&#39;: &#39;typical&#39;, &#39;ua&#39;: &#39;unequal angle&#39;, &#39;uai&#39;: &#39;use as is&#39;, &#39;ub&#39;: &#39;universal beam&#39;, &#39;ucut&#39;: &#39;undercut&#39;, &#39;ull&#39;: &#39;under low limit&#39;, &#39;unk&#39;: &#39;unknown&#39;, &#39;unkn&#39;: &#39;unknown&#39;, &#39;unkw&#39;: &#39;unknown&#39;, &#39;unkwn&#39;: &#39;unknown&#39;, &#39;uno&#39;: &#39;unless noted otherwise&#39;, &#39;uon&#39;: &#39;unless otherwise noted&#39;, &#39;uos&#39;: &#39;unless otherwise specified&#39;, &#39;vac&#39;: &#39;vacuum&#39;, &#39;var&#39;: &#39;variable&#39;, &#39;vb&#39;: &#39;verb&#39;, &#39;ver&#39;: &#39;vertical&#39;, &#39;vert&#39;: &#39;vertical&#39;, &#39;vis &#39;: &#39;visual&#39;, &#39;vlv&#39;: &#39;valve&#39;, &#39;vol&#39;: &#39;volume&#39;, &#39;vs&#39;: &#39;versus&#39;, &#39;vsl&#39;: &#39;vessel&#39;, &#39;w/&#39;: &#39;with&#39;, &#39;w/i&#39;: &#39;within&#39;, &#39;w/o&#39;: &#39;without&#39;, &#39;wc&#39;: &#39;welded column&#39;, &#39;wgt&#39;: &#39;weight&#39;, &#39;wk&#39;: &#39;work&#39;, &#39;wks&#39;: &#39;works&#39;, &#39;wt&#39;: &#39;weight&#39;, &#39;wtr&#39;: &#39;water&#39;, &#39;yd&#39;: &#39;yard&#39;, &#39;yp&#39;: &#39;yield point&#39;, &#39;yr&#39;: &#39;year&#39;, &#39;yrs&#39;: &#39;years&#39;, &#39;emb&#39;: &#39;embrittlement&#39;, &#39;env&#39;: &#39;environment&#39;, &#39;fat&#39;: &#39;fatigue&#39;, &#39;wstg&#39;: &#39;wastage&#39;, &#39;degr&#39;: &#39;degradation&#39;, &#39;deg&#39;: &#39;degradation&#39;, &#39;wst&#39;: &#39;waste &#39;, &#39;chk&#39;: &#39;check&#39;, &#39;xmtr&#39;: &#39;transmitter&#39;, &#39;htr&#39;: &#39;heater&#39;, &#39;retest&#39;: &#39;test&#39;, &#39;verif&#39;: &#39;verify&#39;, &#39;atmos&#39;: &#39;atmospheric&#39;, &#39;cntl&#39;: &#39;control&#39;, &#39;cntrl&#39;: &#39;control&#39;, &#39;wshr&#39;: &#39;washer&#39;, &#39;vent&#39;: &#39;ventilation&#39;, &#39;xfer&#39;: &#39;transfer&#39;, &#39;purif&#39;: &#39;purification&#39;, &#39;hx&#39;: &#39;heat exchanger&#39;, &#39;scaff&#39;: &#39;scaffolding&#39;, &#39;scaf &#39;: &#39;scaffolding&#39;, &#39;cbl&#39;: &#39;cable&#39;, &#39;cbls&#39;: &#39;cables&#39;, &#39;discnt&#39;: &#39;disconnect&#39;, &#39;dscnt&#39;: &#39;disconnect&#39;, &#39;dscnct&#39;: &#39;disconnect&#39;, &#39;regen&#39;: &#39;regenerate&#39;, &#39;recomb&#39;: &#39;recombine&#39;, &#39;depress&#39;: &#39;depressurize&#39;, &#39;demin&#39;: &#39;demineralize&#39;, &#39;strk&#39;: &#39;stroke&#39;, &#39;cntrld&#39;: &#39;controlled&#39;, &#39;dwncmr&#39;: &#39;downcomer&#39;, &#39;drn&#39;: &#39;drain&#39;, &#39;fdwtr&#39;: &#39;feed water&#39;, &#39;turb&#39;: &#39;turbine&#39;, &#39;emerg&#39;: &#39;emergency&#39;, &#39;alt&#39;: &#39;alternator&#39;, &#39;feedwater&#39;: &#39;feed water&#39;, &#39;shft&#39;: &#39;shaft&#39;, &#39;lo&#39;: &#39;low&#39;, &#39;hi&#39;: &#39;high&#39;, &#39;flw&#39;: &#39;flow&#39;, &#39;funct&#39;: &#39;functional&#39;, &#39;trng&#39;: &#39;training&#39;, &#39;tk&#39;: &#39;tank&#39;, &#39;tks&#39;: &#39;tanks&#39;, &#39;isol&#39;: &#39;isolate&#39;, &#39;suct&#39;: &#39;suction&#39;, &#39;tnk&#39;: &#39;tank&#39;, &#39;tnks&#39;: &#39;tanks&#39;, &#39;disch&#39;: &#39;discharge&#39;, &#39;emrg&#39;: &#39;emergency&#39;, &#39;islt&#39;: &#39;isolate&#39;, &#39;xfmr&#39;: &#39;transformer&#39;, &#39;xfrmr&#39;: &#39;transformer&#39;, &#39;stby&#39;: &#39;stand by&#39;, &#39;assmby&#39;: &#39;assembly&#39;, &#39;vrfy&#39;: &#39;verify&#39;, &#39;rls&#39;: &#39;release&#39;, &#39;lvl&#39;: &#39;level&#39;, &#39;deten&#39;: &#39;detension&#39;, &#39;rmve&#39;: &#39;remove&#39;, &#39;hrs&#39;: &#39;hours&#39;, &#39;perfrm&#39;: &#39;perform&#39;, &#39;sched&#39;: &#39;schedule&#39;, &#39;mods&#39;: &#39;modifications&#39;, &#39;cw&#39;: &#39;circulating water&#39;, &#39;rplc&#39;: &#39;replace&#39;, &#39;lwr&#39;: &#39;lower&#39;, &#34;req&#39;d&#34;: &#39;required&#39;, &#39;scrn&#39;: &#39;screen&#39;, &#39;wsh&#39;: &#39;wash&#39;, &#39;mtr&#39;: &#39;motor&#39;, &#39;trblsht&#39;: &#39;troubleshoot&#39;, &#39;ht&#39;: &#39;heat&#39;, &#39;oos&#39;: &#39;out of service&#39;, &#39;spre&#39;: &#39;spare&#39;, &#39;otbd&#39;: &#39;outboard&#39;, &#39;inbd&#39;: &#39;inboard&#39;, &#39;underwtr&#39;: &#39;underwater&#39;, &#39;vib&#39;: &#39;vibration&#39;, &#39;vibs&#39;: &#39;vibrations&#39;, &#39;rplce&#39;: &#39;replace&#39;, &#39;maint&#39;: &#39;maintenance&#39;, &#39;mntnc&#39;: &#39;maintenance&#39;, &#39;mainten&#39;: &#39;maintenance&#39;, &#39;maintenan&#39;: &#39;maintenance&#39;, &#39;mainte&#39;: &#39;maintenance&#39;, &#39;chng&#39;: &#39;change&#39;, &#39;inop&#39;: &#39;inoperative&#39;, &#39;perma&#39;: &#39;permanent&#39;, &#39;trav&#39;: &#39;traveling&#39;, &#39;vibes&#39;: &#39;vibrations&#39;, &#39;crac&#39;: &#39;crack&#39;, &#39;stab&#39;: &#39;stabilize&#39;}
+{&#39;&amp;&#39;: &#39;and&#39;, &#39;ab&#39;: &#39;as built&#39;, &#39;abl&#39;: &#39;ablative&#39;, &#39;abol&#39;: &#39;abolition&#39;, &#39;abs&#39;: &#39;absolute&#39;, &#39;absol&#39;: &#39;absolute&#39;, &#39;abst&#39;: &#39;abstract&#39;, &#39;abstr&#39;: &#39;abstract&#39;, &#39;accep&#39;: &#39;acceptance&#39;, &#39;accom&#39;: &#39;accomodation&#39;, &#39;accomm&#39;: &#39;accomodation&#39;, &#39;admin&#39;: &#39;administrative&#39;, &#39;adv&#39;: &#39;advanced&#39;, &#39;afl&#39;: &#39;above floor level\xa0&#39;, &#39;agl&#39;: &#39;above ground level&#39;, &#39;agst&#39;: &#39;against&#39;, &#39;ah&#39;: &#39;after hours&#39;, &#39;amer&#39;: &#39;american&#39;, &#39;anal&#39;: &#39;analysis&#39;, &#39;analyt&#39;: &#39;analytic&#39;, &#39;ann&#39;: &#39;annual&#39;, &#39;answ&#39;: &#39;answer&#39;, &#39;app&#39;: &#39;apperently&#39;, &#39;approx&#39;: &#39;approximate&#39;, &#39;appt&#39;: &#39;appointment&#39;, &#39;apr&#39;: &#39;april&#39;, &#39;aql&#39;: &#39;acceptable quality level&#39;, &#39;ar&#39;: &#39;as required&#39;, &#39;arch&#39;: &#39;architecture&#39;, &#39;arrgt&#39;: &#39;arrangement&#39;, &#39;artic&#39;: &#39;articulation&#39;, &#39;asap&#39;: &#39;as soon as possible&#39;, &#39;ass&#39;: &#39;assembly&#39;, &#39;assem&#39;: &#39;assembly&#39;, &#39;assy&#39;: &#39;assembly&#39;, &#39;attrib&#39;: &#39;attribute&#39;, &#39;aug&#39;: &#39;august&#39;, &#39;auto&#39;: &#39;automatic&#39;, &#39;aux&#39;: &#39;auxiliary&#39;, &#39;avg&#39;: &#39;average&#39;, &#39;batt&#39;: &#39;battery&#39;, &#39;bc&#39;: &#39;bolt circle&#39;, &#39;bef&#39;: &#39;before&#39;, &#39;betw&#39;: &#39;between&#39;, &#39;bhc&#39;: &#39;bolt hole circle&#39;, &#39;bldg&#39;: &#39;building&#39;, &#39;blk&#39;: &#39;block&#39;, &#39;bof&#39;: &#39;bottom of foundation&#39;, &#39;bom&#39;: &#39;bill of materials&#39;, &#39;bord&#39;: &#39;border&#39;, &#39;bot&#39;: &#39;bottom&#39;, &#39;bp&#39;: &#39;blueprint&#39;, &#39;brg&#39;: &#39;bearing&#39;, &#39;brz&#39;: &#39;bronze&#39;, &#39;bsc&#39;: &#39;basic&#39;, &#39;btm&#39;: &#39;bottom&#39;, &#39;btw&#39;: &#39;between&#39;, &#39;btwn&#39;: &#39;between&#39;, &#39;bw&#39;: &#39;both ways&#39;, &#39;c-c&#39;: &#39;center to center&#39;, &#39;c/o&#39;: &#39;care of&#39;, &#39;cad&#39;: &#39;computer-aided design&#39;, &#39;cal&#39;: &#39;calibration&#39;, &#39;calib&#39;: &#39;calibration&#39;, &#39;calibr&#39;: &#39;calibration&#39;, &#39;cap&#39;: &#39;capacity&#39;, &#39;cat&#39;: &#39;category&#39;, &#39;catal&#39;: &#39;catalogue&#39;, &#39;cda&#39;: &#39;current design activity&#39;, &#39;cent&#39;: &#39;centrifugal&#39;, &#39;centrif&#39;: &#39;centrifugal&#39;, &#39;cert&#39;: &#39;certificate&#39;, &#39;certif&#39;: &#39;certificate&#39;, &#39;cfw&#39;: &#39;continuous fillet weld&#39;, &#39;ch&#39;: &#39;channel&#39;, &#39;cham&#39;: &#39;chamfer&#39;, &#39;chamb&#39;: &#39;chamber&#39;, &#39;chan&#39;: &#39;channel&#39;, &#39;chann&#39;: &#39;channel&#39;, &#39;chap&#39;: &#39;chapter&#39;, &#39;chem&#39;: &#39;chemistry&#39;, &#39;circ&#39;: &#39;circulation&#39;, &#39;cl&#39;: &#39;center line&#39;, &#39;classif&#39;: &#39;classification&#39;, &#39;clr&#39;: &#39;clearance&#39;, &#39;cmu&#39;: &#39;cement masonry unit&#39;, &#39;cndct&#39;: &#39;conductivity&#39;, &#39;cntmnt&#39;: &#39;containment&#39;, &#39;cntmt&#39;: &#39;containment&#39;, &#39;coef &#39;: &#39;coefficient&#39;, &#39;coeff&#39;: &#39;coefficient&#39;, &#39;col&#39;: &#39;column&#39;, &#39;comb&#39;: &#39;combination&#39;, &#39;comm&#39;: &#39;communications&#39;, &#39;comms&#39;: &#39;communications&#39;, &#39;communic&#39;: &#39;communication&#39;, &#39;comp&#39;: &#39;composite&#39;, &#39;conc&#39;: &#39;concentration&#39;, &#39;concent&#39;: &#39;concentration&#39;, &#39;concr&#39;: &#39;concrete&#39;, &#39;cond&#39;: &#39;conduct&#39;, &#39;conn&#39;: &#39;connection&#39;, &#39;const&#39;: &#39;constant&#39;, &#39;cont&#39;: &#39;continuous&#39;, &#39;coupl&#39;: &#39;coupling&#39;, &#39;cr&#39;: &#39;controlled radius&#39;, &#39;crnr&#39;: &#39;corner&#39;, &#39;ct&#39;: &#39;controller&#39;, &#39;ctmt&#39;: &#39;containment&#39;, &#39;ctr&#39;: &#39;center &#39;, &#39;ctrl&#39;: &#39;control&#39;, &#39;cvr&#39;: &#39;cover&#39;, &#39;cyl&#39;: &#39;cylinder&#39;, &#39;dec&#39;: &#39;december&#39;, &#39;decon&#39;: &#39;decontamination&#39;, &#39;def&#39;: &#39;definition&#39;, &#39;dept&#39;: &#39;department&#39;, &#39;descr&#39;: &#39;description&#39;, &#39;det&#39;: &#39;determine&#39;, &#39;determ&#39;: &#39;determine&#39;, &#39;dia&#39;: &#39;diameter &#39;, &#39;diam&#39;: &#39;diameter&#39;, &#39;diaph&#39;: &#39;diaphragm&#39;, &#39;dir&#39;: &#39;directorate&#39;, &#39;discov&#39;: &#39;discovery&#39;, &#39;disp&#39;: &#39;displacement&#39;, &#39;displ&#39;: &#39;displacement&#39;, &#39;distill&#39;: &#39;distillation&#39;, &#39;diy&#39;: &#39;do it yourself&#39;, &#39;dn&#39;: &#39;diameter nominal&#39;, &#39;doz&#39;: &#39;dozen&#39;, &#39;dp&#39;: &#39;downpipe&#39;, &#39;dwg&#39;: &#39;drawing&#39;, &#39;econ&#39;: &#39;economic&#39;, &#39;eff&#39;: &#39;efficiency&#39;, &#39;elec &#39;: &#39;electrical&#39;, &#39;electr&#39;: &#39;electric&#39;, &#39;elem&#39;: &#39;element&#39;, &#39;elev&#39;: &#39;elevation&#39;, &#39;elv&#39;: &#39;elevation&#39;, &#39;eng&#39;: &#39;engineer&#39;, &#39;engin&#39;: &#39;engineering&#39;, &#39;engr&#39;: &#39;engineer&#39;, &#39;engrg&#39;: &#39;engineering&#39;, &#39;eq &#39;: &#39;equal&#39;, &#39;eql&#39;: &#39;equal&#39;, &#39;equip&#39;: &#39;equipment&#39;, &#39;equiv&#39;: &#39;equivalent&#39;, &#39;esp&#39;: &#39;especially&#39;, &#39;est&#39;: &#39;established&#39;, &#39;establ&#39;: &#39;established&#39;, &#39;eta&#39;: &#39;estimated time of arrival&#39;, &#39;etc&#39;: &#39;etcetera&#39;, &#39;evid&#39;: &#39;evidence&#39;, &#39;ew&#39;: &#39;each way&#39;, &#39;exec&#39;: &#39;execution&#39;, &#39;expl&#39;: &#39;explanation&#39;, &#39;explan&#39;: &#39;explanation&#39;, &#39;ext&#39;: &#39;external&#39;, &#39;fam&#39;: &#39;familiar&#39;, &#39;famil&#39;: &#39;familiar&#39;, &#39;feb&#39;: &#39;february&#39;, &#39;fig&#39;: &#39;figure&#39;, &#39;fitt&#39;: &#39;fitting&#39;, &#39;fl&#39;: &#39;fluid&#39;, &#39;flg&#39;: &#39;flange&#39;, &#39;flng&#39;: &#39;flange&#39;, &#39;flnge&#39;: &#39;flange&#39;, &#39;flngs&#39;: &#39;flanges&#39;, &#39;fob&#39;: &#39;free on board&#39;, &#39;fos&#39;: &#39;factor of safety&#39;, &#39;freq&#39;: &#39;frequency&#39;, &#39;fs&#39;: &#39;far side&#39;, &#39;fsbw&#39;: &#39;full strength butt weld&#39;, &#39;ftg&#39;: &#39;fitting&#39;, &#39;ftp&#39;: &#39;file transfer protocol&#39;, &#39;fut&#39;: &#39;future&#39;, &#39;fw&#39;: &#39;feedwater&#39;, &#39;galv&#39;: &#39;galvanized&#39;, &#39;gen&#39;: &#39;general&#39;, &#39;geo&#39;: &#39;geography&#39;, &#39;geog&#39;: &#39;geography&#39;, &#39;gloss&#39;: &#39;glossary&#39;, &#39;gn&#39;: &#39;general note&#39;, &#39;gov&#39;: &#39;government&#39;, &#39;govt&#39;: &#39;government&#39;, &#39;hd&#39;: &#39;head&#39;, &#39;hex&#39;: &#39;hexagon&#39;, &#39;hist &#39;: &#39;historical&#39;, &#39;hor&#39;: &#39;horizontal&#39;, &#39;horiz&#39;: &#39;horizontal&#39;, &#39;hp&#39;: &#39;high pressure&#39;, &#39;hr&#39;: &#39;hour&#39;, &#39;hrs&#39;: &#39;hours&#39;, &#39;hs&#39;: &#39;high strength&#39;, &#39;hw&#39;: &#39;hardware&#39;, &#39;hyd&#39;: &#39;hydraulic&#39;, &#39;hydr&#39;: &#39;hydraulic&#39;, &#39;hydr &#39;: &#39;hydraulic&#39;, &#39;hydraul&#39;: &#39;hydraulic&#39;, &#39;i/o&#39;: &#39;input and output&#39;, &#39;iaw&#39;: &#39;in accordance with&#39;, &#39;id&#39;: &#39;indentity&#39;, &#39;imit&#39;: &#39;imitation&#39;, &#39;imp&#39;: &#39;implementation&#39;, &#39;impf&#39;: &#39;imperfect&#39;, &#39;impr&#39;: &#39;improved&#39;, &#39;ind&#39;: &#39;induction&#39;, &#39;indef&#39;: &#39;indefinite&#39;, &#39;indic&#39;: &#39;indicator&#39;, &#39;indir&#39;: &#39;indirect&#39;, &#39;indust&#39;: &#39;industrial&#39;, &#39;industr&#39;: &#39;industrial&#39;, &#39;inf&#39;: &#39;infinite&#39;, &#39;infl&#39;: &#39;influence&#39;, &#39;inj&#39;: &#39;injection&#39;, &#39;inorg&#39;: &#39;inorganic&#39;, &#39;inq&#39;: &#39;inquiry&#39;, &#39;insp&#39;: &#39;inspection&#39;, &#39;inspec&#39;: &#39;inspection&#39;, &#39;inst&#39;: &#39;instrumental&#39;, &#39;instl&#39;: &#39;install&#39;, &#39;instr&#39;: &#39;instruction&#39;, &#39;insul&#39;: &#39;insulation&#39;, &#39;int &#39;: &#39;internal&#39;, &#39;interj&#39;: &#39;interjection&#39;, &#39;intl&#39;: &#39;internal&#39;, &#39;intro&#39;: &#39;introduction&#39;, &#39;introd&#39;: &#39;introduction&#39;, &#39;inv&#39;: &#39;inverter&#39;, &#39;io&#39;: &#39;inspection opening&#39;, &#39;jan&#39;: &#39;jannuary&#39;, &#39;jt&#39;: &#39;joint&#39;, &#39;junc&#39;: &#39;junction&#39;, &#39;kj&#39;: &#39;key joint&#39;, &#39;lab&#39;: &#39;laboratory&#39;, &#39;lf&#39;: &#39;left hand&#39;, &#39;lg&#39;: &#39;length&#39;, &#39;lh&#39;: &#39;left hand&#39;, &#39;lhs&#39;: &#39;left hand side&#39;, &#39;lm&#39;: &#39;list of material&#39;, &#39;ln&#39;: &#39;line&#39;, &#39;lp&#39;: &#39;low pressure&#39;, &#39;m/c&#39;: &#39;machine&#39;, &#39;mach&#39;: &#39;machine&#39;, &#39;mag&#39;: &#39;magnetic&#39;, &#39;magn&#39;: &#39;magnetic&#39;, &#39;maj&#39;: &#39;major&#39;, &#39;man&#39;: &#39;manual&#39;, &#39;matl&#39;: &#39;material&#39;, &#39;max&#39;: &#39;maximum&#39;, &#39;mbp&#39;: &#39;measurement between pins&#39;, &#39;mbw&#39;: &#39;measurement between wires&#39;, &#39;meas&#39;: &#39;measure&#39;, &#39;measurem&#39;: &#39;measurement&#39;, &#39;mech&#39;: &#39;mechanical&#39;, &#39;mem&#39;: &#39;memory&#39;, &#39;metall&#39;: &#39;metallurgy&#39;, &#39;meth&#39;: &#39;method&#39;, &#39;mf&#39;: &#39;make from&#39;, &#39;mfd&#39;: &#39;manufactured&#39;, &#39;mfg&#39;: &#39;manufacturing&#39;, &#39;mfr&#39;: &#39;manufacturer&#39;, &#39;mgmt&#39;: &#39;management&#39;, &#39;mgt&#39;: &#39;management&#39;, &#39;min&#39;: &#39;minimum&#39;, &#39;misc&#39;: &#39;miscellaneous&#39;, &#39;mngmnt&#39;: &#39;management&#39;, &#39;mngmt&#39;: &#39;management&#39;, &#39;mngt&#39;: &#39;management&#39;, &#39;mod&#39;: &#39;modification&#39;, &#39;mom&#39;: &#39;moment&#39;, &#39;mop&#39;: &#39;measurement between pins&#39;, &#39;mow&#39;: &#39;measurement between wires&#39;, &#39;mrp&#39;: &#39;material requirements planning&#39;, &#39;ms&#39;: &#39;mild steep&#39;, &#39;mtg&#39;: &#39;meeting&#39;, &#39;nat&#39;: &#39;natural&#39;, &#39;nc&#39;: &#39;numerical control&#39;, &#39;ncm&#39;: &#39;nonconforming material&#39;, &#39;ncr&#39;: &#39;nonconformance report&#39;, &#39;ne&#39;: &#39;north-east&#39;, &#39;neg&#39;: &#39;negative&#39;, &#39;net&#39;: &#39;network&#39;, &#39;nl&#39;: &#39;note list&#39;, &#39;no&#39;: &#39;number&#39;, &#39;nom&#39;: &#39;nominal&#39;, &#39;norm&#39;: &#39;normalized&#39;, &#39;normd&#39;: &#39;normalized&#39;, &#39;nov&#39;: &#39;November&#39;, &#39;noz&#39;: &#39;nozzle&#39;, &#39;npr&#39;: &#39;new product release&#39;, &#39;ns&#39;: &#39;nominal size&#39;, &#39;nts&#39;: &#39;not to scale&#39;, &#39;nuc&#39;: &#39;nuclear&#39;, &#39;nucl&#39;: &#39;nuclear&#39;, &#39;nw&#39;: &#39;north-west&#39;, &#39;obj&#39;: &#39;object&#39;, &#39;Obs&#39;: &#39;observation&#39;, &#39;obs&#39;: &#39;observe&#39;, &#39;observ&#39;: &#39;observation&#39;, &#39;obsrv&#39;: &#39;observe&#39;, &#39;occ&#39;: &#39;occurrence&#39;, &#39;occas&#39;: &#39;occasionally&#39;, &#39;occurr&#39;: &#39;occurrence&#39;, &#39;oct&#39;: &#39;octagon&#39;, &#39;od&#39;: &#39;outer diameter&#39;, &#39;op&#39;: &#39;operation&#39;, &#39;oper&#39;: &#39;operator&#39;, &#39;opp&#39;: &#39;opposed&#39;, &#39;ops&#39;: &#39;operations&#39;, &#39;opt&#39;: &#39;option&#39;, &#39;ord&#39;: &#39;order&#39;, &#39;org&#39;: &#39;organization&#39;, &#39;orig&#39;: &#39;original&#39;, &#39;parab&#39;: &#39;parabolic&#39;, &#39;patt&#39;: &#39;pattern&#39;, &#39;pc &#39;: &#39;piece&#39;, &#39;pcd&#39;: &#39;pitch circle diameter&#39;, &#39;pck&#39;: &#39;pack&#39;, &#39;pcs&#39;: &#39;pieces&#39;, &#39;perf&#39;: &#39;perform&#39;, &#39;perh&#39;: &#39;perhaps&#39;, &#39;period&#39;: &#39;periodic&#39;, &#39;pers&#39;: &#39;personal&#39;, &#39;pfc&#39;: &#39;parallel flange channel&#39;, &#39;pl&#39;: &#39;plural&#39;, &#39;plm&#39;: &#39;plant lifecycle management&#39;, &#39;plur&#39;: &#39;plural&#39;, &#39;pmp&#39;: &#39;pump&#39;, &#39;pn&#39;: &#39;part number&#39;, &#39;poi&#39;: &#39;point of intersection&#39;, &#39;pop&#39;: &#39;popular&#39;, &#39;pos&#39;: &#39;positive&#39;, &#39;posn&#39;: &#39;position&#39;, &#39;pract&#39;: &#39;practice&#39;, &#39;pred&#39;: &#39;prediction&#39;, &#39;predic&#39;: &#39;prediction&#39;, &#39;predict&#39;: &#39;prediction&#39;, &#39;pref&#39;: &#39;prefix&#39;, &#39;prep&#39;: &#39;prepare&#39;, &#39;preps&#39;: &#39;preparations&#39;, &#39;pres&#39;: &#39;pressure&#39;, &#39;press&#39;: &#39;pressure&#39;, &#39;prob&#39;: &#39;probably&#39;, &#39;probab&#39;: &#39;probability&#39;, &#39;probl&#39;: &#39;problem&#39;, &#39;prog&#39;: &#39;progress&#39;, &#39;prop&#39;: &#39;property&#39;, &#39;prox&#39;: &#39;proximity&#39;, &#39;pwr&#39;: &#39;power&#39;, &#39;pzr&#39;: &#39;pressurizer&#39;, &#39;qc&#39;: &#39;quality control&#39;, &#39;qnty&#39;: &#39;quantity&#39;, &#39;qty&#39;: &#39;quantity&#39;, &#39;rad&#39;: &#39;radiation&#39;, &#39;rd&#39;: &#39;round&#39;, &#39;reas&#39;: &#39;reason&#39;, &#39;rec&#39;: &#39;recirculation&#39;, &#39;recirc&#39;: &#39;recirculation&#39;, &#39;rect&#39;: &#39;rectangular&#39;, &#39;red&#39;: &#39;reduce&#39;, &#39;ref&#39;: &#39;reference&#39;, &#39;refr&#39;: &#39;reference&#39;, &#39;refurb&#39;: &#39;refurbish&#39;, &#39;regist&#39;: &#39;register&#39;, &#39;regr&#39;: &#39;regression&#39;, &#39;reinf&#39;: &#39;reinforcement&#39;, &#39;reinf &#39;: &#39;reinforce &#39;, &#39;reinst&#39;: &#39;reinstall&#39;, &#39;rel&#39;: &#39;relative&#39;, &#39;remv&#39;: &#39;remove&#39;, &#39;rep&#39;: &#39;report&#39;, &#39;repck&#39;: &#39;repack&#39;, &#39;rept&#39;: &#39;report&#39;, &#39;req&#39;: &#39;required&#39;, &#39;reqd&#39;: &#39;required&#39;, &#39;res&#39;: &#39;research&#39;, &#39;resrvr&#39;: &#39;reservoir&#39;, &#39;reterm&#39;: &#39;retermination&#39;, &#39;rev&#39;: &#39;revised&#39;, &#39;rh&#39;: &#39;right hand &#39;, &#39;rhs&#39;: &#39;right hand side&#39;, &#39;rms&#39;: &#39;root mean square&#39;, &#39;rmv&#39;: &#39;remove&#39;, &#39;rnd&#39;: &#39;round&#39;, &#39;rsvr&#39;: &#39;reservoir&#39;, &#39;rx&#39;: &#39;reactor&#39;, &#39;s/g&#39;: &#39;steam generator&#39;, &#39;sec&#39;: &#39;security&#39;, &#39;sect&#39;: &#39;section&#39;, &#39;sel&#39;: &#39;selected&#39;, &#39;select&#39;: &#39;selection&#39;, &#39;sens&#39;: &#39;sensor&#39;, &#39;sept&#39;: &#39;september&#39;, &#39;sg&#39;: &#39;steam generator&#39;, &#39;sh&#39;: &#39;sheet&#39;, &#39;shcs&#39;: &#39;socket head cap screw&#39;, &#39;shss&#39;: &#39;socket head set screw&#39;, &#39;shwn&#39;: &#39;shown&#39;, &#39;sim&#39;: &#39;simulation&#39;, &#39;sk&#39;: &#39;sketch&#39;, &#39;sn&#39;: &#39;serial number&#39;, &#39;spec&#39;: &#39;specimen&#39;, &#39;sq&#39;: &#39;square&#39;, &#39;ss&#39;: &#39;stainless steel&#39;, &#39;stat&#39;: &#39;statistical&#39;, &#39;statist&#39;: &#39;statistical&#39;, &#39;std&#39;: &#39;standard&#39;, &#39;stdrd&#39;: &#39;standard&#39;, &#39;stk&#39;: &#39;stock&#39;, &#39;str&#39;: &#39;strong&#39;, &#39;struct&#39;: &#39;structural&#39;, &#39;subj&#39;: &#39;subject&#39;, &#39;supp&#39;: &#39;suppression&#39;, &#39;suppress&#39;: &#39;suppression&#39;, &#39;surf&#39;: &#39;surface&#39;, &#39;surv&#39;: &#39;survey&#39;, &#39;susp&#39;: &#39;suspension&#39;, &#39;sw&#39;: &#39;switchyard&#39;, &#39;swch&#39;: &#39;switch&#39;, &#39;symm&#39;: &#39;symmetry&#39;, &#39;sys&#39;: &#39;system&#39;, &#39;syst&#39;: &#39;system&#39;, &#39;tc&#39;: &#39;tungsten carbide&#39;, &#39;tdp&#39;: &#39;technical data package&#39;, &#39;tech&#39;: &#39;technology&#39;, &#39;tech specs&#39;: &#39;technical specifications&#39;, &#39;techn&#39;: &#39;technical&#39;, &#39;technol&#39;: &#39;technology&#39;, &#39;tel&#39;: &#39;telephone&#39;, &#39;telecom&#39;: &#39;telecommunications&#39;, &#39;telecomm&#39;: &#39;telecommunications&#39;, &#39;temp&#39;: &#39;temporary&#39;, &#39;thd&#39;: &#39;thread&#39;, &#39;theor&#39;: &#39;theoretical&#39;, &#39;theoret&#39;: &#39;theoretical&#39;, &#39;thk&#39;: &#39;thick&#39;, &#39;thru&#39;: &#39;through&#39;, &#39;tir&#39;: &#39;total indicator reading&#39;, &#39;tol&#39;: &#39;tolerance&#39;, &#39;toll&#39;: &#39;tollerance&#39;, &#39;trans&#39;: &#39;transaction&#39;, &#39;transf&#39;: &#39;transformer&#39;, &#39;transl&#39;: &#39;translation&#39;, &#39;transm&#39;: &#39;transmission&#39;, &#39;treat&#39;: &#39;treatment&#39;, &#39;treatm&#39;: &#39;treatment&#39;, &#39;troub&#39;: &#39;troublesome&#39;, &#39;ty&#39;: &#39;type&#39;, &#39;typ&#39;: &#39;typical&#39;, &#39;ua&#39;: &#39;unequal angle&#39;, &#39;uai&#39;: &#39;use as is&#39;, &#39;ub&#39;: &#39;universal beam&#39;, &#39;ucut&#39;: &#39;undercut&#39;, &#39;ull&#39;: &#39;under low limit&#39;, &#39;unk&#39;: &#39;unknown&#39;, &#39;unkn&#39;: &#39;unknown&#39;, &#39;unkw&#39;: &#39;unknown&#39;, &#39;unkwn&#39;: &#39;unknown&#39;, &#39;uno&#39;: &#39;unless noted otherwise&#39;, &#39;uon&#39;: &#39;unless otherwise noted&#39;, &#39;uos&#39;: &#39;unless otherwise specified&#39;, &#39;vac&#39;: &#39;vacuum&#39;, &#39;var&#39;: &#39;variable&#39;, &#39;vb&#39;: &#39;verb&#39;, &#39;ver&#39;: &#39;vertical&#39;, &#39;vert&#39;: &#39;vertical&#39;, &#39;vis &#39;: &#39;visual&#39;, &#39;vlv&#39;: &#39;valve&#39;, &#39;vol&#39;: &#39;volume&#39;, &#39;vs&#39;: &#39;versus&#39;, &#39;vsl&#39;: &#39;vessel&#39;, &#39;w/&#39;: &#39;with&#39;, &#39;w/i&#39;: &#39;within&#39;, &#39;w/o&#39;: &#39;without&#39;, &#39;wc&#39;: &#39;welded column&#39;, &#39;wgt&#39;: &#39;weight&#39;, &#39;wk&#39;: &#39;work&#39;, &#39;wks&#39;: &#39;works&#39;, &#39;wt&#39;: &#39;weight&#39;, &#39;wtr&#39;: &#39;water&#39;, &#39;yd&#39;: &#39;yard&#39;, &#39;yp&#39;: &#39;yield point&#39;, &#39;yr&#39;: &#39;year&#39;, &#39;yrs&#39;: &#39;years&#39;, &#39;emb&#39;: &#39;embrittlement&#39;, &#39;env&#39;: &#39;environment&#39;, &#39;fat&#39;: &#39;fatigue&#39;, &#39;wstg&#39;: &#39;wastage&#39;, &#39;degr&#39;: &#39;degradation&#39;, &#39;deg&#39;: &#39;degradation&#39;, &#39;wst&#39;: &#39;waste &#39;, &#39;chk&#39;: &#39;check&#39;, &#39;xmtr&#39;: &#39;transmitter&#39;, &#39;htr&#39;: &#39;heater&#39;, &#39;retest&#39;: &#39;test&#39;, &#39;verif&#39;: &#39;verify&#39;, &#39;atmos&#39;: &#39;atmospheric&#39;, &#39;cntl&#39;: &#39;control&#39;, &#39;cntrl&#39;: &#39;control&#39;, &#39;wshr&#39;: &#39;washer&#39;, &#39;vent&#39;: &#39;ventilation&#39;, &#39;xfer&#39;: &#39;transfer&#39;, &#39;purif&#39;: &#39;purification&#39;, &#39;hx&#39;: &#39;heat exchanger&#39;, &#39;scaff&#39;: &#39;scaffolding&#39;, &#39;scaf &#39;: &#39;scaffolding&#39;, &#39;cbl&#39;: &#39;cable&#39;, &#39;cbls&#39;: &#39;cables&#39;, &#39;discnt&#39;: &#39;disconnect&#39;, &#39;dscnt&#39;: &#39;disconnect&#39;, &#39;dscnct&#39;: &#39;disconnect&#39;, &#39;regen&#39;: &#39;regenerate&#39;, &#39;recomb&#39;: &#39;recombine&#39;, &#39;depress&#39;: &#39;depressurize&#39;, &#39;demin&#39;: &#39;demineralize&#39;, &#39;strk&#39;: &#39;stroke&#39;, &#39;cntrld&#39;: &#39;controlled&#39;, &#39;dwncmr&#39;: &#39;downcomer&#39;, &#39;drn&#39;: &#39;drain&#39;, &#39;fdwtr&#39;: &#39;feed water&#39;, &#39;turb&#39;: &#39;turbine&#39;, &#39;emerg&#39;: &#39;emergency&#39;, &#39;alt&#39;: &#39;alternator&#39;, &#39;feedwater&#39;: &#39;feed water&#39;, &#39;shft&#39;: &#39;shaft&#39;, &#39;lo&#39;: &#39;low&#39;, &#39;hi&#39;: &#39;high&#39;, &#39;flw&#39;: &#39;flow&#39;, &#39;funct&#39;: &#39;functional&#39;, &#39;trng&#39;: &#39;training&#39;, &#39;tk&#39;: &#39;tank&#39;, &#39;tks&#39;: &#39;tanks&#39;, &#39;isol&#39;: &#39;isolate&#39;, &#39;suct&#39;: &#39;suction&#39;, &#39;tnk&#39;: &#39;tank&#39;, &#39;tnks&#39;: &#39;tanks&#39;, &#39;disch&#39;: &#39;discharge&#39;, &#39;emrg&#39;: &#39;emergency&#39;, &#39;islt&#39;: &#39;isolate&#39;, &#39;xfmr&#39;: &#39;transformer&#39;, &#39;xfrmr&#39;: &#39;transformer&#39;, &#39;stby&#39;: &#39;stand by&#39;, &#39;assmby&#39;: &#39;assembly&#39;, &#39;vrfy&#39;: &#39;verify&#39;, &#39;rls&#39;: &#39;release&#39;, &#39;lvl&#39;: &#39;level&#39;, &#39;deten&#39;: &#39;detension&#39;, &#39;rmve&#39;: &#39;remove&#39;, &#39;perfrm&#39;: &#39;perform&#39;, &#39;sched&#39;: &#39;schedule&#39;, &#39;mods&#39;: &#39;modifications&#39;, &#39;cw&#39;: &#39;circulating water&#39;, &#39;rplc&#39;: &#39;replace&#39;, &#39;lwr&#39;: &#39;lower&#39;, &#34;req&#39;d&#34;: &#39;required&#39;, &#39;scrn&#39;: &#39;screen&#39;, &#39;wsh&#39;: &#39;wash&#39;, &#39;mtr&#39;: &#39;motor&#39;, &#39;trblsht&#39;: &#39;troubleshoot&#39;, &#39;ht&#39;: &#39;heat&#39;, &#39;oos&#39;: &#39;out of service&#39;, &#39;spre&#39;: &#39;spare&#39;, &#39;otbd&#39;: &#39;outboard&#39;, &#39;inbd&#39;: &#39;inboard&#39;, &#39;underwtr&#39;: &#39;underwater&#39;, &#39;vib&#39;: &#39;vibration&#39;, &#39;vibs&#39;: &#39;vibrations&#39;, &#39;rplce&#39;: &#39;replace&#39;, &#39;maint&#39;: &#39;maintenance&#39;, &#39;mntnc&#39;: &#39;maintenance&#39;, &#39;mainten&#39;: &#39;maintenance&#39;, &#39;maintenan&#39;: &#39;maintenance&#39;, &#39;mainte&#39;: &#39;maintenance&#39;, &#39;chng&#39;: &#39;change&#39;, &#39;inop&#39;: &#39;inoperative&#39;, &#39;perma&#39;: &#39;permanent&#39;, &#39;trav&#39;: &#39;traveling&#39;, &#39;vibes&#39;: &#39;vibrations&#39;, &#39;crac&#39;: &#39;crack&#39;, &#39;stab&#39;: &#39;stabilize&#39;, &#39;inspt&#39;: &#39;inspection&#39;, &#39;mtce&#39;: &#39;maintenance&#39;, &#39;pkg&#39;: &#39;package&#39;, &#39;upr&#39;: &#39;upper&#39;, &#39;brkr&#39;: &#39;breaker&#39;, &#39;s/d&#39;: &#39;shut-down&#39;, &#39;s/b&#39;: &#39;stand-by&#39;, &#39;vibe&#39;: &#39;vibration&#39;, &#39;1st&#39;: &#39;first&#39;, &#39;2nd&#39;: &#39;second&#39;, &#39;3rd&#39;: &#39;third&#39;, &#39;4th&#39;: &#39;fourth&#39;, &#39;5th&#39;: &#39;fifth&#39;, &#39;6th&#39;: &#39;sixth&#39;, &#39;insl&#39;: &#39;insulation&#39;, &#39;disass&#39;: &#39;disassemble&#39;}
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>cleanedText = abbreviation.abbreviationSub(test)
-print(cleanedText)
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Test
+cleanedTest = abbreviation.abbreviationSub(test)
+print(cleanedTest)
 </pre></div>
 </div>
 </div>
@@ -323,27 +304,11 @@ perform annual sensor calibration of cylinder. high concentration of hydrogen ob
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>test
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
-</pre></div>
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-&#39;perf ann sens calib of cyl.\n          high conc of hydrogen obs.\n          high conc of hydrogen obs every wk.\n          prfr chann calib of chan.\n          esf pump room and fuel bldg test.\n          cal press xmtr sit elev.\n          perform thermography survey of pzr htr terminations.\n          plant mods comp iso mode prep.\n          drain &amp; rmv pipe.&#39;
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>abbrDict = {&#39;perf&#39;:&#39;perform&#39;, &#39;ann&#39;:&#39;annual&#39;, &#39;sens&#39;:&#39;sensor&#39;, &#39;calib&#39;:&#39;calibration&#39;}
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Utilize user provided abbreviation dictionary
+abbrDict = {&#39;perf&#39;:&#39;perform&#39;, &#39;ann&#39;:&#39;annual&#39;, &#39;sens&#39;:&#39;sensor&#39;, &#39;calib&#39;:&#39;calibration&#39;}
 abbreviation.updateAbbreviation(abbrDict, reset=True)
 print(abbreviation.getAbbreviation())
 cleanedText = abbreviation.abbreviationSub(test)
@@ -367,8 +332,8 @@ perform annual sensor calibration of cyl. high conc of hydrogen obs. high conc o
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="Workflow_Demo.html" class="btn btn-neutral float-left" title="Demo For NLP Workflow: Based on branch wangc/nlp" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="nlp_custom_pipes.html" class="btn btn-neutral float-right" title="Custom pipelines" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="Workflow_Demo.html" class="btn btn-neutral float-left" title="Demo For NLP Workflow" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nlp_custom_pipes.html" class="btn btn-neutral float-right" title="Custom Pipelines Demo" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

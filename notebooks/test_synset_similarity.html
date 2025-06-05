@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Similarity analysis &mdash; DACKAR 0.1 documentation</title>
+  <title>Semantic Similarity Analysis &mdash; DACKAR 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -24,7 +24,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Contributors" href="../contributors.html" />
-    <link rel="prev" title="Custom pipelines" href="nlp_custom_pipes.html" /> 
+    <link rel="prev" title="Custom Pipelines Demo" href="nlp_custom_pipes.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -54,13 +54,18 @@
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Notebooks</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html">Preprocessing demo</a></li>
 <li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html#Coherent-text-example-with-Autocorrect-and-ContextualSpellCheck-spelling-correction">Coherent text example with Autocorrect and ContextualSpellCheck spelling correction</a></li>
-<li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html#Time-Autocorrect-workflow">Time Autocorrect workflow</a></li>
-<li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html#Time-ContextualSpellCheck-workflow">Time ContextualSpellCheck workflow</a></li>
 <li class="toctree-l2"><a class="reference internal" href="Workflow_Demo.html">Workflow Demo</a></li>
 <li class="toctree-l2"><a class="reference internal" href="abbreviationHandlerDemo.html">Abbreviation Handler Demo</a></li>
 <li class="toctree-l2"><a class="reference internal" href="nlp_custom_pipes.html">Pipelines</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Similarity Demo</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#Timing-for-performance">Timing for performance</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Setup-the-path-and-load-DACKAR-modules-for-similarity-analysis">Setup the path and load DACKAR modules for similarity analysis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Example">Example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Compute-sentences-similarity-without-disambiguation">Compute sentences similarity without disambiguation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Compute-sentences-similarity-with-disambiguation">Compute sentences similarity with disambiguation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Convert-sentences-into-synsets-list,-and-then-compute-similarity">Convert sentences into synsets list, and then compute similarity</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Timing-for-performance">Timing for performance</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -87,7 +92,7 @@
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="index.html">Usage Notebooks</a></li>
-      <li class="breadcrumb-item active">Similarity analysis</li>
+      <li class="breadcrumb-item active">Semantic Similarity Analysis</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/notebooks/test_synset_similarity.ipynb.txt" rel="nofollow"> View page source</a>
       </li>
@@ -97,8 +102,12 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="Similarity-analysis">
-<h1>Similarity analysis<a class="headerlink" href="#Similarity-analysis" title="Link to this heading">¶</a></h1>
+  <section id="Semantic-Similarity-Analysis">
+<h1>Semantic Similarity Analysis<a class="headerlink" href="#Semantic-Similarity-Analysis" title="Link to this heading">¶</a></h1>
+<p>Leveraging WordNet for semantic similarity calculations with word disambiguation. The semantic similarity is based on maximum word similarity between one word and another sentence. In addition, word order similarity can be also considered in the semantic similarity calculations.</p>
+<img alt="similarity" src="notebooks/images/similarity.png" />
+<section id="Setup-the-path-and-load-DACKAR-modules-for-similarity-analysis">
+<h2>Setup the path and load DACKAR modules for similarity analysis<a class="headerlink" href="#Setup-the-path-and-load-DACKAR-modules-for-similarity-analysis" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
@@ -116,94 +125,124 @@ from dackar.similarity import simUtils
 </pre></div>
 </div>
 </div>
+</section>
+<section id="Example">
+<h2>Example<a class="headerlink" href="#Example" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>### convert sentences into synsets list, and then compute similarity
-</pre></div>
-</div>
-</div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>sents = [&#39;The workers at the industrial plant were overworked&#39;,
-&#39;The plant was no longer bearing flowers&#39;]
-
-sentSynsets = simUtils.convertSentsToSynsets(sents)
-similarity = SU.synsetListSimilarity(sentSynsets[0], sentSynsets[1], delta=.8)
+      &#39;The plant was no longer bearing flowers&#39;]
 </pre></div>
 </div>
 </div>
+</section>
+<section id="Compute-sentences-similarity-without-disambiguation">
+<h2>Compute sentences similarity without disambiguation<a class="headerlink" href="#Compute-sentences-similarity-without-disambiguation" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>delta <span class="math">\in</span> [0, 1] is used to control the similarity contribution from semantic and word order similarity</p></li>
+</ul>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>similarity
-</pre></div>
-</div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
-</pre></div>
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-0.43946127500409304
-</pre></div></div>
-</div>
-<p>### Using disambiguation method to create synsets</p>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>from dackar.similarity import synsetUtils as SU
-from dackar.similarity import simUtils
-
-sents = [&#39;The workers at the industrial plant were overworked&#39;,
-&#39;The plant was no longer bearing flowers&#39;]
-
-sentSynsets = simUtils.convertSentsToSynsetsWithDisambiguation(sents)
-similarity = SU.synsetListSimilarity(sentSynsets[0], sentSynsets[1], delta=.8)
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>similarity = simUtils.sentenceSimilarity(sents[0], sents[1], delta=.8)
+print(&#39;Similarity Score: &#39;,similarity)
 </pre></div>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
-<div class="output_area stderr docutils container">
+<div class="output_area docutils container">
 <div class="highlight"><pre>
-Warming up PyWSD (takes ~10 secs)... took 1.5069150924682617 secs.
+Similarity Score:  0.597345002737055
 </pre></div></div>
 </div>
+</section>
+<section id="Compute-sentences-similarity-with-disambiguation">
+<h2>Compute sentences similarity with disambiguation<a class="headerlink" href="#Compute-sentences-similarity-with-disambiguation" title="Link to this heading">¶</a></h2>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>similarity
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>similarity = simUtils.sentenceSimilarityWithDisambiguation(sents[0], sents[1], delta=.8)
+print(&#39;Similarity Score: &#39;,similarity)
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+Warming up PyWSD (takes ~10 secs)...
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Similarity Score:  0.05641469403833227
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+took 0.9650449752807617 secs.
+</pre></div></div>
+</div>
+</section>
+<section id="Convert-sentences-into-synsets-list,-and-then-compute-similarity">
+<h2>Convert sentences into synsets list, and then compute similarity<a class="headerlink" href="#Convert-sentences-into-synsets-list,-and-then-compute-similarity" title="Link to this heading">¶</a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>sentSynsets = simUtils.convertSentsToSynsets(sents)
+similarity = SU.synsetListSimilarity(sentSynsets[0], sentSynsets[1], delta=.8)
+print(&#39;Similarity Score: &#39;,similarity)
 </pre></div>
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
-</pre></div>
+<div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-0.31713942870949496
+Similarity Score:  0.43946127500409304
+</pre></div></div>
+</div>
+<p>#### Using disambiguation method to create synsets</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>sentSynsets = simUtils.convertSentsToSynsetsWithDisambiguation(sents)
+similarity = SU.synsetListSimilarity(sentSynsets[0], sentSynsets[1], delta=.8)
+print(&#39;Similarity Score: &#39;,similarity)
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Similarity Score:  0.31713942870949496
 </pre></div></div>
 </div>
 <section id="Timing-for-performance">
-<h2>Timing for performance<a class="headerlink" href="#Timing-for-performance" title="Link to this heading">¶</a></h2>
+<h3>Timing for performance<a class="headerlink" href="#Timing-for-performance" title="Link to this heading">¶</a></h3>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>sents = [&#39;The workers at the industrial plant were overworked&#39;,
-&#39;The plant was no longer bearing flowers&#39;]
-
-st = time.time()
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>st = time.time()
 for i in range(100):
     sentSynsets = simUtils.convertSentsToSynsets(sents)
 print(&#39;%s second&#39;% (time.time()-st))
@@ -215,7 +254,7 @@ print(&#39;%s second&#39;% (time.time()-st))
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-5.055598258972168 second
+4.767474889755249 second
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
@@ -234,19 +273,11 @@ print(&#39;%s second&#39;% (time.time()-st))
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-1.5233900547027588 second
+1.6129579544067383 second
 </pre></div></div>
 </div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>from dackar.similarity import simUtils
-</pre></div>
-</div>
-</div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>st = time.time()
@@ -264,17 +295,10 @@ print(&#39;%s second&#39;% (time.time()-st))
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-0.8142197132110596 second
+0.8050062656402588 second
 </pre></div></div>
 </div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
-</pre></div>
-</div>
-</div>
+</section>
 </section>
 </section>
 
@@ -282,7 +306,7 @@ print(&#39;%s second&#39;% (time.time()-st))
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="nlp_custom_pipes.html" class="btn btn-neutral float-left" title="Custom pipelines" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="nlp_custom_pipes.html" class="btn btn-neutral float-left" title="Custom Pipelines Demo" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="../contributors.html" class="btn btn-neutral float-right" title="Contributors" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

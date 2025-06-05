@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>&lt;no title&gt; &mdash; DACKAR 0.1 documentation</title>
+  <title>Alias Pipeline Demo &mdash; DACKAR 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
@@ -71,7 +71,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">&lt;no title&gt;</li>
+      <li class="breadcrumb-item active">Alias Pipeline Demo</li>
       <li class="wy-breadcrumbs-aside">
             <a href="../_sources/notebooks/alias_demo.ipynb.txt" rel="nofollow"> View page source</a>
       </li>
@@ -81,33 +81,48 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+  <section id="Alias-Pipeline-Demo">
+<h1>Alias Pipeline Demo<a class="headerlink" href="#Alias-Pipeline-Demo" title="Link to this heading">¶</a></h1>
+<p>Alias pipeline (i.e., aliasResolver) is one of the internal developed natural language processing (NLP) pipelines. It is used to annotate identified name entities with alias, and it can be accessed through:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span>
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>import spacy
-import numpy as np
-import pandas as pd
-import os, sys, time
-
+<p><strong>Note</strong>: default alias file located at <code class="docutils literal notranslate"><span class="pre">./DACKAR/data/alias.csv</span></code> is used. Users can also provide their own alias using config file located at <code class="docutils literal notranslate"><span class="pre">./DACKAR/src/dackar/config/nlp_config_default.toml</span></code> using keyword <code class="docutils literal notranslate"><span class="pre">alias_file</span></code>.</p>
+<ul class="simple">
+<li><p>Set up</p></li>
+</ul>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Setup loading path, and load aliasResolver pipeline
+import os, sys
 cwd = os.getcwd()
 frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, &#39;src&#39;))
 sys.path.append(frameworkDir)
 
+# Load aliasResolver pipeline
 from dackar.pipelines.CustomPipelineComponents import aliasResolver
 from dackar.utils.nlp.nlp_utils import resetPipeline
 
-nlp = spacy.load(&quot;en_core_web_lg&quot;)
-# import logging
-# logger = logging.getLogger(__name__)
+# Load General Entity pipeline aliasResolver is only used to annotate entities
+from dackar.pipelines.GeneralEntity import GeneralEntity
 
-# ch = logging.StreamHandler()
-# logger.addHandler(ch)
+# Load pattern generation
+from dackar.utils.nlp.nlp_utils import generatePatternList
+
+# Load trained language model/pipeline from spacy, the language model/pipeline includes tok2vec, tagger, parser, attribute_ruler, lemmatizer, ner etc.
+import spacy
+from spacy import displacy
+nlp = spacy.load(&quot;en_core_web_lg&quot;)
 </pre></div>
 </div>
 </div>
+<ul class="simple">
+<li><p>Reset pipeline and add <strong>aliasResolver</strong></p></li>
+</ul>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># aliasResolver pipeline should always after &quot;entity_ruler&quot;
@@ -122,27 +137,26 @@ print(nlp.pipeline)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-[(&#39;tok2vec&#39;, &lt;spacy.pipeline.tok2vec.Tok2Vec object at 0x33ca09f70&gt;), (&#39;tagger&#39;, &lt;spacy.pipeline.tagger.Tagger object at 0x33ca09bb0&gt;), (&#39;parser&#39;, &lt;spacy.pipeline.dep_parser.DependencyParser object at 0x33c8f3ed0&gt;), (&#39;attribute_ruler&#39;, &lt;spacy.pipeline.attributeruler.AttributeRuler object at 0x33cbc8110&gt;), (&#39;lemmatizer&#39;, &lt;spacy.lang.en.lemmatizer.EnglishLemmatizer object at 0x33cbc9e50&gt;), (&#39;ner&#39;, &lt;spacy.pipeline.ner.EntityRecognizer object at 0x33cbf8040&gt;), (&#39;aliasResolver&#39;, &lt;function aliasResolver at 0x3338b37e0&gt;)]
+[(&#39;tok2vec&#39;, &lt;spacy.pipeline.tok2vec.Tok2Vec object at 0x33ef4ed50&gt;), (&#39;tagger&#39;, &lt;spacy.pipeline.tagger.Tagger object at 0x33ef4f830&gt;), (&#39;parser&#39;, &lt;spacy.pipeline.dep_parser.DependencyParser object at 0x33ef322d0&gt;), (&#39;attribute_ruler&#39;, &lt;spacy.pipeline.attributeruler.AttributeRuler object at 0x33f0c0850&gt;), (&#39;lemmatizer&#39;, &lt;spacy.lang.en.lemmatizer.EnglishLemmatizer object at 0x33f0c18d0&gt;), (&#39;ner&#39;, &lt;spacy.pipeline.ner.EntityRecognizer object at 0x33ef32650&gt;), (&#39;aliasResolver&#39;, &lt;function aliasResolver at 0x32be9d440&gt;)]
 </pre></div></div>
 </div>
+<ul class="simple">
+<li><p>Example</p></li>
+</ul>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>text=&quot;1-91120-P1, CLEAN PUMP AND MOTOR. 1-91120-PM1 REQUIRES OIL. 91120, CLEAN TRASH SCREEN&quot;
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Example
+text=&quot;1-91120-P1, CLEAN PUMP AND MOTOR. 1-91120-PM1 REQUIRES OIL. 91120, CLEAN TRASH SCREEN&quot;
 </pre></div>
 </div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Load module from DACKAR
-from dackar.pipelines.GeneralEntity import GeneralEntity
-from spacy import displacy
-# Load pattern generation from DACKAR
-from dackar.utils.nlp.nlp_utils import generatePatternList
-
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># For this demo, General Entity class is used instead spacy default NER pipeline
 pipeline = [pipe for (pipe,_) in nlp.pipeline]
 if &quot;enity_ruler&quot; in pipeline:
     nlp.remove_pipe(&quot;entity_ruler&quot;)
@@ -153,10 +167,11 @@ if &quot;ner&quot; in pipeline:
 entLabel = &quot;cws_component&quot;        # user defined entity label
 entId = &quot;OPM&quot;
 entIDList = [&#39;1-91120-P1&#39;, &#39;1-91120-PM1&#39;, &#39;91120&#39;]
+# Generate pattern list
 patternsEnts = generatePatternList(entIDList, label=entLabel,    id=entId,    nlp=nlp, attr=&quot;LEMMA&quot;)
-
+# Apply General Entity class to identify corresponding entities
 generalEntity = GeneralEntity(nlp, patternsEnts)
-
+# NLP processing and Entities visualization
 doc = nlp(text)
 displacy.render(doc, style=&#39;ent&#39;, jupyter=True)
 </pre></div>
@@ -187,8 +202,9 @@ displacy.render(doc, style=&#39;ent&#39;, jupyter=True)
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>for ent in doc.ents:
-    print(ent.text, ent._.alias)
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Check &#39;alias&#39; annotation
+for ent in doc.ents:
+    print(&#39;Entity:&#39;, ent.text, &#39;| alias:&#39;, ent._.alias)
 </pre></div>
 </div>
 </div>
@@ -197,19 +213,12 @@ displacy.render(doc, style=&#39;ent&#39;, jupyter=True)
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-1-91120-P1 unit 1 pump
-1-91120-PM1 unit 1 pump motor
-91120 pump
+Entity: 1-91120-P1 | alias: unit 1 pump
+Entity: 1-91120-PM1 | alias: unit 1 pump motor
+Entity: 91120 | alias: pump
 </pre></div></div>
 </div>
-<div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>
-</pre></div>
-</div>
-</div>
+</section>
 
 
            </div>
