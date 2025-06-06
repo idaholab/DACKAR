@@ -23,6 +23,8 @@ def find_temporal(nlp, name):
 
 class Temporal(object):
   """
+    Temporal Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

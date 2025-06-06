@@ -16,6 +16,8 @@ def create_phrase_matcher_component(nlp, name, label, patterns, asSpan):
 
 class PhraseEntityMatcher(object):
   """
+    Phrase Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

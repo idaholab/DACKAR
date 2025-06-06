@@ -21,25 +21,22 @@ except ImportError:
 
 
 class MatrixProfile(AnomalyBase):
-  """_summary_
-
-  Args:
-      AnomalyBase (_type_): _description_
+  """Matrix profile class used to compute anomalies in time series dataset
   """
 
   def __init__(self, m, normalize='robust', method='normal', kdp=False, approx_percentage=0.1, sub_sequence_normalize=False, excl_zone_denom=4):
     """Constructor
     """
     super().__init__(norm=normalize)
-    self._m = m # size of slide window
-    self._norm = normalize # perform normalization on times series
-    self._sub_norm = sub_sequence_normalize # perform normalization on subsequence time series when calculuate matrix profile distance
-    # setup exclusion zone for stumpy: i +/- int(np.ceil(m/excl_zone_denom)), default excl_zone_denom = 4
-    # this can avoid nearby subsequences since they are likely highly similar
-    # the distance computed in the exclusion zone is set to np.inf before the matrix profile value is extracted
+    self._m = m #: size of slide window
+    self._norm = normalize #: perform normalization on times series
+    self._sub_norm = sub_sequence_normalize #: perform normalization on subsequence time series when calculuate matrix profile distance
+    #: setup exclusion zone for stumpy: i +/- int(np.ceil(m/excl_zone_denom)), default excl_zone_denom = 4
+    #: this can avoid nearby subsequences since they are likely highly similar
+    #: the distance computed in the exclusion zone is set to np.inf before the matrix profile value is extracted
     if excl_zone_denom != 4 and isinstance(excl_zone_denom, int):
       config.STUMPY_EXCL_ZONE_DENOM = excl_zone_denom
-    self._mp = {} # store calculated matrix profile values
+    self._mp = {} #: store calculated matrix profile values
     self._avail_method = ['normal', 'parallel', 'approx', 'incremental', 'gpu']
     if method.lower() not in self._avail_method:
       raise IOError(f'Unrecognized calculation method: {method}, please choose from {self._avail_method}')
@@ -47,10 +44,10 @@ class MatrixProfile(AnomalyBase):
     self._scrump_percentage = approx_percentage
     if self._method == 'gpu':
       raise NotImplementedError('Method "gpu" is not implemented yet!')
-    self._current_idx = [] # the index for the last entry of current matrix profile
-    self._norm_plot = True # Plot normalized data if True
-    self._compute_kdp = kdp # Compute KDP profile if True
-    self._kdp = {} # Dictionary to store KDP profile data
+    self._current_idx = [] #: the index for the last entry of current matrix profile
+    self._norm_plot = True #: Plot normalized data if True
+    self._compute_kdp = kdp #: Compute KDP profile if True
+    self._kdp = {} #: Dictionary to store KDP profile data
 
 
   def _fit(self, X, y=None):

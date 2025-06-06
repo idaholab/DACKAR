@@ -16,6 +16,8 @@ def create_simple_matcher_component(nlp, name, label, patterns, asSpan):
 
 class SimpleEntityMatcher(object):
   """
+    Simple Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

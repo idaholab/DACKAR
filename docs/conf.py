@@ -25,6 +25,8 @@ project = 'DACKAR'
 copyright = 'Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED'
 author = 'Congjian Wang, Diego Mandelli, Joshua J. Cogliati'
 release = __version__
+today = ''
+today_fmt = '%B %d, %Y'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -49,6 +51,10 @@ templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 source_suffix = [".rst", ".md"]
 autoapi_dirs = ['../src']
+autodoc_default_options = {
+    'members': True,
+}
+autodoc_typehints = "description"
 # autosummary_generate = True
 
 # -- Options for HTML output -------------------------------------------------
@@ -93,6 +99,8 @@ def setup(app) -> None:
 def copy_notebooks() -> None:
     for filename in Path("../examples").glob("*.ipynb"):
         shutil.copy2(str(filename), "notebooks")
+    for filename in Path("../examples/images").glob("*.png"):
+        shutil.copy2(str(filename), "notebooks/images")
 
 copy_notebooks()
 
@@ -102,3 +110,9 @@ copy_notebooks()
 nbsphinx_execute = "never"
 
 autodoc_inherit_docstrings = False
+
+latex_engine = "xelatex"
+latex_elements = {
+    'printindex': r'\def\twocolumn[#1]{#1}\printindex',
+    "extraclassoptions": "landscape" # option to make it landscape to avoid line overflow
+}

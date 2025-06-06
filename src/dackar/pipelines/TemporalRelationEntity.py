@@ -16,6 +16,8 @@ def create_temporal_relation_component(nlp, name, patterns):
 
 class TemporalRelationEntity(object):
   """
+    Temporal Relation Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

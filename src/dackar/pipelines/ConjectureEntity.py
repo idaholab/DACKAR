@@ -15,6 +15,8 @@ def create_conjecture_component(nlp, name, patterns):
 
 class ConjectureEntity(object):
   """
+    Conjecture Entity Recognition class
+
     How to use it:
 
     .. code-block:: python
