@@ -15,6 +15,8 @@ def create_temporal_attribute_component(nlp, name, patterns):
 
 class TemporalAttributeEntity(object):
   """
+    Temporal Attribute Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

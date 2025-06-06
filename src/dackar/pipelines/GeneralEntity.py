@@ -13,6 +13,8 @@ def create_general_component(nlp, name, patterns, asSpan):
 
 class GeneralEntity(object):
   """
+    General Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

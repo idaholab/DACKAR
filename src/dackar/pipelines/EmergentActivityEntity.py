@@ -13,6 +13,8 @@ def create_emergent_activity(nlp, name):
 
 class EmergentActivity(object):
   """
+    Emergent Activity Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

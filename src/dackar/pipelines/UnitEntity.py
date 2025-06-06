@@ -19,6 +19,8 @@ def create_unit_component(nlp, name):
 
 class UnitEntity(object):
   """
+    Unit Entity Recognition class
+
     How to use it:
 
     .. code-block:: python

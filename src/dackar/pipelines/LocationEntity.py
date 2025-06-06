@@ -16,6 +16,8 @@ def create_location_component(nlp, name, patterns):
 
 class LocationEntity(object):
   """
+    Location Entity Recognition class
+
     How to use it:
 
     .. code-block:: python
