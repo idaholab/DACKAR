@@ -1,9 +1,12 @@
-===========================
-Installation with Spacy 3.5
-===========================
+=======================
+Installation with spaCy
+=======================
 
 How to install dependency libraries
-------------------------------------
+-----------------------------------
+
+Install the required libraries
+------------------------------
 
 .. code-block:: bash
 
@@ -11,12 +14,12 @@ How to install dependency libraries
 
   conda activate dackar_libs
 
-  pip install spacy==3.5 textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy=1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+  pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
 
 ..  conda install -c conda-forge pandas
 .. scikit-learn 1.2.2 is required for quantulum3
 
-Download language model from spacy
+Download language model from spaCy
 ----------------------------------
 
 .. code-block:: bash
@@ -32,6 +35,13 @@ Required nltk data for similarity analysis
 .. code-block:: bash
 
   python -m nltk.downloader all
+
+Retrain quantulum3 classifier if needed
+---------------------------------------
+
+.. code-block:: bash
+
+  quantulum3-training -s
 
 
 Different approach when there is an issue with SSLError
