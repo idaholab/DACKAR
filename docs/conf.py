@@ -97,6 +97,8 @@ def setup(app) -> None:
 
 
 def copy_notebooks() -> None:
+    os.makedirs('notebooks', exist_ok=True)
+    os.makedirs('./notebooks/images', exist_ok=True)
     for filename in Path("../examples").glob("*.ipynb"):
         shutil.copy2(str(filename), "notebooks")
     for filename in Path("../examples/images").glob("*.png"):
