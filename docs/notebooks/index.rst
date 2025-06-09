@@ -3,7 +3,8 @@ Usage Notebooks
 ===============
 
 .. toctree::
-    :maxdepth: 1
+    :maxdepth: 2
+    :caption: Contents:
 
     Preprocessing Demo <PreprocessingDemo.ipynb>
     Abbreviation Handler Demo <abbreviationHandlerDemo.ipynb>

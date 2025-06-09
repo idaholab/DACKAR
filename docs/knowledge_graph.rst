@@ -2,7 +2,7 @@
 Knowledge Graph Construction Through Neo4j
 ==========================================
 
-Install additional required libraries
+Install Additional Required Libraries
 -------------------------------------
 
 In order to communicate with neo4j_ Desktop graph database, the neo4j_python_driver_ need to be installed:

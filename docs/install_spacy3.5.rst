@@ -1,11 +1,8 @@
-=======================
-Installation with spaCy
-=======================
+============
+Installation
+============
 
-How to install dependency libraries
------------------------------------
-
-Install the required libraries
+Install the Required Libraries
 ------------------------------
 
 .. code-block:: bash
@@ -19,7 +16,7 @@ Install the required libraries
 ..  conda install -c conda-forge pandas
 .. scikit-learn 1.2.2 is required for quantulum3
 
-Download language model from spaCy
+Download Language Model from spaCy
 ----------------------------------
 
 .. code-block:: bash
@@ -29,22 +26,22 @@ Download language model from spaCy
   python -m coreferee install en
 
 
-Required nltk data for similarity analysis
+Required NLTK Data for Similarity Analysis
 ------------------------------------------
 
 .. code-block:: bash
 
   python -m nltk.downloader all
 
-Retrain quantulum3 classifier if needed
----------------------------------------
+Retrain Quantulum3 Classifier (Optional)
+----------------------------------------
 
 .. code-block:: bash
 
   quantulum3-training -s
 
 
-Different approach when there is an issue with SSLError
+Different Approach When There is an Issue with SSLError
 -------------------------------------------------------
 
 1. Download en_core_web_lg-3.5.0.whl_, then run
