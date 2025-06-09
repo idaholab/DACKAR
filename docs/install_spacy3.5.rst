@@ -12,14 +12,14 @@ Clone DACKAR
 
 The HTTP cloning procedure uses the following clone command:
 
-.. cond-block:: bash
+.. code-block:: bash
 
   git clone https://github.com/idaholab/DACKAR.git
 
 The SSH cloning procedure requires the user to create a SSH key (See: https://help.github.com/articles/connecting-to-github-with-ssh/).
 Once the SSH key has been created, to clone DACKAR the following command can be executed:
 
-.. cond-block:: bash
+.. code-block:: bash
 
   git clone git@github.com:idaholab/DACKAR.git
 
