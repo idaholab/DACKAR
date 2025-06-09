@@ -16,6 +16,16 @@ Install the Required Libraries
 ..  conda install -c conda-forge pandas
 .. scikit-learn 1.2.2 is required for quantulum3
 
+Install Additional Libraries
+----------------------------
+
+Library ``neo4j`` is a Python module that is used to communicate with Neo4j database management system,
+and ``jupyterlab`` is used to execute notebook examples under ``./examples/`` folder.
+
+.. code-block:: bash
+
+  pip install neo4j jupyterlab
+
 Download Language Model from spaCy
 ----------------------------------
 

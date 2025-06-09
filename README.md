@@ -15,6 +15,16 @@
   pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
 ```
 
+- Install additional libraries
+
+Library ``neo4j`` is a Python module that is used to communicate with Neo4j database management system,
+and ``jupyterlab`` is used to execute notebook examples under ``./examples/`` folder.
+
+```bash
+
+  pip install neo4j jupyterlab
+```
+
 - Download language model from spacy (can not use INL network)
 
 ```bash
