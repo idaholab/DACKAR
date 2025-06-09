@@ -18,6 +18,7 @@ Welcome to DACKAR's documentation!
    install_spacy3.5
    support
    Notebooks <notebooks/index>
+   knowledge_graph
    .. install
 
 .. toctree::
