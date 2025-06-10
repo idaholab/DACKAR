@@ -23,6 +23,8 @@ def find_temporal(nlp, name):
 
 class Temporal(object):
   """
+    Temporal Entity Recognition class
+
     How to use it:
 
     .. code-block:: python
@@ -30,7 +32,7 @@ class Temporal(object):
       from TemporalEnity import Temporal
       nlp = spacy.load("en_core_web_sm")
       pmatcher = Temporal(nlp)
-      doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
+      doc = nlp("The event is scheduled for 25th August 2023.")
       updatedDoc = pmatcher(doc)
 
     or:
@@ -195,7 +197,7 @@ class Temporal(object):
         [{"LOWER": {"in": terms1}, "OP": "?"}, {"LEMMA": {"in": terms2}, "OP": "?"}, {"LEMMA": {"in": terms3}, "OP": "?"}, {"LOWER": {"in": ["at", "on", "by", "from", "to", "before", "after", "between", "during", "in"]}, "OP": "?"}, {"ENT_TYPE": {"in": ["DATE", "TIME"]}, "OP": "+"}]
       ]
 
-    self.matcher = SimpleEntityMatcher(nlp, label='Temporal', terms=pattern)
+    self.matcher = SimpleEntityMatcher(nlp, label='Temporal', patterns=pattern)
     self.asSpan = True
 
 

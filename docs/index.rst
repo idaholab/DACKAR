@@ -16,9 +16,10 @@ Welcome to DACKAR's documentation!
    :caption: Contents:
 
    install_spacy3.5
-   install
    support
    Notebooks <notebooks/index>
+   knowledge_graph
+   .. install
 
 .. toctree::
    :maxdepth: 2
@@ -26,14 +27,14 @@ Welcome to DACKAR's documentation!
    :hidden:
    :caption: More documentation
 
-   contributors
+   .. contributors
 
-Indices and tables
-==================
+.. Indices and tables
+   ==================
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+   * :ref:`genindex`
+   * :ref:`modindex`
+   * :ref:`search`
 
 Contributions
 =============

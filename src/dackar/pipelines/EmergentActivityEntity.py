@@ -13,6 +13,8 @@ def create_emergent_activity(nlp, name):
 
 class EmergentActivity(object):
   """
+    Emergent Activity Entity Recognition class
+
     How to use it:
 
     .. code-block:: python
@@ -44,7 +46,7 @@ class EmergentActivity(object):
     idPattern = [[{"TEXT":{"REGEX":"(?=\S*[a-zA-Z])(?=\S*[0-9])"}}]]
     # idPattern = [[{"TEXT":{"REGEX":"^(?=.*\b(?=\S*[a-zA-Z])(?=\S*[0-9]))"}}]]
 
-    self.matcher = SimpleEntityMatcher(nlp, label='WO', terms=woPattern)
+    self.matcher = SimpleEntityMatcher(nlp, label='WO', patterns=woPattern)
     self.matcher.matcher.add('ID', idPattern)
     self.asSpan = True
 

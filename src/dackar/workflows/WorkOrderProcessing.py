@@ -132,7 +132,8 @@ class WorkOrderProcessing(WorkflowBase):
 
     # Extracted information can be treated as attributes for given entity
     dfStatus = pd.DataFrame({'entity':entList, 'alias':aliasList, 'entity_text': entTextList, 'status':statusList, 'conjecture':cjList, 'negation':negList, 'negation_text': negTextList})
-    dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'entity_text', 'status', 'conjecture', 'negation', 'negation_text'])
+    if 'output_status_file' in nlpConfig['files']:
+      dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'entity_text', 'status', 'conjecture', 'negation', 'negation_text'])
 
     self._entStatus = dfStatus
     logger.info('End of health status extraction!')
@@ -141,7 +142,8 @@ class WorkOrderProcessing(WorkflowBase):
     logger.info('Start to extract causal relation using OPM model information')
     self.extractRelDep(self._matchedSents)
     dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
-    dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    if 'output_relation_file' in nlpConfig['files']:
+      dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
     logger.info('End of causal relation extraction!')
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):

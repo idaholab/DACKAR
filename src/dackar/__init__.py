@@ -1,5 +1,5 @@
 # Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
-__version__ = "1.0.dev"
+__version__ = "0.1.dev"
 
 import logging
 

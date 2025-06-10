@@ -13,12 +13,14 @@ logging.getLogger('quantulum3').setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
 
-@Language.factory("unit_entity", default_config={"label": "unit", "asSpan":True})
-def create_unit_component(nlp, name, label, asSpan):
-  return UnitEntity(nlp, label, asSpan=asSpan)
+@Language.factory("unit_entity")
+def create_unit_component(nlp, name):
+  return UnitEntity(nlp)
 
 class UnitEntity(object):
   """
+    Unit Entity Recognition class
+
     How to use it:
 
     .. code-block:: python
@@ -37,17 +39,14 @@ class UnitEntity(object):
       newDoc = nlp(doc.text)
   """
 
-  def __init__(self, nlp, label='unit', asSpan=True, callback=None):
+  def __init__(self, nlp):
     """
     Args:
       nlp: spacy nlp model
-      label: str, the name/label for the patterns in terms
     """
     self.name = 'unit_entity'
-    self.label = label
+    self.label = 'unit'
     self.nlp = nlp
-    self.matcher = PhraseMatcher(nlp.vocab, attr='LOWER')
-    self.asSpan = asSpan
 
   def __call__(self, doc):
     """
@@ -56,27 +55,17 @@ class UnitEntity(object):
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     text = doc.text
-    # print(text)
     quants = parser.parse(text)
-    # print(quants)
-    # Methods using pattern and matcher to identify the entities
-    quants = set([quant.surface.lower().strip() for quant in quants if quant.unit.entity.name not in ['dimensionless', 'time']])
-    patterns = [self.nlp.make_doc(quant) for quant in quants]
-    self.matcher.add(self.label, patterns)
-    matches = self.matcher(doc, as_spans=self.asSpan)
-
-    spans = []
-    if not self.asSpan:
-      for label, start, end in matches:
-        span = Span(doc, start, end, label=label)
-        spans.append(span)
-    else:
-      spans.extend(matches)
-
     newEnts = []
-    for ent in spans:
-      check = [True if tk.dep_ in ['prep'] or tk.pos_ in ['ADP'] else False for tk in ent]
-      if True not in check:
-        newEnts.append(ent)
-    doc.ents = filter_spans(list(doc.ents)+newEnts)
+    for quant in quants:
+      if quant.unit.entity.name not in ['dimensionless', 'time']:
+        start, end = quant.span
+        span = doc[:].char_span(start, end, label=self.label)
+        # When '.' is used at the end of unit, the char_span will return None
+        # The workaround is to include '.' in the span
+        # Other solution, text can be preprocessed to strip '.'
+        if span is None:
+          span = doc[:].char_span(start, end+1, label=self.label)
+        newEnts.append(span)
+    doc.ents = filter_spans(newEnts+list(doc.ents))
     return doc

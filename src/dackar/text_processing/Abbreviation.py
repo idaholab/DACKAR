@@ -24,7 +24,7 @@ class Abbreviation(object):
 
   def __init__(self):
     """
-      Abbrviation expander constructor
+      Abbreviation expander constructor
 
       Args:
         abbreviationsFilename: string, filename of abbreviations data

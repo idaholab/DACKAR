@@ -80,7 +80,7 @@ def resetPipeline(nlp, pipes):
     if pipe in ['pysbdSentenceBoundaries']:
       # nlp.add_pipe(pipe, before='parser')
       nlp.add_pipe(pipe, first=True)
-    else:
+    elif pipe not in ['tagger', 'parser', 'tok2vec', 'attribute_ruler', 'lemmatizer', 'ner']:
       nlp.add_pipe(pipe)
   logger.info(f"Model: {nlp.meta['name']}, Language: {nlp.meta['lang']}")
   logger.info('Available pipelines:'+', '.join([pipe for (pipe,_) in nlp.pipeline]))
@@ -242,6 +242,8 @@ def extendEnt(matcher, doc, i, matches):
 
 def customTokenizer(nlp):
   """custom tokenizer to keep hyphens between letters and digits
+  When apply tokenizer, the words with hyphens will be splitted into multiple tokens,
+  this function can be used to avoid the split of the words when hyphens are present.
 
   Args:
       nlp (spacy nlp model): spacy nlp model

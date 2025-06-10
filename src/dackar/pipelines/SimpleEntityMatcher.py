@@ -10,20 +10,22 @@ from spacy.util import filter_spans
 import logging
 logger = logging.getLogger(__name__)
 
-@Language.factory("simple_entity_matcher", default_config={"label": "ssc", "terms":[{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}], "asSpan":True})
-def create_simple_matcher_component(nlp, name, label, terms, asSpan):
-  return SimpleEntityMatcher(nlp, label, terms, asSpan=asSpan)
+@Language.factory("simple_entity_matcher", default_config={"label": "ssc", "patterns":[{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}], "asSpan":True})
+def create_simple_matcher_component(nlp, name, label, patterns, asSpan):
+  return SimpleEntityMatcher(nlp, label, patterns, asSpan=asSpan)
 
 class SimpleEntityMatcher(object):
   """
+    Simple Entity Recognition class
+
     How to use it:
 
     .. code-block:: python
 
       from SimpleEntityMatcher import SimpleEntityMatcher
       nlp = spacy.load("en_core_web_sm")
-      terms = [{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}]
-      pmatcher = SimpleEntityMatcher(nlp, 'ssc', terms)
+      patterns = [{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}]
+      pmatcher = SimpleEntityMatcher(nlp, 'ssc', patterns)
       doc = nlp("The shaft deflection is causing the safety cage to rattle. Pumps not experiencing enough flow for the pumps to keep the check valves open during test. Pump not experiencing enough flow during test. Shaft made noise. Vibration seems like it is coming from the shaft.")
       updatedDoc = pmatcher(doc)
 
@@ -31,26 +33,26 @@ class SimpleEntityMatcher(object):
 
     .. code-block:: python
 
-      nlp.add_pipe('simple_entity_matcher', config={"label": "ssc", "terms":[{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}], "asSpan":True})
+      nlp.add_pipe('simple_entity_matcher', config={"label": "ssc", "patterns":[{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}], "asSpan":True})
       newDoc = nlp(doc.text)
   """
 
-  def __init__(self, nlp, label, terms, asSpan=True, callback=None):
+  def __init__(self, nlp, label, patterns, asSpan=True, callback=None):
     """
     Args:
 
       nlp: spacy nlp model
-      label: str, the name/label for the patterns in terms
-        terms, list, the rules used to match the entities, for example,
-        terms = [{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}]
+      label: str, the name/label for the patterns in patterns
+        patterns, list, the rules used to match the entities, for example,
+        patterns = [{"LOWER": "hello"}, {"IS_PUNCT": True}, {"LOWER": "world"}]
     """
     self.name = 'simple_entity_matcher'
     self.matcher = Matcher(nlp.vocab)
-    if not isinstance(terms, list):
-      terms = [terms]
-    if not isinstance(terms[0], list):
-      terms = [terms]
-    self.matcher.add(label, terms, on_match=callback)
+    if not isinstance(patterns, list):
+      patterns = [patterns]
+    if not isinstance(patterns[0], list):
+      patterns = [patterns]
+    self.matcher.add(label, patterns, on_match=callback)
     self.asSpan = asSpan
 
   def __call__(self, doc, replace=False):
