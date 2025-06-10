@@ -116,5 +116,5 @@ autodoc_inherit_docstrings = False
 latex_engine = "xelatex"
 latex_elements = {
     'printindex': r'\def\twocolumn[#1]{#1}\printindex',
-    "extraclassoptions": "landscape" # option to make it landscape to avoid line overflow
+    # "extraclassoptions": "landscape" # option to make it landscape to avoid line overflow
 }
