@@ -11,7 +11,6 @@ DACKAR is structured by a set of workflows where each workflow is designed to pr
 * tlp_workflow: Workflow to process textual data
 * kg_workflow: Workflow to construct and update knowledge graphs
 
-
 ## Installation
 
 ### How to install DACKAR libraries?
