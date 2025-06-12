@@ -2,7 +2,6 @@
 # ALL RIGHTS RESERVED
 
 import pandas as pd
-import numpy as np
 import itertools
 
 '''
@@ -163,12 +162,53 @@ class entityLibrary():
 
       None
     """
+    entity   = []
+    alias    = []
+    category = []
+
     for key in self.library.keys():
       for elem in self.library[key]:
         if '-' in elem:
           self.library[key].append(elem.replace('-',''))
           self.library[key].append(elem.replace('-',' '))
+          
+          entity.append(elem.replace('-',''))
+          category.append(key)
+          alias.append(elem)
 
+          entity.append(elem.replace('-',' '))
+          category.append(key)
+          alias.append(elem)
+
+        entity.append(elem)
+        category.append(key)
+        alias.append(elem)
+        
+
+    library_dict = {'entity'   : entity,
+                    'alias'    : alias,
+                    'category' : category}
+    
+    self.library_df = pd.DataFrame.from_dict(library_dict)
+
+  def searchEntityInfo(self, entity):
+    """
+    Method designed to return information about an entity store in the dictionary.
+
+    Args:
+
+      entity, string, entity name
+
+    Returns:
+
+      (alias,category), tuple, tuple containing the alias and category class of the provided entity
+    """
+    if entity in self.library_df['entity'].to_list():
+      row = self.library_df[self.library_df['entity']==entity]
+      return (row['alias'].to_list()[0] , list(set(row['category'].to_list())))
+    else:
+      print('The entity "' + str(entity) + '" is not part of the entitylibrary')
+      return (entity, '')
 
   def keyWordListGenerator(self, fileName):
     """
@@ -259,6 +299,22 @@ class entityLibrary():
       nKeywords = n_keywords + len(self.library[tag])
     print("Number of listed keywords: " + str(nKeywords))
 
+  def patternCreator(self):
+    """
+    This method is designed to create patterns from the tags and the corresponding list of keywords.
+    
+    Args:
 
+      None
 
+    Returns:
 
+      patterns, list, list of patterns: {"label": label_ID, "pattern": keyword}
+    """
+
+    patterns = []
+    for tag in self.library:
+      for elem in self.library[tag]:
+        listElem ={"label": tag, "pattern": elem}
+        patterns.append(listElem)
+    return patterns
