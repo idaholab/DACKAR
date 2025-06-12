@@ -19,40 +19,40 @@ class customMBSEobject(object):
     """
         Class designed to process the a custom MBSE model from file.
     """
-    def __init__(self, nodes_filename, edges_filename):
+    def __init__(self, nodesFilename, edgesFilename):
         """
         Initialization method for the custom MBSE model class
 
         Args:
 
-            nodes_filename: file, file in .csv format containing all nodes 
-            edges_filename: file, file in .csv format containing all edges 
+            nodesFilename: file, file in .csv format containing all nodes 
+            edgesFilename: file, file in .csv format containing all edges 
 
         Returns:
 
             None
         """
-        self.nodes_filename = nodes_filename
-        self.edges_filename = edges_filename
-        self.list_IDs = []
+        self.nodesFilename = nodesFilename
+        self.edgesFilename = edgesFilename
+        self.listIDs = []
 
-        self.allowed_node_types = ['entity']
-        self.allowed_edge_types = ['link','composition','support'] # to be developed: 'opm_instance'
+        self.allowedNodeTypes = ['entity']
+        self.allowedEdgeTypes = ['link','composition','support'] # to be developed: 'opm_instance'
 
-        self.allowed_node_cols = ['label','ID','type']
+        self.allowedNodeCols = ['label','ID','type']
         self.allowed_edge_cols = ['sourceNodeId','targetNodeId','type','medium']
 
         self.parseFiles()
         self.checkNodes()
         self.checkEdges()
 
-        nodes_file_split =  self.nodes_filename.split('.')
-        nodes_file_kg = nodes_file_split[0] + '_kg.' + nodes_file_split[1]
+        nodesFileSplit =  self.nodesFilename.split('.')
+        nodesFileKg = nodesFileSplit[0] + '_kg.' + nodesFileSplit[1]
 
-        edges_file_split =  self.edges_filename.split('.')
-        edges_file_kg = edges_file_split[0] + '_kg.' + edges_file_split[1]
+        edgesFileSplit =  self.edgesFilename.split('.')
+        edgesFileKg = edgesFileSplit[0] + '_kg.' + edgesFileSplit[1]
 
-        self.printOnFiles(nodes_file_kg,edges_file_kg)
+        self.printOnFiles(nodesFileKg,edgesFileKg)
     
     def checkModel(self):
         """
@@ -82,16 +82,16 @@ class customMBSEobject(object):
             None
         """
         # parse nodes
-        self.nodes_df = pd.read_csv(self.nodes_filename, sep=',', skip_blank_lines=True, dtype=str)
-        self.nodes_df.dropna(how='all', inplace=True)
-        self.nodes_df = self.nodes_df.apply(lambda x: x.astype(str).str.lower())
+        self.nodesDf = pd.read_csv(self.nodesFilename, sep=',', skip_blank_lines=True, dtype=str)
+        self.nodesDf.dropna(how='all', inplace=True)
+        self.nodesDf = self.nodesDf.apply(lambda x: x.astype(str).str.lower())
 
-        self.list_IDs = self.nodes_df['ID'].dropna().to_list()
+        self.listIDs = self.nodesDf['ID'].dropna().to_list()
         
         # parse edges
-        self.edges_df = pd.read_csv(self.edges_filename, sep=',', skip_blank_lines=True, dtype=str)
-        self.edges_df.dropna(how='all', inplace=True)
-        self.edges_df = self.edges_df.apply(lambda x: x.astype(str).str.lower())
+        self.edgesDf = pd.read_csv(self.edgesFilename, sep=',', skip_blank_lines=True, dtype=str)
+        self.edgesDf.dropna(how='all', inplace=True)
+        self.edgesDf = self.edgesDf.apply(lambda x: x.astype(str).str.lower())
 
 
     def checkNodes(self):
@@ -108,26 +108,26 @@ class customMBSEobject(object):
         """
         logger.info('- Check node file -')
         # Check all columns are present
-        cols = self.nodes_df.columns.tolist()
-        if set(cols)!=set(self.allowed_node_cols):
+        cols = self.nodesDf.columns.tolist()
+        if set(cols)!=set(self.allowedNodeCols):
             raise IOError('Node file structure check - Error: wrong set of provided columns ' + str(cols) + ' (allowed: label, ID, type)')
         else:
              logger.info('Node file structure check - Pass')
 
         # Check for duplicate IDs
-        duplicateIDs = self.nodes_df.duplicated()
+        duplicateIDs = self.nodesDf.duplicated()
 
-        if self.nodes_df[duplicateIDs].empty:
+        if self.nodesDf[duplicateIDs].empty:
              logger.info("List of node IDs check - Pass")
         else:
              logger.info("List of node IDs check - Error: duplicate IDs were found:")
-             logger.info(self.nodes_df[duplicateIDs])
+             logger.info(self.nodesDf[duplicateIDs])
         
         #check for structure of each row
         logger.info("Entity check...")
-        for index, row in self.nodes_df.iterrows():
-            if row['type'] not in set(self.allowed_node_types):
-                raise IOError('Type of row ' + str(index) + ' in node file is not allowed. Allowed types: ' +str(self.allowed_node_types))
+        for index, row in self.nodesDf.iterrows():
+            if row['type'] not in set(self.allowedNodeTypes):
+                raise IOError('Type of row ' + str(index) + ' in node file is not allowed. Allowed types: ' +str(self.allowedNodeTypes))
             
             if pd.isnull(row['type']) and pd.isnull(row['ID']):
                 raise IOError('Entity of row ' + str(index) + ' in node file: Error - neither type nor ID have been specified')
@@ -147,42 +147,42 @@ class customMBSEobject(object):
         """
         logger.info('- Check edge file -')
         # Check all columns are present
-        cols = self.edges_df.columns.tolist()
+        cols = self.edgesDf.columns.tolist()
         if set(cols)!=set(self.allowed_edge_cols):
             raise IOError('Edge file structure check - Error: wrong set of provided columns (allowed: sourceNodeId,targetNodeId,type,medium)')
         else:
              logger.info('Edge file structure check - Pass')
 
         # Check for duplicate edges
-        duplicateEdges = self.edges_df[['sourceNodeId','targetNodeId']].duplicated()
+        duplicateEdges = self.edgesDf[['sourceNodeId','targetNodeId']].duplicated()
 
-        if self.edges_df[duplicateEdges].empty:
+        if self.edgesDf[duplicateEdges].empty:
              logger.info("List of edges check - Pass")
         else:
             logger.info("List of edges check - Error: duplicate edges were found:")
-            logger.info(self.edges_df[duplicateEdges])
+            logger.info(self.edgesDf[duplicateEdges])
 
         # Check IDs in edge file are defined in node file
-        sourceNodeId_list = self.edges_df['sourceNodeId'].to_list()
-        diff1 = set(sourceNodeId_list) - set(self.list_IDs)
+        sourceNodeId_list = self.edgesDf['sourceNodeId'].to_list()
+        diff1 = set(sourceNodeId_list) - set(self.listIDs)
         if diff1:
             raise IOError('Error - Edge file: not recognized entities: ' + str(diff1))
 
-        targetNodeId_list = self.edges_df['targetNodeId'].to_list()
-        diff2 = set(targetNodeId_list) - set(self.list_IDs)
+        targetNodeId_list = self.edgesDf['targetNodeId'].to_list()
+        diff2 = set(targetNodeId_list) - set(self.listIDs)
         if diff2:
             raise IOError('Error - Edge file: not recognized entities: ' + str(diff2))
 
         # Check for structure of each row
         logger.info("Edges check...")
-        for index, row in self.edges_df.iterrows():
+        for index, row in self.edgesDf.iterrows():
             if pd.isnull(row['sourceNodeId']) or pd.isnull(row['targetNodeId']):
                 logger.info(row)
                 raise IOError('Edge ' + str(index) + ' in edge file: Error - both sourceNodeId and targetNodeId need to be specified')
              
-            if row['type'] not in set(self.allowed_edge_types):
+            if row['type'] not in set(self.allowedEdgeTypes):
                 logger.info(row)
-                raise IOError('Type of row ' + str(index) + ' in edge file is not allowed. Allowed types: ' +str(self.allowed_edge_types))
+                raise IOError('Type of row ' + str(index) + ' in edge file is not allowed. Allowed types: ' +str(self.allowedEdgeTypes))
             
             if row['type']=='link' and pd.isnull(row['medium']):
                 logger.info(row)
@@ -195,7 +195,7 @@ class customMBSEobject(object):
 
         # check that entities in the node file have been mentioned in edge file
         entities_edge_list = sourceNodeId_list + targetNodeId_list
-        diff3 = set(self.list_IDs) - set(entities_edge_list)
+        diff3 = set(self.listIDs) - set(entities_edge_list)
         if diff3:
             raise IOError('Error - Node file: these entities in the node file were not mentioned in the edge file: ' + str(diff3))        
         logger.info("Edges check: Pass")
@@ -217,9 +217,9 @@ class customMBSEobject(object):
 
         Returns:
 
-            self.list_IDs, list, list of IDs specified in the MBSE model
+            self.listIDs, list, list of IDs specified in the MBSE model
         """
-        return self.list_IDs
+        return self.listIDs
     
     def addNodesEdges(self, new_node_dict, new_edge_dicts):
         """
@@ -231,14 +231,14 @@ class customMBSEobject(object):
 
         Returns:
 
-            self.list_IDs, list, list of IDs specified in the MBSE model
+            self.listIDs, list, list of IDs specified in the MBSE model
         """        
-        self.nodes_df.loc[len(self.nodes_df)] = new_node_dict
+        self.nodesDf.loc[len(self.nodesDf)] = new_node_dict
         
         for edge in new_edge_dicts:
-            self.edges_df.loc[len(self.edges_df)] = edge
+            self.edgesDf.loc[len(self.edgesDf)] = edge
         
-        self.list_IDs = self.nodes_df['ID'].dropna().to_list()
+        self.listIDs = self.nodesDf['ID'].dropna().to_list()
 
     def printOnFiles(self,nodes_file,edges_file):
         """
@@ -250,10 +250,10 @@ class customMBSEobject(object):
 
         Returns:
 
-            self.list_IDs, list, list of IDs specified in the MBSE model
+            self.listIDs, list, list of IDs specified in the MBSE model
         """  
 
-        self.nodes_df.to_csv(nodes_file, index=False)
-        self.edges_df.to_csv(edges_file, index=False)
+        self.nodesDf.to_csv(nodes_file, index=False)
+        self.edgesDf.to_csv(edges_file, index=False)
 
 

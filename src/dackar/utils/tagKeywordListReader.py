@@ -192,6 +192,17 @@ class entityLibrary():
     self.library_df = pd.DataFrame.from_dict(library_dict)
 
   def searchEntityInfo(self, entity):
+    """
+    Method designed to return information about an entity store in the dictionary.
+
+    Args:
+
+      entity, string, entity name
+
+    Returns:
+
+      (alias,category), tuple, tuple containing the alias and category class of the provided entity
+    """
     if entity in self.library_df['entity'].to_list():
       row = self.library_df[self.library_df['entity']==entity]
       return (row['alias'].to_list()[0] , list(set(row['category'].to_list())))
@@ -290,13 +301,17 @@ class entityLibrary():
 
   def patternCreator(self):
     """
-      This method is designed to create patterns from the tags and the corresponding list of
-      keywords.
-      @ In, tagDict, dict, dictionary containing tags and keywords. This dictionary is generated
-                          by keyWordListGenerator() located in tagKeywordListReader.py from the
-                          file nlp/data/tag_keywords_lists.xlsx
-      @ Out, patterns, list, list of patterns: {"label": label_ID, "pattern": keyword}
+    This method is designed to create patterns from the tags and the corresponding list of keywords.
+    
+    Args:
+
+      None
+
+    Returns:
+
+      patterns, list, list of patterns: {"label": label_ID, "pattern": keyword}
     """
+
     patterns = []
     for tag in self.library:
       for elem in self.library[tag]:
