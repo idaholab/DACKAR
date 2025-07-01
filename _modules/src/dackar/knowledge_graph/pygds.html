@@ -1,0 +1,358 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.knowledge_graph.pygds &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.knowledge_graph.pygds</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.knowledge_graph.pygds</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on March 20, 2025</span>
+
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="c1"># Source:</span>
+<span class="c1"># https://neo4j.com/docs/graph-data-science-client/current/</span>
+<span class="c1"># https://github.com/neo4j/graph-data-science</span>
+
+<span class="c1"># Python client for neo4j GDS library</span>
+<span class="c1"># https://github.com/neo4j/graph-data-science-client</span>
+<span class="c1"># pip install graphdatascience</span>
+<span class="c1"># for networkx support</span>
+<span class="c1"># pip install graphdatascience[networkx]</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">graphdatascience</span><span class="w"> </span><span class="kn">import</span> <span class="n">GraphDataScience</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="PyGDS">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PyGDS</span><span class="p">:</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">uri</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">pwd</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="s1">&#39;neo4j&#39;</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;init method</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            uri (str): # uri = &quot;bolt://localhost:7687&quot; for a single instance or uri = &quot;neo4j://localhost:7687&quot; for a cluster</span>
+<span class="sd">            user (str): default to &#39;neo4j&#39;</span>
+<span class="sd">            pwd (str): password the the neo4j DBMS database (can be reset in neo4j Desktop app)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+<div class="viewcode-block" id="PyGDS.__uri">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.__uri">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__uri</span> <span class="o">=</span> <span class="n">uri</span></div>
+
+<div class="viewcode-block" id="PyGDS.__user">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.__user">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__user</span> <span class="o">=</span> <span class="n">user</span></div>
+
+<div class="viewcode-block" id="PyGDS.__pwd">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.__pwd">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__pwd</span> <span class="o">=</span> <span class="n">pwd</span></div>
+
+<div class="viewcode-block" id="PyGDS.__driver">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.__driver">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="PyGDS.__database">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.__database">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__database</span> <span class="o">=</span> <span class="n">database</span> <span class="k">if</span> <span class="n">database</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s1">&#39;neo4j&#39;</span></div>
+
+<div class="viewcode-block" id="PyGDS.__graph">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.__graph">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__graph</span> <span class="o">=</span> <span class="p">[]</span> <span class="c1"># store the constructed graphs</span></div>
+
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="o">=</span> <span class="n">GraphDataScience</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__uri</span><span class="p">,</span> <span class="n">auth</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__user</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pwd</span><span class="p">),</span> <span class="n">database</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__database</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to create the driver: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PyGDS.close">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.close">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Close the python neo4j GDS connection</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="PyGDS.restart">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.restart">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">restart</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Restart the python neo4j GDS connection</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="o">=</span> <span class="n">GraphDataScience</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__uri</span><span class="p">,</span> <span class="n">auth</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">__user</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pwd</span><span class="p">),</span> <span class="n">database</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__database</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to restart the GDS driver: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PyGDS.query">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.query">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;User provided Cypher query statements for python neo4j driver to use to query database</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query (str): user provided Cypher query statements</span>
+<span class="sd">            parameters (dict, optional): dictionary that provide key/value pairs for query statement to use. Defaults to None.</span>
+<span class="sd">            db (str, optional): name for database. Defaults to None.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            DataFrame: returned queried results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;Driver not initialized!&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">run_cypher</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="n">database</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Query failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">response</span></div>
+
+
+<div class="viewcode-block" id="PyGDS.project">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.project">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">project</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_name</span><span class="p">,</span> <span class="n">node_spec</span><span class="p">,</span> <span class="n">relationship_spec</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a named graph in the catalog for use by algorithms</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            graph_name (str): graph name</span>
+<span class="sd">            node_spec (str or dict): Node project, dict option ({nodeLabel: {&#39;properties&#39;:[properties]}})</span>
+<span class="sd">            relationship_spec (str or dict): Relationship projection, dict option ({relationLabel: {&#39;properties&#39;:[properties]}})</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            graph (Graph object): GDS graph object</span>
+<span class="sd">            result (pandas.Series): containing metadata from underlying procedure call.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># exists_result = self.__driver.graph.exists(graph_name)</span>
+        <span class="c1"># assert exists_result[&#39;exists&#39;]</span>
+        <span class="n">graph</span><span class="p">,</span> <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">project</span><span class="p">(</span><span class="n">graph_name</span><span class="p">,</span> <span class="n">node_spec</span><span class="p">,</span> <span class="n">relationship_spec</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__graph</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">graph</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">graph</span><span class="p">,</span> <span class="n">result</span></div>
+
+
+
+<div class="viewcode-block" id="PyGDS.load_dataframe">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.load_dataframe">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_name</span><span class="p">,</span> <span class="n">nodes</span><span class="p">,</span> <span class="n">relationships</span><span class="p">,</span> <span class="n">write</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Constructing a graph from pandas.DataFrames</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            graph_name (str): Name of the graph to be constructed</span>
+<span class="sd">            nodes (pandas.DataFrame): one or more dataframes containing node data</span>
+<span class="sd">            relationships (pandas.DataFrame): one or more dataframes containing relationship data</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            graph (Graph object): GDS graph object</span>
+
+<span class="sd">        Examples:</span>
+<span class="sd">            nodes = pandas.DataFrame(</span>
+<span class="sd">                {</span>
+<span class="sd">                    &quot;nodeId&quot;: [0, 1, 2, 3],</span>
+<span class="sd">                    &quot;labels&quot;:  [&quot;A&quot;, &quot;B&quot;, &quot;C&quot;, &quot;A&quot;],</span>
+<span class="sd">                    &quot;prop1&quot;: [42, 1337, 8, 0],</span>
+<span class="sd">                    &quot;otherProperty&quot;: [0.1, 0.2, 0.3, 0.4]</span>
+<span class="sd">                }</span>
+<span class="sd">            )</span>
+
+<span class="sd">            relationships = pandas.DataFrame(</span>
+<span class="sd">                {</span>
+<span class="sd">                    &quot;sourceNodeId&quot;: [0, 1, 2, 3],</span>
+<span class="sd">                    &quot;targetNodeId&quot;: [1, 2, 3, 0],</span>
+<span class="sd">                    &quot;relationshipType&quot;: [&quot;REL&quot;, &quot;REL&quot;, &quot;REL&quot;, &quot;REL&quot;],</span>
+<span class="sd">                    &quot;weight&quot;: [0.0, 0.0, 0.1, 42.0]</span>
+<span class="sd">                }</span>
+<span class="sd">            )</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">graph</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">construct</span><span class="p">(</span><span class="n">graph_name</span><span class="p">,</span> <span class="n">nodes</span><span class="p">,</span> <span class="n">relationships</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__graph</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">graph</span><span class="p">)</span>
+        <span class="c1"># if write:</span>
+            <span class="c1"># self.__driver.graph.nodeProperties.write(graph,list(nodes[&#39;labels&#39;].unique()))</span>
+            <span class="c1"># self.__driver.graph.relationship.write(graph,list(relationships[&#39;relationshipType&#39;].unique()))</span>
+            <span class="c1"># Note: the export can only be used to write the data into a new database</span>
+            <span class="c1"># self.__driver.graph.export(graph, dbName = self.__database)</span>
+
+        <span class="k">return</span> <span class="n">graph</span></div>
+
+
+<div class="viewcode-block" id="PyGDS.check">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.check">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Print the graph information</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">list_graph</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">list</span><span class="p">()</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;List of graphs:&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">list_graph</span><span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">graph</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__graph</span><span class="p">:</span>
+            <span class="n">node_count</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">node_count</span><span class="p">()</span>
+            <span class="n">node_labels</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">node_labels</span><span class="p">()</span>
+            <span class="n">relationship_count</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">relationship_count</span><span class="p">()</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;The graph </span><span class="si">{</span><span class="n">graph</span><span class="o">.</span><span class="n">name</span><span class="p">()</span><span class="si">}</span><span class="s1"> has </span><span class="si">{</span><span class="n">node_count</span><span class="si">}</span><span class="s1"> nodes&#39;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;The graph </span><span class="si">{</span><span class="n">graph</span><span class="o">.</span><span class="n">name</span><span class="p">()</span><span class="si">}</span><span class="s1"> has labels: </span><span class="si">{</span><span class="n">node_labels</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;The graph </span><span class="si">{</span><span class="n">graph</span><span class="o">.</span><span class="n">name</span><span class="p">()</span><span class="si">}</span><span class="s1"> has </span><span class="si">{</span><span class="n">relationship_count</span><span class="si">}</span><span class="s1"> relationships&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="PyGDS.reset">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Reset the GDS, delete the graph in the memory</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">graph</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__graph</span><span class="p">:</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">graph</span><span class="o">.</span><span class="n">name</span><span class="p">()</span>
+            <span class="n">graph</span><span class="o">.</span><span class="n">drop</span><span class="p">()</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Graph with name </span><span class="si">%s</span><span class="s1"> has been removed!&#39;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PyGDS.centrality">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/pygds/index.html#src.dackar.knowledge_graph.pygds.PyGDS.centrality">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">centrality</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;eigenvector&#39;</span><span class="p">,</span> <span class="n">check</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Centrality algorithms are used to understand the role or influence of particular nodes in a graph</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            method (str, optional): centrality algorithm. Defaults to &#39;eigenvector&#39;.</span>
+<span class="sd">            &#39;Engenvector centrality&#39; measures the importance or influence of a node based on its connections</span>
+<span class="sd">            to other nodes in the network.</span>
+<span class="sd">            &#39;Betweenness centrality&#39; quantifies the importance of a node as a bridge or intermediary</span>
+<span class="sd">            in the network. It measures how often a node lies on the shortest path between other pairs of nodes</span>
+<span class="sd">            &#39;Degree centrality&#39; measures the number of connections (edges) a node has in the network</span>
+<span class="sd">            check (bool, optional): print graph information if True</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">centrality_result</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">graph</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">__graph</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;eigenvector&#39;</span><span class="p">:</span>
+                <span class="n">centrality_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">eigenvector</span><span class="o">.</span><span class="n">mutate</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">maxIterations</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">mutateProperty</span><span class="o">=</span><span class="s1">&#39;eigenvectorCentrality&#39;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodeProperties</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;eigenvectorCentrality&#39;</span><span class="p">])</span>
+            <span class="k">elif</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;betweenness&#39;</span><span class="p">:</span>
+                <span class="n">centrality_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">betweenness</span><span class="o">.</span><span class="n">mutate</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">mutateProperty</span><span class="o">=</span><span class="s1">&#39;betweennessCentrality&#39;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodeProperties</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;betweennessCentrality&#39;</span><span class="p">])</span>
+            <span class="k">elif</span> <span class="n">method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s1">&#39;degree&#39;</span><span class="p">:</span>
+                <span class="n">centrality_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">degree</span><span class="o">.</span><span class="n">mutate</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="n">mutateProperty</span><span class="o">=</span><span class="s1">&#39;degreeCentrality&#39;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodeProperties</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">graph</span><span class="p">,</span> <span class="p">[</span><span class="s1">&#39;degreeCentrality&#39;</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Invalid input for &#39;method&#39; keyword, available options are: eigenvector, betweenness and degree!&quot;</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">check</span> <span class="ow">and</span> <span class="n">centrality_result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">check</span><span class="p">()</span>
+                <span class="nb">print</span><span class="p">(</span><span class="n">centrality_result</span><span class="o">.</span><span class="n">centralityDistribution</span><span class="p">)</span></div>
+</div>
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

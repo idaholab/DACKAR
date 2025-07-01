@@ -366,7 +366,7 @@
 
         <span class="k">try</span><span class="p">:</span>
             <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">(</span><span class="n">database</span><span class="o">=</span><span class="n">db</span><span class="p">)</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span>
-            <span class="n">response</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">parameters</span><span class="p">))</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">))</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Query failed:&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
         <span class="k">finally</span><span class="p">:</span>
@@ -413,7 +413,61 @@
         <span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">tx</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">))</span>
         <span class="c1"># result = [record.values() for record in result]</span>
         <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="Py2Neo.load_dataframe_for_nodes">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.Py2Neo.load_dataframe_for_nodes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_dataframe_for_nodes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">df</span><span class="p">,</span> <span class="n">labels</span><span class="p">,</span> <span class="n">properties</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load pandas dataframe to create nodes</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            df (pandas.DataFrame): DataFrame for loading</span>
+<span class="sd">            labels (str): node label</span>
+<span class="sd">            properties (list): node properties from the dataframe column names</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">properties</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">create_node</span><span class="p">(</span><span class="n">labels</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">to_dict</span><span class="p">())</span></div>
+
+
+    <span class="c1"># Load csv function to create relations</span>
+<div class="viewcode-block" id="Py2Neo.load_dataframe_for_relations">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.Py2Neo.load_dataframe_for_relations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_dataframe_for_relations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">df</span><span class="p">,</span> <span class="n">l1</span><span class="o">=</span><span class="s1">&#39;sourceLabel&#39;</span><span class="p">,</span> <span class="n">p1</span><span class="o">=</span><span class="s1">&#39;sourceNodeId&#39;</span><span class="p">,</span> <span class="n">l2</span><span class="o">=</span><span class="s1">&#39;targetLabel&#39;</span><span class="p">,</span> <span class="n">p2</span><span class="o">=</span><span class="s1">&#39;targetNodeId&#39;</span><span class="p">,</span> <span class="n">lr</span><span class="o">=</span><span class="s1">&#39;relationshipType&#39;</span><span class="p">,</span> <span class="n">pr</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load dataframe to create node relations</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            df (pandas.DataFrame): DataFrame for relationships</span>
+<span class="sd">            l1 (str): first node label</span>
+<span class="sd">            p1 (str): first node ID</span>
+<span class="sd">            l2 (str): second node label</span>
+<span class="sd">            P2 (str): second node ID</span>
+<span class="sd">            lr (str): relationship label</span>
+<span class="sd">            pr (list, optional): of attributes for relation. Defaults to None.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># FIXME: this function is not complete, it can generate duplicate nodes due to limited properties</span>
+        <span class="c1"># for nodes. Future development need to be performed.</span>
+        <span class="c1"># label (l1/l2), properties (p1/p2), and relation label (lr), relation properties (pr)</span>
+        <span class="n">valid</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">valid</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">l1</span><span class="p">,</span> <span class="n">l2</span><span class="p">,</span> <span class="n">lr</span><span class="p">,</span> <span class="n">p1</span><span class="p">,</span> <span class="n">p2</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">pr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">valid</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pr</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">valid</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">))</span>
+
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+                <span class="n">l1_</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">l1</span><span class="p">]</span>
+                <span class="n">p1_</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;nodeId&#39;</span><span class="p">:</span> <span class="n">row</span><span class="p">[</span><span class="n">p1</span><span class="p">]}</span>
+                <span class="n">l2_</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">l2</span><span class="p">]</span>
+                <span class="n">p2_</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;nodeId&#39;</span><span class="p">:</span> <span class="n">row</span><span class="p">[</span><span class="n">p2</span><span class="p">]}</span>
+                <span class="n">lr_</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">lr</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">pr</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">pr_</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">pr</span><span class="p">]</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">pr_</span> <span class="o">=</span> <span class="kc">None</span>
+                <span class="n">session</span><span class="o">.</span><span class="n">execute_write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_create_relation</span><span class="p">,</span> <span class="n">l1_</span><span class="p">,</span> <span class="n">p1_</span><span class="p">,</span> <span class="n">l2_</span><span class="p">,</span> <span class="n">p2_</span><span class="p">,</span> <span class="n">lr_</span><span class="p">,</span> <span class="n">pr_</span><span class="p">)</span></div>
 </div>
+
 
 
 </pre></div>
