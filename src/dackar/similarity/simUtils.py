@@ -6,16 +6,18 @@ import copy
 # https://github.com/alvations/pywsd
 
 from ..contrib.lazy import lazy_loader
-
-pywsd = lazy_loader.LazyLoader('pywsd', globals(), 'pywsd')
+from .synsetUtils import semanticSimilaritySynsets, synsetsSimilarity
+from .synsetUtils import semanticSimilarityUsingDisambiguatedSynsets
+from .utils import combineListsRemoveDuplicates
 
 import nltk
 from nltk import word_tokenize as tokenizer
 from nltk.corpus import brown
 from nltk.corpus import wordnet as wn
 
-from .synsetUtils import semanticSimilaritySynsets, synsetsSimilarity
-from .synsetUtils import semanticSimilarityUsingDisambiguatedSynsets
+
+pywsd = lazy_loader.LazyLoader('pywsd', globals(), 'pywsd')
+
 
 """
   Methods proposed by: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=1644735
@@ -524,7 +526,7 @@ def convertSentsToSynsetsWithDisambiguation(sentList):
   sentSynsets = []
   for sent in sentList:
     _, bestSyn = sentenceSenseDisambiguationPyWSD(sent, senseMethod='simple_lesk', simMethod='path')
-    bestSyn = [wn.synset(syn.name()) for syn in bestSyn if syn is not None]
+    # bestSyn = [wn.synset(syn.name()) for syn in bestSyn if syn is not None]
     sentSynsets.append(bestSyn)
   return sentSynsets
 
@@ -606,23 +608,4 @@ def convertSentsToSynsets(sentList, info=None):
     sentSynsets.append(bestSyn)
   return sentSynsets
 
-def combineListsRemoveDuplicates(list1, list2):
-  """combine two lists and remove duplicates
 
-  Args:
-      list1 (list): the first list of words
-      list2 (list): the second list of words
-
-  Returns:
-      list: the combined list of words
-  """
-  combinedList = list1 + list2
-  seen = set()
-  result = []
-
-  for item in combinedList:
-      if item not in seen:
-          seen.add(item)
-          result.append(item)
-
-  return result

@@ -6,6 +6,7 @@ import numpy as np
 
 from nltk.corpus import wordnet as wn
 from nltk.corpus import wordnet_ic
+from .utils import combineListsRemoveDuplicates
 
 def synsetListSimilarity(synsetList1, synsetList2, delta=0.85):
   """
@@ -107,9 +108,18 @@ def semanticSimilaritySynsets(synsetA, synsetB, disambiguation=False):
 
       similarity: float, [0, 1], the similarity score
   """
-  shortDistance = pathLength(synsetA, synsetB, disambiguation=disambiguation)
-  maxHierarchy = scalingDepthEffect(synsetA, synsetB, disambiguation=disambiguation)
-  similarity = shortDistance*maxHierarchy
+  ## The following method "pathLength" "scalingDepthEffect" are derived from literature
+  # shortDistance = pathLength(synsetA, synsetB, disambiguation=disambiguation)
+  # maxHierarchy = scalingDepthEffect(synsetA, synsetB, disambiguation=disambiguation)
+  # similarity = shortDistance*maxHierarchy
+
+  # Using methods directly from wordnet
+  synsetA = wn.synset(synsetA.name())
+  synsetB = wn.synset(synsetB.name())
+  shortDistance = synsetA.path_similarity(synsetB)
+  maxHierarchy = synsetA.wup_similarity(synsetB)
+  # Harmonic Mean
+  similarity = 2 * shortDistance*maxHierarchy/(shortDistance+maxHierarchy)
   return similarity
 
 def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
@@ -121,13 +131,13 @@ def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
 
       synsetA: wordnet.synset, synset for first word
       synsetB: wordnet.synset, synset for second word
-      alpha: float, a constant in monotonically descreasing function, exp(-alpha*wordnetpathLength),
+      alpha: float, a constant in monotonically decreasing function, exp(-alpha*wordnetpathLength),
       parameter used to scale the shortest path length. For wordnet, the optimal value is 0.2
       disambiguation: bool, True if disambiguation have been performed for the given synsets
 
     Returns:
 
-      shortDistance: float, [0, 1], the shortest distance between two synsets using exponential descreasing
+      shortDistance: float, [0, 1], the shortest distance between two synsets using exponential decreasing
       function.
   """
   synsetA = wn.synset(synsetA.name())
@@ -146,14 +156,14 @@ def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
       if len(lemmaSetA.intersection(lemmaSetB)) > 0:
         maxLength = 1.0
       else:
-        maxLength = synsetA.shortest_path_distance(synsetB)
+        maxLength = 1/synsetA.path_similarity(synsetB)-1
         if maxLength is None:
-          maxLength = 0.0
+          maxLength = 10.0
     else:
-      # when disamigutation is performed, we should avoid to check lemmas
-      maxLength = synsetA.shortest_path_distance(synsetB)
+      # when disambiguation is performed, we should avoid to check lemmas
+      maxLength = 1/synsetA.path_similarity(synsetB)-1
       if maxLength is None:
-        maxLength = 0.0
+        maxLength = 10.
   shortDistance = math.exp(-alpha*maxLength)
   return shortDistance
 
@@ -232,7 +242,8 @@ def semanticSimilaritySynsetList(synsetList1, synsetList2):
 
       semSimilarity: float, [0, 1], the similarity score
   """
-  synSet = set(synsetList1).union(set(synsetList2))
+  # synSet = set(synsetList1).union(set(synsetList2))
+  synSet = combineListsRemoveDuplicates(synsetList1, synsetList2)
   wordVectorA = constructSemanticVector(synsetList1, synSet)
   wordVectorB = constructSemanticVector(synsetList2, synSet)
 
@@ -365,7 +376,8 @@ def semanticSimilarityUsingDisambiguatedSynsets(synsetsA, synsetsB, simMethod='s
 
       semSimilarity: float, [0, 1], the similarity score
   """
-  jointWordSynsets = set(synsetsA).union(set(synsetsB))
+  # jointWordSynsets = set(synsetsA).union(set(synsetsB))
+  jointWordSynsets = combineListsRemoveDuplicates(synsetsA, synsetsB)
   wordVectorA = constructSemanticVectorUsingDisambiguatedSynsets(synsetsA, jointWordSynsets, simMethod=simMethod)
   wordVectorB = constructSemanticVectorUsingDisambiguatedSynsets(synsetsB, jointWordSynsets, simMethod=simMethod)
   semSimilarity = np.dot(wordVectorA, wordVectorB)/(np.linalg.norm(wordVectorA)*np.linalg.norm(wordVectorB))
