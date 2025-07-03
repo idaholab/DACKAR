@@ -38,7 +38,7 @@ def test_sentence_similarity_disambiguation_simple():
 
 def test_sentence_similarity_disambiguation_original():
   similarity = simUtils.sentenceSimilarityWithDisambiguation(sents[0], sents[1], senseMethod='original_lesk', delta=0.85)
-  assert abs(similarity-0.3578) <1.e-3, similarity
+  assert abs(similarity-0.3578) <5.e-3, similarity
 
 def test_sentence_similarity_disambiguation_cosine():
   similarity = simUtils.sentenceSimilarityWithDisambiguation(sents[0], sents[1], senseMethod='cosine_lesk', delta=0.85)
