@@ -39,14 +39,12 @@ def wordOrderSimilaritySynsetList(synsetList1, synsetList2):
   """
   # keep the order (works for python3.7+)
   synSet = list(dict.fromkeys(synsetList1+synsetList2))
-  # synSet = list(set(synsetList1).union(set(synsetList2)))
-  index = {syn[1]: syn[0] for syn in enumerate(synSet)}
-  r1 = constructSynsetOrderVector(synsetList1, synSet, index)
-  r2 = constructSynsetOrderVector(synsetList2, synSet, index)
+  r1 = constructSynsetOrderVector(synsetList1, synSet)
+  r2 = constructSynsetOrderVector(synsetList2, synSet)
   srTemp = np.linalg.norm(r1-r2)/np.linalg.norm(r1+r2)
   return 1-srTemp
 
-def constructSynsetOrderVector(synsets, jointSynsets, index):
+def constructSynsetOrderVector(synsets, jointSynsets):
   """
     Construct synset order vector for word order similarity calculation
 
@@ -54,25 +52,22 @@ def constructSynsetOrderVector(synsets, jointSynsets, index):
 
       synsets: list of synsets
       jointSynsets: list of joint synsets
-      index: int, index for synsets
 
     Returns:
 
       vector: np.array, synset order vector
   """
   vector = np.zeros(len(jointSynsets))
-  i = 0
-  synsets = set(synsets)
-  for syn in jointSynsets:
-    if syn in synsets:
-      vector[i] = index[syn]
-    else:
-      synSimilar, similarity = identifyBestSimilarSynsetFromSynsets(syn, synsets)
-      if similarity > 0.4:
-        vector[i] = index[synSimilar]
+  for i, syn in enumerate(jointSynsets):
+    try:
+      index = synsets.index(syn)
+    except ValueError:
+      synSimilar, similarity = identifyBestSimilarSynsetFromSynsets(syn, set(synsets))
+      if similarity > 0.9:
+        index = synsets.index(synSimilar)
       else:
-        vector[i] = 0
-    i +=1
+        index = 0
+    vector[i] = index
   return vector
 
 def identifyBestSimilarSynsetFromSynsets(syn, synsets):
