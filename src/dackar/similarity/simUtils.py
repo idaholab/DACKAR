@@ -278,7 +278,7 @@ def identifyBestSimilarSynsetPair(wordA, wordB):
   synsetsWordB = wn.synsets(wordB)
 
   if len(synsetsWordA) == 0 or len(synsetsWordB) == 0:
-    return None, 0.0
+    return (None,None), 0.0
   else:
     similarity = 0.0
     bestPair = None, None
@@ -286,6 +286,7 @@ def identifyBestSimilarSynsetPair(wordA, wordB):
       for synsetWordB in synsetsWordB:
         # TODO: may change to general similarity method
         temp = wn.path_similarity(synsetWordA, synsetWordB)
+        # temp = semanticSimilaritySynsets(synsetWordA, synsetWordB)
         if temp > similarity:
           similarity = temp
           bestPair = synsetWordA, synsetWordB
