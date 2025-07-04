@@ -61,7 +61,7 @@ def constructSynsetOrderVector(synsets, jointSynsets):
   vector = np.zeros(len(jointSynsets))
   for i, syn in enumerate(jointSynsets):
     try:
-      index = synsets.index(syn)
+      index = synsets.index(syn) + 1
     except ValueError:
       synSimilar, similarity = identifyBestSimilarSynsetFromSynsets(syn, set(synsets))
       if similarity > 0.9:

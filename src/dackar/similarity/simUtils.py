@@ -84,7 +84,7 @@ def constructWordOrderVector(words, jointWords):
   vector = np.zeros(len(jointWords))
   for i, jointWord in enumerate(jointWords):
     try:
-      index = words.index(jointWord)
+      index = words.index(jointWord) + 1
     except ValueError:
       # Additional enhancement
       # If the words similarity score is very high, the words will be treated the same.
@@ -149,7 +149,7 @@ def constructSemanticVector(words, jointWords, infoContentNorm):
         vector[i] = vector[i]*math.pow(content(jointWord, wordCount, brownDict), 2)
     else:
       similarWord, similarity =  identifyBestSimilarWordFromWordSet(jointWord, wordSet)
-      if similarity >0.2:
+      if similarity > 0.2:
         vector[i] = similarity
       else:
         vector[i] = 0.0
@@ -251,11 +251,11 @@ def semanticSimilarityWords(wordA, wordB):
   """
   if wordA.lower() == wordB.lower():
     return 1.0
-  bestPair = identifyBestSimilarSynsetPair(wordA, wordB)
-  if bestPair[0] is None or bestPair[1] is None:
-    return 0.0
-  # disambiguation is False since only two words is provided and there is no additional information content
-  similarity = semanticSimilaritySynsets(bestPair[0], bestPair[1], disambiguation=False)
+  bestPair, similarity = identifyBestSimilarSynsetPair(wordA, wordB)
+  # if bestPair[0] is None or bestPair[1] is None:
+  #   return 0.0
+  # # disambiguation is False since only two words is provided and there is no additional information content
+  # similarity = semanticSimilaritySynsets(bestPair[0], bestPair[1], disambiguation=False)
   return similarity
 
 
@@ -271,15 +271,16 @@ def identifyBestSimilarSynsetPair(wordA, wordB):
     Returns:
 
       bestPair: tuple, (first synset, second synset), identified best synset pair using wordnet similarity
+      similarity: float, the similarity score
   """
-  similarity = -1.0
+  similarity = 0.0
   synsetsWordA = wn.synsets(wordA)
   synsetsWordB = wn.synsets(wordB)
 
   if len(synsetsWordA) == 0 or len(synsetsWordB) == 0:
-    return None, None
+    return None, 0.0
   else:
-    similarity = -1.0
+    similarity = 0.0
     bestPair = None, None
     for synsetWordA in synsetsWordA:
       for synsetWordB in synsetsWordB:
@@ -288,7 +289,7 @@ def identifyBestSimilarSynsetPair(wordA, wordB):
         if temp > similarity:
           similarity = temp
           bestPair = synsetWordA, synsetWordB
-    return bestPair
+    return bestPair, similarity
 
 #################################################
 
@@ -363,7 +364,7 @@ def wordsSimilarity(wordA, wordB, method='semantic_similarity_synsets'):
     method = method + '_similarity'
   if method not in sematicSimMethod + wordnetSimMethod:
     raise ValueError(f'{method} is not valid, please use one of {wordnetSimMethod+sematicSimMethod}')
-  bestPair = identifyBestSimilarSynsetPair(wordA, wordB)
+  bestPair, _ = identifyBestSimilarSynsetPair(wordA, wordB)
   if bestPair[0] is None or bestPair[1] is None:
     return 0.0
   # when campare words only, we assume there is no disambiguation required.
