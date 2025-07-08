@@ -6,6 +6,9 @@ Created on February, 2024
 """
 import re
 import logging
+import toml
+import os
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,4 +41,28 @@ def getShortAcronym(s):
   acronym = [x for x in l if re.search("[/]", x) and len(x)==3]
   ns = "".join([x for x in l if x not in acronym])
   return ns, acronym
+
+def readToml(filePath):
+  """Read toml formatted file
+
+  Args:
+      filePath (str): the path to the file
+
+  Returns:
+      dict: dictionary of file content
+  """
+  with open(filePath, 'r') as file:
+    dataDict = toml.load(file)
+  return dataDict
+
+def writeToFile(filePath, content):
+  """Write content into file
+
+  Args:
+      filePath (str): file path
+      content (str): content that will be written
+  """
+  with open(filePath, 'w') as file:
+    file.write(content)
+
 
