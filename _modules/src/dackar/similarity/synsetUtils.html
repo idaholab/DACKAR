@@ -88,6 +88,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">nltk.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">wordnet</span> <span class="k">as</span> <span class="n">wn</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">nltk.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">wordnet_ic</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">combineListsRemoveDuplicates</span>
 
 <div class="viewcode-block" id="synsetListSimilarity">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/synsetUtils/index.html#src.dackar.similarity.synsetUtils.synsetListSimilarity">[docs]</a>
@@ -126,17 +127,15 @@
 <span class="sd">  &quot;&quot;&quot;</span>
   <span class="c1"># keep the order (works for python3.7+)</span>
   <span class="n">synSet</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">synsetList1</span><span class="o">+</span><span class="n">synsetList2</span><span class="p">))</span>
-  <span class="c1"># synSet = list(set(synsetList1).union(set(synsetList2)))</span>
-  <span class="n">index</span> <span class="o">=</span> <span class="p">{</span><span class="n">syn</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span> <span class="n">syn</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">synSet</span><span class="p">)}</span>
-  <span class="n">r1</span> <span class="o">=</span> <span class="n">constructSynsetOrderVector</span><span class="p">(</span><span class="n">synsetList1</span><span class="p">,</span> <span class="n">synSet</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
-  <span class="n">r2</span> <span class="o">=</span> <span class="n">constructSynsetOrderVector</span><span class="p">(</span><span class="n">synsetList2</span><span class="p">,</span> <span class="n">synSet</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+  <span class="n">r1</span> <span class="o">=</span> <span class="n">constructSynsetOrderVector</span><span class="p">(</span><span class="n">synsetList1</span><span class="p">,</span> <span class="n">synSet</span><span class="p">)</span>
+  <span class="n">r2</span> <span class="o">=</span> <span class="n">constructSynsetOrderVector</span><span class="p">(</span><span class="n">synsetList2</span><span class="p">,</span> <span class="n">synSet</span><span class="p">)</span>
   <span class="n">srTemp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">r1</span><span class="o">-</span><span class="n">r2</span><span class="p">)</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">r1</span><span class="o">+</span><span class="n">r2</span><span class="p">)</span>
   <span class="k">return</span> <span class="mi">1</span><span class="o">-</span><span class="n">srTemp</span></div>
 
 
 <div class="viewcode-block" id="constructSynsetOrderVector">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/synsetUtils/index.html#src.dackar.similarity.synsetUtils.constructSynsetOrderVector">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">constructSynsetOrderVector</span><span class="p">(</span><span class="n">synsets</span><span class="p">,</span> <span class="n">jointSynsets</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">constructSynsetOrderVector</span><span class="p">(</span><span class="n">synsets</span><span class="p">,</span> <span class="n">jointSynsets</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Construct synset order vector for word order similarity calculation</span>
 
@@ -144,25 +143,22 @@
 
 <span class="sd">      synsets: list of synsets</span>
 <span class="sd">      jointSynsets: list of joint synsets</span>
-<span class="sd">      index: int, index for synsets</span>
 
 <span class="sd">    Returns:</span>
 
 <span class="sd">      vector: np.array, synset order vector</span>
 <span class="sd">  &quot;&quot;&quot;</span>
   <span class="n">vector</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">jointSynsets</span><span class="p">))</span>
-  <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
-  <span class="n">synsets</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">synsets</span><span class="p">)</span>
-  <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">jointSynsets</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">synsets</span><span class="p">:</span>
-      <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span><span class="p">[</span><span class="n">syn</span><span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-      <span class="n">synSimilar</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetFromSynsets</span><span class="p">(</span><span class="n">syn</span><span class="p">,</span> <span class="n">synsets</span><span class="p">)</span>
-      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span> <span class="mf">0.4</span><span class="p">:</span>
-        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span><span class="p">[</span><span class="n">synSimilar</span><span class="p">]</span>
+  <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">syn</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">jointSynsets</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+      <span class="n">index</span> <span class="o">=</span> <span class="n">synsets</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">syn</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+      <span class="n">synSimilar</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetFromSynsets</span><span class="p">(</span><span class="n">syn</span><span class="p">,</span> <span class="nb">set</span><span class="p">(</span><span class="n">synsets</span><span class="p">))</span>
+      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span> <span class="mf">0.9</span><span class="p">:</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="n">synsets</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">synSimilar</span><span class="p">)</span>
       <span class="k">else</span><span class="p">:</span>
-        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">i</span> <span class="o">+=</span><span class="mi">1</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span>
   <span class="k">return</span> <span class="n">vector</span></div>
 
 
@@ -194,7 +190,7 @@
 
 <div class="viewcode-block" id="semanticSimilaritySynsets">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/synsetUtils/index.html#src.dackar.similarity.synsetUtils.semanticSimilaritySynsets">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">semanticSimilaritySynsets</span><span class="p">(</span><span class="n">synsetA</span><span class="p">,</span> <span class="n">synsetB</span><span class="p">,</span> <span class="n">disambiguation</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">semanticSimilaritySynsets</span><span class="p">(</span><span class="n">synsetA</span><span class="p">,</span> <span class="n">synsetB</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Compute the similarity between two synset using semantic analysis</span>
 <span class="sd">    (e.g., using both path length and depth information in wordnet)</span>
@@ -208,9 +204,18 @@
 
 <span class="sd">      similarity: float, [0, 1], the similarity score</span>
 <span class="sd">  &quot;&quot;&quot;</span>
-  <span class="n">shortDistance</span> <span class="o">=</span> <span class="n">pathLength</span><span class="p">(</span><span class="n">synsetA</span><span class="p">,</span> <span class="n">synsetB</span><span class="p">,</span> <span class="n">disambiguation</span><span class="o">=</span><span class="n">disambiguation</span><span class="p">)</span>
-  <span class="n">maxHierarchy</span> <span class="o">=</span> <span class="n">scalingDepthEffect</span><span class="p">(</span><span class="n">synsetA</span><span class="p">,</span> <span class="n">synsetB</span><span class="p">,</span> <span class="n">disambiguation</span><span class="o">=</span><span class="n">disambiguation</span><span class="p">)</span>
-  <span class="n">similarity</span> <span class="o">=</span> <span class="n">shortDistance</span><span class="o">*</span><span class="n">maxHierarchy</span>
+  <span class="c1">## The following method &quot;pathLength&quot; &quot;scalingDepthEffect&quot; are derived from literature</span>
+  <span class="c1"># shortDistance = pathLength(synsetA, synsetB, disambiguation=disambiguation)</span>
+  <span class="c1"># maxHierarchy = scalingDepthEffect(synsetA, synsetB, disambiguation=disambiguation)</span>
+  <span class="c1"># similarity = shortDistance*maxHierarchy</span>
+
+  <span class="c1"># Using methods directly from wordnet</span>
+  <span class="n">synsetA</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synset</span><span class="p">(</span><span class="n">synsetA</span><span class="o">.</span><span class="n">name</span><span class="p">())</span>
+  <span class="n">synsetB</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synset</span><span class="p">(</span><span class="n">synsetB</span><span class="o">.</span><span class="n">name</span><span class="p">())</span>
+  <span class="n">shortDistance</span> <span class="o">=</span> <span class="n">synsetA</span><span class="o">.</span><span class="n">path_similarity</span><span class="p">(</span><span class="n">synsetB</span><span class="p">)</span>
+  <span class="n">maxHierarchy</span> <span class="o">=</span> <span class="n">synsetA</span><span class="o">.</span><span class="n">wup_similarity</span><span class="p">(</span><span class="n">synsetB</span><span class="p">)</span>
+  <span class="c1"># Harmonic Mean</span>
+  <span class="n">similarity</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">shortDistance</span><span class="o">*</span><span class="n">maxHierarchy</span><span class="o">/</span><span class="p">(</span><span class="n">shortDistance</span><span class="o">+</span><span class="n">maxHierarchy</span><span class="p">)</span>
   <span class="k">return</span> <span class="n">similarity</span></div>
 
 
@@ -225,13 +230,13 @@
 
 <span class="sd">      synsetA: wordnet.synset, synset for first word</span>
 <span class="sd">      synsetB: wordnet.synset, synset for second word</span>
-<span class="sd">      alpha: float, a constant in monotonically descreasing function, exp(-alpha*wordnetpathLength),</span>
+<span class="sd">      alpha: float, a constant in monotonically decreasing function, exp(-alpha*wordnetpathLength),</span>
 <span class="sd">      parameter used to scale the shortest path length. For wordnet, the optimal value is 0.2</span>
 <span class="sd">      disambiguation: bool, True if disambiguation have been performed for the given synsets</span>
 
 <span class="sd">    Returns:</span>
 
-<span class="sd">      shortDistance: float, [0, 1], the shortest distance between two synsets using exponential descreasing</span>
+<span class="sd">      shortDistance: float, [0, 1], the shortest distance between two synsets using exponential decreasing</span>
 <span class="sd">      function.</span>
 <span class="sd">  &quot;&quot;&quot;</span>
   <span class="n">synsetA</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synset</span><span class="p">(</span><span class="n">synsetA</span><span class="o">.</span><span class="n">name</span><span class="p">())</span>
@@ -250,14 +255,14 @@
       <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lemmaSetA</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">lemmaSetB</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
         <span class="n">maxLength</span> <span class="o">=</span> <span class="mf">1.0</span>
       <span class="k">else</span><span class="p">:</span>
-        <span class="n">maxLength</span> <span class="o">=</span> <span class="n">synsetA</span><span class="o">.</span><span class="n">shortest_path_distance</span><span class="p">(</span><span class="n">synsetB</span><span class="p">)</span>
+        <span class="n">maxLength</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="n">synsetA</span><span class="o">.</span><span class="n">path_similarity</span><span class="p">(</span><span class="n">synsetB</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span>
         <span class="k">if</span> <span class="n">maxLength</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-          <span class="n">maxLength</span> <span class="o">=</span> <span class="mf">0.0</span>
+          <span class="n">maxLength</span> <span class="o">=</span> <span class="mf">10.0</span>
     <span class="k">else</span><span class="p">:</span>
-      <span class="c1"># when disamigutation is performed, we should avoid to check lemmas</span>
-      <span class="n">maxLength</span> <span class="o">=</span> <span class="n">synsetA</span><span class="o">.</span><span class="n">shortest_path_distance</span><span class="p">(</span><span class="n">synsetB</span><span class="p">)</span>
+      <span class="c1"># when disambiguation is performed, we should avoid to check lemmas</span>
+      <span class="n">maxLength</span> <span class="o">=</span> <span class="mi">1</span><span class="o">/</span><span class="n">synsetA</span><span class="o">.</span><span class="n">path_similarity</span><span class="p">(</span><span class="n">synsetB</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span>
       <span class="k">if</span> <span class="n">maxLength</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">maxLength</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">maxLength</span> <span class="o">=</span> <span class="mf">10.</span>
   <span class="n">shortDistance</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">alpha</span><span class="o">*</span><span class="n">maxLength</span><span class="p">)</span>
   <span class="k">return</span> <span class="n">shortDistance</span></div>
 
@@ -342,7 +347,8 @@
 
 <span class="sd">      semSimilarity: float, [0, 1], the similarity score</span>
 <span class="sd">  &quot;&quot;&quot;</span>
-  <span class="n">synSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">synsetList1</span><span class="p">)</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">synsetList2</span><span class="p">))</span>
+  <span class="c1"># synSet = set(synsetList1).union(set(synsetList2))</span>
+  <span class="n">synSet</span> <span class="o">=</span> <span class="n">combineListsRemoveDuplicates</span><span class="p">(</span><span class="n">synsetList1</span><span class="p">,</span> <span class="n">synsetList2</span><span class="p">)</span>
   <span class="n">wordVectorA</span> <span class="o">=</span> <span class="n">constructSemanticVector</span><span class="p">(</span><span class="n">synsetList1</span><span class="p">,</span> <span class="n">synSet</span><span class="p">)</span>
   <span class="n">wordVectorB</span> <span class="o">=</span> <span class="n">constructSemanticVector</span><span class="p">(</span><span class="n">synsetList2</span><span class="p">,</span> <span class="n">synSet</span><span class="p">)</span>
 
@@ -425,7 +431,7 @@
       <span class="k">else</span><span class="p">:</span>
         <span class="n">similarity</span> <span class="o">=</span> <span class="mf">0.0</span>
   <span class="k">elif</span> <span class="n">method</span> <span class="ow">in</span> <span class="n">sematicSimMethod</span><span class="p">:</span>
-    <span class="n">similarity</span> <span class="o">=</span> <span class="n">semanticSimilaritySynsets</span><span class="p">(</span><span class="n">synsetA</span><span class="p">,</span> <span class="n">synsetB</span><span class="p">,</span> <span class="n">disambiguation</span><span class="o">=</span><span class="n">disambiguation</span><span class="p">)</span>
+    <span class="n">similarity</span> <span class="o">=</span> <span class="n">semanticSimilaritySynsets</span><span class="p">(</span><span class="n">synsetA</span><span class="p">,</span> <span class="n">synsetB</span><span class="p">)</span>
   <span class="k">else</span><span class="p">:</span>
     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1"> is not valid, please use one of </span><span class="si">{</span><span class="n">wordnetSimMethod</span><span class="o">+</span><span class="n">sematicSimMethod</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
 
@@ -487,7 +493,8 @@
 
 <span class="sd">      semSimilarity: float, [0, 1], the similarity score</span>
 <span class="sd">  &quot;&quot;&quot;</span>
-  <span class="n">jointWordSynsets</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">synsetsA</span><span class="p">)</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">synsetsB</span><span class="p">))</span>
+  <span class="c1"># jointWordSynsets = set(synsetsA).union(set(synsetsB))</span>
+  <span class="n">jointWordSynsets</span> <span class="o">=</span> <span class="n">combineListsRemoveDuplicates</span><span class="p">(</span><span class="n">synsetsA</span><span class="p">,</span> <span class="n">synsetsB</span><span class="p">)</span>
   <span class="n">wordVectorA</span> <span class="o">=</span> <span class="n">constructSemanticVectorUsingDisambiguatedSynsets</span><span class="p">(</span><span class="n">synsetsA</span><span class="p">,</span> <span class="n">jointWordSynsets</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="n">simMethod</span><span class="p">)</span>
   <span class="n">wordVectorB</span> <span class="o">=</span> <span class="n">constructSemanticVectorUsingDisambiguatedSynsets</span><span class="p">(</span><span class="n">synsetsB</span><span class="p">,</span> <span class="n">jointWordSynsets</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="n">simMethod</span><span class="p">)</span>
   <span class="n">semSimilarity</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">wordVectorA</span><span class="p">,</span> <span class="n">wordVectorB</span><span class="p">)</span><span class="o">/</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">wordVectorA</span><span class="p">)</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">wordVectorB</span><span class="p">))</span>

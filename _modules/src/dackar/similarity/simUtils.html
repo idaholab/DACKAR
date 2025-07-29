@@ -88,19 +88,21 @@
 <span class="c1"># https://github.com/alvations/pywsd</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">..contrib.lazy</span><span class="w"> </span><span class="kn">import</span> <span class="n">lazy_loader</span>
-
-<div class="viewcode-block" id="pywsd">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.pywsd">[docs]</a>
-<span class="n">pywsd</span> <span class="o">=</span> <span class="n">lazy_loader</span><span class="o">.</span><span class="n">LazyLoader</span><span class="p">(</span><span class="s1">&#39;pywsd&#39;</span><span class="p">,</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;pywsd&#39;</span><span class="p">)</span></div>
-
+<span class="kn">from</span><span class="w"> </span><span class="nn">.synsetUtils</span><span class="w"> </span><span class="kn">import</span> <span class="n">semanticSimilaritySynsets</span><span class="p">,</span> <span class="n">synsetsSimilarity</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.synsetUtils</span><span class="w"> </span><span class="kn">import</span> <span class="n">semanticSimilarityUsingDisambiguatedSynsets</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">combineListsRemoveDuplicates</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">nltk</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">nltk</span><span class="w"> </span><span class="kn">import</span> <span class="n">word_tokenize</span> <span class="k">as</span> <span class="n">tokenizer</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">nltk.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">brown</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">nltk.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">wordnet</span> <span class="k">as</span> <span class="n">wn</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">.synsetUtils</span><span class="w"> </span><span class="kn">import</span> <span class="n">semanticSimilaritySynsets</span><span class="p">,</span> <span class="n">synsetsSimilarity</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.synsetUtils</span><span class="w"> </span><span class="kn">import</span> <span class="n">semanticSimilarityUsingDisambiguatedSynsets</span>
+
+<div class="viewcode-block" id="pywsd">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.pywsd">[docs]</a>
+<span class="n">pywsd</span> <span class="o">=</span> <span class="n">lazy_loader</span><span class="o">.</span><span class="n">LazyLoader</span><span class="p">(</span><span class="s1">&#39;pywsd&#39;</span><span class="p">,</span> <span class="nb">globals</span><span class="p">(),</span> <span class="s1">&#39;pywsd&#39;</span><span class="p">)</span></div>
+
+
 
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">  Methods proposed by: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&amp;arnumber=1644735</span>
@@ -109,7 +111,7 @@
 
 <div class="viewcode-block" id="sentenceSimilarity">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.sentenceSimilarity">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">sentenceSimilarity</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">0.85</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sentenceSimilarity</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">delta</span><span class="o">=</span><span class="mf">0.85</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Compute sentence similarity using both semantic and word order similarity</span>
 <span class="sd">    The semantic similarity is based on maximum word similarity between one word and another sentence</span>
@@ -120,12 +122,14 @@
 <span class="sd">      sentenceB: str, second sentence used to compute sentence similarity</span>
 <span class="sd">      infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors</span>
 <span class="sd">      delta: float, [0,1], similarity contribution from semantic similarity, 1-delta is the similarity</span>
-<span class="sd">      contribution from word order similarity</span>
+<span class="sd">      contribution from word order similarity, default is 0.85</span>
 
 <span class="sd">    Returns:</span>
 
 <span class="sd">      similarity: float, [0, 1], the computed similarity for given two sentences</span>
 <span class="sd">  &quot;&quot;&quot;</span>
+  <span class="k">if</span> <span class="n">delta</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">delta</span> <span class="o">&gt;</span> <span class="mf">1.</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s1">&#39;Invalid value for &quot;delta&quot;, please provide a value between 0 and 1.&#39;</span><span class="p">)</span>
   <span class="n">similarity</span> <span class="o">=</span> <span class="n">delta</span> <span class="o">*</span> <span class="n">semanticSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">,</span> <span class="n">infoContentNorm</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">-</span><span class="n">delta</span><span class="p">)</span><span class="o">*</span> <span class="n">wordOrderSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">)</span>
   <span class="k">return</span> <span class="n">similarity</span></div>
 
@@ -136,6 +140,8 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">wordOrderSimilaritySentences</span><span class="p">(</span><span class="n">sentenceA</span><span class="p">,</span> <span class="n">sentenceB</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Compute sentence similarity using word order similarity</span>
+<span class="sd">    Ref: Li, Yuhua, et al. &quot;Sentence similarity based on semantic nets and corpus statistics.&quot;</span>
+<span class="sd">    IEEE transactions on knowledge and data engineering 18.8 (2006): 1138-1150.</span>
 
 <span class="sd">    Args:</span>
 
@@ -149,16 +155,15 @@
   <span class="n">wordsA</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">sentenceA</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
   <span class="n">wordsB</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">sentenceB</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
   <span class="n">wordSet</span> <span class="o">=</span> <span class="n">combineListsRemoveDuplicates</span><span class="p">(</span><span class="n">wordsA</span><span class="p">,</span> <span class="n">wordsB</span><span class="p">)</span>
-  <span class="n">index</span> <span class="o">=</span> <span class="p">{</span><span class="n">word</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span> <span class="n">word</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">word</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">wordSet</span><span class="p">)}</span>
-  <span class="n">r1</span> <span class="o">=</span> <span class="n">constructWordOrderVector</span><span class="p">(</span><span class="n">wordsA</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
-  <span class="n">r2</span> <span class="o">=</span> <span class="n">constructWordOrderVector</span><span class="p">(</span><span class="n">wordsB</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">,</span> <span class="n">index</span><span class="p">)</span>
+  <span class="n">r1</span> <span class="o">=</span> <span class="n">constructWordOrderVector</span><span class="p">(</span><span class="n">wordsA</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">)</span>
+  <span class="n">r2</span> <span class="o">=</span> <span class="n">constructWordOrderVector</span><span class="p">(</span><span class="n">wordsB</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">)</span>
   <span class="n">srTemp</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">r1</span><span class="o">-</span><span class="n">r2</span><span class="p">)</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">r1</span><span class="o">+</span><span class="n">r2</span><span class="p">)</span>
   <span class="k">return</span> <span class="mi">1</span><span class="o">-</span><span class="n">srTemp</span></div>
 
 
 <div class="viewcode-block" id="constructWordOrderVector">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.constructWordOrderVector">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">constructWordOrderVector</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">jointWords</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">constructWordOrderVector</span><span class="p">(</span><span class="n">words</span><span class="p">,</span> <span class="n">jointWords</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Construct word order vector</span>
 
@@ -166,25 +171,24 @@
 
 <span class="sd">      words: set of words, a set of words for one sentence</span>
 <span class="sd">      jointWords: set of joint words, a set of joint words for both sentences</span>
-<span class="sd">      index: dict, word index in the joint set of words</span>
 
 <span class="sd">    Returns:</span>
 
 <span class="sd">      vector: numpy.array, the word order vector</span>
 <span class="sd">  &quot;&quot;&quot;</span>
   <span class="n">vector</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">jointWords</span><span class="p">))</span>
-  <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
-  <span class="n">wordSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
-  <span class="k">for</span> <span class="n">jointWord</span> <span class="ow">in</span> <span class="n">jointWords</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">jointWord</span> <span class="ow">in</span> <span class="n">wordSet</span><span class="p">:</span>
-      <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span><span class="p">[</span><span class="n">jointWord</span><span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-      <span class="n">wordSimilar</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span> <span class="n">identifyBestSimilarWordFromWordSet</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">)</span>
-      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span> <span class="mf">0.4</span><span class="p">:</span>
-        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span><span class="p">[</span><span class="n">wordSimilar</span><span class="p">]</span>
+  <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">jointWord</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">jointWords</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+      <span class="n">index</span> <span class="o">=</span> <span class="n">words</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">jointWord</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+      <span class="c1"># Additional enhancement</span>
+      <span class="c1"># If the words similarity score is very high, the words will be treated the same.</span>
+      <span class="n">wordSimilar</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span> <span class="n">identifyBestSimilarWordFromWordSet</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="nb">set</span><span class="p">(</span><span class="n">words</span><span class="p">))</span>
+      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span> <span class="mf">0.9</span><span class="p">:</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="n">words</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">wordSimilar</span><span class="p">)</span>
       <span class="k">else</span><span class="p">:</span>
-        <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">i</span> <span class="o">+=</span><span class="mi">1</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">index</span>
   <span class="k">return</span> <span class="n">vector</span></div>
 
 
@@ -194,6 +198,8 @@
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Compute sentence similarity using semantic similarity</span>
 <span class="sd">    The semantic similarity is based on maximum word similarity between one word and another sentence</span>
+<span class="sd">    Ref: Li, Yuhua, et al. &quot;Sentence similarity based on semantic nets and corpus statistics.&quot;</span>
+<span class="sd">    IEEE transactions on knowledge and data engineering 18.8 (2006): 1138-1150.</span>
 
 <span class="sd">    Args:</span>
 
@@ -232,7 +238,8 @@
 
 <span class="sd">      vector: numpy.array, the semantic vector</span>
 <span class="sd">  &quot;&quot;&quot;</span>
-  <span class="n">wordSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
+  <span class="c1"># Need to preserve the order of words in the word list</span>
+  <span class="n">wordSet</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">words</span><span class="p">)</span>
   <span class="n">vector</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">jointWords</span><span class="p">))</span>
   <span class="k">if</span> <span class="n">infoContentNorm</span><span class="p">:</span>
     <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span> <span class="o">=</span> <span class="n">brownInfo</span><span class="p">()</span>
@@ -244,7 +251,7 @@
         <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">*</span><span class="n">math</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">content</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="n">wordCount</span><span class="p">,</span> <span class="n">brownDict</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
       <span class="n">similarWord</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span>  <span class="n">identifyBestSimilarWordFromWordSet</span><span class="p">(</span><span class="n">jointWord</span><span class="p">,</span> <span class="n">wordSet</span><span class="p">)</span>
-      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span><span class="mf">0.2</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">similarity</span> <span class="o">&gt;</span> <span class="mf">0.2</span><span class="p">:</span>
         <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">similarity</span>
       <span class="k">else</span><span class="p">:</span>
         <span class="n">vector</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
@@ -358,11 +365,11 @@
 <span class="sd">  &quot;&quot;&quot;</span>
   <span class="k">if</span> <span class="n">wordA</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">wordB</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
     <span class="k">return</span> <span class="mf">1.0</span>
-  <span class="n">bestPair</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetPair</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">)</span>
-  <span class="k">if</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="k">return</span> <span class="mf">0.0</span>
-  <span class="c1"># disambiguation is False since only two words is provided and there is no additional information content</span>
-  <span class="n">similarity</span> <span class="o">=</span> <span class="n">semanticSimilaritySynsets</span><span class="p">(</span><span class="n">bestPair</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">disambiguation</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+  <span class="n">bestPair</span><span class="p">,</span> <span class="n">similarity</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetPair</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">)</span>
+  <span class="c1"># if bestPair[0] is None or bestPair[1] is None:</span>
+  <span class="c1">#   return 0.0</span>
+  <span class="c1"># # disambiguation is False since only two words is provided and there is no additional information content</span>
+  <span class="c1"># similarity = semanticSimilaritySynsets(bestPair[0], bestPair[1], disambiguation=False)</span>
   <span class="k">return</span> <span class="n">similarity</span></div>
 
 
@@ -381,24 +388,26 @@
 <span class="sd">    Returns:</span>
 
 <span class="sd">      bestPair: tuple, (first synset, second synset), identified best synset pair using wordnet similarity</span>
+<span class="sd">      similarity: float, the similarity score</span>
 <span class="sd">  &quot;&quot;&quot;</span>
-  <span class="n">similarity</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
+  <span class="n">similarity</span> <span class="o">=</span> <span class="mf">0.0</span>
   <span class="n">synsetsWordA</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">wordA</span><span class="p">)</span>
   <span class="n">synsetsWordB</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">wordB</span><span class="p">)</span>
 
   <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">synsetsWordA</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">synsetsWordB</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-    <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span><span class="kc">None</span><span class="p">),</span> <span class="mf">0.0</span>
   <span class="k">else</span><span class="p">:</span>
-    <span class="n">similarity</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
+    <span class="n">similarity</span> <span class="o">=</span> <span class="mf">0.0</span>
     <span class="n">bestPair</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
     <span class="k">for</span> <span class="n">synsetWordA</span> <span class="ow">in</span> <span class="n">synsetsWordA</span><span class="p">:</span>
       <span class="k">for</span> <span class="n">synsetWordB</span> <span class="ow">in</span> <span class="n">synsetsWordB</span><span class="p">:</span>
         <span class="c1"># TODO: may change to general similarity method</span>
         <span class="n">temp</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">path_similarity</span><span class="p">(</span><span class="n">synsetWordA</span><span class="p">,</span> <span class="n">synsetWordB</span><span class="p">)</span>
+        <span class="c1"># temp = semanticSimilaritySynsets(synsetWordA, synsetWordB)</span>
         <span class="k">if</span> <span class="n">temp</span> <span class="o">&gt;</span> <span class="n">similarity</span><span class="p">:</span>
           <span class="n">similarity</span> <span class="o">=</span> <span class="n">temp</span>
           <span class="n">bestPair</span> <span class="o">=</span> <span class="n">synsetWordA</span><span class="p">,</span> <span class="n">synsetWordB</span>
-    <span class="k">return</span> <span class="n">bestPair</span></div>
+    <span class="k">return</span> <span class="n">bestPair</span><span class="p">,</span> <span class="n">similarity</span></div>
 
 
 <span class="c1">#################################################</span>
@@ -482,7 +491,7 @@
     <span class="n">method</span> <span class="o">=</span> <span class="n">method</span> <span class="o">+</span> <span class="s1">&#39;_similarity&#39;</span>
   <span class="k">if</span> <span class="n">method</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sematicSimMethod</span> <span class="o">+</span> <span class="n">wordnetSimMethod</span><span class="p">:</span>
     <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1"> is not valid, please use one of </span><span class="si">{</span><span class="n">wordnetSimMethod</span><span class="o">+</span><span class="n">sematicSimMethod</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
-  <span class="n">bestPair</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetPair</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">)</span>
+  <span class="n">bestPair</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">identifyBestSimilarSynsetPair</span><span class="p">(</span><span class="n">wordA</span><span class="p">,</span> <span class="n">wordB</span><span class="p">)</span>
   <span class="k">if</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">bestPair</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">return</span> <span class="mf">0.0</span>
   <span class="c1"># when campare words only, we assume there is no disambiguation required.</span>
@@ -657,7 +666,7 @@
   <span class="n">sentSynsets</span> <span class="o">=</span> <span class="p">[]</span>
   <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">sentList</span><span class="p">:</span>
     <span class="n">_</span><span class="p">,</span> <span class="n">bestSyn</span> <span class="o">=</span> <span class="n">sentenceSenseDisambiguationPyWSD</span><span class="p">(</span><span class="n">sent</span><span class="p">,</span> <span class="n">senseMethod</span><span class="o">=</span><span class="s1">&#39;simple_lesk&#39;</span><span class="p">,</span> <span class="n">simMethod</span><span class="o">=</span><span class="s1">&#39;path&#39;</span><span class="p">)</span>
-    <span class="n">bestSyn</span> <span class="o">=</span> <span class="p">[</span><span class="n">wn</span><span class="o">.</span><span class="n">synset</span><span class="p">(</span><span class="n">syn</span><span class="o">.</span><span class="n">name</span><span class="p">())</span> <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">bestSyn</span> <span class="k">if</span> <span class="n">syn</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+    <span class="c1"># bestSyn = [wn.synset(syn.name()) for syn in bestSyn if syn is not None]</span>
     <span class="n">sentSynsets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bestSyn</span><span class="p">)</span>
   <span class="k">return</span> <span class="n">sentSynsets</span></div>
 
@@ -749,28 +758,6 @@
   <span class="k">return</span> <span class="n">sentSynsets</span></div>
 
 
-<div class="viewcode-block" id="combineListsRemoveDuplicates">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.combineListsRemoveDuplicates">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">combineListsRemoveDuplicates</span><span class="p">(</span><span class="n">list1</span><span class="p">,</span> <span class="n">list2</span><span class="p">):</span>
-<span class="w">  </span><span class="sd">&quot;&quot;&quot;combine two lists and remove duplicates</span>
-
-<span class="sd">  Args:</span>
-<span class="sd">      list1 (list): the first list of words</span>
-<span class="sd">      list2 (list): the second list of words</span>
-
-<span class="sd">  Returns:</span>
-<span class="sd">      list: the combined list of words</span>
-<span class="sd">  &quot;&quot;&quot;</span>
-  <span class="n">combinedList</span> <span class="o">=</span> <span class="n">list1</span> <span class="o">+</span> <span class="n">list2</span>
-  <span class="n">seen</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
-  <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
-
-  <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">combinedList</span><span class="p">:</span>
-      <span class="k">if</span> <span class="n">item</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
-          <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-          <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
-
-  <span class="k">return</span> <span class="n">result</span></div>
 
 </pre></div>
 
