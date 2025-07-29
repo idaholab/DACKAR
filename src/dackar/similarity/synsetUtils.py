@@ -94,7 +94,7 @@ def identifyBestSimilarSynsetFromSynsets(syn, synsets):
       bestSyn = syn1
   return bestSyn, similarity
 
-def semanticSimilaritySynsets(synsetA, synsetB, disambiguation=False):
+def semanticSimilaritySynsets(synsetA, synsetB):
   """
     Compute the similarity between two synset using semantic analysis
     (e.g., using both path length and depth information in wordnet)
@@ -320,7 +320,7 @@ def synsetsSimilarity(synsetA, synsetB, method='semantic_similarity_synsets', di
       else:
         similarity = 0.0
   elif method in sematicSimMethod:
-    similarity = semanticSimilaritySynsets(synsetA, synsetB, disambiguation=disambiguation)
+    similarity = semanticSimilaritySynsets(synsetA, synsetB)
   else:
     raise ValueError(f'{method} is not valid, please use one of {wordnetSimMethod+sematicSimMethod}')
 

@@ -35,12 +35,14 @@ def sentenceSimilarity(sentenceA, sentenceB, infoContentNorm=True, delta=0.85):
       sentenceB: str, second sentence used to compute sentence similarity
       infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors
       delta: float, [0,1], similarity contribution from semantic similarity, 1-delta is the similarity
-      contribution from word order similarity
+      contribution from word order similarity, default is 0.85
 
     Returns:
 
       similarity: float, [0, 1], the computed similarity for given two sentences
   """
+  if delta < 0 or delta > 1.:
+    raise IOError('Invalid value for "delta", please provide a value between 0 and 1.')
   similarity = delta * semanticSimilaritySentences(sentenceA, sentenceB, infoContentNorm) + (1.0-delta)* wordOrderSimilaritySentences(sentenceA, sentenceB)
   return similarity
 
