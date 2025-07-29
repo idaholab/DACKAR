@@ -237,19 +237,22 @@ def MMD_test(test_array, omegaSet, iterations, alphaTest, alphaOmegaset, printFl
             plt.show()
         return p_value, testOutput
 
-def event2TStest(E_loc, TS, iterations, alphaTest, alphaOmegaset, windowSize, omegaSize, screen=True, returnMinPval=False):
+def event2TStest(E_loc, TS, iterations, alphaTest, alphaOmegaset, windowSize, omegaSize, returnMinPval=False):
     """
-      Method designed to 
+      Method designed to assess temporal correlation of an event E and a time series TS
 
       Args:
-        omegaSet: np.ndarray or list, population of arrays
-        test_array: np.array, array of values to be tested against omegaSet
+        E_loc: int, temporal location of event E
+        TS: np.array, univariate time series
         iterations: int, number of iterartions required to compute MMD^2_u
         alphaTest: float, acceptance value for hypothesis testing (single array testing)
         alphaOmegaset: float, acceptance value for hypothesis testing (omegaSet testing)
-        printFlag: bool, flag to plot MMD distribution
+        windowSize: int, size of time window prior and after event occurence
+        omegaSize: int, number of samples from time series TS
+        returnMinPval: bool, flag that indictae whether to return p-value of MMD assessment
       Return:
         relation: string, outcome of the event to timeseries temporal analysis
+        minPval: float, p-value of MMD assessment
     """
 
     omegaSet = omega(windowSize,TS,omegaSize)

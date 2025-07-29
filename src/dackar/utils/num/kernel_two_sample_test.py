@@ -13,18 +13,33 @@ from sklearn.metrics import pairwise_kernels
 
 def MMD2u(K, m, n):
     """
-        The MMD^2_u unbiased statistic using U-statistics.
+      Method designed to perform MMD^2_u unbiased statistic using U-statistics.
+
+      Args:
+        K: np.array, 2-D matrix
+        m: int, size of first vector
+        n: int, size of second vector
+      Return:
+        sampled: np.array, set of Nsamples elements randomly chosen from array
     """
     Kx = K[:m, :m]
     Ky = K[m:, m:]
     Kxy = K[:m, m:]
-    return 1.0 / (m * (m - 1.0)) * (Kx.sum() - Kx.diagonal().sum()) + \
-        1.0 / (n * (n - 1.0)) * (Ky.sum() - Ky.diagonal().sum()) - \
-        2.0 / (m * n) * Kxy.sum()
+    val = 1.0 / (m * (m - 1.0)) * (Kx.sum() - Kx.diagonal().sum()) + \
+          1.0 / (n * (n - 1.0)) * (Ky.sum() - Ky.diagonal().sum()) - \
+          2.0 / (m * n) * Kxy.sum()
+    return val
 
 def MMD2b(K, m, n):
     """
-        The MMD^2 biased statistics using V-statistics
+        Method designed to perform  MMD^2 biased statistics using V-statistics
+
+      Args:
+        K: np.array, 2-D matrix
+        m: int, size of first vector
+        n: int, size of second vector
+      Return:
+        sampled: np.array, set of Nsamples elements randomly chosen from array
     """
     Kx = K[:m, :m]
     Ky = K[m:, m:]
