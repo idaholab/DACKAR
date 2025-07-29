@@ -315,18 +315,17 @@ def event2TStest(E_loc, TS, iterations, alphaTest, alphaOmegaset, windowSize, om
     #####################################
     # New Detection Logic
     #
-    if test_out_r==True  and test_out_f==False:
+    if   test_out_r==True  and test_out_f==False:
         relation = 'E --> S'
     elif test_out_r==False and test_out_f==True:
         relation = 'S --> E'
     elif test_out_r==True  and test_out_f==True:
-        relation = 'S;E'
-        '''
-        if p_val_f>p_val_r:
+        #relation = 'S;E'
+        if p_val_f<p_val_r:
             relation = 'S -->* E'
         else:
             relation = 'E -->* S'
-        '''
+
     else:
         if test_out_4:
             relation = 'S;E'
