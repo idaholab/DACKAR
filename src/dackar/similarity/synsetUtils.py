@@ -6,6 +6,7 @@ import numpy as np
 
 from nltk.corpus import wordnet as wn
 from nltk.corpus import wordnet_ic
+from .utils import combineListsRemoveDuplicates
 
 def synsetListSimilarity(synsetList1, synsetList2, delta=0.85):
   """
@@ -39,14 +40,12 @@ def wordOrderSimilaritySynsetList(synsetList1, synsetList2):
   """
   # keep the order (works for python3.7+)
   synSet = list(dict.fromkeys(synsetList1+synsetList2))
-  # synSet = list(set(synsetList1).union(set(synsetList2)))
-  index = {syn[1]: syn[0] for syn in enumerate(synSet)}
-  r1 = constructSynsetOrderVector(synsetList1, synSet, index)
-  r2 = constructSynsetOrderVector(synsetList2, synSet, index)
+  r1 = constructSynsetOrderVector(synsetList1, synSet)
+  r2 = constructSynsetOrderVector(synsetList2, synSet)
   srTemp = np.linalg.norm(r1-r2)/np.linalg.norm(r1+r2)
   return 1-srTemp
 
-def constructSynsetOrderVector(synsets, jointSynsets, index):
+def constructSynsetOrderVector(synsets, jointSynsets):
   """
     Construct synset order vector for word order similarity calculation
 
@@ -54,25 +53,22 @@ def constructSynsetOrderVector(synsets, jointSynsets, index):
 
       synsets: list of synsets
       jointSynsets: list of joint synsets
-      index: int, index for synsets
 
     Returns:
 
       vector: np.array, synset order vector
   """
   vector = np.zeros(len(jointSynsets))
-  i = 0
-  synsets = set(synsets)
-  for syn in jointSynsets:
-    if syn in synsets:
-      vector[i] = index[syn]
-    else:
-      synSimilar, similarity = identifyBestSimilarSynsetFromSynsets(syn, synsets)
-      if similarity > 0.4:
-        vector[i] = index[synSimilar]
+  for i, syn in enumerate(jointSynsets):
+    try:
+      index = synsets.index(syn) + 1
+    except ValueError:
+      synSimilar, similarity = identifyBestSimilarSynsetFromSynsets(syn, set(synsets))
+      if similarity > 0.9:
+        index = synsets.index(synSimilar)
       else:
-        vector[i] = 0
-    i +=1
+        index = 0
+    vector[i] = index
   return vector
 
 def identifyBestSimilarSynsetFromSynsets(syn, synsets):
@@ -98,7 +94,7 @@ def identifyBestSimilarSynsetFromSynsets(syn, synsets):
       bestSyn = syn1
   return bestSyn, similarity
 
-def semanticSimilaritySynsets(synsetA, synsetB, disambiguation=False):
+def semanticSimilaritySynsets(synsetA, synsetB):
   """
     Compute the similarity between two synset using semantic analysis
     (e.g., using both path length and depth information in wordnet)
@@ -112,9 +108,18 @@ def semanticSimilaritySynsets(synsetA, synsetB, disambiguation=False):
 
       similarity: float, [0, 1], the similarity score
   """
-  shortDistance = pathLength(synsetA, synsetB, disambiguation=disambiguation)
-  maxHierarchy = scalingDepthEffect(synsetA, synsetB, disambiguation=disambiguation)
-  similarity = shortDistance*maxHierarchy
+  ## The following method "pathLength" "scalingDepthEffect" are derived from literature
+  # shortDistance = pathLength(synsetA, synsetB, disambiguation=disambiguation)
+  # maxHierarchy = scalingDepthEffect(synsetA, synsetB, disambiguation=disambiguation)
+  # similarity = shortDistance*maxHierarchy
+
+  # Using methods directly from wordnet
+  synsetA = wn.synset(synsetA.name())
+  synsetB = wn.synset(synsetB.name())
+  shortDistance = synsetA.path_similarity(synsetB)
+  maxHierarchy = synsetA.wup_similarity(synsetB)
+  # Harmonic Mean
+  similarity = 2 * shortDistance*maxHierarchy/(shortDistance+maxHierarchy)
   return similarity
 
 def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
@@ -126,13 +131,13 @@ def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
 
       synsetA: wordnet.synset, synset for first word
       synsetB: wordnet.synset, synset for second word
-      alpha: float, a constant in monotonically descreasing function, exp(-alpha*wordnetpathLength),
+      alpha: float, a constant in monotonically decreasing function, exp(-alpha*wordnetpathLength),
       parameter used to scale the shortest path length. For wordnet, the optimal value is 0.2
       disambiguation: bool, True if disambiguation have been performed for the given synsets
 
     Returns:
 
-      shortDistance: float, [0, 1], the shortest distance between two synsets using exponential descreasing
+      shortDistance: float, [0, 1], the shortest distance between two synsets using exponential decreasing
       function.
   """
   synsetA = wn.synset(synsetA.name())
@@ -151,14 +156,14 @@ def pathLength(synsetA, synsetB, alpha=0.2, disambiguation=False):
       if len(lemmaSetA.intersection(lemmaSetB)) > 0:
         maxLength = 1.0
       else:
-        maxLength = synsetA.shortest_path_distance(synsetB)
+        maxLength = 1/synsetA.path_similarity(synsetB)-1
         if maxLength is None:
-          maxLength = 0.0
+          maxLength = 10.0
     else:
-      # when disamigutation is performed, we should avoid to check lemmas
-      maxLength = synsetA.shortest_path_distance(synsetB)
+      # when disambiguation is performed, we should avoid to check lemmas
+      maxLength = 1/synsetA.path_similarity(synsetB)-1
       if maxLength is None:
-        maxLength = 0.0
+        maxLength = 10.
   shortDistance = math.exp(-alpha*maxLength)
   return shortDistance
 
@@ -237,7 +242,8 @@ def semanticSimilaritySynsetList(synsetList1, synsetList2):
 
       semSimilarity: float, [0, 1], the similarity score
   """
-  synSet = set(synsetList1).union(set(synsetList2))
+  # synSet = set(synsetList1).union(set(synsetList2))
+  synSet = combineListsRemoveDuplicates(synsetList1, synsetList2)
   wordVectorA = constructSemanticVector(synsetList1, synSet)
   wordVectorB = constructSemanticVector(synsetList2, synSet)
 
@@ -314,7 +320,7 @@ def synsetsSimilarity(synsetA, synsetB, method='semantic_similarity_synsets', di
       else:
         similarity = 0.0
   elif method in sematicSimMethod:
-    similarity = semanticSimilaritySynsets(synsetA, synsetB, disambiguation=disambiguation)
+    similarity = semanticSimilaritySynsets(synsetA, synsetB)
   else:
     raise ValueError(f'{method} is not valid, please use one of {wordnetSimMethod+sematicSimMethod}')
 
@@ -370,7 +376,8 @@ def semanticSimilarityUsingDisambiguatedSynsets(synsetsA, synsetsB, simMethod='s
 
       semSimilarity: float, [0, 1], the similarity score
   """
-  jointWordSynsets = set(synsetsA).union(set(synsetsB))
+  # jointWordSynsets = set(synsetsA).union(set(synsetsB))
+  jointWordSynsets = combineListsRemoveDuplicates(synsetsA, synsetsB)
   wordVectorA = constructSemanticVectorUsingDisambiguatedSynsets(synsetsA, jointWordSynsets, simMethod=simMethod)
   wordVectorB = constructSemanticVectorUsingDisambiguatedSynsets(synsetsB, jointWordSynsets, simMethod=simMethod)
   semSimilarity = np.dot(wordVectorA, wordVectorB)/(np.linalg.norm(wordVectorA)*np.linalg.norm(wordVectorB))

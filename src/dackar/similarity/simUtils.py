@@ -6,23 +6,25 @@ import copy
 # https://github.com/alvations/pywsd
 
 from ..contrib.lazy import lazy_loader
-
-pywsd = lazy_loader.LazyLoader('pywsd', globals(), 'pywsd')
+from .synsetUtils import semanticSimilaritySynsets, synsetsSimilarity
+from .synsetUtils import semanticSimilarityUsingDisambiguatedSynsets
+from .utils import combineListsRemoveDuplicates
 
 import nltk
 from nltk import word_tokenize as tokenizer
 from nltk.corpus import brown
 from nltk.corpus import wordnet as wn
 
-from .synsetUtils import semanticSimilaritySynsets, synsetsSimilarity
-from .synsetUtils import semanticSimilarityUsingDisambiguatedSynsets
+
+pywsd = lazy_loader.LazyLoader('pywsd', globals(), 'pywsd')
+
 
 """
   Methods proposed by: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=1644735
   Codes are modified from https://github.com/anishvarsha/Sentence-Similaritity-using-corpus-statistics
 """
 
-def sentenceSimilarity(sentenceA, sentenceB, infoContentNorm=False, delta=0.85):
+def sentenceSimilarity(sentenceA, sentenceB, infoContentNorm=True, delta=0.85):
   """
     Compute sentence similarity using both semantic and word order similarity
     The semantic similarity is based on maximum word similarity between one word and another sentence
@@ -33,12 +35,14 @@ def sentenceSimilarity(sentenceA, sentenceB, infoContentNorm=False, delta=0.85):
       sentenceB: str, second sentence used to compute sentence similarity
       infoContentNorm: bool, True if statistics corpus is used to weight similarity vectors
       delta: float, [0,1], similarity contribution from semantic similarity, 1-delta is the similarity
-      contribution from word order similarity
+      contribution from word order similarity, default is 0.85
 
     Returns:
 
       similarity: float, [0, 1], the computed similarity for given two sentences
   """
+  if delta < 0 or delta > 1.:
+    raise IOError('Invalid value for "delta", please provide a value between 0 and 1.')
   similarity = delta * semanticSimilaritySentences(sentenceA, sentenceB, infoContentNorm) + (1.0-delta)* wordOrderSimilaritySentences(sentenceA, sentenceB)
   return similarity
 
@@ -46,6 +50,8 @@ def sentenceSimilarity(sentenceA, sentenceB, infoContentNorm=False, delta=0.85):
 def wordOrderSimilaritySentences(sentenceA, sentenceB):
   """
     Compute sentence similarity using word order similarity
+    Ref: Li, Yuhua, et al. "Sentence similarity based on semantic nets and corpus statistics."
+    IEEE transactions on knowledge and data engineering 18.8 (2006): 1138-1150.
 
     Args:
 
@@ -59,13 +65,12 @@ def wordOrderSimilaritySentences(sentenceA, sentenceB):
   wordsA = tokenizer(sentenceA.lower())
   wordsB = tokenizer(sentenceB.lower())
   wordSet = combineListsRemoveDuplicates(wordsA, wordsB)
-  index = {word[1]: word[0] for word in enumerate(wordSet)}
-  r1 = constructWordOrderVector(wordsA, wordSet, index)
-  r2 = constructWordOrderVector(wordsB, wordSet, index)
+  r1 = constructWordOrderVector(wordsA, wordSet)
+  r2 = constructWordOrderVector(wordsB, wordSet)
   srTemp = np.linalg.norm(r1-r2)/np.linalg.norm(r1+r2)
   return 1-srTemp
 
-def constructWordOrderVector(words, jointWords, index):
+def constructWordOrderVector(words, jointWords):
   """
     Construct word order vector
 
@@ -73,31 +78,32 @@ def constructWordOrderVector(words, jointWords, index):
 
       words: set of words, a set of words for one sentence
       jointWords: set of joint words, a set of joint words for both sentences
-      index: dict, word index in the joint set of words
 
     Returns:
 
       vector: numpy.array, the word order vector
   """
   vector = np.zeros(len(jointWords))
-  i = 0
-  wordSet = set(words)
-  for jointWord in jointWords:
-    if jointWord in wordSet:
-      vector[i] = index[jointWord]
-    else:
-      wordSimilar, similarity = identifyBestSimilarWordFromWordSet(jointWord, wordSet)
-      if similarity > 0.4:
-        vector[i] = index[wordSimilar]
+  for i, jointWord in enumerate(jointWords):
+    try:
+      index = words.index(jointWord) + 1
+    except ValueError:
+      # Additional enhancement
+      # If the words similarity score is very high, the words will be treated the same.
+      wordSimilar, similarity = identifyBestSimilarWordFromWordSet(jointWord, set(words))
+      if similarity > 0.9:
+        index = words.index(wordSimilar)
       else:
-        vector[i] = 0
-    i +=1
+        index = 0
+    vector[i] = index
   return vector
 
 def semanticSimilaritySentences(sentenceA, sentenceB, infoContentNorm):
   """
     Compute sentence similarity using semantic similarity
     The semantic similarity is based on maximum word similarity between one word and another sentence
+    Ref: Li, Yuhua, et al. "Sentence similarity based on semantic nets and corpus statistics."
+    IEEE transactions on knowledge and data engineering 18.8 (2006): 1138-1150.
 
     Args:
 
@@ -133,7 +139,8 @@ def constructSemanticVector(words, jointWords, infoContentNorm):
 
       vector: numpy.array, the semantic vector
   """
-  wordSet = set(words)
+  # Need to preserve the order of words in the word list
+  wordSet = list(words)
   vector = np.zeros(len(jointWords))
   if infoContentNorm:
     wordCount, brownDict = brownInfo()
@@ -145,7 +152,7 @@ def constructSemanticVector(words, jointWords, infoContentNorm):
         vector[i] = vector[i]*math.pow(content(jointWord, wordCount, brownDict), 2)
     else:
       similarWord, similarity =  identifyBestSimilarWordFromWordSet(jointWord, wordSet)
-      if similarity >0.2:
+      if similarity > 0.2:
         vector[i] = similarity
       else:
         vector[i] = 0.0
@@ -247,11 +254,11 @@ def semanticSimilarityWords(wordA, wordB):
   """
   if wordA.lower() == wordB.lower():
     return 1.0
-  bestPair = identifyBestSimilarSynsetPair(wordA, wordB)
-  if bestPair[0] is None or bestPair[1] is None:
-    return 0.0
-  # disambiguation is False since only two words is provided and there is no additional information content
-  similarity = semanticSimilaritySynsets(bestPair[0], bestPair[1], disambiguation=False)
+  bestPair, similarity = identifyBestSimilarSynsetPair(wordA, wordB)
+  # if bestPair[0] is None or bestPair[1] is None:
+  #   return 0.0
+  # # disambiguation is False since only two words is provided and there is no additional information content
+  # similarity = semanticSimilaritySynsets(bestPair[0], bestPair[1], disambiguation=False)
   return similarity
 
 
@@ -267,24 +274,26 @@ def identifyBestSimilarSynsetPair(wordA, wordB):
     Returns:
 
       bestPair: tuple, (first synset, second synset), identified best synset pair using wordnet similarity
+      similarity: float, the similarity score
   """
-  similarity = -1.0
+  similarity = 0.0
   synsetsWordA = wn.synsets(wordA)
   synsetsWordB = wn.synsets(wordB)
 
   if len(synsetsWordA) == 0 or len(synsetsWordB) == 0:
-    return None, None
+    return (None,None), 0.0
   else:
-    similarity = -1.0
+    similarity = 0.0
     bestPair = None, None
     for synsetWordA in synsetsWordA:
       for synsetWordB in synsetsWordB:
         # TODO: may change to general similarity method
         temp = wn.path_similarity(synsetWordA, synsetWordB)
+        # temp = semanticSimilaritySynsets(synsetWordA, synsetWordB)
         if temp > similarity:
           similarity = temp
           bestPair = synsetWordA, synsetWordB
-    return bestPair
+    return bestPair, similarity
 
 #################################################
 
@@ -359,7 +368,7 @@ def wordsSimilarity(wordA, wordB, method='semantic_similarity_synsets'):
     method = method + '_similarity'
   if method not in sematicSimMethod + wordnetSimMethod:
     raise ValueError(f'{method} is not valid, please use one of {wordnetSimMethod+sematicSimMethod}')
-  bestPair = identifyBestSimilarSynsetPair(wordA, wordB)
+  bestPair, _ = identifyBestSimilarSynsetPair(wordA, wordB)
   if bestPair[0] is None or bestPair[1] is None:
     return 0.0
   # when campare words only, we assume there is no disambiguation required.
@@ -522,7 +531,7 @@ def convertSentsToSynsetsWithDisambiguation(sentList):
   sentSynsets = []
   for sent in sentList:
     _, bestSyn = sentenceSenseDisambiguationPyWSD(sent, senseMethod='simple_lesk', simMethod='path')
-    bestSyn = [wn.synset(syn.name()) for syn in bestSyn if syn is not None]
+    # bestSyn = [wn.synset(syn.name()) for syn in bestSyn if syn is not None]
     sentSynsets.append(bestSyn)
   return sentSynsets
 
@@ -604,23 +613,4 @@ def convertSentsToSynsets(sentList, info=None):
     sentSynsets.append(bestSyn)
   return sentSynsets
 
-def combineListsRemoveDuplicates(list1, list2):
-  """combine two lists and remove duplicates
 
-  Args:
-      list1 (list): the first list of words
-      list2 (list): the second list of words
-
-  Returns:
-      list: the combined list of words
-  """
-  combinedList = list1 + list2
-  seen = set()
-  result = []
-
-  for item in combinedList:
-      if item not in seen:
-          seen.add(item)
-          result.append(item)
-
-  return result
