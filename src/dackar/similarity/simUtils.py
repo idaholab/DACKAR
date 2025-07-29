@@ -139,7 +139,8 @@ def constructSemanticVector(words, jointWords, infoContentNorm):
 
       vector: numpy.array, the semantic vector
   """
-  wordSet = set(words)
+  # Need to preserve the order of words in the word list
+  wordSet = list(words)
   vector = np.zeros(len(jointWords))
   if infoContentNorm:
     wordCount, brownDict = brownInfo()

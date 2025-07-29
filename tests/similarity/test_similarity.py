@@ -16,9 +16,13 @@ def test_synset_disambiguation():
   similarity = SU.synsetListSimilarity(sentSynsets[0], sentSynsets[1], delta=.8)
   assert abs(similarity - 0.25625) < 1.e-3, similarity
 
+def test_sentence_similarity_no_infoContent():
+  similarity = simUtils.sentenceSimilarity(sents[0], sents[1], infoContentNorm=False, delta=0.85)
+  assert abs(similarity-0.64513) <1.e-3, similarity
+
 def test_sentence_similarity():
-  similarity = simUtils.sentenceSimilarity(sents[0], sents[1], delta=0.85)
-  assert abs(similarity-0.35404) <1.e-1, similarity
+  similarity = simUtils.sentenceSimilarity(sents[0], sents[1], infoContentNorm=True, delta=0.85)
+  assert abs(similarity-0.36858) <1.e-3, similarity
 
 def test_word_order_similarity():
   similarity = simUtils.wordOrderSimilaritySentences(sents[0],sents[1])
