@@ -33,23 +33,9 @@ fh.setFormatter(formatter)
 # add the handlers to the logger
 logger.addHandler(fh)
 
-def main():
-  logger.info('Welcome!')
-  # set up argument parser
-  parser = argparse.ArgumentParser(description='DACKAR Input ArgumentParser')
-  parser.add_argument('file_path', type=str, default='./system_tests/test_opm.toml' ,help='The path to the input file.')
-  parser.add_argument('--output-file', type=str, default='output.txt', help='The file to save the output to.')
-  # parse the arguments
-  args = parser.parse_args()
-  logger.info('Input file: %s', args.file_path)
-  # read the TOML file
-  inputDict = readToml(args.file_path)
 
-  # load nlp model
-  nlp = spacy.load(inputDict['params']['language_model'], exclude=[])
 
-  label = inputDict['params']['ent']['label']
-  entId = inputDict['params']['ent']['id']
+def processInput(inputDict, nlp, label, entId):
 
   ents = []
   # Parse OPM model
@@ -58,8 +44,8 @@ def main():
     opmFile = inputDict['files']['opm']
     opmObj = OPMobject(opmFile)
     formList = opmObj.returnObjectList()
-    functionList = opmObj.returnProcessList()
-    attributeList = opmObj.returnAttributeList()
+    # functionList = opmObj.returnProcessList()
+    # attributeList = opmObj.returnAttributeList()
     ents.extend(formList)
   if 'entity' in inputDict['files']:
     entityFile = inputDict['files']['entity']
@@ -69,7 +55,13 @@ def main():
   ents = set(ents)
 
   # convert opm formList into matcher patternsOPM
-  patternsOPM = generatePatternList(ents, label=label, id=entId, nlp=nlp, attr="LEMMA")
+  patterns = generatePatternList(ents, label=label, id=entId, nlp=nlp, attr="LEMMA")
+
+  return patterns
+
+
+def get_analysis_module(patterns, nlp, entId):
+
   ########################################################################
   #  Parse causal keywords, and generate patterns for them
   #  The patterns can be used to identify the causal relationships
@@ -82,21 +74,46 @@ def main():
     vars = set(ds[col].dropna())
     patternsCausal.extend(generatePatternList(vars, label=causalLabel, id=causalID, nlp=nlp, attr="LEMMA"))
 
+  name = 'ssc_entity_ruler'
+  matcher = RuleBasedMatcher(nlp, entID=entId, causalKeywordID=causalID)
+  matcher.addEntityPattern(name, patterns)
+
+  causalName = 'causal_keywords_entity_ruler'
+  matcher.addEntityPattern(causalName, patternsCausal)
+
+  return matcher
+
+
+
+def main():
+  logger.info('Welcome!')
+  # set up argument parser
+  parser = argparse.ArgumentParser(description='DACKAR Input ArgumentParser')
+  parser.add_argument('file_path', type=str, default='./system_tests/test_opm.toml' ,help='The path to the input file.')
+  parser.add_argument('--output-file', type=str, default='output.txt', help='The file to save the output to.')
+  # parse the arguments
+  args = parser.parse_args()
+  logger.info('Input file: %s', args.file_path)
+  # read the TOML file
+  inputDict = readToml(args.file_path)
+
+  label = inputDict['params']['ent']['label']
+  entId = inputDict['params']['ent']['id']
+
+  # doc = "The Pump is not experiencing enough flow for the pumps to keep the check valves open during test."
   # text that needs to be processed. either load from file or direct assign
   textFile = inputDict['files']['text']
   with open(textFile, 'r') as ft:
     doc = ft.read()
 
-  # doc = "The Pump is not experiencing enough flow for the pumps to keep the check valves open during test."
+  # load nlp model
+  nlp = spacy.load(inputDict['params']['language_model'], exclude=[])
 
-  name = 'ssc_entity_ruler'
-  matcher = RuleBasedMatcher(nlp, entID=entId, causalKeywordID=causalID)
-  matcher.addEntityPattern(name, patternsOPM)
+  patterns = processInput(inputDict, nlp, label, entId)
 
-  causalName = 'causal_keywords_entity_ruler'
-  matcher.addEntityPattern(causalName, patternsCausal)
+  module = get_analysis_module(patterns, nlp, entId)
+  module(doc.lower())
 
-  matcher(doc.lower())
 
 
   logger.info(' ... Complete!')
