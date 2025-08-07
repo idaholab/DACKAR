@@ -10,8 +10,6 @@ import sys
 import spacy
 import pandas as pd
 
-
-
 # import pipelines
 from ..pipelines.ConjectureEntity import ConjectureEntity
 from ..pipelines.PhraseEntityMatcher import PhraseEntityMatcher
@@ -46,6 +44,8 @@ from ..utils.opm.OPLparser import OPMobject
 from ..utils.mbse.LMLparser import LMLobject
 
 from .RuleBasedMatcher import RuleBasedMatcher
+from .WorkOrderProcessing import WorkOrderProcessing
+from .OperatorShiftLogsProcessing import OperatorShiftLogs
 from .. import config as defaultConfig
 
 from ..contrib.lazy import lazy_loader
@@ -72,7 +72,6 @@ customPipe = {'norm':'normEntities',
 
 
 
-
 logger = logging.getLogger('DACKAR.WorkflowManager')
 
 
@@ -87,6 +86,8 @@ class WorkflowManager:
 
     self._causalLabel = "causal"
     self._causalID = "causal"
+    self._entPatternName = 'dackar_ent'
+    self._causalPatternName = 'dackar_causal'
 
     self._patterns = self.generatePattern(config)
     self._causalPatterns = self.processCausalEnt()
@@ -99,14 +100,21 @@ class WorkflowManager:
     # add customized NER pipes
     self.ner()
     # setup workflow
-    self._workflow = self.setWorkflow()
+    self._causalFlow = self.causal()
+    # self._workflow = self.setWorkflow()
 
 
   def run(self, doc):
 
     if self._pp is not None:
       doc = self._pp(doc)
-    self._workflow(doc)
+    # Do general NLP
+    doc_new = self._nlp(doc)
+    # Do causal analysis
+    if self._causalFlow is not None:
+      self._causalFlow(doc)
+    # Do specific NLP
+    # self._workflow(doc) # TODO combine specific NLP with general NLP pipeline
 
   def get(self):
     pass
@@ -162,14 +170,14 @@ class WorkflowManager:
       patternsCausal.extend(generatePatternList(cvars, label=self._causalLabel, id=self._causalID, nlp=self._nlp, attr="LEMMA"))
     return patternsCausal
 
-  def setWorkflow(self):
-    name = 'ssc_entity_ruler'
-    matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
-    matcher.addEntityPattern(name, self._patterns)
+  # def setWorkflow(self):
+  #   name = 'ssc_entity_ruler'
+  #   matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+  #   matcher.addEntityPattern(name, self._patterns)
 
-    causalName = 'causal_keywords_entity_ruler'
-    matcher.addEntityPattern(causalName, self._causalPatterns)
-    return matcher
+  #   causalName = 'causal_keywords_entity_ruler'
+  #   matcher.addEntityPattern(causalName, self._causalPatterns)
+  #   return matcher
 
 
   def preprocessing(self):
@@ -218,6 +226,23 @@ class WorkflowManager:
       self._nlp = resetPipeline(self._nlp, pipes=pipelines)
 
 
-  # TODO
   def causal(self):
-    return None
+    """Set up causal analysis flow
+
+    Returns:
+        Workflow Object: Object to conduct causal analysis
+    """
+    method = None
+    matcher = None
+    if 'causal' in self._config:
+      method = self._config['causal']['type'] if 'type' in self._config['causal'] else None
+    if method is not None:
+      if method == 'general':
+        matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+      elif method == 'wo':
+        matcher = WorkOrderProcessing(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+      elif method == 'osl':
+        matcher = OperatorShiftLogs(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+      matcher.addEntityPattern(self._entPatternName, self._patterns)
+      matcher.addEntityPattern(self._causalPatternName, self._causalPatterns)
+    return matcher

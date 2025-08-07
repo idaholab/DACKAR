@@ -44,7 +44,7 @@ class WorkOrderProcessing(WorkflowBase):
   """
     Class to process CWS work order dataset
   """
-  def __init__(self, nlp, entID='SSC', *args, **kwargs):
+  def __init__(self, nlp, entID='SSC', causalKeywordID='causal',*args, **kwargs):
     """
       Construct
 
