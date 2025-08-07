@@ -11,14 +11,17 @@ import spacy
 import pandas as pd
 
 
+
 # import pipelines
 from ..pipelines.ConjectureEntity import ConjectureEntity
 from ..pipelines.PhraseEntityMatcher import PhraseEntityMatcher
 from ..pipelines.UnitEntity import UnitEntity
 from ..pipelines.SimpleEntityMatcher import SimpleEntityMatcher
+from dackar.pipelines.TemporalEntity import Temporal
 from ..pipelines.TemporalAttributeEntity import TemporalAttributeEntity
 from ..pipelines.TemporalRelationEntity import TemporalRelationEntity
 from ..pipelines.LocationEntity import LocationEntity
+from ..pipelines.EmergentActivityEntity import EmergentActivity
 from ..pipelines.GeneralEntity import GeneralEntity
 from ..pipelines.CustomPipelineComponents import normEntities
 from ..pipelines.CustomPipelineComponents import initCoref
@@ -36,6 +39,7 @@ from ..similarity import synsetUtils
 from ..similarity.SentenceSimilarity import SentenceSimilarity
 # import utils
 from ..utils.nlp.nlp_utils import generatePatternList
+from ..utils.nlp.nlp_utils import resetPipeline
 from ..utils.nlp.CreatePatterns import CreatePatterns
 # OPL parser to generate object and process lists
 from ..utils.opm.OPLparser import OPMobject
@@ -44,8 +48,29 @@ from ..utils.mbse.LMLparser import LMLobject
 from .RuleBasedMatcher import RuleBasedMatcher
 from .. import config as defaultConfig
 
-
 from ..contrib.lazy import lazy_loader
+
+
+NERMapping = {'temporal':'Temporal',
+              'unit':'unit_entity',
+              'temporal_relation':'temporal_relation_entity',
+              'temporal_attribute':'temporal_attribute_entity',
+              'location':'location_entity',
+              'emergent_activity':'EmergentActivity',
+              'conjecture':'conjecture_entity',
+              'merge':'merge_entities'
+
+}
+
+
+customPipe = {'norm':'normEntities',
+              'alias':'aliasResolver',
+              'expand':'expandEntities',
+              'merge':'mergePhrase',
+              'sbd':'pysbdSentenceBoundaries'
+}
+
+
 
 
 logger = logging.getLogger('DACKAR.WorkflowManager')
@@ -69,9 +94,12 @@ class WorkflowManager:
 
     self._config = config
 
+    # pre-processing
     self._pp = self.preprocessing()
-
-    self._workflow = self.setWorflow()
+    # add customized NER pipes
+    self.ner()
+    # setup workflow
+    self._workflow = self.setWorkflow()
 
 
   def run(self, doc):
@@ -134,7 +162,7 @@ class WorkflowManager:
       patternsCausal.extend(generatePatternList(cvars, label=self._causalLabel, id=self._causalID, nlp=self._nlp, attr="LEMMA"))
     return patternsCausal
 
-  def setWorflow(self):
+  def setWorkflow(self):
     name = 'ssc_entity_ruler'
     matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
     matcher.addEntityPattern(name, self._patterns)
@@ -145,6 +173,14 @@ class WorkflowManager:
 
 
   def preprocessing(self):
+    """setup text pre-processing pipeline
+
+    Raises:
+        IOError: if pipeline option is not available
+
+    Returns:
+        Preprocessing Object: Preprocessing pipeline
+    """
 
     logger.info('Set up text pre-processing.')
     ppList = []
@@ -165,11 +201,23 @@ class WorkflowManager:
     preprocess = Preprocessing(ppList, ppOptions)
     return preprocess
 
+  def ner(self):
+    """Set up NER pipelines
+
+    Raises:
+        IOError: if pipeline is not available
+    """
+    pipelines = []
+    if 'ner' in self._config:
+      for pipe in self._config['ner']:
+        if pipe in NERMapping:
+          pipelines.append(NERMapping[pipe])
+        else:
+          raise IOError(f'Unrecognized ner {pipe}!')
+
+      self._nlp = resetPipeline(self._nlp, pipes=pipelines)
+
 
   # TODO
-  def ner(self):
-    if 'ner' not in self._config:
-      return None
-
   def causal(self):
     return None
