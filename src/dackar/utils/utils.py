@@ -8,8 +8,9 @@ import re
 import logging
 import toml
 import os
+import pathlib
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('DACKAR.utils')
 
 
 def getOnlyWords(s):
@@ -52,7 +53,10 @@ def readToml(filePath):
       dict: dictionary of file content
   """
   with open(filePath, 'r') as file:
+    path = pathlib.Path(filePath).parent
     dataDict = toml.load(file)
+    for f in dataDict['files']:
+      dataDict['files'][f] = os.path.join(path, dataDict['files'][f])
   return dataDict
 
 def writeToFile(filePath, content):

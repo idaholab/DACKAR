@@ -10,11 +10,46 @@ import sys
 import spacy
 import pandas as pd
 
-from .RuleBasedMatcher import RuleBasedMatcher
-from .. import config as defaultConfig
+
+# import pipelines
+from ..pipelines.ConjectureEntity import ConjectureEntity
+from ..pipelines.PhraseEntityMatcher import PhraseEntityMatcher
+from ..pipelines.UnitEntity import UnitEntity
+from ..pipelines.SimpleEntityMatcher import SimpleEntityMatcher
+from ..pipelines.TemporalAttributeEntity import TemporalAttributeEntity
+from ..pipelines.TemporalRelationEntity import TemporalRelationEntity
+from ..pipelines.LocationEntity import LocationEntity
+from ..pipelines.GeneralEntity import GeneralEntity
+from ..pipelines.CustomPipelineComponents import normEntities
+from ..pipelines.CustomPipelineComponents import initCoref
+from ..pipelines.CustomPipelineComponents import aliasResolver
+from ..pipelines.CustomPipelineComponents import anaphorCoref
+from ..pipelines.CustomPipelineComponents import anaphorEntCoref
+from ..pipelines.CustomPipelineComponents import expandEntities
+from ..pipelines.CustomPipelineComponents import mergePhrase
+from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
+# import text processing
+from ..text_processing.Preprocessing import Preprocessing
+# import similarity
+from ..similarity import simUtils
+from ..similarity import synsetUtils
+from ..similarity.SentenceSimilarity import SentenceSimilarity
+# import utils
 from ..utils.nlp.nlp_utils import generatePatternList
+from ..utils.nlp.CreatePatterns import CreatePatterns
 # OPL parser to generate object and process lists
 from ..utils.opm.OPLparser import OPMobject
+from ..utils.mbse.LMLparser import LMLobject
+
+from .RuleBasedMatcher import RuleBasedMatcher
+from .. import config as defaultConfig
+
+
+from ..contrib.lazy import lazy_loader
+
+
+logger = logging.getLogger('DACKAR.WorkflowManager')
+
 
 class WorkflowManager:
   """_summary_
@@ -28,15 +63,21 @@ class WorkflowManager:
     self._causalLabel = "causal"
     self._causalID = "causal"
 
-    self._patterns = self.processInput(config)
+    self._patterns = self.generatePattern(config)
     self._causalPatterns = self.processCausalEnt()
+
+
     self._config = config
+
+    self._pp = self.preprocessing()
 
     self._workflow = self.setWorflow()
 
 
   def run(self, doc):
 
+    if self._pp is not None:
+      doc = self._pp(doc)
     self._workflow(doc)
 
   def get(self):
@@ -58,7 +99,7 @@ class WorkflowManager:
 #      Internal Functions
 ############################################
 
-  def processInput(self, config):
+  def generatePattern(self, config):
     ents = []
     # Parse OPM model
     # some modifications, bearings --> pump bearings
@@ -101,3 +142,34 @@ class WorkflowManager:
     causalName = 'causal_keywords_entity_ruler'
     matcher.addEntityPattern(causalName, self._causalPatterns)
     return matcher
+
+
+  def preprocessing(self):
+
+    logger.info('Set up text pre-processing.')
+    ppList = []
+    ppOptions = {}
+    if 'processing' not in self._config or len(self._config['processing']) == 0:
+      return None
+    for ptype in self._config['processing']:
+      for pp, pval in self._config['processing'][ptype].items():
+        if isinstance(pval, bool) and pval:
+          ppList.append(pp)
+        elif not isinstance(pval, bool):
+          ppList.append(pp)
+          if pp in ['punctuation', 'brackets']:
+            ppOptions.update({pp:{'only':pval}})
+          else:
+            raise IOError(f'Unrecognized option for {ptype} {pp}!')
+            # ppOptions.update({pp:pval})
+    preprocess = Preprocessing(ppList, ppOptions)
+    return preprocess
+
+
+  # TODO
+  def ner(self):
+    if 'ner' not in self._config:
+      return None
+
+  def causal(self):
+    return None

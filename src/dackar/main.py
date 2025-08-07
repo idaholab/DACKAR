@@ -34,13 +34,14 @@ def main():
   logger.info('Welcome!')
   # set up argument parser
   parser = argparse.ArgumentParser(description='DACKAR Input ArgumentParser')
-  parser.add_argument('file_path', type=str, default='./system_tests/test_opm.toml' ,help='The path to the input file.')
+  parser.add_argument('--file_path', type=str, default='../../system_tests/test_opm.toml' ,help='The path to the input file.')
   parser.add_argument('--output-file', type=str, default='output.txt', help='The file to save the output to.')
   # parse the arguments
   args = parser.parse_args()
   logger.info('Input file: %s', args.file_path)
   # read the TOML file
-  inputDict = readToml(args.file_path)
+  configFile = os.path.join(os.path.dirname(__file__), args.file_path)
+  inputDict = readToml(configFile)
 
   # doc = "The Pump is not experiencing enough flow for the pumps to keep the check valves open during test."
   # text that needs to be processed. either load from file or direct assign
@@ -50,6 +51,10 @@ def main():
 
   # load nlp model
   nlp = spacy.load(inputDict['params']['language_model'], exclude=[])
+
+  # Create logic to switch between different analysis
+
+
 
   module = WorkflowManager(nlp, inputDict)
   module.run(doc.lower())

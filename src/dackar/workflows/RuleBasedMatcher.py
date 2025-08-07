@@ -15,7 +15,7 @@ from collections import deque
 from ..config import nlpConfig
 from .WorkflowBase import WorkflowBase
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('DACKAR.RuleBasedMatcher')
 
 class RuleBasedMatcher(WorkflowBase):
   """
