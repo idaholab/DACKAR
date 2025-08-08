@@ -1,4 +1,5 @@
 import jsonschema
+import jsonpointer
 import logging
 
 logger = logging.getLogger('DACKAR.validate')
@@ -118,4 +119,17 @@ def validateToml(config):
   except jsonschema.exceptions.ValidationError as e:
     logger.info("TOML input file is invalid.")
     logger.info(e.message)
+
+    # Use jsonpointer to get the path to the error
+    path = e.absolute_path
+    pointer = jsonpointer.JsonPointer.from_parts(path)
+    print(f"Path to error: {pointer}")
+
+    # Optionally, print the part of the data causing the issue
+    try:
+        problematic_data = pointer.resolve(config)
+        print(f"Problematic data: {problematic_data}")
+    except jsonpointer.JsonPointerException:
+        print("Could not resolve the path to the problematic data.")
+
     return False
