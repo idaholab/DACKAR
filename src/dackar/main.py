@@ -15,6 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from dackar.utils.utils import readToml, writeToFile
 from dackar.workflows.WorkflowManager import WorkflowManager
+from dackar.validate import validateToml
 
 logging.basicConfig(format='%(asctime)s %(name)-20s %(levelname)-8s %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.DEBUG)
 # To enable the logging to both file and console, the logger for the main should be the root,
@@ -42,6 +43,11 @@ def main():
   # read the TOML file
   configFile = os.path.join(os.path.dirname(__file__), args.file_path)
   inputDict = readToml(configFile)
+
+  # validate
+  validate = validateToml(inputDict)
+  if not validate:
+    raise IOError("TOML input file is invalid.")
 
   # doc = "The Pump is not experiencing enough flow for the pumps to keep the check valves open during test."
   # text that needs to be processed. either load from file or direct assign
