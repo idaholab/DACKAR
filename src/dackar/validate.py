@@ -112,6 +112,14 @@ schema = {
 }
 
 def validateToml(config):
+  """Validate TOML input file
+
+  Args:
+      config (dict): loaded toml input
+
+  Returns:
+      bool: True if valid
+  """
   try:
     jsonschema.validate(instance=config, schema=schema)
     logger.info("TOML input file is valid.")
@@ -123,13 +131,13 @@ def validateToml(config):
     # Use jsonpointer to get the path to the error
     path = e.absolute_path
     pointer = jsonpointer.JsonPointer.from_parts(path)
-    print(f"Path to error: {pointer}")
+    logger.info("Path to error: %s", pointer)
 
     # Optionally, print the part of the data causing the issue
     try:
-        problematic_data = pointer.resolve(config)
-        print(f"Problematic data: {problematic_data}")
+        problematicData = pointer.resolve(config)
+        logger.info("Problematic data: %s", problematicData)
     except jsonpointer.JsonPointerException:
-        print("Could not resolve the path to the problematic data.")
+        logger.info("Could not resolve the path to the problematic data.")
 
     return False
