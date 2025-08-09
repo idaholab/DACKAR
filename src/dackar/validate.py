@@ -7,17 +7,32 @@ logger = logging.getLogger('DACKAR.validate')
 
 schema = {
   "type": "object",
+  "description": "",
   "properties": {
     "params": {
       "type": "object",
+      "description": "",
       "properties": {
-        "language_model": { "type": "string" },
-        "logger": { "type": "string" },
+        "language_model": {
+          "type": "string",
+          "description": ""
+        },
+        "logger": {
+          "type": "string",
+          "description": ""
+        },
         "ent": {
           "type": "object",
+          "description": "",
           "properties": {
-            "label": { "type": "string" },
-            "id": { "type": "string" }
+            "label": {
+              "type": "string",
+              "description": ""
+            },
+            "id": {
+              "type": "string",
+              "description": ""
+            }
           },
           "required": ["label", "id"]
         }
@@ -26,88 +41,183 @@ schema = {
     },
     "files": {
       "type": "object",
+      "description": "",
       "properties": {
-        "text": { "type": "string" },
-        "entity": { "type": "string" },
-        "opm": { "type": "string" }
+        "text": {
+          "type": "string",
+          "description": ""
+        },
+        "entity": {
+          "type": "string",
+          "description": ""
+        },
+        "opm": {
+          "type": "string",
+          "description": ""
+        }
       },
       "required": ["text", "entity", "opm"]
     },
     "processing": {
       "type": "object",
+      "description": "",
       "properties": {
         "normalize": {
           "type": "object",
+          "description": "",
           "properties": {
-            "bullet_points": { "type": "boolean" },
-            "hyphenated_words": { "type": "boolean" },
-            "quotation_marks": { "type": "boolean" },
-            "whitespace": { "type": "boolean" },
-            "numerize": { "type": "boolean" }
+            "bullet_points": {
+              "type": "boolean",
+              "description": ""
+            },
+            "hyphenated_words": {
+              "type": "boolean",
+              "description": ""
+            },
+            "quotation_marks": {
+              "type": "boolean",
+              "description": ""
+            },
+            "whitespace": {
+              "type": "boolean",
+              "description": ""
+            },
+            "numerize": {
+              "type": "boolean",
+              "description": ""
+            }
           }
         },
         "remove": {
           "type": "object",
+          "description": "",
           "properties": {
-            "brackets": { "type": "boolean" },
-            "html_tags": { "type": "boolean" },
+            "brackets": {
+              "type": "boolean",
+              "description": ""
+            },
+            "html_tags": {
+              "type": "boolean",
+              "description": ""
+            },
             "punctuation": {
               "type": "array",
-              "items": { "type": "string" }
+              "description": "",
+              "items": {
+                "type": "string",
+                "description": ""
+              }
             }
           }
         },
         "replace": {
           "type": "object",
+          "description": "",
           "properties": {
-            "currency_symbols": { "type": "boolean" },
-            "emails": { "type": "boolean" },
-            "emojis": { "type": "boolean" },
-            "hashtags": { "type": "boolean" },
-            "numbers": { "type": "boolean" },
-            "phone_numbers": { "type": "boolean" },
-            "urls": { "type": "boolean" },
-            "user_handles": { "type": "boolean" }
+            "currency_symbols": {
+              "type": "boolean",
+              "description": ""
+            },
+            "emails": {
+              "type": "boolean",
+              "description": ""
+            },
+            "emojis": {
+              "type": "boolean",
+              "description": ""
+            },
+            "hashtags": {
+              "type": "boolean",
+              "description": ""
+            },
+            "numbers": {
+              "type": "boolean",
+              "description": ""
+            },
+            "phone_numbers": {
+              "type": "boolean",
+              "description": ""
+            },
+            "urls": {
+              "type": "boolean",
+              "description": ""
+            },
+            "user_handles": {
+              "type": "boolean",
+              "description": ""
+            }
           }
         }
       }
     },
     "ner": {
       "type": "object",
+      "description": "",
       "properties": {
-        "unit": { "type": "boolean" },
-        "temporal_relation": { "type": "boolean" },
-        "temporal": { "type": "boolean" },
-        "temporal_attribute": { "type": "boolean" },
-        "location": { "type": "boolean" },
-        "emergent_activity": { "type": "boolean" },
-        "conjecture": { "type": "boolean" }
+        "unit": {
+          "type": "boolean",
+          "description": ""
+        },
+        "temporal_relation": {
+          "type": "boolean",
+          "description": ""
+        },
+        "temporal": {
+          "type": "boolean",
+          "description": ""
+        },
+        "temporal_attribute": {
+          "type": "boolean",
+          "description": ""
+        },
+        "location": {
+          "type": "boolean",
+          "description": ""
+        },
+        "emergent_activity": {
+          "type": "boolean",
+          "description": ""
+        },
+        "conjecture": {
+          "type": "boolean",
+          "description": ""
+        }
       }
     },
     "causal": {
       "type": "object",
+      "description": "",
       "properties": {
-        "type": { "type": "string", "enum": ["general", "wo", "osl"] }
+        "type": {
+          "type": "string",
+          "enum": ["general", "wo", "osl"],
+          "description": ""
+        }
       },
       "required": ["type"]
     },
     "visualize": {
       "type": "object",
+      "description": "",
       "properties": {}
     },
     "outputs": {
       "type": "object",
+      "description": "",
       "properties": {
-        "csv": { "type": "boolean" }
+        "csv": {
+          "type": "boolean",
+          "description": ""
+        }
       },
       "required": ["csv"]
     },
     "similarity": {
       "type": "object",
+      "description": "",
       "properties": {}
     }
   },
-  # "required": ["params", "files", "processing", "ner", "causal", "visualize", "outputs", "similarity"]
   "required": ["params", "files", "ner", "causal"]
 }
 
