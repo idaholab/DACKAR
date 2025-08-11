@@ -25,8 +25,8 @@ def getL(loc,window,array,type):
 
       Args:
         loc: int, reference location in the time series for the selected portion
-        window: np array, size of the selected portion of the time series
-        array: np array, original time series
+        window: np.array, size of the selected portion of the time series
+        array: np.array, original time series
         type: string, type of the selected portion of the time series (rear or front)
       Return:
         timeseriesPortion: np array, size of the selected portion of the time series
@@ -53,8 +53,8 @@ def omega(window,array,Nsamples):
       Method designed to extract set of portions of a time series
 
       Args:
-        window: np array, size of the selected portion of the time series
-        array: np array, original time series
+        window: np.array, size of the selected portion of the time series
+        array: np.array, original time series
         Nsamples: int, number of portions to be selected
       Return:
         omegaSet: np.array, set of Nsamples portions of a time series
@@ -112,7 +112,7 @@ def t_score(array_front, array_rear):
 
         tscore = (mean_front-mean_rear)/math.sqrt((var_front+var_rear)/n)
     else:
-        print("t_score error: the two provided array have different sizes.")
+        logger.error("t_score error: the two provided array have different sizes.")
         tscore = None
     return tscore
 
@@ -122,8 +122,8 @@ def MMD_test(test_array, omegaSet, iterations, alphaTest, alphaOmegaset, printFl
       using the Maximum Mean Discrepancy testing method
 
       Args:
-        omegaSet: np.ndarray or list, population of arrays
         test_array: np.array, array of values to be tested against omegaSet
+        omegaSet: np.ndarray or list, population of arrays
         iterations: int, number of iterartions required to compute MMD^2_u
         alphaTest: float, acceptance value for hypothesis testing (single array testing)
         alphaOmegaset: float, acceptance value for hypothesis testing (omegaSet testing)
@@ -152,13 +152,13 @@ def MMD_test(test_array, omegaSet, iterations, alphaTest, alphaOmegaset, printFl
         if p_value < alphaTest:
             nullHypothesis = False
             testOutput = True
-            print(f'The p-value is: {round(p_value, 5)}, which is less than the significant level: {alphaTest}')
+            logger.info(f'The p-value is: {round(p_value, 5)}, which is less than the significant level: {alphaTest}')
             # print("The null hypothesis got rejected")
             # print('The two sub-series are generated from two different distributions')
         else:
             nullHypothesis = True
             testOutput = False
-            print(f'The p-value is: {round(p_value, 5)}, which is larger than the significant level: {alphaTest}')
+            logger.info(f'The p-value is: {round(p_value, 5)}, which is larger than the significant level: {alphaTest}')
             # print("The null hypothesis got accepted")
             # print('The two sub-series are generated from the same distributions')
         return p_value, testOutput
@@ -213,13 +213,13 @@ def MMD_test(test_array, omegaSet, iterations, alphaTest, alphaOmegaset, printFl
         if p_value < alphaOmegaset:
             nullHypothesis = False
             testOutput = True
-            print(f"The probability of the sub-series are generated from the normal conditions of full time-series is {p_value}, which is smaller than given test value {alphaOmegaset}")
+            logger.info(f"The probability of the sub-series are generated from the normal conditions of full time-series is {p_value}, which is smaller than given test value {alphaOmegaset}")
             # print("The null hypothesis got rejected")
             # print('The sub-series is correlated to the anomaly events')
         else:
             nullHypothesis = True
             testOutput = False
-            print(f"The probability of the sub-series are generated from the normal conditions of full time-series is {p_value}, which is greater than given test value {alphaOmegaset}")
+            logger.info(f"The probability of the sub-series are generated from the normal conditions of full time-series is {p_value}, which is greater than given test value {alphaOmegaset}")
             # print("The null hypothesis got accepted")
             # print('The sub-series is not correlated to the anomaly events')
 
@@ -261,27 +261,27 @@ def event2TStest(E_loc, TS, iterations, alphaTest, alphaOmegaset, windowSize, om
     L_front_rear = np.concatenate((L_front, L_rear), axis=None)
     minPval = 1.0
 
-    print('=============================================')
+    logger.info('=============================================')
     # print('MMD Testing')
-    print("Computing statitics for Lfront vs. omega")
+    logger.info("Computing statitics for Lfront vs. omega")
     p_val_f , test_out_f = MMD_test(L_front, omegaSet, iterations, alphaTest, alphaOmegaset, False)
-    print('Correlated?', test_out_f, 'p value:', p_val_f)
+    logger.info('Correlated?', test_out_f, 'p value:', p_val_f)
     if p_val_f < minPval:
         minPval = p_val_f
 
-    print("\nComputing statistics for Lrear vs. omega")
+    logger.info("\nComputing statistics for Lrear vs. omega")
     p_val_r , test_out_r = MMD_test(L_rear, omegaSet, iterations, alphaTest, alphaOmegaset, False)
-    print('Correlated?', test_out_r, 'p value:', p_val_r)
+    logger.info('Correlated?', test_out_r, 'p value:', p_val_r)
     if p_val_r < minPval:
         minPval = p_val_r
 
-    print("\nComputing statitics for Lfront vs. Lrear")
+    logger.info("\nComputing statitics for Lfront vs. Lrear")
     p_val_3 , test_out_3 = MMD_test(L_rear, L_front, iterations, alphaTest, alphaOmegaset, False)
-    print('Correlated?', test_out_3, 'p value:', p_val_3)
+    logger.info('Correlated?', test_out_3, 'p value:', p_val_3)
 
-    print("\nComputing statitics for Lfront u Lrear vs. omega")
+    logger.info("\nComputing statitics for Lfront u Lrear vs. omega")
     p_val_4, test_out_4 = MMD_test(L_front_rear, omegaSet, iterations, alphaTest, alphaOmegaset, False)
-    print('Correlated?', test_out_4, 'p value:', p_val_4)
+    logger.info('Correlated?', test_out_4, 'p value:', p_val_4)
     if p_val_4 < minPval:
         minPval = p_val_4
 
@@ -339,7 +339,7 @@ def event2TStest(E_loc, TS, iterations, alphaTest, alphaOmegaset, windowSize, om
             else:
                 # S and E are uncorrelated
                 relation = 'S!E'
-    print('Identified relation: ', relation)
+    logger.info('Identified relation: ', relation)
     if returnMinPval:
         return relation, minPval
     else:
