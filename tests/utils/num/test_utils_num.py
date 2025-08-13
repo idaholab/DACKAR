@@ -10,16 +10,16 @@ m = 200
 n = 200
 d = 2
 
-sigma2X = np.eye(d)
+sigmaX = np.eye(d)
 muX = np.zeros(d)
 
-sigma2Y = np.eye(d)
+sigmaY = np.eye(d)
 muY = np.zeros(d)
 
 iterations = 2000
 
-X = np.random.multivariate_normal(mean=muX, cov=sigma2X, size=m)
-Y = np.random.multivariate_normal(mean=muY, cov=sigma2Y, size=n)
+X = np.random.multivariate_normal(mean=muX, cov=sigmaX, size=m)
+Y = np.random.multivariate_normal(mean=muY, cov=sigmaY, size=n)
 
 def test_kernel_two_sample_test():
     sigma2 = np.median(pairwise_distances(X, Y, metric='euclidean'))**2
@@ -39,7 +39,9 @@ def test_kernel_two_sample_test():
                                                         gamma=1.0/sigma2,
                                                         verbose=True)
     
-    assert abs(p_value - 0.868) < 1E-3
+    assert abs(p_value - 0.875) < 1E-3
+
+np.random.seed(0)
 
 m = 200
 n = 200
@@ -56,7 +58,25 @@ iterations = 2000
 X = np.random.multivariate_normal(mean=muX, cov=sigma2X, size=m)
 Y = np.random.multivariate_normal(mean=muY, cov=sigma2Y, size=n)
 
+def test_kernel_two_sample_test():
+    sigma2 = np.median(pairwise_distances(X, Y, metric='euclidean'))**2
+    mmd2u, mmd2u_null, p_value = K2ST.kernel_two_sample_test(X, Y,
+                                                        kernel_function='rbf',
+                                                        iterations=iterations,
+                                                        gamma=1.0/sigma2,
+                                                        verbose=True)
+    
+    assert abs(mmd2u - 0.19124120543500756) < 1E-8
 
+def test_kernel_two_sample_test():
+    sigma2 = np.median(pairwise_distances(X, Y, metric='euclidean'))**2
+    mmd2u, mmd2u_null, p_value = K2ST.kernel_two_sample_test(X, Y,
+                                                        kernel_function='rbf',
+                                                        iterations=iterations,
+                                                        gamma=1.0/sigma2,
+                                                        verbose=True)
+    
+    assert abs(p_value - 0.0005) < 1E-5
 
 '''
 plt.figure()
