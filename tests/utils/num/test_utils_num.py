@@ -1,4 +1,4 @@
-from dackar.utils.num import kernel_two_sample_test
+from dackar.utils.num import kernel_two_sample_test as K2ST
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -23,7 +23,7 @@ Y = np.random.multivariate_normal(mean=muY, cov=sigma2Y, size=n)
 
 def test_kernel_two_sample_test():
     sigma2 = np.median(pairwise_distances(X, Y, metric='euclidean'))**2
-    mmd2u, mmd2u_null, p_value = kernel_two_sample_test(X, Y,
+    mmd2u, mmd2u_null, p_value = K2ST.kernel_two_sample_test(X, Y,
                                                         kernel_function='rbf',
                                                         iterations=iterations,
                                                         gamma=1.0/sigma2,
@@ -33,7 +33,7 @@ def test_kernel_two_sample_test():
 
 def test_kernel_two_sample_test():
     sigma2 = np.median(pairwise_distances(X, Y, metric='euclidean'))**2
-    mmd2u, mmd2u_null, p_value = kernel_two_sample_test(X, Y,
+    mmd2u, mmd2u_null, p_value = K2ST.kernel_two_sample_test(X, Y,
                                                         kernel_function='rbf',
                                                         iterations=iterations,
                                                         gamma=1.0/sigma2,
