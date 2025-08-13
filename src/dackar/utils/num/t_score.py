@@ -40,7 +40,7 @@ def getL(loc,window,array,type):
         elif type=='front':
             l = array[loc-window:loc]
         else:
-            print('error')
+            logger.error('error')
     else:
         logger.error('getL method: Provided time series has incorrect data type.')
     
@@ -79,7 +79,7 @@ def omega(window,array,Nsamples):
 
 def choice(array,Nsamples):
     """
-      Method designed to randomly choose Nsamples out of array (replace is set to True)
+      Method designed to randomly choose Nsamples out of an array (replace is set to True)
 
       Args:
         array: np.array, array of values to be sampled
