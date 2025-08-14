@@ -38,6 +38,7 @@ from ..similarity.SentenceSimilarity import SentenceSimilarity
 # import utils
 from ..utils.nlp.nlp_utils import generatePatternList
 from ..utils.nlp.nlp_utils import resetPipeline
+from ..utils.nlp.nlp_utils import extractNER
 from ..utils.nlp.CreatePatterns import CreatePatterns
 # OPL parser to generate object and process lists
 from ..utils.opm.OPLparser import OPMobject
@@ -97,6 +98,8 @@ class WorkflowManager:
     self._causalPatterns = self.processCausalEnt()
 
     self._config = config
+
+    self._causalFlow = None
     # pre-processing
     self._pp = self.preprocessing()
 
@@ -112,29 +115,42 @@ class WorkflowManager:
     else:
       raise IOError(f'Unrecognized analysis type {self._mode}')
 
-    # self._workflow = self.setWorkflow()
 
   def run(self, doc):
+    """execute the knowledge extraction
+
+    Args:
+        doc (str): raw text data to process
+    """
 
     # pre-processing text
     if self._pp is not None:
         doc = self._pp(doc)
-
     # Logic for analysis
     if self._mode == 'ner':
       doc = self._nlp(doc)
+      # output data
+      df = extractNER(doc)
+      self.write(df, 'ner.csv', style='csv')
     elif self._mode == 'causal':
       self._causalFlow(doc)
-
-
-    # Do specific NLP
-    # self._workflow(doc) # TODO combine specific NLP with general NLP pipeline
+      # output data
 
   def get(self):
     pass
 
-  def write(self, fname, style='csv'):
-    pass
+  def write(self, data, fname, style='csv'):
+    """Dump data
+
+    Args:
+        data (pandas.DataFrame): output data to dump
+        fname (str): file name to save the data
+        style (str, optional): type of file. Defaults to 'csv'.
+    """
+    if isinstance(data, pd.DataFrame):
+      data.to_csv(fname, index=False)
+    else:
+      pass
 
   def visualize(self):
     pass
@@ -209,7 +225,6 @@ class WorkflowManager:
   #   matcher.addEntityPattern(causalName, self._causalPatterns)
   #   return matcher
 
-
   def preprocessing(self):
     """setup text pre-processing pipeline
 
@@ -239,11 +254,12 @@ class WorkflowManager:
     preprocess = Preprocessing(ppList, ppOptions)
     return preprocess
 
+
   def ner(self):
     """Set up NER pipelines
 
     Raises:
-        IOError: if pipeline is not available
+        NER Object: Object to conduct NER
     """
     pipelines = []
     if 'ner' in self._config:
@@ -254,6 +270,9 @@ class WorkflowManager:
           raise IOError(f'Unrecognized ner {pipe}!')
 
       self._nlp = resetPipeline(self._nlp, pipes=pipelines)
+
+    self._nlp.add_pipe("general_entity", config={"patterns": self._patterns}, before='ner')
+
 
 
   def causal(self):

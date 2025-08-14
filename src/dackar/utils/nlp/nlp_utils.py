@@ -263,3 +263,24 @@ def customTokenizer(nlp):
                             token_match=nlp.tokenizer.token_match,
                             rules=nlp.Defaults.tokenizer_exceptions)
   return nlp
+
+
+def extractNER(doc):
+  """
+    Generate data frame for visualization of spaCy doc with custom NER.
+
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+
+      df: pandas.DataFrame, data frame contains attributes of NER tokens
+  """
+  rows = []
+  for ent in doc.ents:
+    row = {'Entity':ent, 'ID': ent.ent_id_, 'Label': ent.label_, 'Start': ent.start, 'End': ent.end}
+    rows.append(row)
+  df = pd.DataFrame(rows)
+  df.index.name = None
+  return df
