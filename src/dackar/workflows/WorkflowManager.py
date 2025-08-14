@@ -48,6 +48,8 @@ from .WorkOrderProcessing import WorkOrderProcessing
 from .OperatorShiftLogsProcessing import OperatorShiftLogs
 from .. import config as defaultConfig
 
+from ..validate import validateToml
+
 from ..contrib.lazy import lazy_loader
 
 
@@ -80,6 +82,8 @@ class WorkflowManager:
   """
 
   def __init__(self, nlp, config):
+    # validate input
+    self._validate(config)
     self._nlp = nlp
     self._label = config['params']['ent']['label']
     self._entId = config['params']['ent']['id']
@@ -92,27 +96,37 @@ class WorkflowManager:
     self._patterns = self.generatePattern(config)
     self._causalPatterns = self.processCausalEnt()
 
-
     self._config = config
-
     # pre-processing
     self._pp = self.preprocessing()
-    # add customized NER pipes
-    self.ner()
-    # setup workflow
-    self._causalFlow = self.causal()
-    # self._workflow = self.setWorkflow()
 
+    # Construct execution logic
+    self._mode = config['analysis']['type']
+
+    if self._mode == 'ner':
+      # add customized NER pipes
+      self.ner()
+    elif self._mode == 'causal':
+      # setup workflow
+      self._causalFlow = self.causal()
+    else:
+      raise IOError(f'Unrecognized analysis type {self._mode}')
+
+    # self._workflow = self.setWorkflow()
 
   def run(self, doc):
 
+    # pre-processing text
     if self._pp is not None:
-      doc = self._pp(doc)
-    # Do general NLP
-    doc_new = self._nlp(doc)
-    # Do causal analysis
-    if self._causalFlow is not None:
+        doc = self._pp(doc)
+
+    # Logic for analysis
+    if self._mode == 'ner':
+      doc = self._nlp(doc)
+    elif self._mode == 'causal':
       self._causalFlow(doc)
+
+
     # Do specific NLP
     # self._workflow(doc) # TODO combine specific NLP with general NLP pipeline
 
@@ -134,6 +148,22 @@ class WorkflowManager:
 ############################################
 #      Internal Functions
 ############################################
+
+  def _validate(self, config):
+    """validate dackar input file using JSON schema
+
+    Args:
+        config (dict): dictionary for dackar input
+
+    Raises:
+        IOError: error out if not valid
+    """
+    # validate
+    validate = validateToml(config)
+    if not validate:
+      logger.error("TOML input file is invalid.")
+      raise IOError("TOML input file is invalid.")
+
 
   def generatePattern(self, config):
     ents = []
@@ -243,6 +273,8 @@ class WorkflowManager:
         matcher = WorkOrderProcessing(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       elif method == 'osl':
         matcher = OperatorShiftLogs(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+      else:
+        raise IOError(f'Unrecognized causal type {method}')
       matcher.addEntityPattern(self._entPatternName, self._patterns)
       matcher.addEntityPattern(self._causalPatternName, self._causalPatterns)
     return matcher

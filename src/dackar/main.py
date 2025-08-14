@@ -15,7 +15,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from dackar.utils.utils import readToml, writeToFile
 from dackar.workflows.WorkflowManager import WorkflowManager
-from dackar.validate import validateToml
 
 logging.basicConfig(format='%(asctime)s %(name)-20s %(levelname)-8s %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.DEBUG)
 # To enable the logging to both file and console, the logger for the main should be the root,
@@ -35,19 +34,15 @@ def main():
   logger.info('Welcome!')
   # set up argument parser
   parser = argparse.ArgumentParser(description='DACKAR Input ArgumentParser')
-  parser.add_argument('--file_path', type=str, default='../../system_tests/test_opm.toml' ,help='The path to the input file.')
-  parser.add_argument('--output-file', type=str, default='output.txt', help='The file to save the output to.')
+  parser.add_argument('-i', '--file_path', type=str, default='../../system_tests/test_opm.toml' ,help='The path to the input file.')
+  parser.add_argument('-o', '--output-file', type=str, default='output.txt', help='The file to save the output to.')
   # parse the arguments
   args = parser.parse_args()
   logger.info('Input file: %s', args.file_path)
   # read the TOML file
-  configFile = os.path.join(os.path.dirname(__file__), args.file_path)
+  cwd = os.getcwd()
+  configFile = os.path.join(cwd, args.file_path)
   inputDict = readToml(configFile)
-
-  # validate
-  validate = validateToml(inputDict)
-  if not validate:
-    raise IOError("TOML input file is invalid.")
 
   # doc = "The Pump is not experiencing enough flow for the pumps to keep the check valves open during test."
   # text that needs to be processed. either load from file or direct assign
