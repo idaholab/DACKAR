@@ -4,17 +4,14 @@
 Created on August 1, 2025
 @author: wangc, mandd
 """
-import os
 import logging
-import sys
-import spacy
 import pandas as pd
 
 # import pipelines
 from ..pipelines.ConjectureEntity import ConjectureEntity
-from ..pipelines.PhraseEntityMatcher import PhraseEntityMatcher
+# from ..pipelines.PhraseEntityMatcher import PhraseEntityMatcher
 from ..pipelines.UnitEntity import UnitEntity
-from ..pipelines.SimpleEntityMatcher import SimpleEntityMatcher
+# from ..pipelines.SimpleEntityMatcher import SimpleEntityMatcher
 from dackar.pipelines.TemporalEntity import Temporal
 from ..pipelines.TemporalAttributeEntity import TemporalAttributeEntity
 from ..pipelines.TemporalRelationEntity import TemporalRelationEntity
@@ -31,15 +28,16 @@ from ..pipelines.CustomPipelineComponents import mergePhrase
 from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 # import text processing
 from ..text_processing.Preprocessing import Preprocessing
-# import similarity
-from ..similarity import simUtils
-from ..similarity import synsetUtils
-from ..similarity.SentenceSimilarity import SentenceSimilarity
+# # import similarity
+# from ..similarity import simUtils
+# from ..similarity import synsetUtils
+# from ..similarity.SentenceSimilarity import SentenceSimilarity
+
 # import utils
 from ..utils.nlp.nlp_utils import generatePatternList
 from ..utils.nlp.nlp_utils import resetPipeline
 from ..utils.nlp.nlp_utils import extractNER
-from ..utils.nlp.CreatePatterns import CreatePatterns
+
 # OPL parser to generate object and process lists
 from ..utils.opm.OPLparser import OPMobject
 from ..utils.mbse.LMLparser import LMLobject
@@ -65,7 +63,6 @@ NERMapping = {'temporal':'Temporal',
 
 }
 
-
 customPipe = {'norm':'normEntities',
               'alias':'aliasResolver',
               'expand':'expandEntities',
@@ -73,39 +70,30 @@ customPipe = {'norm':'normEntities',
               'sbd':'pysbdSentenceBoundaries'
 }
 
-
-
 logger = logging.getLogger('DACKAR.WorkflowManager')
-
-
 class WorkflowManager:
-  """_summary_
+  """Workflow Manager
   """
 
   def __init__(self, nlp, config):
+    logger.info('Initialization')
     # validate input
     self._validate(config)
     self._nlp = nlp
     self._label = config['params']['ent']['label']
     self._entId = config['params']['ent']['id']
-
     self._causalLabel = "causal"
     self._causalID = "causal"
     self._entPatternName = 'dackar_ent'
     self._causalPatternName = 'dackar_causal'
-
     self._patterns = self.generatePattern(config)
     self._causalPatterns = self.processCausalEnt()
-
     self._config = config
-
     self._causalFlow = None
     # pre-processing
     self._pp = self.preprocessing()
-
     # Construct execution logic
     self._mode = config['analysis']['type']
-
     if self._mode == 'ner':
       # add customized NER pipes
       self.ner()
@@ -122,7 +110,7 @@ class WorkflowManager:
     Args:
         doc (str): raw text data to process
     """
-
+    logger.info('Execute workflow %s', self._mode)
     # pre-processing text
     if self._pp is not None:
         doc = self._pp(doc)
@@ -168,14 +156,6 @@ class WorkflowManager:
   def reset(self):
     pass
 
-
-
-  # TODO:
-  # 1. Test work order
-  # 2. Test shift log
-  # 3. Add function for visualization
-
-
   ############################################
   #      Internal Functions
   ############################################
@@ -195,11 +175,17 @@ class WorkflowManager:
       logger.error("TOML input file is invalid.")
       raise IOError("TOML input file is invalid.")
 
-
   def generatePattern(self, config):
+    """Generate patterns using provided OPM and/or entity file
+
+    Args:
+        config (dict): input dictionary
+
+    Returns:
+        list: list of patterns will be used by entity matcher
+    """
     ents = []
     # Parse OPM model
-    # some modifications, bearings --> pump bearings
     if 'opm' in config['files']:
       opmFile = config['files']['opm']
       opmObj = OPMobject(opmFile)
@@ -211,18 +197,19 @@ class WorkflowManager:
       entityFile = config['files']['entity']
       entityList = pd.read_csv(entityFile).values.ravel().tolist()
       ents.extend(entityList)
-
     ents = set(ents)
-
     # convert opm formList into matcher patternsOPM
     patterns = generatePatternList(ents, label=self._label, id=self._entId, nlp=self._nlp, attr="LEMMA")
     return patterns
 
   def processCausalEnt(self):
-    ########################################################################
-    #  Parse causal keywords, and generate patterns for them
-    #  The patterns can be used to identify the causal relationships
+    """
+    Parse causal keywords, and generate patterns for them
+    The patterns can be used to identify the causal relationships
 
+    Returns:
+        list: list of patterns will be used by causal entity matcher
+    """
     patternsCausal = []
     causalFilename = defaultConfig.nlpConfig['files']['cause_effect_keywords_file']
     ds = pd.read_csv(causalFilename, skipinitialspace=True)
@@ -230,15 +217,6 @@ class WorkflowManager:
       cvars = set(ds[col].dropna())
       patternsCausal.extend(generatePatternList(cvars, label=self._causalLabel, id=self._causalID, nlp=self._nlp, attr="LEMMA"))
     return patternsCausal
-
-  # def setWorkflow(self):
-  #   name = 'ssc_entity_ruler'
-  #   matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
-  #   matcher.addEntityPattern(name, self._patterns)
-
-  #   causalName = 'causal_keywords_entity_ruler'
-  #   matcher.addEntityPattern(causalName, self._causalPatterns)
-  #   return matcher
 
   def preprocessing(self):
     """setup text pre-processing pipeline
@@ -249,7 +227,6 @@ class WorkflowManager:
     Returns:
         Preprocessing Object: Preprocessing pipeline
     """
-
     logger.info('Set up text pre-processing.')
     ppList = []
     ppOptions = {}
@@ -283,11 +260,8 @@ class WorkflowManager:
           pipelines.append(NERMapping[pipe])
         else:
           raise IOError(f'Unrecognized ner {pipe}!')
-
       self._nlp = resetPipeline(self._nlp, pipes=pipelines)
-
     self._nlp.add_pipe("general_entity", config={"patterns": self._patterns}, before='ner')
-
 
 
   def causal(self):
