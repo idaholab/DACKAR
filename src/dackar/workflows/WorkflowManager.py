@@ -134,7 +134,22 @@ class WorkflowManager:
       self.write(df, 'ner.csv', style='csv')
     elif self._mode == 'causal':
       self._causalFlow(doc)
-      # output data
+      # output data: TODO
+      # Access data
+      entHS = self._causalFlow.getEntHS()
+      entStatus = self._causalFlow.getEntStatus()
+      if len(entHS) != 0:
+        self.write(entHS, 'causal_ner_health_status.csv', style='csv')
+      if len(entStatus) != 0:
+        self.write(entStatus, 'causal_ner_status.csv', style='csv')
+
+
+
+
+
+
+
+
 
   def get(self):
     pass

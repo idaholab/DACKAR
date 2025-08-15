@@ -43,6 +43,22 @@ class RuleBasedMatcher(WorkflowBase):
     """
     super().reset()
 
+  def getEntHS(self):
+    """Get entity health status
+
+    Returns:
+        pandas.DataFrame: Entity health status data
+    """
+    return self._entHS
+
+  def getEntStatus(self):
+    """Get entity status
+
+    Returns:
+        pandas.DataFrame: entity status data
+    """
+    return self._entStatus
+
   def extractInformation(self):
     """
       Extract information
@@ -59,67 +75,30 @@ class RuleBasedMatcher(WorkflowBase):
     ## health status
     logger.info('Start to extract health status')
     self.extractHealthStatus(self._matchedSents)
-    ## Access health status and output to an ordered csv file
-    entList = []
-    hsList = []
-    svList = []
-    kwList = []
-    cjList = []
-    sentList = []
-    hsPrependAmod = []
-    hsPrepend = []
-    hsAppend = []
-    hsAppendAmod = []
-    negList = []
-    negTextList = []
+
+    rows = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.health_status is not None:
-          entList.append(ent.text)
-          hsList.append(ent._.health_status)
-          svList.append(ent._.ent_status_verb)
-          kwList.append(ent._.hs_keyword)
-          cjList.append(ent._.conjecture)
-          sentList.append(sent.text.strip('\n'))
-          hsPrepend.append(ent._.health_status_prepend)
-          hsPrependAmod.append(ent._.health_status_prepend_amod)
-          hsAppend.append(ent._.health_status_append)
-          hsAppendAmod.append(ent._.health_status_append_amod)
-          negList.append(ent._.neg)
-          negTextList.append(ent._.neg_text)
+          row = {'entities':ent.text, 'label':ent.label_, 'root':ent._.ent_status_verb, 'status keywords':ent._.hs_keyword, 'health status':ent._.health_status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
+              'health status prepend': ent._.health_status_prepend, 'health status prepend adjectival modifier':ent._.health_status_prepend_amod, 'health status append': ent._.health_status_append,
+              'health status append adjectival modifier': ent._.health_status_append_amod, 'negation':ent._.neg, 'negation text': ent._.neg_text}
 
-    ## include 'root' in the output
-    df = pd.DataFrame({'entities':entList, 'root':svList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList,
-                       'health status prepend': hsPrepend, 'health status prepend adjectival modifier':hsPrependAmod, 'health status append': hsAppend,
-                       'health status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
-    df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'root','status keywords', 'health status prepend adjectival modifier', 'health status prepend', 'health status', 'health status append adjectival modifier', 'health status append', 'sentence'])
-    self._entHS = df
-    # df = pd.DataFrame({'entities':entList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList})
-    # df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'status keywords', 'health statuses', 'conjecture', 'sentence'])
+          rows.append(row)
+    self._entHS = pd.DataFrame(rows)
 
+    rows = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.status is not None:
-          entList.append(ent.text)
-          hsList.append(ent._.status)
-          svList.append(ent._.ent_status_verb)
-          cjList.append(ent._.conjecture)
-          sentList.append(sent.text.strip('\n'))
-          hsPrepend.append(ent._.status_prepend)
-          hsPrependAmod.append(ent._.status_prepend_amod)
-          hsAppend.append(ent._.status_append)
-          hsAppendAmod.append(ent._.status_append_amod)
-          negList.append(ent._.neg)
-          negTextList.append(ent._.neg_text)
+          row = {'entities':ent.text, 'label':ent.label_, 'status keywords':ent._.ent_status_verb, 'status':ent._.status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
+                'status prepend': ent._.status_prepend, 'status prepend adjectival modifier':ent._.status_prepend_amod, 'status append': ent._.status_append,
+                'status append adjectival modifier': ent._.status_append_amod, 'negation':ent._.neg, 'negation text': ent._.neg_text}
+          rows.append(row)
+    self._entStatus = pd.DataFrame(rows)
 
-    ## include 'root' in the output
-    dfStatus = pd.DataFrame({'entities':entList, 'status keywords':svList, 'status':hsList, 'conjecture':cjList, 'sentence':sentList,
-                       'status prepend': hsPrepend, 'status prepend adjectival modifier':hsPrependAmod, 'status append': hsAppend,
-                       'status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
-    # df.to_csv(nlpConfig['files']['output_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'status keyword', 'status prepend adjectival modifier', 'status prepend', 'status', 'status append adjectival modifier', 'status append', 'sentence'])
-    self._entStatus = dfStatus
 
     logger.info('End of health status extraction!')
     ## causal relation
