@@ -229,6 +229,7 @@ class WorkflowBase(object):
     self._rawCausalList = []
     self._causalSentsOneEnt = []
     self._entHS = None
+    self._entStatus = None
     self._doc = None
     self.dataframeRelations = None
     self.dataframeEntities = None

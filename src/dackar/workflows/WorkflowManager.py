@@ -134,21 +134,20 @@ class WorkflowManager:
       self.write(df, 'ner.csv', style='csv')
     elif self._mode == 'causal':
       self._causalFlow(doc)
-      # output data: TODO
-      # Access data
-      entHS = self._causalFlow.getEntHS()
-      entStatus = self._causalFlow.getEntStatus()
+      # output entity data with status
+      entHS = self._causalFlow.getAttribute('entHS')
+      entStatus = self._causalFlow.getAttribute('entStatus')
       if len(entHS) != 0:
         self.write(entHS, 'causal_ner_health_status.csv', style='csv')
       if len(entStatus) != 0:
         self.write(entStatus, 'causal_ner_status.csv', style='csv')
-
-
-
-
-
-
-
+      # output causal data
+      causalRelation = self._causalFlow.getAttribute('causalRelation')
+      causalRelationGeneral = self._causalFlow.getAttribute('causalRelationGeneral')
+      if len(causalRelation) != 0:
+        self.write(causalRelation, 'causal_relation.csv', style='csv')
+      if len(causalRelationGeneral) != 0:
+        self.write(causalRelationGeneral, 'causal_relation_general.csv', style='csv')
 
 
   def get(self):

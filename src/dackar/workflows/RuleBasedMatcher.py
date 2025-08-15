@@ -36,28 +36,27 @@ class RuleBasedMatcher(WorkflowBase):
         None
     """
     super().__init__(nlp, entID, causalKeywordID, *args, **kwargs)
+    self._causalRelation = None
+    self._causalRelationGeneral = None
 
   def reset(self):
     """
       Reset rule-based matcher
     """
     super().reset()
+    self._causalRelation = None
+    self._causalRelationGeneral = None
 
-  def getEntHS(self):
-    """Get entity health status
+  def getAttribute(self, name):
+    """Get self attribute data
 
-    Returns:
-        pandas.DataFrame: Entity health status data
-    """
-    return self._entHS
-
-  def getEntStatus(self):
-    """Get entity status
+    Args:
+        name (str): name of protected variable
 
     Returns:
-        pandas.DataFrame: entity status data
+        pandas.DataFrame: attribute data
     """
-    return self._entStatus
+    return getattr(self, '_'+name)
 
   def extractInformation(self):
     """
@@ -99,12 +98,15 @@ class RuleBasedMatcher(WorkflowBase):
           rows.append(row)
     self._entStatus = pd.DataFrame(rows)
 
+    self._causalRelation = None
+    self._causalRelationGeneral = None
 
     logger.info('End of health status extraction!')
     ## causal relation
     logger.info('Start to extract causal relation using OPM model information')
     self.extractRelDep(self._matchedSents)
     dfCausals = pd.DataFrame(self._extractedCausals, columns=self._causalNames)
+    self._causalRelation = dfCausals
     dfCausals.to_csv(nlpConfig['files']['output_causal_effect_file'], columns=self._causalNames)
     logger.info('End of causal relation extraction!')
     ## print extracted relation
@@ -116,7 +118,9 @@ class RuleBasedMatcher(WorkflowBase):
     logger.info('Start to use general extraction method to extract causal relation')
     matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
     extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
-    print(*extractedCauseEffects)
+    self._causalRelationGeneral = pd.DataFrame(extractedCauseEffects, columns=['subject','predicate', 'object'])
+
+    # print(*extractedCauseEffects)
     logger.info('End of causal relation extraction using general extraction method!')
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
