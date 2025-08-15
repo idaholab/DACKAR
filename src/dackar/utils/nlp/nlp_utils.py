@@ -17,7 +17,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 
-logger = logging.getLogger('DACKAR.nlp_utils')
+logger = logging.getLogger('DACKAR.utils')
 
 ###########################################################################
 

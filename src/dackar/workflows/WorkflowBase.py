@@ -34,7 +34,7 @@ from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 from ..config import nlpConfig
 from ..text_processing.Preprocessing import Preprocessing
 
-logger = logging.getLogger('DACKAR.WorkflowBase')
+logger = logging.getLogger('DACKAR')
 
 ## temporary add stream handler
 # ch = logging.StreamHandler()

@@ -149,10 +149,6 @@ class WorkflowManager:
       if len(causalRelationGeneral) != 0:
         self.write(causalRelationGeneral, 'causal_relation_general.csv', style='csv')
 
-
-  def get(self):
-    pass
-
   def write(self, data, fname, style='csv'):
     """Dump data
 
@@ -174,10 +170,15 @@ class WorkflowManager:
 
 
 
+  # TODO:
+  # 1. Test work order
+  # 2. Test shift log
+  # 3. Add function for visualization
 
-############################################
-#      Internal Functions
-############################################
+
+  ############################################
+  #      Internal Functions
+  ############################################
 
   def _validate(self, config):
     """validate dackar input file using JSON schema

@@ -15,7 +15,7 @@ from collections import deque
 from ..config import nlpConfig
 from .WorkflowBase import WorkflowBase
 
-logger = logging.getLogger('DACKAR.RuleBasedMatcher')
+logger = logging.getLogger('DACKAR.Causal')
 
 class RuleBasedMatcher(WorkflowBase):
   """
@@ -120,7 +120,6 @@ class RuleBasedMatcher(WorkflowBase):
     extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
     self._causalRelationGeneral = pd.DataFrame(extractedCauseEffects, columns=['subject','predicate', 'object'])
 
-    # print(*extractedCauseEffects)
     logger.info('End of causal relation extraction using general extraction method!')
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
