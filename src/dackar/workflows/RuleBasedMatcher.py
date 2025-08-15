@@ -44,19 +44,6 @@ class RuleBasedMatcher(WorkflowBase):
       Reset rule-based matcher
     """
     super().reset()
-    self._causalRelation = None
-    self._causalRelationGeneral = None
-
-  def getAttribute(self, name):
-    """Get self attribute data
-
-    Args:
-        name (str): name of protected variable
-
-    Returns:
-        pandas.DataFrame: attribute data
-    """
-    return getattr(self, '_'+name)
 
   def extractInformation(self):
     """
@@ -118,7 +105,7 @@ class RuleBasedMatcher(WorkflowBase):
     logger.info('Start to use general extraction method to extract causal relation')
     matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
     extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
-    self._causalRelationGeneral = pd.DataFrame(extractedCauseEffects, columns=['subject','predicate', 'object'])
+    self._causalRelationGeneral = pd.DataFrame(extractedCauseEffects, columns=['subject','relation', 'object'])
 
     logger.info('End of causal relation extraction using general extraction method!')
 

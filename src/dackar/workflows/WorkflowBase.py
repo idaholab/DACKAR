@@ -215,6 +215,8 @@ class WorkflowBase(object):
     self._screen = False
     self.dataframeRelations = None
     self.dataframeEntities = None
+    self._causalRelation = None
+    self._causalRelationGeneral = None
 
     self._textProcess = self.textProcess()
 
@@ -233,6 +235,19 @@ class WorkflowBase(object):
     self._doc = None
     self.dataframeRelations = None
     self.dataframeEntities = None
+    self._causalRelation = None
+    self._causalRelationGeneral = None
+
+  def getAttribute(self, name):
+    """Get self attribute data
+
+    Args:
+        name (str): name of protected variable
+
+    Returns:
+        pandas.DataFrame: attribute data
+    """
+    return getattr(self, '_'+name)
 
   def textProcess(self):
     """

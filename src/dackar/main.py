@@ -53,10 +53,6 @@ def main():
   # load nlp model
   nlp = spacy.load(inputDict['params']['language_model'], exclude=[])
 
-  # Create logic to switch between different analysis
-
-
-
   module = WorkflowManager(nlp, inputDict)
   module.run(doc.lower())
 
