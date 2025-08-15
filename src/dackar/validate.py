@@ -153,7 +153,12 @@ schema = {
     "visualize": {
       "type": "object",
       "description": "",
-      "properties": {}
+      "properties": {
+        "ner": {
+        "type": "boolean",
+        "description": ""
+        }
+      }
     },
     "outputs": {
       "type": "object",

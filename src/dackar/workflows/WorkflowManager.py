@@ -4,8 +4,11 @@
 Created on August 1, 2025
 @author: wangc, mandd
 """
+import os
+from pathlib import Path
 import logging
 import pandas as pd
+from spacy import displacy
 
 # import pipelines
 from ..pipelines.ConjectureEntity import ConjectureEntity
@@ -137,6 +140,12 @@ class WorkflowManager:
       if causalRelationGeneral is not None and len(causalRelationGeneral) != 0:
         self.write(causalRelationGeneral, 'causal_relation_general.csv', style='csv')
 
+      doc = self._causalFlow.getAttribute('doc')
+
+    if 'visualize' in self._config and 'ner' in self._config['visualize']:
+      if self._config['visualize']['ner']:
+        self.visualize(doc)
+
   def write(self, data, fname, style='csv'):
     """Dump data
 
@@ -150,8 +159,17 @@ class WorkflowManager:
     else:
       pass
 
-  def visualize(self):
-    pass
+  def visualize(self, doc):
+    """visual entities
+
+    Args:
+        doc (spacy.tokens.doc.Doc): the processed document using nlp pipelines
+    """
+    cwd = os.getcwd()
+    svg = displacy.render(doc, style='ent', page=True, minify=True)
+    outputPath = Path(os.path.join(cwd, 'ent.svg'))
+    outputPath.open("w", encoding="utf-8").write(svg)
+
 
   def reset(self):
     pass
