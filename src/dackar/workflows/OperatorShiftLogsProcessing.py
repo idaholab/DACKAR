@@ -76,7 +76,7 @@ class OperatorShiftLogs(WorkflowBase):
     self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
     self._subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
     self._objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
-    self._extractedInfoNames = ['Entity', 'Status', 'Amod', 'Action', 'Dep', 'Alias', 'Negation', 'Conjecture', 'Sentence']
+    self._entInfoNames = ['Entity', 'Label', 'Status', 'Amod', 'Action', 'Dep', 'Alias', 'Negation', 'Conjecture', 'Sentence']
 
   def reset(self):
     """
@@ -84,7 +84,7 @@ class OperatorShiftLogs(WorkflowBase):
     """
     super().reset()
     self._allRelPairs = []
-    self._entStatus = None
+    self._entInfoNames = None
 
   def textProcess(self):
     """
@@ -139,19 +139,20 @@ class OperatorShiftLogs(WorkflowBase):
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if ents is not None:
         for ent in ents:
-            entInfo.append([ent.text, ent._.status, ent._.status_amod, ent._.action, ent._.edep, ent._.alias, ent._.neg_text, sent._.conjecture, sent.text])
+            entInfo.append([ent.text, ent.label_, ent._.status, ent._.status_amod, ent._.action, ent._.edep, ent._.alias, ent._.neg_text, sent._.conjecture, sent.text.strip('\n')])
     if len(entInfo) > 0:
-      self.dataframeEntities = pd.DataFrame(entInfo, columns=self._extractedInfoNames)
+      self._entStatus = pd.DataFrame(entInfo, columns=self._entInfoNames)
 
     # Extract entity relations
     logger.info('Start to extract entity relations')
     self.extractRelDep(self._matchedSents)
     # dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
     # dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+
     if len(self._allRelPairs) > 0:
-      self.dataframeRelations = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+      self._causalRelationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
       if self._screen:
-        print(self.dataframeRelations)
+        print(self._causalRelationGeneral)
     logger.info('End of entity relation extraction!')
 
     if self._causalKeywordID in self._entityLabels:
