@@ -69,3 +69,29 @@ class TestWorkFlows:
     assert dfCausal['causal keyword'].tolist()[0].text == 'caused'
     assert dfCausal['effect'].tolist()[0].text == 'shaft'
 
+
+  def test_wo(self):
+    matcher = self.get_matcher(method='wo')
+    matcher(self.doc)
+    df = matcher.getAttribute('entStatus')
+    dfCausal = matcher.getAttribute('causalRelationGeneral')
+    print(dfCausal)
+    assert df['entity'].tolist() == ['pump bearings']
+    assert df['label'].tolist() == ['test_label']
+    assert df['status'].tolist()[0] == 'Rupture of pump bearings caused shaft degradation'
+    assert dfCausal['subject'].tolist()[0] == 'pump bearings'
+    assert dfCausal['relation'].tolist()[0] == 'caused'
+    assert dfCausal['object'].tolist()[0] == 'shaft'
+
+  def test_osl(self):
+    matcher = self.get_matcher(method='osl')
+    matcher(self.doc)
+    df = matcher.getAttribute('entStatus')
+    dfCausal = matcher.getAttribute('causalRelationGeneral')
+    print(dfCausal)
+    assert df['entity'].tolist() == ['pump bearings', 'shaft']
+    assert df['label'].tolist() == ['test_label', 'test_label']
+    assert df['status'].tolist()[1].text == 'degradation'
+    assert dfCausal['subject'].tolist()[0] == 'pump bearings'
+    assert dfCausal['relation'].tolist()[0] == 'caused'
+    assert dfCausal['object'].tolist()[0] == 'shaft'

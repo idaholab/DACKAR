@@ -219,7 +219,7 @@ class WorkOrderProcessing(WorkflowBase):
         (subject tuple, predicate, object tuple): generator, the extracted causal relation
     """
     subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
-    # objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
+    objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
     for sent in matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if len(ents) <= 1:
@@ -244,7 +244,8 @@ class WorkOrderProcessing(WorkflowBase):
           subjConjEnt.append(text)
         elif entRoot.dep_ in subjList:
           subjEnt.append(text)
-        elif entRoot.dep_ in ['obj', 'dobj']:
+        # elif entRoot.dep_ in ['obj', 'dobj']: # mainly for short sentence or phrase
+        elif entRoot.dep_ in objList:
           objEnt.append(text)
         elif entRoot.i > root.i and entRoot.dep_ in ['conj']:
           objConjEnt.append(text)
@@ -253,18 +254,23 @@ class WorkOrderProcessing(WorkflowBase):
         for subjConj in subjConjEnt:
           allRelPairs.append([subj, 'conj', subjConj])
         for obj in objEnt:
-          allRelPairs.append([subj, root, obj])
+          allRelPairs.append([subj, root.text, obj])
         for objConj in objConjEnt:
-          allRelPairs.append([subj, root, objConj])
+          allRelPairs.append([subj, root.text, objConj])
       # subjconj
       for subjConj in subjConjEnt:
         for obj in objEnt:
-          allRelPairs.append([subjConj, root, obj])
+          allRelPairs.append([subjConj, root.text, obj])
         for objConj in objConjEnt:
-          allRelPairs.append([subjConj, root, objConj])
+          allRelPairs.append([subjConj, root.text, objConj])
       # obj
       for obj in objEnt:
         for objConj in objConjEnt:
           allRelPairs.append([obj, 'conj', objConj])
+
+      # handle specific case
+      if len(allRelPairs) == 0:
+        if len(ents) == 2 and ents[0].root.i < root.i and ents[1].root.i > root.i:
+          allRelPairs.append([ents[0].text, root.text, ents[1].text])
 
       self._allRelPairs += allRelPairs
