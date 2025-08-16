@@ -67,7 +67,7 @@ class RuleBasedMatcher(WorkflowBase):
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.health_status is not None:
-          row = {'entities':ent.text, 'label':ent.label_, 'root':ent._.ent_status_verb, 'status keywords':ent._.hs_keyword, 'health status':ent._.health_status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
+          row = {'entity':ent.text, 'label':ent.label_, 'alias':ent._.alias, 'root':ent._.ent_status_verb, 'status keyword':ent._.hs_keyword, 'health status':ent._.health_status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
               'health status prepend': ent._.health_status_prepend, 'health status prepend adjectival modifier':ent._.health_status_prepend_amod, 'health status append': ent._.health_status_append,
               'health status append adjectival modifier': ent._.health_status_append_amod, 'negation':ent._.neg, 'negation text': ent._.neg_text}
 
@@ -79,7 +79,7 @@ class RuleBasedMatcher(WorkflowBase):
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.status is not None:
-          row = {'entities':ent.text, 'label':ent.label_, 'status keywords':ent._.ent_status_verb, 'status':ent._.status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
+          row = {'entity':ent.text, 'label':ent.label_, 'alias':ent._.alias, 'status keyword':ent._.ent_status_verb, 'status':ent._.status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
                 'status prepend': ent._.status_prepend, 'status prepend adjectival modifier':ent._.status_prepend_amod, 'status append': ent._.status_append,
                 'status append adjectival modifier': ent._.status_append_amod, 'negation':ent._.neg, 'negation text': ent._.neg_text}
           rows.append(row)
@@ -105,7 +105,7 @@ class RuleBasedMatcher(WorkflowBase):
     logger.info('Start to use general extraction method to extract causal relation')
     matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
     extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
-    self._causalRelationGeneral = pd.DataFrame(extractedCauseEffects, columns=['subject','relation', 'object'])
+    self._causalRelationGeneral = pd.DataFrame(extractedCauseEffects, columns=self._relationNames)
 
     logger.info('End of causal relation extraction using general extraction method!')
 
@@ -608,7 +608,7 @@ class RuleBasedMatcher(WorkflowBase):
             if cRootHead.dep_ in ['xcomp', 'advcl', 'relcl']:
               causeList, effectList = self.identifyCauseEffectForClauseModifier(cRootHead, rootCause, validLeftSSCEnts, validRightSSCEnts)
             elif cRoot.dep_ in ['attr']:
-              causeList, effectList = self.identifyCauseEffectForAttr(self, cRootHead, validLeftSSCEnts, validRightSSCEnts)
+              causeList, effectList = self.identifyCauseEffectForAttr(cRootHead, validLeftSSCEnts, validRightSSCEnts)
               if rootCause is None:
                 rootCause = (causeList, effectList, conjecture)
             elif cRoot.dep_ in ['nsubj']:
@@ -626,7 +626,7 @@ class RuleBasedMatcher(WorkflowBase):
             if cRootHead.dep_ in ['xcomp', 'advcl', 'relcl']:
               causeList, effectList = self.identifyCauseEffectForClauseModifier(cRootHead, rootCause, validLeftSSCEnts, validRightSSCEnts, reverse=True)
             elif cRoot.dep_ in ['attr']:
-              causeList, effectList = self.identifyCauseEffectForAttr(self, cRootHead, validLeftSSCEnts, validRightSSCEnts, reverse=True)
+              causeList, effectList = self.identifyCauseEffectForAttr(cRootHead, validLeftSSCEnts, validRightSSCEnts, reverse=True)
               if rootCause is None:
                 rootCause = (causeList, effectList, conjecture)
             elif cRoot.dep_ in ['nsubj']:

@@ -278,6 +278,8 @@ class WorkflowManager:
           pipelines.append(NERMapping[pipe])
         else:
           raise IOError(f'Unrecognized ner {pipe}!')
+      # add aliasResolver
+      pipelines.append('aliasResolver')
       self._nlp = resetPipeline(self._nlp, pipes=pipelines)
     self._nlp.add_pipe("general_entity", config={"patterns": self._patterns}, before='ner')
 

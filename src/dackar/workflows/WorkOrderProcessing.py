@@ -60,7 +60,6 @@ class WorkOrderProcessing(WorkflowBase):
     """
     super().__init__(nlp, entID, causalKeywordID='causal', *args, **kwargs)
     self._allRelPairs = []
-    self._relationNames = ['subject', 'relation', 'object']
 
   def reset(self):
     """

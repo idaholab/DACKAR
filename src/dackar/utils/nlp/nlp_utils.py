@@ -279,7 +279,7 @@ def extractNER(doc):
   """
   rows = []
   for ent in doc.ents:
-    row = {'Entity':ent, 'ID': ent.ent_id_, 'Label': ent.label_, 'Start': ent.start, 'End': ent.end}
+    row = {'entity':ent, 'label': ent.label_, 'id': ent.ent_id_, 'alias':ent._.alias, 'start': ent.start, 'end': ent.end}
     rows.append(row)
   df = pd.DataFrame(rows)
   df.index.name = None

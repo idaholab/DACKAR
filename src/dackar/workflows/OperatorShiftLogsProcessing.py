@@ -73,10 +73,9 @@ class OperatorShiftLogs(WorkflowBase):
       self.nlp.add_pipe('mergeEntitiesWithSameID', after='aliasResolver')
 
     self._allRelPairs = []
-    self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
     self._subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
     self._objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
-    self._entInfoNames = ['Entity', 'Label', 'Status', 'Amod', 'Action', 'Dep', 'Alias', 'Negation', 'Conjecture', 'Sentence']
+    self._entInfoNames = ['entity', 'label', 'status', 'amod', 'action', 'dep', 'alias', 'negation', 'conjecture', 'sentence']
 
   def reset(self):
     """
@@ -161,6 +160,7 @@ class OperatorShiftLogs(WorkflowBase):
       self.extractCausalRelDep(self._matchedSents)
       logger.info('End of causal relation extraction!')
       if len(self._rawCausalList) > 0:
+        # self._rawCausalList contains all identified entities ordered by index
         for l in self._rawCausalList:
           print(l, l[0].sent)
         # print(self._rawCausalList)
@@ -455,7 +455,7 @@ class OperatorShiftLogs(WorkflowBase):
           if not self.isSubElements(obj, sscEnts+causalEnts):
             causalPairs.append((obj, obj.i))
 
-      # mergePhrase pipelie can merge "( Issue" into single entity.
+      # mergePhrase pipeline can merge "( Issue" into single entity.
       causalPairs = sorted(causalPairs, key=itemgetter(1))
 
       causalPairs = [elem[0] for elem in causalPairs]

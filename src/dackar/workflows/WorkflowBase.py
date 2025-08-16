@@ -206,6 +206,7 @@ class WorkflowBase(object):
     self._entID = entID
     self._causalKeywordID = causalKeywordID
     self._causalNames = ['cause', 'cause health status', 'causal keyword', 'effect', 'effect health status', 'sentence', 'conjecture']
+    self._relationNames = ['subject', 'relation', 'object']
     self._extractedCausals = [] # list of tuples, each tuple represents one causal-effect, i.e., (cause, cause health status, cause keyword, effect, effect health status, sentence)
     self._causalSentsNoEnts = []
     self._rawCausalList = []
