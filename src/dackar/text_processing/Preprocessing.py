@@ -8,6 +8,9 @@ from cytoolz import functoolz
 import re
 import textacy.preprocessing as preprocessing
 from numerizer import numerize
+import logging
+
+logger = logging.getLogger('DACKAR.Preprocessing')
 
 # list of available preprocessors in textacy.preprocessing.normalize
 textacyNormalize = ['bullet_points',
@@ -209,6 +212,7 @@ class Preprocessing(object):
       Returns:
         processed: str, string of processed text
     """
+    logger.info('Preprocess raw text data')
     processed = text.strip('\n')
     processed = re.sub(r'&', ' and ', processed)
     # processed = re.sub(r'/', ' and ', processed)
