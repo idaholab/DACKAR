@@ -9,6 +9,7 @@ from pathlib import Path
 import logging
 import pandas as pd
 from spacy import displacy
+import spacy
 
 # import pipelines
 from ..pipelines.ConjectureEntity import ConjectureEntity
@@ -78,10 +79,12 @@ class WorkflowManager:
   """Workflow Manager
   """
 
-  def __init__(self, nlp, config):
+  def __init__(self, config):
     logger.info('Initialization')
     # validate input
     self._validate(config)
+    # load nlp model
+    nlp = spacy.load(config['params']['language_model'], exclude=[])
     self._nlp = nlp
     self._label = config['params']['ent']['label']
     self._entId = config['params']['ent']['id']

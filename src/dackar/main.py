@@ -44,9 +44,7 @@ def main():
   with open(textFile, 'r') as ft:
     doc = ft.read()
 
-  # load nlp model
-  nlp = spacy.load(inputDict['params']['language_model'], exclude=[])
-  module = WorkflowManager(nlp, inputDict)
+  module = WorkflowManager(inputDict)
   module.run(doc.lower())
   logger.info(' ... Complete!')
 
