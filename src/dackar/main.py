@@ -8,7 +8,6 @@ import os
 import argparse
 import logging
 import sys
-import spacy
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -37,15 +36,10 @@ def main():
   # read the TOML file
   cwd = os.getcwd()
   configFile = os.path.join(cwd, args.file_path)
-  inputDict = readToml(configFile)
+  configDict = readToml(configFile)
 
-  # text that needs to be processed. either load from file or direct assign
-  textFile = inputDict['nlp']['files']['text']
-  with open(textFile, 'r') as ft:
-    doc = ft.read()
-
-  module = WorkflowManager(inputDict)
-  module.run(doc.lower())
+  module = WorkflowManager(configDict)
+  module.run()
   logger.info(' ... Complete!')
 
 if __name__ == '__main__':

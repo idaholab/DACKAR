@@ -109,14 +109,20 @@ class WorkflowManager:
     else:
       raise IOError(f'Unrecognized analysis type {self._mode}')
 
+    # text that needs to be processed. either load from file or direct assign
+    textFile = config['nlp']['files']['text']
+    with open(textFile, 'r') as ft:
+      self._doc = ft.read()
 
-  def run(self, doc):
+
+  def run(self):
     """execute the knowledge extraction
 
     Args:
         doc (str): raw text data to process
     """
     logger.info('Execute workflow %s', self._mode)
+    doc = self._doc
     # pre-processing text
     if self._pp is not None:
         doc = self._pp(doc)
