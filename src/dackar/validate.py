@@ -245,11 +245,128 @@ nlp_schema = {
       "additionalProperties": False
     }
   },
-  "required": ["nlp"],
-  "additionalProperties": False
+  # "required": ["nlp"],
+  # "additionalProperties": False
 }
 
+neo4j_schema = {
+  "type": "object",
+  "description": "Schema for validating the Neo4j configuration TOML input.",
+  "properties": {
+    "neo4j": {
+      "type": "object",
+      "description": "Neo4j configuration settings.",
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri",
+          "description": "URI for connecting to the Neo4j database."
+        },
+        "pwd": {
+          "type": "string",
+          "description": "Password for connecting to the Neo4j database."
+        },
+        "config_file_path": {
+          "type": "string",
+          "description": "Path to the Neo4j configuration file."
+        },
+        "import_folder_path": {
+          "type": "string",
+          "description": "Path to the folder where import data files are located."
+        },
+        "reset": {
+          "type": "boolean",
+          "description": "Flag to indicate whether the database should be reset."
+        },
+        "node": {
+          "type": "array",
+          "description": "List of node configurations.",
+          "items": {
+            "type": "object",
+            "description": "Configuration for a single node.",
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Path to the CSV file containing node data."
+              },
+              "label": {
+                "type": "string",
+                "description": "Label for the node."
+              },
+              "attribute": {
+                "type": "object",
+                "description": "Mapping of node attributes.",
+                "additionalProperties": {
+                  "type": "string",
+                  "description": "Attribute mapping."
+                }
+              }
+            },
+            "required": ["file", "label", "attribute"]
+          }
+        },
+        "edge": {
+          "type": "array",
+          "description": "List of edge configurations.",
+          "items": {
+            "type": "object",
+            "description": "Configuration for a single edge.",
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Path to the CSV file containing edge data."
+              },
+              "source_label": {
+                "type": "string",
+                "description": "Label for the source node of the edge."
+              },
+              "target_label": {
+                "type": "string",
+                "description": "Label for the target node of the edge."
+              },
+              "label": {
+                "type": "string",
+                "description": "Label for the edge."
+              },
+              "label_attribute": {
+                "type": "object",
+                "description": "Mapping of edge label attributes.",
+                "additionalProperties": {
+                  "type": "string",
+                  "description": "Label attribute mapping."
+                },
+                "default": None
+              },
+              "source_attribute": {
+                "type": "object",
+                "description": "Mapping of source node attributes.",
+                "additionalProperties": {
+                  "type": "string",
+                  "description": "Source attribute mapping."
+                }
+              },
+              "target_attribute": {
+                "type": "object",
+                "description": "Mapping of target node attributes.",
+                "additionalProperties": {
+                  "type": "string",
+                  "description": "Target attribute mapping."
+                }
+              }
+            },
+            "required": ["file", "source_label", "target_label", "label", "source_attribute", "target_attribute"]
+          }
+        }
+      },
+      "required": ["uri", "pwd", "config_file_path", "import_folder_path", "node", "edge"]
+    }
+  },
+  # "required": ["neo4j"]
+}
 
+schema = {}
+schema.update(nlp_schema)
+schema['properties'].update(neo4j_schema['properties'])
 
 def validateToml(config):
   """Validate TOML input file
@@ -261,7 +378,7 @@ def validateToml(config):
       bool: True if valid
   """
   try:
-    jsonschema.validate(instance=config, schema=nlp_schema)
+    jsonschema.validate(instance=config, schema=schema)
     logger.info("TOML input file is valid.")
     return True
   except jsonschema.exceptions.ValidationError as e:

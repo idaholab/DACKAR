@@ -55,8 +55,15 @@ def readToml(filePath):
   with open(filePath, 'r') as file:
     path = pathlib.Path(filePath).parent
     dataDict = toml.load(file)
-    for f in dataDict['nlp']['files']:
-      dataDict['nlp']['files'][f] = os.path.join(path, dataDict['nlp']['files'][f])
+    if 'nlp' in dataDict:
+      for f in dataDict['nlp']['files']:
+        dataDict['nlp']['files'][f] = os.path.join(path, dataDict['nlp']['files'][f])
+    # if 'neo4j' in dataDict:
+    #   for node in dataDict['neo4j']['node']:
+    #     node['file'] = os.path.join(path, node['file'])
+    #   for edge in dataDict['neo4j']['edge']:
+    #     edge['file'] = os.path.join(path, edge['file'])
+
   return dataDict
 
 def writeToFile(filePath, content):

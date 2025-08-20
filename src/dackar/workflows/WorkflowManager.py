@@ -55,6 +55,10 @@ from ..validate import validateToml
 
 from ..contrib.lazy import lazy_loader
 
+# load library for neo4j
+from ..knowledge_graph.py2neo import Py2Neo
+from ..knowledge_graph.graph_utils import set_neo4j_import_folder
+
 
 NERMapping = {'temporal':'Temporal',
               'unit':'unit_entity',
@@ -127,7 +131,18 @@ class WorkflowManager:
       self._doc = ft.read()
 
   def initializeNeo4j(self):
-    pass
+    self._uri = self._neo4jConfig['uri']
+    self._pwd = self._neo4jConfig['pwd']
+    self._neoConf = self._neo4jConfig['config_file_path'] if 'config_file_path' in self._neo4jConfig else None
+    self._neoImport = self._neo4jConfig['import_folder_path'] if 'import_folder_path' in self._neo4jConfig else None
+    self._reset = self._neo4jConfig['reset'] if 'reset' in self._neo4jConfig else False
+    # change import folder to user specific location
+    if self._neoConf is not None and self._neoImport is not None:
+      set_neo4j_import_folder(self._neoConf, self._neoImport)
+    # create neo4j driver
+    self._py2neo = Py2Neo(uri=self._uri, user='neo4j', pwd=self._pwd)
+    if self._reset:
+      self._py2neo.reset()
 
   def runNLP(self):
     """execute the knowledge extraction
@@ -170,7 +185,18 @@ class WorkflowManager:
         self.visualize(doc)
 
   def runNeo4j(self):
-    pass
+    for node in self._neo4jConfig['node']:
+      self._py2neo.load_csv_for_nodes(node['file'], node['label'], node['attribute'])
+    for edge in self._neo4jConfig['edge']:
+      labelAttr = edge['label_attribute'] if 'label_attribute' in edge else None
+      self._py2neo.load_csv_for_relations(edge['file'],
+                                          edge['source_label'],
+                                          edge['source_attribute'],
+                                          edge['target_label'],
+                                          edge['target_attribute'],
+                                          edge['label'],
+                                          labelAttr)
+
 
   def run(self):
     if self._nlpConfig is not None:
