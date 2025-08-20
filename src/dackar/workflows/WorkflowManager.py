@@ -81,25 +81,37 @@ class WorkflowManager:
 
   def __init__(self, config):
     logger.info('Initialization')
+    self._nlpConfig = None
+    self._neo4jConfig = None
+    self._config = config
     # validate input
     self._validate(config)
+    if 'nlp' in config:
+      self._nlpConfig = config['nlp']
+      self.initializeNLP()
+    elif 'neo4j' in config:
+      self._neo4jConfig = config['neo4j']
+      self.initializeNeo4j()
+
+  def initializeNLP(self):
+    config = self._nlpConfig
     # load nlp model
-    nlp = spacy.load(config['nlp']['language_model'], exclude=[])
+    nlp = spacy.load(config['language_model'], exclude=[])
     self._nlp = nlp
-    self._label = config['nlp']['ent']['label']
-    self._entId = config['nlp']['ent']['id']
+    self._label = config['ent']['label']
+    self._entId = config['ent']['id']
     self._causalLabel = "causal"
     self._causalID = "causal"
     self._entPatternName = 'dackar_ent'
     self._causalPatternName = 'dackar_causal'
     self._patterns = self.generatePattern(config)
     self._causalPatterns = self.processCausalEnt()
-    self._config = config
+
     self._causalFlow = None
     # pre-processing
     self._pp = self.preprocessing()
     # Construct execution logic
-    self._mode = config['nlp']['analysis']['type']
+    self._mode = config['analysis']['type']
     if self._mode == 'ner':
       # add customized NER pipes
       self.ner()
@@ -110,12 +122,14 @@ class WorkflowManager:
       raise IOError(f'Unrecognized analysis type {self._mode}')
 
     # text that needs to be processed. either load from file or direct assign
-    textFile = config['nlp']['files']['text']
+    textFile = config['files']['text']
     with open(textFile, 'r') as ft:
       self._doc = ft.read()
 
+  def initializeNeo4j(self):
+    pass
 
-  def run(self):
+  def runNLP(self):
     """execute the knowledge extraction
 
     Args:
@@ -154,6 +168,16 @@ class WorkflowManager:
     if 'visualize' in self._config['nlp'] and 'ner' in self._config['nlp']['visualize']:
       if self._config['nlp']['visualize']['ner']:
         self.visualize(doc)
+
+  def runNeo4j(self):
+    pass
+
+  def run(self):
+    if self._nlpConfig is not None:
+      self.runNLP()
+    if self._neo4jConfig is not None:
+      self.runNeo4j()
+
 
   def write(self, data, fname, style='csv'):
     """Dump data
@@ -213,15 +237,15 @@ class WorkflowManager:
     """
     ents = []
     # Parse OPM model
-    if 'opm' in config['nlp']['files']:
-      opmFile = config['nlp']['files']['opm']
+    if 'opm' in config['files']:
+      opmFile = config['files']['opm']
       opmObj = OPMobject(opmFile)
       formList = opmObj.returnObjectList()
       # functionList = opmObj.returnProcessList()
       # attributeList = opmObj.returnAttributeList()
       ents.extend(formList)
-    if 'entity' in config['nlp']['files']:
-      entityFile = config['nlp']['files']['entity']
+    if 'entity' in config['files']:
+      entityFile = config['files']['entity']
       entityList = pd.read_csv(entityFile).values.ravel().tolist()
       ents.extend(entityList)
     ents = set(ents)
