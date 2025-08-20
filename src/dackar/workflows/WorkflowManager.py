@@ -165,8 +165,8 @@ class WorkflowManager:
 
       doc = self._causalFlow.getAttribute('doc')
 
-    if 'visualize' in self._config['nlp'] and 'ner' in self._config['nlp']['visualize']:
-      if self._config['nlp']['visualize']['ner']:
+    if 'visualize' in self._nlpConfig and 'ner' in self._nlpConfig['visualize']:
+      if self._nlpConfig['visualize']['ner']:
         self.visualize(doc)
 
   def runNeo4j(self):
@@ -177,7 +177,6 @@ class WorkflowManager:
       self.runNLP()
     if self._neo4jConfig is not None:
       self.runNeo4j()
-
 
   def write(self, data, fname, style='csv'):
     """Dump data
@@ -281,10 +280,10 @@ class WorkflowManager:
     logger.info('Set up text pre-processing.')
     ppList = []
     ppOptions = {}
-    if 'processing' not in self._config['nlp'] or len(self._config['nlp']['processing']) == 0:
+    if 'processing' not in self._nlpConfig or len(self._nlpConfig['processing']) == 0:
       return None
 
-    for pp, pval in self._config['nlp']['processing'].items():
+    for pp, pval in self._nlpConfig['processing'].items():
       if isinstance(pval, bool) and pval:
         ppList.append(pp)
       elif not isinstance(pval, bool):
@@ -305,8 +304,8 @@ class WorkflowManager:
         NER Object: Object to conduct NER
     """
     pipelines = []
-    if 'ner' in self._config['nlp']:
-      for pipe in self._config['nlp']['ner']:
+    if 'ner' in self._nlpConfig:
+      for pipe in self._nlpConfig['ner']:
         if pipe in NERMapping:
           pipelines.append(NERMapping[pipe])
         else:
@@ -325,8 +324,8 @@ class WorkflowManager:
     """
     method = None
     matcher = None
-    if 'causal' in self._config['nlp']:
-      method = self._config['nlp']['causal']['type'] if 'type' in self._config['nlp']['causal'] else None
+    if 'causal' in self._nlpConfig:
+      method = self._nlpConfig['causal']['type'] if 'type' in self._nlpConfig['causal'] else None
     if method is not None:
       if method == 'general':
         matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
