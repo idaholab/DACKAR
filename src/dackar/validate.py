@@ -266,14 +266,14 @@ neo4j_schema = {
           "type": "string",
           "description": "Password for connecting to the Neo4j database."
         },
-        "config_file_path": {
-          "type": "string",
-          "description": "Path to the Neo4j configuration file."
-        },
-        "import_folder_path": {
-          "type": "string",
-          "description": "Path to the folder where import data files are located."
-        },
+        # "config_file_path": {
+        #   "type": "string",
+        #   "description": "Path to the Neo4j configuration file."
+        # },
+        # "import_folder_path": {
+        #   "type": "string",
+        #   "description": "Path to the folder where import data files are located."
+        # },
         "reset": {
           "type": "boolean",
           "description": "Flag to indicate whether the database should be reset."
@@ -358,7 +358,7 @@ neo4j_schema = {
           }
         }
       },
-      "required": ["uri", "pwd", "config_file_path", "import_folder_path", "node", "edge"]
+      "required": ["uri", "pwd", "node", "edge"]
     }
   },
   # "required": ["neo4j"]
