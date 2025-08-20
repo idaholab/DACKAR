@@ -34,7 +34,7 @@ from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 from ..config import nlpConfig
 from ..text_processing.Preprocessing import Preprocessing
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('DACKAR')
 
 ## temporary add stream handler
 # ch = logging.StreamHandler()
@@ -206,6 +206,7 @@ class WorkflowBase(object):
     self._entID = entID
     self._causalKeywordID = causalKeywordID
     self._causalNames = ['cause', 'cause health status', 'causal keyword', 'effect', 'effect health status', 'sentence', 'conjecture']
+    self._relationNames = ['subject', 'relation', 'object']
     self._extractedCausals = [] # list of tuples, each tuple represents one causal-effect, i.e., (cause, cause health status, cause keyword, effect, effect health status, sentence)
     self._causalSentsNoEnts = []
     self._rawCausalList = []
@@ -215,6 +216,8 @@ class WorkflowBase(object):
     self._screen = False
     self.dataframeRelations = None
     self.dataframeEntities = None
+    self._causalRelation = None
+    self._causalRelationGeneral = None
 
     self._textProcess = self.textProcess()
 
@@ -229,9 +232,23 @@ class WorkflowBase(object):
     self._rawCausalList = []
     self._causalSentsOneEnt = []
     self._entHS = None
+    self._entStatus = None
     self._doc = None
     self.dataframeRelations = None
     self.dataframeEntities = None
+    self._causalRelation = None
+    self._causalRelationGeneral = None
+
+  def getAttribute(self, name):
+    """Get self attribute data
+
+    Args:
+        name (str): name of protected variable
+
+    Returns:
+        pandas.DataFrame: attribute data
+    """
+    return getattr(self, '_'+name)
 
   def textProcess(self):
     """

@@ -41,7 +41,7 @@ and ``jupyterlab`` is used to execute notebook examples under ``./examples/`` fo
 
 ## Test
 
-### Test functions with ```__pytest__```
+### Test functions with ```pytest```
 
 - Run the following command in your command line to install pytest:
 

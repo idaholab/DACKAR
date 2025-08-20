@@ -42,8 +42,8 @@ class EmergentActivity(object):
     self.name = 'EmergentActivity'
     # work order identification should always before other identification
     # This is because when spans overlap, the (first) longest span is preferred over shorter spans.
-    woPattern = [[{"LOWER": "wo"}, {"IS_PUNCT": True, "OP":"*"}, {"IS_DIGIT": True}], [{"TEXT":{"REGEX":"(?<=wo)\d+"}}]]
-    idPattern = [[{"TEXT":{"REGEX":"(?=\S*[a-zA-Z])(?=\S*[0-9])"}}]]
+    woPattern = [[{"LOWER": "wo"}, {"IS_PUNCT": True, "OP":"*"}, {"IS_DIGIT": True}], [{"TEXT":{"REGEX":r"(?<=wo)\d+"}}]]
+    idPattern = [[{"TEXT":{"REGEX":r"(?=\S*[a-zA-Z])(?=\S*[0-9])"}}]]
     # idPattern = [[{"TEXT":{"REGEX":"^(?=.*\b(?=\S*[a-zA-Z])(?=\S*[0-9]))"}}]]
 
     self.matcher = SimpleEntityMatcher(nlp, label='WO', patterns=woPattern)
