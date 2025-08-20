@@ -40,7 +40,7 @@ def main():
   inputDict = readToml(configFile)
 
   # text that needs to be processed. either load from file or direct assign
-  textFile = inputDict['files']['text']
+  textFile = inputDict['nlp']['files']['text']
   with open(textFile, 'r') as ft:
     doc = ft.read()
 

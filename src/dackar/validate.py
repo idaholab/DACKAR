@@ -5,245 +5,251 @@ import copy
 
 logger = logging.getLogger('DACKAR.validate')
 
-schema = {
+nlp_schema = {
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "description": "",
   "properties": {
-    "params": {
+    "nlp": {
       "type": "object",
-      "description": "",
+      "description": "NLP configuration settings",
       "properties": {
         "language_model": {
           "type": "string",
-          "description": ""
+          "description": "Language model to be used"
         },
         "logger": {
           "type": "string",
-          "description": ""
+          "description": "Logger path"
         },
         "ent": {
           "type": "object",
-          "description": "",
+          "description": "Entity recognition settings",
           "properties": {
             "label": {
               "type": "string",
-              "description": ""
+              "description": "Entity label"
             },
             "id": {
               "type": "string",
-              "description": ""
+              "description": "Entity ID"
             }
           },
-          "required": ["label", "id"]
-        }
-      },
-      "required": ["language_model", "ent"]
-    },
-    "files": {
-      "type": "object",
-      "description": "",
-      "properties": {
-        "text": {
-          "type": "string",
-          "description": ""
+          "required": ["label", "id"],
+          "additionalProperties": False
         },
-        "entity": {
-          "type": "string",
-          "description": ""
-        },
-        "opm": {
-          "type": "string",
-          "description": ""
-        }
-      },
-      "required": ["text", "entity", "opm"]
-    },
-    "processing": {
-      "type": "object",
-      "description": "",
-      "properties": {
-        "normalize": {
+        "files": {
           "type": "object",
-          "description": "",
+          "description": "File paths for input data",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "Path to text data file"
+            },
+            "entity": {
+              "type": "string",
+              "description": "Path to entity data file"
+            },
+            "opm": {
+              "type": "string",
+              "description": "Path to OPM model file"
+            }
+          },
+          "required": ["text", "entity", "opm"],
+          "additionalProperties": False
+        },
+        "processing": {
+          "type": "object",
+          "description": "Text processing settings",
           "properties": {
             "bullet_points": {
               "type": "boolean",
-              "description": ""
+              "description": "Normalize bullet points"
             },
             "hyphenated_words": {
               "type": "boolean",
-              "description": ""
+              "description": "Normalize hyphenated words"
             },
             "quotation_marks": {
               "type": "boolean",
-              "description": ""
+              "description": "Normalize quotation marks"
             },
             "whitespace": {
               "type": "boolean",
-              "description": ""
+              "description": "Normalize whitespace"
             },
             "numerize": {
               "type": "boolean",
-              "description": ""
-            }
-          }
-        },
-        "remove": {
-          "type": "object",
-          "description": "",
-          "properties": {
+              "description": "Convert numbers to digits"
+            },
             "brackets": {
               "type": "boolean",
-              "description": ""
+              "description": "Remove brackets"
             },
             "html_tags": {
               "type": "boolean",
-              "description": ""
+              "description": "Remove HTML tags"
             },
             "punctuation": {
               "type": "array",
-              "description": "",
+              "description": "List of punctuation marks to remove",
               "items": {
-                "type": "string",
-                "description": ""
+                "type": "string"
               }
-            }
-          }
-        },
-        "replace": {
-          "type": "object",
-          "description": "",
-          "properties": {
+            },
             "currency_symbols": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace currency symbols"
             },
             "emails": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace email addresses"
             },
             "emojis": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace emojis"
             },
             "hashtags": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace hashtags"
             },
             "numbers": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace numbers"
             },
             "phone_numbers": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace phone numbers"
             },
             "urls": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace URLs"
             },
             "user_handles": {
               "type": "boolean",
-              "description": ""
+              "description": "Replace user handles"
             }
+          },
+          "additionalProperties": False
+        },
+        "ner": {
+          "type": "object",
+          "description": "NER (Named Entity Recognition) pipeline settings",
+          "properties": {
+            "unit": {
+              "type": "boolean",
+              "description": "Enable unit NER pipeline"
+            },
+            "temporal_relation": {
+              "type": "boolean",
+              "description": "Enable temporal relation NER pipeline"
+            },
+            "temporal": {
+              "type": "boolean",
+              "description": "Enable temporal NER pipeline"
+            },
+            "temporal_attribute": {
+              "type": "boolean",
+              "description": "Enable temporal attribute NER pipeline"
+            },
+            "location": {
+              "type": "boolean",
+              "description": "Enable location NER pipeline"
+            },
+            "emergent_activity": {
+              "type": "boolean",
+              "description": "Enable emergent activity NER pipeline"
+            },
+            "conjecture": {
+              "type": "boolean",
+              "description": "Enable conjecture NER pipeline"
+            }
+          },
+          "additionalProperties": False
+        },
+        "causal": {
+          "type": "object",
+          "description": "Causal analysis settings",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Type of causal analysis",
+              "enum": ["general", "wo", "osl"]
+            }
+          },
+          "additionalProperties": False
+        },
+        "outputs": {
+          "type": "object",
+          "description": "Output settings",
+          "properties": {
+            "csv": {
+              "type": "boolean",
+              "description": "Output results to CSV"
+            },
+            "visualize": {
+              "type": "boolean",
+              "description": "Enable visualization of results"
+            }
+          },
+          "additionalProperties": False
+        },
+        "analysis": {
+          "type": "object",
+          "description": "Analysis type settings",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Type of analysis to perform",
+              "enum": ["ner", "causal"]
+            }
+          },
+          "required": ["type"],
+          "additionalProperties": False
+        }
+      },
+      "required": ["language_model", "ent", "files", "analysis"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "analysis": {
+                "properties": {
+                  "type": {
+                    "const": "ner"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": ["ner"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "analysis": {
+                "properties": {
+                  "type": {
+                    "const": "causal"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": ["causal"]
           }
         }
-      }
-    },
-    "visualize": {
-      "type": "object",
-      "description": "",
-      "properties": {
-        "ner": {
-        "type": "boolean",
-        "description": ""
-        }
-      }
-    },
-    "outputs": {
-      "type": "object",
-      "description": "",
-      "properties": {
-        "csv": {
-          "type": "boolean",
-          "description": ""
-        }
-      },
-      "required": ["csv"]
-    },
-
-    "analysis": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["ner", "causal", "similarity", "anomaly", "knowledge graph"],
-          "description": "Type of analysis. Options: 'ner' (named entity recognition), 'causal' (rule based causal analysis), 'similarity', 'anomaly', 'knowledge graph'."
-        }
-      },
-      "required": ["type"]
-    },
-
+      ],
+      "additionalProperties": False
+    }
   },
-  "required": ["params", "files", "analysis"]
+  "required": ["nlp"],
+  "additionalProperties": False
 }
 
-ner_schema = copy.deepcopy(schema)
-ner = {"ner": {
-      "type": "object",
-      "description": "",
-      "properties": {
-        "unit": {
-          "type": "boolean",
-          "description": ""
-        },
-        "temporal_relation": {
-          "type": "boolean",
-          "description": ""
-        },
-        "temporal": {
-          "type": "boolean",
-          "description": ""
-        },
-        "temporal_attribute": {
-          "type": "boolean",
-          "description": ""
-        },
-        "location": {
-          "type": "boolean",
-          "description": ""
-        },
-        "emergent_activity": {
-          "type": "boolean",
-          "description": ""
-        },
-        "conjecture": {
-          "type": "boolean",
-          "description": ""
-        }
-      }
-    }
-  }
-ner_schema["properties"].update(ner)
-ner_schema["required"].append("ner")
 
-causal_schema = copy.deepcopy(schema)
-causal = {
-      "causal": {
-      "type": "object",
-      "description": "",
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["general", "wo", "osl"],
-          "description": ""
-        }
-      },
-      "required": ["type"]
-    }
-}
-causal_schema["properties"].update(causal)
-causal_schema["required"].append("causal")
 
 def validateToml(config):
   """Validate TOML input file
@@ -255,12 +261,7 @@ def validateToml(config):
       bool: True if valid
   """
   try:
-    if config['analysis']['type'] == 'ner':
-      jsonschema.validate(instance=config, schema=ner_schema)
-    elif config['analysis']['type'] == 'causal':
-      jsonschema.validate(instance=config, schema=causal_schema)
-    else:
-      raise IOError(f"Unrecognized analysis type {config['analysis']['type']}")
+    jsonschema.validate(instance=config, schema=nlp_schema)
     logger.info("TOML input file is valid.")
     return True
   except jsonschema.exceptions.ValidationError as e:

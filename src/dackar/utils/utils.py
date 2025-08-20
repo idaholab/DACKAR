@@ -55,8 +55,8 @@ def readToml(filePath):
   with open(filePath, 'r') as file:
     path = pathlib.Path(filePath).parent
     dataDict = toml.load(file)
-    for f in dataDict['files']:
-      dataDict['files'][f] = os.path.join(path, dataDict['files'][f])
+    for f in dataDict['nlp']['files']:
+      dataDict['nlp']['files'][f] = os.path.join(path, dataDict['nlp']['files'][f])
   return dataDict
 
 def writeToFile(filePath, content):

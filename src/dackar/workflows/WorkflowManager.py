@@ -84,10 +84,10 @@ class WorkflowManager:
     # validate input
     self._validate(config)
     # load nlp model
-    nlp = spacy.load(config['params']['language_model'], exclude=[])
+    nlp = spacy.load(config['nlp']['language_model'], exclude=[])
     self._nlp = nlp
-    self._label = config['params']['ent']['label']
-    self._entId = config['params']['ent']['id']
+    self._label = config['nlp']['ent']['label']
+    self._entId = config['nlp']['ent']['id']
     self._causalLabel = "causal"
     self._causalID = "causal"
     self._entPatternName = 'dackar_ent'
@@ -99,7 +99,7 @@ class WorkflowManager:
     # pre-processing
     self._pp = self.preprocessing()
     # Construct execution logic
-    self._mode = config['analysis']['type']
+    self._mode = config['nlp']['analysis']['type']
     if self._mode == 'ner':
       # add customized NER pipes
       self.ner()
@@ -145,8 +145,8 @@ class WorkflowManager:
 
       doc = self._causalFlow.getAttribute('doc')
 
-    if 'visualize' in self._config and 'ner' in self._config['visualize']:
-      if self._config['visualize']['ner']:
+    if 'visualize' in self._config['nlp'] and 'ner' in self._config['nlp']['visualize']:
+      if self._config['nlp']['visualize']['ner']:
         self.visualize(doc)
 
   def write(self, data, fname, style='csv'):
@@ -207,15 +207,15 @@ class WorkflowManager:
     """
     ents = []
     # Parse OPM model
-    if 'opm' in config['files']:
-      opmFile = config['files']['opm']
+    if 'opm' in config['nlp']['files']:
+      opmFile = config['nlp']['files']['opm']
       opmObj = OPMobject(opmFile)
       formList = opmObj.returnObjectList()
       # functionList = opmObj.returnProcessList()
       # attributeList = opmObj.returnAttributeList()
       ents.extend(formList)
-    if 'entity' in config['files']:
-      entityFile = config['files']['entity']
+    if 'entity' in config['nlp']['files']:
+      entityFile = config['nlp']['files']['entity']
       entityList = pd.read_csv(entityFile).values.ravel().tolist()
       ents.extend(entityList)
     ents = set(ents)
@@ -251,19 +251,19 @@ class WorkflowManager:
     logger.info('Set up text pre-processing.')
     ppList = []
     ppOptions = {}
-    if 'processing' not in self._config or len(self._config['processing']) == 0:
+    if 'processing' not in self._config['nlp'] or len(self._config['nlp']['processing']) == 0:
       return None
-    for ptype in self._config['processing']:
-      for pp, pval in self._config['processing'][ptype].items():
-        if isinstance(pval, bool) and pval:
-          ppList.append(pp)
-        elif not isinstance(pval, bool):
-          ppList.append(pp)
-          if pp in ['punctuation', 'brackets']:
-            ppOptions.update({pp:{'only':pval}})
-          else:
-            raise IOError(f'Unrecognized option for {ptype} {pp}!')
-            # ppOptions.update({pp:pval})
+
+    for pp, pval in self._config['nlp']['processing'].items():
+      if isinstance(pval, bool) and pval:
+        ppList.append(pp)
+      elif not isinstance(pval, bool):
+        ppList.append(pp)
+        if pp in ['punctuation', 'brackets']:
+          ppOptions.update({pp:{'only':pval}})
+        else:
+          raise IOError(f'Unrecognized option for processing {pp}!')
+          # ppOptions.update({pp:pval})
     preprocess = Preprocessing(ppList, ppOptions)
     return preprocess
 
@@ -275,8 +275,8 @@ class WorkflowManager:
         NER Object: Object to conduct NER
     """
     pipelines = []
-    if 'ner' in self._config:
-      for pipe in self._config['ner']:
+    if 'ner' in self._config['nlp']:
+      for pipe in self._config['nlp']['ner']:
         if pipe in NERMapping:
           pipelines.append(NERMapping[pipe])
         else:
@@ -295,8 +295,8 @@ class WorkflowManager:
     """
     method = None
     matcher = None
-    if 'causal' in self._config:
-      method = self._config['causal']['type'] if 'type' in self._config['causal'] else None
+    if 'causal' in self._config['nlp']:
+      method = self._config['nlp']['causal']['type'] if 'type' in self._config['nlp']['causal'] else None
     if method is not None:
       if method == 'general':
         matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
