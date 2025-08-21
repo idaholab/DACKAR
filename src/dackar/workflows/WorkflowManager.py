@@ -46,9 +46,9 @@ from ..utils.nlp.nlp_utils import extractNER
 from ..utils.opm.OPLparser import OPMobject
 from ..utils.mbse.LMLparser import LMLobject
 
-from .RuleBasedMatcher import RuleBasedMatcher
-from .WorkOrderProcessing import WorkOrderProcessing
-from .OperatorShiftLogsProcessing import OperatorShiftLogs
+from ..causal.RuleBasedMatcher import RuleBasedMatcher
+from ..causal.WorkOrderProcessing import WorkOrderProcessing
+from ..causal.OperatorShiftLogsProcessing import OperatorShiftLogs
 from .. import config as defaultConfig
 
 from ..validate import validateToml

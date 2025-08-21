@@ -1,13 +1,13 @@
-from dackar.workflows.RuleBasedMatcher import RuleBasedMatcher
-from dackar.workflows.OperatorShiftLogsProcessing import OperatorShiftLogs
-from dackar.workflows.WorkOrderProcessing import WorkOrderProcessing
+from dackar.causal.RuleBasedMatcher import RuleBasedMatcher
+from dackar.causal.OperatorShiftLogsProcessing import OperatorShiftLogs
+from dackar.causal.WorkOrderProcessing import WorkOrderProcessing
 from dackar.config import nlpConfig
 from dackar.utils.nlp.nlp_utils import generatePatternList
 import spacy
 import pandas as pd
 
 
-class TestWorkFlows:
+class TestCausal:
 
   nlp = spacy.load("en_core_web_lg", exclude=[])
   entId = 'test'

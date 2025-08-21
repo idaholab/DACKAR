@@ -13,7 +13,7 @@ from spacy.tokens import Span
 from ..text_processing.Preprocessing import Preprocessing
 from ..utils.utils import getOnlyWords, getShortAcronym
 from ..config import nlpConfig
-from .WorkflowBase import WorkflowBase
+from .CausalBase import CausalBase
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ if not Token.has_extension('alias'):
   Token.set_extension("alias", default=None)
 
 
-class WorkOrderProcessing(WorkflowBase):
+class WorkOrderProcessing(CausalBase):
   """
     Class to process CWS work order dataset
   """
@@ -207,70 +207,3 @@ class WorkOrderProcessing(WorkflowBase):
             # if the entity not among subj and obj, it may not need to report it
             pass
 
-  def extractRelDep(self, matchedSents):
-    """
-
-      Args:
-
-        matchedSents: list, the list of matched sentences
-
-      Returns:
-
-        (subject tuple, predicate, object tuple): generator, the extracted causal relation
-    """
-    subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
-    objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
-    for sent in matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
-      if len(ents) <= 1:
-        continue
-      root = sent.root
-      allRelPairs = []
-      subjEnt = []
-      subjConjEnt = []
-      objEnt = []
-      objConjEnt = []
-
-      for ent in ents:
-        entRoot = ent.root
-        if ent._.alias is not None:
-          text = ent._.alias
-        else:
-          text = ent.text
-        # entity at the beginning of sentence
-        if ent.start == sent.start:
-          subjEnt.append(text)
-        elif entRoot.dep_ in ['conj'] and entRoot.i < root.i:
-          subjConjEnt.append(text)
-        elif entRoot.dep_ in subjList:
-          subjEnt.append(text)
-        # elif entRoot.dep_ in ['obj', 'dobj']: # mainly for short sentence or phrase
-        elif entRoot.dep_ in objList:
-          objEnt.append(text)
-        elif entRoot.i > root.i and entRoot.dep_ in ['conj']:
-          objConjEnt.append(text)
-      # subj
-      for subj in subjEnt:
-        for subjConj in subjConjEnt:
-          allRelPairs.append([subj, 'conj', subjConj])
-        for obj in objEnt:
-          allRelPairs.append([subj, root.text, obj])
-        for objConj in objConjEnt:
-          allRelPairs.append([subj, root.text, objConj])
-      # subjconj
-      for subjConj in subjConjEnt:
-        for obj in objEnt:
-          allRelPairs.append([subjConj, root.text, obj])
-        for objConj in objConjEnt:
-          allRelPairs.append([subjConj, root.text, objConj])
-      # obj
-      for obj in objEnt:
-        for objConj in objConjEnt:
-          allRelPairs.append([obj, 'conj', objConj])
-
-      # handle specific case
-      if len(allRelPairs) == 0:
-        if len(ents) == 2 and ents[0].root.i < root.i and ents[1].root.i > root.i:
-          allRelPairs.append([ents[0].text, root.text, ents[1].text])
-
-      self._allRelPairs += allRelPairs

@@ -13,11 +13,11 @@ from spacy.tokens import Span
 from collections import deque
 
 from ..config import nlpConfig
-from .WorkflowBase import WorkflowBase
+from .CausalBase import CausalBase
 
 logger = logging.getLogger('DACKAR.Causal')
 
-class RuleBasedMatcher(WorkflowBase):
+class RuleBasedMatcher(CausalBase):
   """
     Rule Based Matcher Class
   """
@@ -434,7 +434,7 @@ class RuleBasedMatcher(WorkflowBase):
         #   return self.findRightObj(nbor, deps=['pobj'])
         return child
       elif child.dep_ == 'compound' and \
-         child.head.dep_ in deps: # check if contained in compound
+        child.head.dep_ in deps: # check if contained in compound
         return child
       toVisit.extend(list(child.children))
     return None
