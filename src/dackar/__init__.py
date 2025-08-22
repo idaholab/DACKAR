@@ -1,11 +1,11 @@
 # Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
-__version__ = "0.1.dev"
+__version__ = "1.0.dev"
 
 import logging
 
 # setup imports here
 # import workflows
-from dackar.workflows.RuleBasedMatcher import RuleBasedMatcher
+from dackar.causal.RuleBasedMatcher import RuleBasedMatcher
 # import pipelines
 from dackar.pipelines.ConjectureEntity import ConjectureEntity
 from dackar.pipelines.PhraseEntityMatcher import PhraseEntityMatcher
