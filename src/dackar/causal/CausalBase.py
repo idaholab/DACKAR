@@ -218,7 +218,8 @@ class CausalBase(object):
     self.dataframeEntities = None
     self._causalRelation = None
     self._causalRelationGeneral = None
-
+    self._relationGeneral = None
+    self._allRelPairs = []
     self._textProcess = self.textProcess()
 
   def reset(self):
@@ -238,6 +239,8 @@ class CausalBase(object):
     self.dataframeEntities = None
     self._causalRelation = None
     self._causalRelationGeneral = None
+    self._relationGeneral = None
+    self._allRelPairs = []
 
   def getAttribute(self, name):
     """Get self attribute data

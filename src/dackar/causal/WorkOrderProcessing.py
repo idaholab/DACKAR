@@ -59,14 +59,12 @@ class WorkOrderProcessing(CausalBase):
         None
     """
     super().__init__(nlp, entID, causalKeywordID='causal', *args, **kwargs)
-    self._allRelPairs = []
 
   def reset(self):
     """
       Reset rule-based matcher
     """
     super().reset()
-    self._allRelPairs = []
     self._entStatus = None
 
   def addKeywords(self, keywords, ktype):
@@ -122,13 +120,13 @@ class WorkOrderProcessing(CausalBase):
     logger.info('End of health status extraction!')
 
     # Extract entity relations
-    logger.info('Start to extract causal relation')
+    logger.info('Start to extract general entity relation')
     self.extractRelDep(self._matchedSents)
-    self._causalRelationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+    self._relationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
 
     if 'output_relation_file' in nlpConfig['files']:
-      self._causalRelationGeneral.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
-    logger.info('End of causal relation extraction!')
+      self._relationGeneral.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    logger.info('End of general entity relation extraction!')
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
     """

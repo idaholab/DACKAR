@@ -71,8 +71,6 @@ class OperatorShiftLogs(CausalBase):
     super().__init__(nlp, entID, causalKeywordID, *args, **kwargs)
     if not nlp.has_pipe('mergeEntitiesWithSameID'):
       self.nlp.add_pipe('mergeEntitiesWithSameID', after='aliasResolver')
-
-    self._allRelPairs = []
     self._subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
     self._objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
     self._entInfoNames = ['entity', 'label', 'status', 'amod', 'action', 'dep', 'alias', 'negation', 'conjecture', 'sentence']
@@ -82,7 +80,6 @@ class OperatorShiftLogs(CausalBase):
       Reset rule-based matcher
     """
     super().reset()
-    self._allRelPairs = []
     self._entInfoNames = None
 
   def textProcess(self):
@@ -143,16 +140,16 @@ class OperatorShiftLogs(CausalBase):
       self._entStatus = pd.DataFrame(entInfo, columns=self._entInfoNames)
 
     # Extract entity relations
-    logger.info('Start to extract entity relations')
+    logger.info('Start to extract general entity relations')
     self.extractRelDep(self._matchedSents)
     # dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
     # dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
 
     if len(self._allRelPairs) > 0:
-      self._causalRelationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+      self._relationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
       if self._screen:
-        print(self._causalRelationGeneral)
-    logger.info('End of entity relation extraction!')
+        print(self._relationGeneral)
+    logger.info('End of general entity relation extraction!')
 
     if self._causalKeywordID in self._entityLabels:
       # # Extract entity causal relations

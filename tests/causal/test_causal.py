@@ -74,7 +74,7 @@ class TestCausal:
     matcher = self.get_matcher(method='wo')
     matcher(self.doc)
     df = matcher.getAttribute('entStatus')
-    dfCausal = matcher.getAttribute('causalRelationGeneral')
+    dfCausal = matcher.getAttribute('relationGeneral')
     print(dfCausal)
     assert df['entity'].tolist() == ['pump bearings']
     assert df['label'].tolist() == ['test_label']
@@ -87,7 +87,7 @@ class TestCausal:
     matcher = self.get_matcher(method='osl')
     matcher(self.doc)
     df = matcher.getAttribute('entStatus')
-    dfCausal = matcher.getAttribute('causalRelationGeneral')
+    dfCausal = matcher.getAttribute('relationGeneral')
     print(dfCausal)
     assert df['entity'].tolist() == ['pump bearings', 'shaft']
     assert df['label'].tolist() == ['test_label', 'test_label']

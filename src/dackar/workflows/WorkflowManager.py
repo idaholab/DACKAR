@@ -176,11 +176,11 @@ class WorkflowManager:
         self.write(entStatus, 'causal_ner_status.csv', style='csv')
       # output causal data
       causalRelation = self._causalFlow.getAttribute('causalRelation')
-      causalRelationGeneral = self._causalFlow.getAttribute('causalRelationGeneral')
+      relationGeneral = self._causalFlow.getAttribute('relationGeneral')
       if causalRelation is not None and len(causalRelation) != 0:
         self.write(causalRelation, 'causal_relation.csv', style='csv')
-      if causalRelationGeneral is not None and len(causalRelationGeneral) != 0:
-        self.write(causalRelationGeneral, 'causal_relation_general.csv', style='csv')
+      if relationGeneral is not None and len(relationGeneral) != 0:
+        self.write(relationGeneral, 'relation_general.csv', style='csv')
 
       doc = self._causalFlow.getAttribute('doc')
 

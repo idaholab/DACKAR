@@ -91,7 +91,7 @@ class RuleBasedMatcher(CausalBase):
     logger.info('End of health status extraction!')
     ## causal relation
     logger.info('Start to extract causal relation using OPM model information')
-    self.extractRelDep(self._matchedSents)
+    self.extractCausalRelDep(self._matchedSents)
     dfCausals = pd.DataFrame(self._extractedCausals, columns=self._causalNames)
     self._causalRelation = dfCausals
     dfCausals.to_csv(nlpConfig['files']['output_causal_effect_file'], columns=self._causalNames)
@@ -101,7 +101,16 @@ class RuleBasedMatcher(CausalBase):
     # print(*self.extract(self._matchedSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[]), sep='\n')
     # logger.info('End of causal relation extraction using general extraction method!')
 
-    # collect general cause effect info
+    # Extract general entity relations
+    logger.info('Start to extract general entity relations')
+    self.extractRelDep(self._matchedSents)
+    if len(self._allRelPairs) > 0:
+      self._relationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+      if self._screen:
+        print(self._relationGeneral)
+    logger.info('End of general entity relation extraction!')
+
+    # collect general cause effect info in (subj, causalKeywords, obj)
     logger.info('Start to use general extraction method to extract causal relation')
     matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
     extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
@@ -490,9 +499,9 @@ class RuleBasedMatcher(CausalBase):
           return ent
     return ent
 
-  def extractRelDep(self, matchedSents):
+  def extractCausalRelDep(self, matchedSents):
     """
-
+      Extract causal Relation between entities
       Args:
 
         matchedSents: list, the list of matched sentences
