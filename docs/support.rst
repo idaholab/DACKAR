@@ -2,8 +2,8 @@
 Support
 =======
 
-The easiest way to get help with the project is to open an issue on GitHub at:
-_Github: https://github.com/idaholab/DACKAR/issues
+The easiest way to get help with the project is to open an issue on `GitHub`_ .
+.. _Github: https://github.com/idaholab/DACKAR/issues/
 
 Developers:
 -----------
