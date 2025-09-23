@@ -9,6 +9,9 @@ Created on February, 2024
 # External Imports
 import pandas as pd
 import logging
+import networkx as nx 
+import matplotlib.pyplot as plt
+import os
 
 logger = logging.getLogger("my logger")
 c_handler = logging.StreamHandler()
@@ -19,7 +22,7 @@ class customMBSEobject(object):
     """
         Class designed to process the a custom MBSE model from file.
     """
-    def __init__(self, nodesFilename, edgesFilename):
+    def __init__(self, nodesFilename, edgesFilename, path=None):
         """
         Initialization method for the custom MBSE model class
 
@@ -39,18 +42,28 @@ class customMBSEobject(object):
         self.allowedNodeTypes = ['entity']
         self.allowedEdgeTypes = ['link','composition','support'] # to be developed: 'opm_instance'
 
-        self.allowedNodeCols = ['label','ID','type']
+        self.allowedNodeCols   = ['label','ID','type']
         self.allowed_edge_cols = ['sourceNodeId','targetNodeId','type','medium']
 
         self.parseFiles()
         self.checkNodes()
         self.checkEdges()
 
-        nodesFileSplit =  self.nodesFilename.split('.')
+        self.path = path
+
+        nodesFileName = os.path.basename(self.nodesFilename) 
+        nodesFileSplit = nodesFileName.split('.')
         nodesFileKg = nodesFileSplit[0] + '_kg.' + nodesFileSplit[1]
 
-        edgesFileSplit =  self.edgesFilename.split('.')
+        edgesFileName = os.path.basename(self.edgesFilename) 
+        edgesFileSplit = edgesFileName.split('.')
         edgesFileKg = edgesFileSplit[0] + '_kg.' + edgesFileSplit[1]
+
+        if self.path is not None:
+            full_path = os.path.join(os.getcwd(), path)
+            os.makedirs(full_path, exist_ok=True)
+            nodesFileKg = os.path.join(full_path, nodesFileKg)
+            edgesFileKg = os.path.join(full_path, edgesFileKg)
 
         self.printOnFiles(nodesFileKg,edgesFileKg)
     
@@ -256,4 +269,63 @@ class customMBSEobject(object):
         self.nodesDf.to_csv(nodes_file, index=False)
         self.edgesDf.to_csv(edges_file, index=False)
 
+    def plot(self, fileID):
+        """
+        Method designed to plot on file the obtained graph
 
+        Args:
+
+            fileID, string, name of the file
+
+        Returns:
+
+            None
+        """  
+        G = nx.DiGraph()
+
+        for index, row in self.edgesDf.iterrows():
+            if row['type'] == 'link':
+                G.add_edge(row['sourceNodeId'],	row['targetNodeId'], type='link')
+            else: 
+                G.add_edge(row['sourceNodeId'],	row['targetNodeId'], type='support')
+
+        edgeTypeColors = {'link': 'blue', 'support': 'green'}
+
+        edgeColors = []
+        for u, v, data in G.edges(data=True):
+            edgeType = data.get('type')
+            edgeColors.append(edgeTypeColors.get(edgeType, 'black'))
+
+        pos = nx.spring_layout(G) # Or any other layout algorithm
+        nx.draw(G, pos, with_labels=True, edge_color=edgeColors, node_color='lightblue', font_color='black')
+
+        if self.path is not None:
+            full_path = os.path.join(os.getcwd(), self.path)
+            os.makedirs(full_path, exist_ok=True)
+            fileName = 'fileID' + str('.png')
+            fileName = os.path.join(full_path, fileName)
+        else: 
+            fileName = 'fileID' + str('.png')
+        plt.savefig(fileName)
+
+    def printEquipmentID(self):
+        """
+        Method designed to print on file the list of IDs
+
+        Args:
+
+            None
+
+        Returns:
+
+            None
+        """  
+        
+        if self.path is not None:
+            full_path = os.path.join(os.getcwd(), self.path)
+            os.makedirs(full_path, exist_ok=True)
+            idFile = str(self.__class__.__name__) + "_ID.csv"
+            idFile = os.path.join(full_path, idFile)
+        else: 
+            idFile = str(self.__class__.__name__) + "_ID.csv"
+        self.nodesDf['ID'].to_csv(idFile, index=False)
