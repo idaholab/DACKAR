@@ -40,7 +40,7 @@ if not Token.has_extension('alias'):
   Token.set_extension("alias", default=None)
 
 
-class WorkOrderProcessing(CausalBase):
+class CausalPhrase(CausalBase):
   """
     Class to process CWS work order dataset
   """

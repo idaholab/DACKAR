@@ -17,7 +17,7 @@ from .CausalBase import CausalBase
 
 logger = logging.getLogger('DACKAR.Causal')
 
-class RuleBasedMatcher(CausalBase):
+class CausalSentence(CausalBase):
   """
     Rule Based Matcher Class
   """

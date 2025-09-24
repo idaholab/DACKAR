@@ -5,7 +5,7 @@ import logging
 
 # setup imports here
 # import workflows
-from dackar.causal.RuleBasedMatcher import RuleBasedMatcher
+from dackar.causal.CausalSentence import CausalSentence
 # import pipelines
 from dackar.pipelines.ConjectureEntity import ConjectureEntity
 from dackar.pipelines.PhraseEntityMatcher import PhraseEntityMatcher

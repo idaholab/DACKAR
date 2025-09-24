@@ -46,8 +46,8 @@ from ..utils.nlp.nlp_utils import extractNER
 from ..utils.opm.OPLparser import OPMobject
 from ..utils.mbse.LMLparser import LMLobject
 
-from ..causal.RuleBasedMatcher import RuleBasedMatcher
-from ..causal.WorkOrderProcessing import WorkOrderProcessing
+from ..causal.CausalSentence import CausalSentence
+from ..causal.CausalPhrase import CausalPhrase
 from ..causal.OperatorShiftLogsProcessing import OperatorShiftLogs
 from .. import config as defaultConfig
 
@@ -362,9 +362,9 @@ class WorkflowManager:
       method = self._nlpConfig['causal']['type'] if 'type' in self._nlpConfig['causal'] else None
     if method is not None:
       if method == 'general':
-        matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+        matcher = CausalSentence(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       elif method == 'wo':
-        matcher = WorkOrderProcessing(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+        matcher = CausalPhrase(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       elif method == 'osl':
         matcher = OperatorShiftLogs(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       else:
