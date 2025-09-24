@@ -1,6 +1,6 @@
-from dackar.causal.RuleBasedMatcher import RuleBasedMatcher
+from dackar.causal.CausalSentence import CausalSentence
 from dackar.causal.OperatorShiftLogsProcessing import OperatorShiftLogs
-from dackar.causal.WorkOrderProcessing import WorkOrderProcessing
+from dackar.causal.CausalPhrase import CausalPhrase
 from dackar.config import nlpConfig
 from dackar.utils.nlp.nlp_utils import generatePatternList
 import spacy
@@ -44,9 +44,9 @@ class TestCausal:
 
   def get_matcher(self, method):
     if method == 'general':
-      matcher = RuleBasedMatcher(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
+      matcher = CausalSentence(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
     elif method == 'wo':
-      matcher = WorkOrderProcessing(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
+      matcher = CausalPhrase(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
     elif method == 'osl':
       matcher = OperatorShiftLogs(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
     else:
