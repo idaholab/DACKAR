@@ -363,7 +363,7 @@ class WorkflowManager:
     if method is not None:
       if method == 'general':
         matcher = CausalSentence(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
-      elif method == 'wo':
+      elif method == 'phrase':
         matcher = CausalPhrase(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       elif method == 'osl':
         matcher = OperatorShiftLogs(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
