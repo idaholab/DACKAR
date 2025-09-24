@@ -42,7 +42,7 @@ if not Token.has_extension('alias'):
 
 class CausalPhrase(CausalBase):
   """
-    Class to process CWS work order dataset
+    Class to process short phrase dataset
   """
   def __init__(self, nlp, entID='SSC', causalKeywordID='causal',*args, **kwargs):
     """
