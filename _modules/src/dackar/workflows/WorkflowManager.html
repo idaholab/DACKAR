@@ -1,0 +1,549 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.workflows.WorkflowManager &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.workflows.WorkflowManager</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.workflows.WorkflowManager</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on August 1, 2025</span>
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">spacy</span><span class="w"> </span><span class="kn">import</span> <span class="n">displacy</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">spacy</span>
+
+<span class="c1"># import pipelines</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.ConjectureEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConjectureEntity</span>
+<span class="c1"># from ..pipelines.PhraseEntityMatcher import PhraseEntityMatcher</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.UnitEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">UnitEntity</span>
+<span class="c1"># from ..pipelines.SimpleEntityMatcher import SimpleEntityMatcher</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.pipelines.TemporalEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">Temporal</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.TemporalAttributeEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">TemporalAttributeEntity</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.TemporalRelationEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">TemporalRelationEntity</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.LocationEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">LocationEntity</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.EmergentActivityEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">EmergentActivity</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.GeneralEntity</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeneralEntity</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">normEntities</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">initCoref</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">aliasResolver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">anaphorCoref</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">anaphorEntCoref</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">expandEntities</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">mergePhrase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..pipelines.CustomPipelineComponents</span><span class="w"> </span><span class="kn">import</span> <span class="n">pysbdSentenceBoundaries</span>
+<span class="c1"># import text processing</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..text_processing.Preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Preprocessing</span>
+<span class="c1"># # import similarity</span>
+<span class="c1"># from ..similarity import simUtils</span>
+<span class="c1"># from ..similarity import synsetUtils</span>
+<span class="c1"># from ..similarity.SentenceSimilarity import SentenceSimilarity</span>
+
+<span class="c1"># import utils</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils.nlp.nlp_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">generatePatternList</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils.nlp.nlp_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">resetPipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils.nlp.nlp_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">extractNER</span>
+
+<span class="c1"># OPL parser to generate object and process lists</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils.opm.OPLparser</span><span class="w"> </span><span class="kn">import</span> <span class="n">OPMobject</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..utils.mbse.LMLparser</span><span class="w"> </span><span class="kn">import</span> <span class="n">LMLobject</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.RuleBasedMatcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">RuleBasedMatcher</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.WorkOrderProcessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorkOrderProcessing</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.OperatorShiftLogsProcessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">OperatorShiftLogs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..</span><span class="w"> </span><span class="kn">import</span> <span class="n">config</span> <span class="k">as</span> <span class="n">defaultConfig</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..validate</span><span class="w"> </span><span class="kn">import</span> <span class="n">validateToml</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..contrib.lazy</span><span class="w"> </span><span class="kn">import</span> <span class="n">lazy_loader</span>
+
+<span class="c1"># load library for neo4j</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..knowledge_graph.py2neo</span><span class="w"> </span><span class="kn">import</span> <span class="n">Py2Neo</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..knowledge_graph.graph_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_neo4j_import_folder</span>
+
+
+<div class="viewcode-block" id="NERMapping">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.NERMapping">[docs]</a>
+<span class="n">NERMapping</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;temporal&#39;</span><span class="p">:</span><span class="s1">&#39;Temporal&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;unit&#39;</span><span class="p">:</span><span class="s1">&#39;unit_entity&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;temporal_relation&#39;</span><span class="p">:</span><span class="s1">&#39;temporal_relation_entity&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;temporal_attribute&#39;</span><span class="p">:</span><span class="s1">&#39;temporal_attribute_entity&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;location&#39;</span><span class="p">:</span><span class="s1">&#39;location_entity&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;emergent_activity&#39;</span><span class="p">:</span><span class="s1">&#39;EmergentActivity&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;conjecture&#39;</span><span class="p">:</span><span class="s1">&#39;conjecture_entity&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;merge&#39;</span><span class="p">:</span><span class="s1">&#39;merge_entities&#39;</span>
+
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="customPipe">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.customPipe">[docs]</a>
+<span class="n">customPipe</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;norm&#39;</span><span class="p">:</span><span class="s1">&#39;normEntities&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;alias&#39;</span><span class="p">:</span><span class="s1">&#39;aliasResolver&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;expand&#39;</span><span class="p">:</span><span class="s1">&#39;expandEntities&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;merge&#39;</span><span class="p">:</span><span class="s1">&#39;mergePhrase&#39;</span><span class="p">,</span>
+              <span class="s1">&#39;sbd&#39;</span><span class="p">:</span><span class="s1">&#39;pysbdSentenceBoundaries&#39;</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s1">&#39;DACKAR.WorkflowManager&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="WorkflowManager">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">WorkflowManager</span><span class="p">:</span>
+<span class="w">  </span><span class="sd">&quot;&quot;&quot;Workflow Manager</span>
+<span class="sd">  &quot;&quot;&quot;</span>
+
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Initialization&#39;</span><span class="p">)</span>
+<div class="viewcode-block" id="WorkflowManager._nlpConfig">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager._nlpConfig">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="WorkflowManager._neo4jConfig">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager._neo4jConfig">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="WorkflowManager._config">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager._config">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_config</span> <span class="o">=</span> <span class="n">config</span></div>
+
+    <span class="c1"># validate input</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_validate</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s1">&#39;nlp&#39;</span> <span class="ow">in</span> <span class="n">config</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;nlp&#39;</span><span class="p">]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">initializeNLP</span><span class="p">()</span>
+    <span class="k">elif</span> <span class="s1">&#39;neo4j&#39;</span> <span class="ow">in</span> <span class="n">config</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;neo4j&#39;</span><span class="p">]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">initializeNeo4j</span><span class="p">()</span>
+
+<div class="viewcode-block" id="WorkflowManager.initializeNLP">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.initializeNLP">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">initializeNLP</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize NLP calculation</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span>
+    <span class="c1"># load nlp model</span>
+    <span class="n">nlp</span> <span class="o">=</span> <span class="n">spacy</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">config</span><span class="p">[</span><span class="s1">&#39;language_model&#39;</span><span class="p">],</span> <span class="n">exclude</span><span class="o">=</span><span class="p">[])</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span> <span class="o">=</span> <span class="n">nlp</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_label</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;ent&#39;</span><span class="p">][</span><span class="s1">&#39;label&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entId</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;ent&#39;</span><span class="p">][</span><span class="s1">&#39;id&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalLabel</span> <span class="o">=</span> <span class="s2">&quot;causal&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalID</span> <span class="o">=</span> <span class="s2">&quot;causal&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entPatternName</span> <span class="o">=</span> <span class="s1">&#39;dackar_ent&#39;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalPatternName</span> <span class="o">=</span> <span class="s1">&#39;dackar_causal&#39;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generatePattern</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalPatterns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">processCausalEnt</span><span class="p">()</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="c1"># pre-processing</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_pp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">preprocessing</span><span class="p">()</span>
+    <span class="c1"># Construct execution logic</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_mode</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;analysis&#39;</span><span class="p">][</span><span class="s1">&#39;type&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mode</span> <span class="o">==</span> <span class="s1">&#39;ner&#39;</span><span class="p">:</span>
+      <span class="c1"># add customized NER pipes</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">ner</span><span class="p">()</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mode</span> <span class="o">==</span> <span class="s1">&#39;causal&#39;</span><span class="p">:</span>
+      <span class="c1"># setup workflow</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">causal</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unrecognized analysis type </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_mode</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+    <span class="c1"># text that needs to be processed. either load from file or direct assign</span>
+    <span class="n">textFile</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;text&#39;</span><span class="p">]</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">textFile</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">ft</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_doc</span> <span class="o">=</span> <span class="n">ft</span><span class="o">.</span><span class="n">read</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.initializeNeo4j">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.initializeNeo4j">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">initializeNeo4j</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize NEO4j settings</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_uri</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span><span class="p">[</span><span class="s1">&#39;uri&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_pwd</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span><span class="p">[</span><span class="s1">&#39;pwd&#39;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_reset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span><span class="p">[</span><span class="s1">&#39;reset&#39;</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;reset&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span> <span class="k">else</span> <span class="kc">False</span>
+    <span class="c1"># # change import folder to user specific location</span>
+    <span class="c1"># self._neoConf = self._neo4jConfig[&#39;config_file_path&#39;] if &#39;config_file_path&#39; in self._neo4jConfig else None</span>
+    <span class="c1"># self._neoImport = self._neo4jConfig[&#39;import_folder_path&#39;] if &#39;import_folder_path&#39; in self._neo4jConfig else None</span>
+    <span class="c1"># if self._neoConf is not None and self._neoImport is not None:</span>
+    <span class="c1">#   set_neo4j_import_folder(self._neoConf, self._neoImport)</span>
+    <span class="c1"># create neo4j driver</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_py2neo</span> <span class="o">=</span> <span class="n">Py2Neo</span><span class="p">(</span><span class="n">uri</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_uri</span><span class="p">,</span> <span class="n">user</span><span class="o">=</span><span class="s1">&#39;neo4j&#39;</span><span class="p">,</span> <span class="n">pwd</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_pwd</span><span class="p">)</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_reset</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_py2neo</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.runNLP">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.runNLP">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">runNLP</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute the knowledge extraction</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        doc (str): raw text data to process</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Execute workflow </span><span class="si">%s</span><span class="s1">&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mode</span><span class="p">)</span>
+    <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_doc</span>
+    <span class="c1"># pre-processing text</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pp</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+    <span class="c1"># Logic for analysis</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mode</span> <span class="o">==</span> <span class="s1">&#39;ner&#39;</span><span class="p">:</span>
+      <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+      <span class="c1"># output data</span>
+      <span class="n">df</span> <span class="o">=</span> <span class="n">extractNER</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="s1">&#39;ner.csv&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;csv&#39;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_mode</span> <span class="o">==</span> <span class="s1">&#39;causal&#39;</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+      <span class="c1"># output entity data with status</span>
+      <span class="n">entHS</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s1">&#39;entHS&#39;</span><span class="p">)</span>
+      <span class="n">entStatus</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s1">&#39;entStatus&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">entHS</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">entHS</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">entHS</span><span class="p">,</span> <span class="s1">&#39;causal_ner_health_status.csv&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;csv&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">entStatus</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">entStatus</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">entStatus</span><span class="p">,</span> <span class="s1">&#39;causal_ner_status.csv&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;csv&#39;</span><span class="p">)</span>
+      <span class="c1"># output causal data</span>
+      <span class="n">causalRelation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s1">&#39;causalRelation&#39;</span><span class="p">)</span>
+      <span class="n">causalRelationGeneral</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s1">&#39;causalRelationGeneral&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">causalRelation</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">causalRelation</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">causalRelation</span><span class="p">,</span> <span class="s1">&#39;causal_relation.csv&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;csv&#39;</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">causalRelationGeneral</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">causalRelationGeneral</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">causalRelationGeneral</span><span class="p">,</span> <span class="s1">&#39;causal_relation_general.csv&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;csv&#39;</span><span class="p">)</span>
+
+      <span class="n">doc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalFlow</span><span class="o">.</span><span class="n">getAttribute</span><span class="p">(</span><span class="s1">&#39;doc&#39;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="s1">&#39;visualize&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span> <span class="ow">and</span> <span class="s1">&#39;ner&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">[</span><span class="s1">&#39;visualize&#39;</span><span class="p">]:</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">[</span><span class="s1">&#39;visualize&#39;</span><span class="p">][</span><span class="s1">&#39;ner&#39;</span><span class="p">]:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">visualize</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.runNeo4j">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.runNeo4j">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">runNeo4j</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load data into neo4j</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span><span class="p">[</span><span class="s1">&#39;node&#39;</span><span class="p">]:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_py2neo</span><span class="o">.</span><span class="n">load_csv_for_nodes</span><span class="p">(</span><span class="n">node</span><span class="p">[</span><span class="s1">&#39;file&#39;</span><span class="p">],</span> <span class="n">node</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">],</span> <span class="n">node</span><span class="p">[</span><span class="s1">&#39;attribute&#39;</span><span class="p">])</span>
+    <span class="k">for</span> <span class="n">edge</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span><span class="p">[</span><span class="s1">&#39;edge&#39;</span><span class="p">]:</span>
+      <span class="n">labelAttr</span> <span class="o">=</span> <span class="n">edge</span><span class="p">[</span><span class="s1">&#39;label_attribute&#39;</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;label_attribute&#39;</span> <span class="ow">in</span> <span class="n">edge</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_py2neo</span><span class="o">.</span><span class="n">load_csv_for_relations</span><span class="p">(</span><span class="n">edge</span><span class="p">[</span><span class="s1">&#39;file&#39;</span><span class="p">],</span>
+                                          <span class="n">edge</span><span class="p">[</span><span class="s1">&#39;source_label&#39;</span><span class="p">],</span>
+                                          <span class="n">edge</span><span class="p">[</span><span class="s1">&#39;source_attribute&#39;</span><span class="p">],</span>
+                                          <span class="n">edge</span><span class="p">[</span><span class="s1">&#39;target_label&#39;</span><span class="p">],</span>
+                                          <span class="n">edge</span><span class="p">[</span><span class="s1">&#39;target_attribute&#39;</span><span class="p">],</span>
+                                          <span class="n">edge</span><span class="p">[</span><span class="s1">&#39;label&#39;</span><span class="p">],</span>
+                                          <span class="n">labelAttr</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="WorkflowManager.run">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.run">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Execute the workflow</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">runNLP</span><span class="p">()</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_neo4jConfig</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">runNeo4j</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.write">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.write">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;csv&#39;</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dump data</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        data (pandas.DataFrame): output data to dump</span>
+<span class="sd">        fname (str): file name to save the data</span>
+<span class="sd">        style (str, optional): type of file. Defaults to &#39;csv&#39;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+      <span class="n">data</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">fname</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.visualize">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.visualize">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">visualize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;visual entities</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        doc (spacy.tokens.doc.Doc): the processed document using nlp pipelines</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">cwd</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+    <span class="n">svg</span> <span class="o">=</span> <span class="n">displacy</span><span class="o">.</span><span class="n">render</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;ent&#39;</span><span class="p">,</span> <span class="n">page</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">minify</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">outputPath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cwd</span><span class="p">,</span> <span class="s1">&#39;ent.svg&#39;</span><span class="p">))</span>
+    <span class="n">outputPath</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">svg</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="WorkflowManager.reset">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.reset">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">pass</span></div>
+
+
+  <span class="c1">############################################</span>
+  <span class="c1">#      Internal Functions</span>
+  <span class="c1">############################################</span>
+
+<div class="viewcode-block" id="WorkflowManager._validate">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager._validate">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">_validate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;validate dackar input file using JSON schema</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        config (dict): dictionary for dackar input</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        IOError: error out if not valid</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># validate</span>
+    <span class="n">validate</span> <span class="o">=</span> <span class="n">validateToml</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">validate</span><span class="p">:</span>
+      <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;TOML input file is invalid.&quot;</span><span class="p">)</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">&quot;TOML input file is invalid.&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.generatePattern">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.generatePattern">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">generatePattern</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate patterns using provided OPM and/or entity file</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        config (dict): input dictionary</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        list: list of patterns will be used by entity matcher</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ents</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="c1"># Parse OPM model</span>
+    <span class="k">if</span> <span class="s1">&#39;opm&#39;</span> <span class="ow">in</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">]:</span>
+      <span class="n">opmFile</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;opm&#39;</span><span class="p">]</span>
+      <span class="n">opmObj</span> <span class="o">=</span> <span class="n">OPMobject</span><span class="p">(</span><span class="n">opmFile</span><span class="p">)</span>
+      <span class="n">formList</span> <span class="o">=</span> <span class="n">opmObj</span><span class="o">.</span><span class="n">returnObjectList</span><span class="p">()</span>
+      <span class="c1"># functionList = opmObj.returnProcessList()</span>
+      <span class="c1"># attributeList = opmObj.returnAttributeList()</span>
+      <span class="n">ents</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">formList</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s1">&#39;entity&#39;</span> <span class="ow">in</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">]:</span>
+      <span class="n">entityFile</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;entity&#39;</span><span class="p">]</span>
+      <span class="n">entityList</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">entityFile</span><span class="p">)</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">ravel</span><span class="p">()</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+      <span class="n">ents</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">entityList</span><span class="p">)</span>
+    <span class="n">ents</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ents</span><span class="p">)</span>
+    <span class="c1"># convert opm formList into matcher patternsOPM</span>
+    <span class="n">patterns</span> <span class="o">=</span> <span class="n">generatePatternList</span><span class="p">(</span><span class="n">ents</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_label</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entId</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">patterns</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.processCausalEnt">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.processCausalEnt">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">processCausalEnt</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Parse causal keywords, and generate patterns for them</span>
+<span class="sd">    The patterns can be used to identify the causal relationships</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        list: list of patterns will be used by causal entity matcher</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">patternsCausal</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">causalFilename</span> <span class="o">=</span> <span class="n">defaultConfig</span><span class="o">.</span><span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;cause_effect_keywords_file&#39;</span><span class="p">]</span>
+    <span class="n">ds</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">causalFilename</span><span class="p">,</span> <span class="n">skipinitialspace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">ds</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+      <span class="n">cvars</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ds</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">())</span>
+      <span class="n">patternsCausal</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">generatePatternList</span><span class="p">(</span><span class="n">cvars</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalLabel</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalID</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">,</span> <span class="n">attr</span><span class="o">=</span><span class="s2">&quot;LEMMA&quot;</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">patternsCausal</span></div>
+
+
+<div class="viewcode-block" id="WorkflowManager.preprocessing">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.preprocessing">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">preprocessing</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;setup text pre-processing pipeline</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        IOError: if pipeline option is not available</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Preprocessing Object: Preprocessing pipeline</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Set up text pre-processing.&#39;</span><span class="p">)</span>
+    <span class="n">ppList</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">ppOptions</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="s1">&#39;processing&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">[</span><span class="s1">&#39;processing&#39;</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">for</span> <span class="n">pp</span><span class="p">,</span> <span class="n">pval</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">[</span><span class="s1">&#39;processing&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+      <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pval</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)</span> <span class="ow">and</span> <span class="n">pval</span><span class="p">:</span>
+        <span class="n">ppList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pp</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pval</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="n">ppList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pp</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pp</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;punctuation&#39;</span><span class="p">,</span> <span class="s1">&#39;brackets&#39;</span><span class="p">]:</span>
+          <span class="n">ppOptions</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">pp</span><span class="p">:{</span><span class="s1">&#39;only&#39;</span><span class="p">:</span><span class="n">pval</span><span class="p">}})</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unrecognized option for processing </span><span class="si">{</span><span class="n">pp</span><span class="si">}</span><span class="s1">!&#39;</span><span class="p">)</span>
+          <span class="c1"># ppOptions.update({pp:pval})</span>
+    <span class="n">preprocess</span> <span class="o">=</span> <span class="n">Preprocessing</span><span class="p">(</span><span class="n">ppList</span><span class="p">,</span> <span class="n">ppOptions</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">preprocess</span></div>
+
+
+
+<div class="viewcode-block" id="WorkflowManager.ner">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.ner">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">ner</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Set up NER pipelines</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        NER Object: Object to conduct NER</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pipelines</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="s1">&#39;ner&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">pipe</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">[</span><span class="s1">&#39;ner&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">pipe</span> <span class="ow">in</span> <span class="n">NERMapping</span><span class="p">:</span>
+          <span class="n">pipelines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">NERMapping</span><span class="p">[</span><span class="n">pipe</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unrecognized ner </span><span class="si">{</span><span class="n">pipe</span><span class="si">}</span><span class="s1">!&#39;</span><span class="p">)</span>
+      <span class="c1"># add aliasResolver</span>
+      <span class="n">pipelines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s1">&#39;aliasResolver&#39;</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span> <span class="o">=</span> <span class="n">resetPipeline</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">,</span> <span class="n">pipes</span><span class="o">=</span><span class="n">pipelines</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="o">.</span><span class="n">add_pipe</span><span class="p">(</span><span class="s2">&quot;general_entity&quot;</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;patterns&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="p">},</span> <span class="n">before</span><span class="o">=</span><span class="s1">&#39;ner&#39;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="WorkflowManager.causal">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkflowManager/index.html#src.dackar.workflows.WorkflowManager.WorkflowManager.causal">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">causal</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Set up causal analysis flow</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Workflow Object: Object to conduct causal analysis</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">method</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">matcher</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="s1">&#39;causal&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">:</span>
+      <span class="n">method</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">[</span><span class="s1">&#39;causal&#39;</span><span class="p">][</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="k">if</span> <span class="s1">&#39;type&#39;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nlpConfig</span><span class="p">[</span><span class="s1">&#39;causal&#39;</span><span class="p">]</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">method</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;general&#39;</span><span class="p">:</span>
+        <span class="n">matcher</span> <span class="o">=</span> <span class="n">RuleBasedMatcher</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entId</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalID</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;wo&#39;</span><span class="p">:</span>
+        <span class="n">matcher</span> <span class="o">=</span> <span class="n">WorkOrderProcessing</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entId</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalID</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">&#39;osl&#39;</span><span class="p">:</span>
+        <span class="n">matcher</span> <span class="o">=</span> <span class="n">OperatorShiftLogs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entId</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalID</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Unrecognized causal type </span><span class="si">{</span><span class="n">method</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+      <span class="n">matcher</span><span class="o">.</span><span class="n">addEntityPattern</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_entPatternName</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_patterns</span><span class="p">)</span>
+      <span class="n">matcher</span><span class="o">.</span><span class="n">addEntityPattern</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_causalPatternName</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalPatterns</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">matcher</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
