@@ -36,16 +36,21 @@ jobs:
       - name: Install DACKAR Required Libraries
         # Either fix scikit-learn==1.5 to allow quantulum3 to use the pretrained classifier or
         # Run "quantulum3-training -s" to retrain classifier
+
         run: |
           pwd
           conda create -n dackar_libs python=3.11
           conda init bash && source ~/.bashrc && conda activate dackar_libs
-          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
           pip install neo4j jupyterlab
           pip install pytest
-          python3 -m spacy download en_core_web_lg
-          python3 -m coreferee install en
-          python3 -m nltk.downloader all
+      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
+      - name: Download trained models
+        run: |
+          conda init bash && source ~/.bashrc && conda activate dackar_libs
+          python -m coreferee install en
+          python -m nltk.downloader all
+          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
           quantulum3-training -s
 
       - name: Test
@@ -81,14 +86,18 @@ jobs:
           pwd
           conda create -n dackar_libs python=3.11
           conda init zsh && source ~/.zshrc && conda activate dackar_libs
-          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
           pip install neo4j jupyterlab
           pip install pytest
-          python3 -m spacy download en_core_web_lg
-          python3 -m coreferee install en
-          python3 -m nltk.downloader all
-          quantulum3-training -s
 
+      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
+      - name: Download trained models
+        run: |
+          conda init zsh && source ~/.zshrc && conda activate dackar_libs
+          python -m coreferee install en
+          python -m nltk.downloader all
+          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
+          quantulum3-training -s
 
       - name: Test
         run: |
@@ -98,7 +107,7 @@ jobs:
 
 
   Test-DACKAR-Windows:
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
       - name: Setup Conda
         uses: conda-incubator/setup-miniconda@v3
@@ -125,15 +134,27 @@ jobs:
           echo " Conda information"
           conda info
           echo " Activate Dackar conda environment"
-          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+          pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
           pip install neo4j jupyterlab
           pip install pytest
+          pip uninstall numba llvmlite
+          pip install --no-cache-dir numba==0.61 llvmlite==0.44
           conda list
           which python
-          python -m spacy download en_core_web_lg
+          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
           python -m coreferee install en
           python -m nltk.downloader all
           quantulum3-training -s
+
+      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
+      # python -m spacy download en_core_web_lg
+      # pip install numba
+      # - name: Download trained models
+      #   run: |
+      #     pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
+      #     python -m coreferee install en
+      #     python -m nltk.downloader all
+      #     quantulum3-training -s
 
       - name: Test
         run: |

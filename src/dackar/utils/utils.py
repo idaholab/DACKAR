@@ -6,7 +6,11 @@ Created on February, 2024
 """
 import re
 import logging
-logger = logging.getLogger(__name__)
+import toml
+import os
+import pathlib
+
+logger = logging.getLogger('DACKAR.utils')
 
 
 def getOnlyWords(s):
@@ -38,4 +42,38 @@ def getShortAcronym(s):
   acronym = [x for x in l if re.search("[/]", x) and len(x)==3]
   ns = "".join([x for x in l if x not in acronym])
   return ns, acronym
+
+def readToml(filePath):
+  """Read toml formatted file
+
+  Args:
+      filePath (str): the path to the file
+
+  Returns:
+      dict: dictionary of file content
+  """
+  with open(filePath, 'r') as file:
+    path = pathlib.Path(filePath).parent
+    dataDict = toml.load(file)
+    if 'nlp' in dataDict:
+      for f in dataDict['nlp']['files']:
+        dataDict['nlp']['files'][f] = os.path.join(path, dataDict['nlp']['files'][f])
+    # if 'neo4j' in dataDict:
+    #   for node in dataDict['neo4j']['node']:
+    #     node['file'] = os.path.join(path, node['file'])
+    #   for edge in dataDict['neo4j']['edge']:
+    #     edge['file'] = os.path.join(path, edge['file'])
+
+  return dataDict
+
+def writeToFile(filePath, content):
+  """Write content into file
+
+  Args:
+      filePath (str): file path
+      content (str): content that will be written
+  """
+  with open(filePath, 'w') as file:
+    file.write(content)
+
 

@@ -13,7 +13,7 @@ from spacy.tokens import Span
 from ..text_processing.Preprocessing import Preprocessing
 from ..utils.utils import getOnlyWords, getShortAcronym
 from ..config import nlpConfig
-from .WorkflowBase import WorkflowBase
+from .CausalBase import CausalBase
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +40,11 @@ if not Token.has_extension('alias'):
   Token.set_extension("alias", default=None)
 
 
-class WorkOrderProcessing(WorkflowBase):
+class CausalPhrase(CausalBase):
   """
-    Class to process CWS work order dataset
+    Class to process short phrase dataset
   """
-  def __init__(self, nlp, entID='SSC', *args, **kwargs):
+  def __init__(self, nlp, entID='SSC', causalKeywordID='causal',*args, **kwargs):
     """
       Construct
 
@@ -59,15 +59,12 @@ class WorkOrderProcessing(WorkflowBase):
         None
     """
     super().__init__(nlp, entID, causalKeywordID='causal', *args, **kwargs)
-    self._allRelPairs = []
-    self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
 
   def reset(self):
     """
       Reset rule-based matcher
     """
     super().reset()
-    self._allRelPairs = []
     self._entStatus = None
 
   def addKeywords(self, keywords, ktype):
@@ -107,44 +104,29 @@ class WorkOrderProcessing(WorkflowBase):
     logger.info('Start to extract health status')
     self.extractHealthStatus(self._matchedSents)
 
-    ## Access status and output to an ordered csv file
-    entList = []
-    aliasList = []
-    entTextList = []
-    statusList = []
-    cjList = []
-    negList = []
-    negTextList = []
+    rows = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.status is not None:
-          entList.append(ent.text)
-          aliasList.append(ent._.alias)
-          if ent._.alias is not None:
-            entTextList.append(ent._.alias)
-          else:
-            entTextList.append(ent.text)
-          statusList.append(ent._.status)
-          cjList.append(ent._.conjecture)
-          negList.append(ent._.neg)
-          negTextList.append(ent._.neg_text)
+          row = {'entity':ent.text,'label': ent.label_, 'alias':ent._.alias, 'status':ent._.status, 'conjecture':ent._.conjecture, 'negation':ent._.neg, 'negation_text': ent._.neg_text}
+          rows.append(row)
+    self._entStatus = pd.DataFrame(rows)
 
-    # Extracted information can be treated as attributes for given entity
-    dfStatus = pd.DataFrame({'entity':entList, 'alias':aliasList, 'entity_text': entTextList, 'status':statusList, 'conjecture':cjList, 'negation':negList, 'negation_text': negTextList})
     if 'output_status_file' in nlpConfig['files']:
-      dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'entity_text', 'status', 'conjecture', 'negation', 'negation_text'])
+      self._entStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity','label', 'alias', 'status', 'conjecture', 'negation', 'negation_text'])
 
-    self._entStatus = dfStatus
+    # self._entStatus = dfStatus
     logger.info('End of health status extraction!')
 
     # Extract entity relations
-    logger.info('Start to extract causal relation using OPM model information')
+    logger.info('Start to extract general entity relation')
     self.extractRelDep(self._matchedSents)
-    dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+    self._relationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+
     if 'output_relation_file' in nlpConfig['files']:
-      dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
-    logger.info('End of causal relation extraction!')
+      self._relationGeneral.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+    logger.info('End of general entity relation extraction!')
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
     """
@@ -223,64 +205,3 @@ class WorkOrderProcessing(WorkflowBase):
             # if the entity not among subj and obj, it may not need to report it
             pass
 
-  def extractRelDep(self, matchedSents):
-    """
-
-      Args:
-
-        matchedSents: list, the list of matched sentences
-
-      Returns:
-
-        (subject tuple, predicate, object tuple): generator, the extracted causal relation
-    """
-    subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
-    # objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
-    for sent in matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
-      if len(ents) <= 1:
-        continue
-      root = sent.root
-      allRelPairs = []
-      subjEnt = []
-      subjConjEnt = []
-      objEnt = []
-      objConjEnt = []
-
-      for ent in ents:
-        entRoot = ent.root
-        if ent._.alias is not None:
-          text = ent._.alias
-        else:
-          text = ent.text
-        # entity at the beginning of sentence
-        if ent.start == sent.start:
-          subjEnt.append(text)
-        elif entRoot.dep_ in ['conj'] and entRoot.i < root.i:
-          subjConjEnt.append(text)
-        elif entRoot.dep_ in subjList:
-          subjEnt.append(text)
-        elif entRoot.dep_ in ['obj', 'dobj']:
-          objEnt.append(text)
-        elif entRoot.i > root.i and entRoot.dep_ in ['conj']:
-          objConjEnt.append(text)
-      # subj
-      for subj in subjEnt:
-        for subjConj in subjConjEnt:
-          allRelPairs.append([subj, 'conj', subjConj])
-        for obj in objEnt:
-          allRelPairs.append([subj, root, obj])
-        for objConj in objConjEnt:
-          allRelPairs.append([subj, root, objConj])
-      # subjconj
-      for subjConj in subjConjEnt:
-        for obj in objEnt:
-          allRelPairs.append([subjConj, root, obj])
-        for objConj in objConjEnt:
-          allRelPairs.append([subjConj, root, objConj])
-      # obj
-      for obj in objEnt:
-        for objConj in objConjEnt:
-          allRelPairs.append([obj, 'conj', objConj])
-
-      self._allRelPairs += allRelPairs
