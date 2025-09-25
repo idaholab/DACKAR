@@ -111,11 +111,8 @@
 <h1>Demo For NLP Workflow<a class="headerlink" href="#Demo-For-NLP-Workflow" title="Link to this heading">¶</a></h1>
 <section id="Set-Paths-and-Loading-Required-Modules">
 <h2>Set Paths and Loading Required Modules<a class="headerlink" href="#Set-Paths-and-Loading-Required-Modules" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p>Required libraries, please check SR2ML/dependencies.xml</p></li>
-</ul>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># External Modules #
@@ -134,7 +131,7 @@ sys.path.append(frameworkDir)
 ########################
 
 # Internal Modules #
-from dackar.workflows.RuleBasedMatcher import RuleBasedMatcher
+from dackar.causal.CausalSentence import CausalSentence
 from dackar import config
 from dackar.utils.nlp.nlp_utils import generatePatternList
 from dackar.text_processing.Preprocessing import Preprocessing
@@ -151,7 +148,7 @@ nlp = spacy.load(&quot;en_core_web_lg&quot;, exclude=[])
 <section id="Initialize-variables">
 <h2>Initialize variables<a class="headerlink" href="#Initialize-variables" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>cleanDoc = True         # prepocessor the raw doc text, i.e., remove brackets, repeatings, punctuations.
@@ -204,7 +201,7 @@ preprocess = Preprocessing(preprocessorList, preprocessorOptions)
 <section id="Load-entity-list-and-causal-list-or-provide-directly">
 <h2>Load entity list and causal list or provide directly<a class="headerlink" href="#Load-entity-list-and-causal-list-or-provide-directly" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>entityFile = config.nlpConfig[&#39;files&#39;][&#39;entity_file&#39;]
@@ -222,7 +219,7 @@ for col in ds.columns:
 <section id="Generate-patterns-that-can-be-used-in-NER">
 <h2>Generate patterns that can be used in NER<a class="headerlink" href="#Generate-patterns-that-can-be-used-in-NER" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>patternsEnts = generatePatternList(ents, label=entLabel, id=entId, nlp=nlp, attr=&quot;LEMMA&quot;)
@@ -233,32 +230,22 @@ patternsCausal = generatePatternList(causalList, label=causalLabel, id=causalID,
 </section>
 <section id="Create-rule-based-matcher-with-entity-list-and-causal-entity-list">
 <h2>Create rule-based matcher with entity list and causal entity list<a class="headerlink" href="#Create-rule-based-matcher-with-entity-list-and-causal-entity-list" title="Link to this heading">¶</a></h2>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>matcher = RuleBasedMatcher(nlp, entID=entId, causalKeywordID=causalID)
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>matcher = CausalSentence(nlp, entID=entId, causalKeywordID=causalID)
 
 matcher.addEntityPattern(&#39;ssc_entity_ruler&#39;, patternsEnts)
 matcher.addEntityPattern(&#39;causal_keywords_entity_ruler&#39;, patternsCausal)
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-30-May-25 16:12:52 dackar.workflows.WorkflowBase INFO     Create instance of RuleBasedMatcher
-30-May-25 16:12:53 dackar.utils.nlp.nlp_utils INFO     Model: core_web_lg, Language: en
-30-May-25 16:12:53 dackar.utils.nlp.nlp_utils INFO     Available pipelines:pysbdSentenceBoundaries, tok2vec, tagger, parser, attribute_ruler, lemmatizer, mergePhrase, normEntities, initCoref, aliasResolver, anaphorCoref, anaphorEntCoref
-</pre></div></div>
-</div>
 </section>
 <section id="Read-raw-text-data-and-preprocess-it">
 <h2>Read raw text data and preprocess it<a class="headerlink" href="#Read-raw-text-data-and-preprocess-it" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Read Raw Text Data, Users can also provide a raw string here
@@ -278,7 +265,7 @@ if numerizerDoc:
 <section id="Correct-the-doc">
 <h2>Correct the doc<a class="headerlink" href="#Correct-the-doc" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>availCheckers = [&#39;autocorrect&#39;, &#39;ContextualSpellCheck&#39;]
@@ -300,602 +287,29 @@ doc = doc.lower()
 </section>
 <section id="Process-text-using-Rule-Based-Matcher">
 <h2>Process text using Rule Based Matcher<a class="headerlink" href="#Process-text-using-Rule-Based-Matcher" title="Link to this heading">¶</a></h2>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>matcher(doc)
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher INFO     Start to extract health status
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher WARNING  Entity &#34;pump&#34; dep_ is &#34;nmod&#34; is not among valid list &#34;[nsubj, nsubjpass, pobj, dobj, compound]&#34;
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher WARNING  Entity &#34;pump&#34; dep_ is &#34;nmod&#34; is not among valid list &#34;[nsubj, nsubjpass, pobj, dobj, compound]&#34;
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher WARNING  No status identified for &#34;pump&#34; in &#34;slight vibrations is noticed - likely from pump shaft deflection.
-&#34;
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher WARNING  Entity &#34;pump&#34; dep_ is &#34;xcomp&#34; is not among valid list &#34;[nsubj, nsubjpass, pobj, dobj, compound]&#34;
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher WARNING  Entity &#34;pump&#34; dep_ is &#34;xcomp&#34; is not among valid list &#34;[nsubj, nsubjpass, pobj, dobj, compound]&#34;
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher INFO     End of health status extraction!
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher INFO     Start to extract causal relation using OPM model information
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher INFO     End of causal relation extraction!
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher INFO     Start to use general extraction method to extract causal relation
-30-May-25 16:12:53 dackar.workflows.RuleBasedMatcher INFO     End of causal relation extraction using general extraction method!
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-(bearings, caused, shaft degradation) (bearings, caused, shaft degradation) (inspection, revealed, degradation) (inspection, revealed, degradation) (they, caused, failure) (low flow conditions, causing, cavitation) (pump, keep, the check valves) (shaft, made, noise) (pump, made, noises)
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>matcher._extractedCausals
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
-</pre></div>
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-[[pump bearings,
-  None,
-  caused,
-  shaft degradation,
-  None,
-  rupture of pump bearings caused pump shaft degradation.,
-  False],
- [pump bearings,
-  None,
-  caused,
-  shaft degradation,
-  None,
-  rupture of pump bearings caused pump shaft degradation and consequent flow reduction.,
-  False],
- [power supply,
-  None,
-  due to,
-  pump,
-  None,
-  pump test failed due to power supply failure.,
-  False],
- [pump,
-  None,
-  revealed,
-  impeller,
-  None,
-  pump inspection revealed excessive impeller degradation.,
-  False],
- [pump,
-  None,
-  revealed,
-  impeller,
-  None,
-  pump inspection revealed excessive impeller degradation likely due to cavitation.,
-  True],
- [pump shaft,
-  None,
-  caused,
-  pump,
-  None,
-  several cracks on pump shaft were observed; they could have caused pump failure within few days.,
-  True],
- [pump shaft,
-  None,
-  causing,
-  motor,
-  None,
-  the pump shaft vibration appears to be causing the motor to vibrate as well.,
-  False]]
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>matcher._entStatus
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
-</pre></div>
-</div>
-<div class="output_area rendered_html docutils container">
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>entities</th>
-      <th>status keywords</th>
-      <th>status</th>
-      <th>conjecture</th>
-      <th>sentence</th>
-      <th>status prepend</th>
-      <th>status prepend adjectival modifier</th>
-      <th>status append</th>
-      <th>status append adjectival modifier</th>
-      <th>negation</th>
-      <th>negation text</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>1 leak</td>
-      <td>False</td>
-      <td>1 leak was noticed from the rcp pump 1a.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>(pump)</td>
-      <td>[from, rcp]</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>(signs, of, past leakage)</td>
-      <td>False</td>
-      <td>rcp pump 1a had signs of past leakage.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>(enough flow)</td>
-      <td>False</td>
-      <td>the pump is not experiencing enough flow durin...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>True</td>
-      <td>not</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>responding</td>
-      <td>False</td>
-      <td>pump flow meter was not responding.</td>
-      <td>(meter)</td>
-      <td>[]</td>
-      <td>None</td>
-      <td>None</td>
-      <td>True</td>
-      <td>not</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>pump bearings</td>
-      <td>None</td>
-      <td>(rupture)</td>
-      <td>False</td>
-      <td>rupture of pump bearings caused pump shaft deg...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>5</th>
-      <td>pump</td>
-      <td>cause</td>
-      <td>rupture</td>
-      <td>False</td>
-      <td>rupture of pump bearings caused pump shaft deg...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>6</th>
-      <td>pump bearings</td>
-      <td>None</td>
-      <td>(rupture)</td>
-      <td>False</td>
-      <td>rupture of pump bearings caused pump shaft deg...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>7</th>
-      <td>pump</td>
-      <td>cause</td>
-      <td>rupture</td>
-      <td>False</td>
-      <td>rupture of pump bearings caused pump shaft deg...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>8</th>
-      <td>power supply</td>
-      <td>None</td>
-      <td>burnout</td>
-      <td>False</td>
-      <td>power supply has been found burnout.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>9</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>test</td>
-      <td>False</td>
-      <td>pump test failed due to power supply failure.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>10</th>
-      <td>power supply</td>
-      <td>None</td>
-      <td>failure</td>
-      <td>False</td>
-      <td>pump test failed due to power supply failure.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>11</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>inspection</td>
-      <td>False</td>
-      <td>pump inspection revealed excessive impeller de...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>12</th>
-      <td>impeller</td>
-      <td>None</td>
-      <td>degradation</td>
-      <td>False</td>
-      <td>pump inspection revealed excessive impeller de...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>13</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>inspection</td>
-      <td>True</td>
-      <td>pump inspection revealed excessive impeller de...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>14</th>
-      <td>impeller</td>
-      <td>None</td>
-      <td>degradation</td>
-      <td>True</td>
-      <td>pump inspection revealed excessive impeller de...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>15</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>(found, in, proximity)</td>
-      <td>False</td>
-      <td>oil puddle was found in proximity of rcp pump 1a.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>(pump)</td>
-      <td>[of, rcp]</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>16</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>anomalous vibrations</td>
-      <td>False</td>
-      <td>anomalous vibrations were observed for rcp pum...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>[]</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>17</th>
-      <td>pump shaft</td>
-      <td>None</td>
-      <td>(several cracks)</td>
-      <td>False</td>
-      <td>several cracks on pump shaft were observed; th...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>18</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>failure</td>
-      <td>True</td>
-      <td>several cracks on pump shaft were observed; th...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>19</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>cavitating</td>
-      <td>False</td>
-      <td>rcp pump 1a was cavitating and vibrating to so...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>20</th>
-      <td>pump shaft</td>
-      <td>None</td>
-      <td>vibration</td>
-      <td>False</td>
-      <td>the pump shaft vibration appears to be causing...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>21</th>
-      <td>motor</td>
-      <td>None</td>
-      <td>vibrate</td>
-      <td>False</td>
-      <td>the pump shaft vibration appears to be causing...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>22</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>(noise, of, cavitation, which, became, faint, ...</td>
-      <td>False</td>
-      <td>pump had noise of cavitation which became fain...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>23</th>
-      <td>pump shaft</td>
-      <td>None</td>
-      <td>(deflection)</td>
-      <td>False</td>
-      <td>the pump shaft deflection is causing the safet...</td>
-      <td>(deflection)</td>
-      <td>[]</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>24</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>(enough flow, for, the, pumps)</td>
-      <td>False</td>
-      <td>the pump is not experiencing enough flow for t...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>True</td>
-      <td>not</td>
-    </tr>
-    <tr>
-      <th>25</th>
-      <td>pumps</td>
-      <td>None</td>
-      <td>(enough flow)</td>
-      <td>False</td>
-      <td>the pump is not experiencing enough flow for t...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>26</th>
-      <td>pump shaft</td>
-      <td>None</td>
-      <td>noise</td>
-      <td>False</td>
-      <td>pump shaft made noise.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>27</th>
-      <td>pump shaft</td>
-      <td>come</td>
-      <td>vibration</td>
-      <td>True</td>
-      <td>vibration seems like it is coming from the pum...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>[]</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>28</th>
-      <td>pump shaft</td>
-      <td>None</td>
-      <td>(deflection)</td>
-      <td>False</td>
-      <td>visible pump shaft deflection in operation.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>29</th>
-      <td>pump bearings</td>
-      <td>None</td>
-      <td>acceptable condition</td>
-      <td>False</td>
-      <td>pump bearings appear in acceptable condition.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>30</th>
-      <td>pump</td>
-      <td>None</td>
-      <td>noises</td>
-      <td>False</td>
-      <td>pump made noises - not enough to affect perfor...</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>31</th>
-      <td>pump shaft</td>
-      <td>None</td>
-      <td>1 slight deflection</td>
-      <td>False</td>
-      <td>pump shaft has 1 slight deflection.</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>None</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-  </tbody>
-</table>
-</div></div>
 </div>
 </section>
 </section>

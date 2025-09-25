@@ -62,7 +62,7 @@
 <li class="toctree-l2"><a class="reference internal" href="Workflow_Demo.html">Workflow Demo</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Work Order Processing</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#Setup-path-and-load-DACKAR-modules">Setup path and load DACKAR modules</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#Generate-entities-patterns-and-process-text-using-WorkOrderProcessing-class">Generate entities patterns and process text using WorkOrderProcessing class</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Generate-entities-patterns-and-process-text-using-CausalPhrase-class">Generate entities patterns and process text using CausalPhrase class</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#Processing-work-order-accumulatively">Processing work order accumulatively</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#Accessing-attributes-of-entities">Accessing attributes of entities</a></li>
 </ul>
@@ -108,7 +108,7 @@
 <section id="Setup-path-and-load-DACKAR-modules">
 <h2>Setup path and load DACKAR modules<a class="headerlink" href="#Setup-path-and-load-DACKAR-modules" title="Link to this heading">¶</a></h2>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>%reload_ext autoreload
@@ -126,7 +126,7 @@ cwd = os.getcwd()
 frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, &#39;src&#39;))
 sys.path.append(frameworkDir)
 
-from dackar.workflows.WorkOrderProcessing import WorkOrderProcessing
+from dackar.causal.CausalPhrase import CausalPhrase
 from dackar.utils.nlp.nlp_utils import generatePatternList
 
 logging.basicConfig(format=&#39;%(asctime)s %(name)-20s %(levelname)-8s %(message)s&#39;, datefmt=&#39;%d-%b-%y %H:%M:%S&#39;, level=logging.INFO)
@@ -135,16 +135,16 @@ logging.getLogger().setLevel(logging.ERROR)
 </div>
 </div>
 </section>
-<section id="Generate-entities-patterns-and-process-text-using-WorkOrderProcessing-class">
-<h2>Generate entities patterns and process text using WorkOrderProcessing class<a class="headerlink" href="#Generate-entities-patterns-and-process-text-using-WorkOrderProcessing-class" title="Link to this heading">¶</a></h2>
+<section id="Generate-entities-patterns-and-process-text-using-CausalPhrase-class">
+<h2>Generate entities patterns and process text using CausalPhrase class<a class="headerlink" href="#Generate-entities-patterns-and-process-text-using-CausalPhrase-class" title="Link to this heading">¶</a></h2>
 <p>The following information will be identified:</p>
 <ul class="simple">
 <li><p>Entities</p></li>
 <li><p>Alias associated with entities</p></li>
 <li><p>Status associated with entities</p></li>
 </ul>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Specify Entities Labels and IDs
@@ -152,7 +152,7 @@ entLabel = &quot;cws_component&quot;        # user defined entity label
 entId = &quot;OPM&quot;
 # Load language model
 nlp = spacy.load(&quot;en_core_web_lg&quot;, exclude=[])
-matcher = WorkOrderProcessing(nlp, entID=entId)
+matcher = CausalPhrase(nlp, entID=entId)
 
 entIDList = [&#39;1-91120-P1&#39;, &#39;1-91120-PM1&#39;, &#39;91120&#39;]
 patternsEnts = generatePatternList(entIDList, label=entLabel,    id=entId,    nlp=nlp, attr=&quot;LEMMA&quot;)
@@ -165,42 +165,11 @@ displacy.render(doc, style=&#39;ent&#39;, jupyter=True)
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-28-May-25 09:57:58 dackar.workflows.WorkflowBase INFO     Create instance of WorkOrderProcessing
-28-May-25 09:58:00 dackar.utils.nlp.nlp_utils INFO     Model: core_web_lg, Language: en
-28-May-25 09:58:00 dackar.utils.nlp.nlp_utils INFO     Available pipelines:pysbdSentenceBoundaries, tok2vec, tagger, parser, attribute_ruler, lemmatizer, mergePhrase, normEntities, initCoref, aliasResolver, anaphorCoref, anaphorEntCoref
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area rendered_html docutils container">
-<span class="tex2jax_ignore"><div class="entities" style="line-height: 2.5; direction: ltr">
-<mark class="entity" style="background: #ddd; padding: 0.45em 0.6em; margin: 0 0.25em; line-height: 1; border-radius: 0.35em;">
-    1-91120-P1
-    <span style="font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; vertical-align: middle; margin-left: 0.5rem">cws_component</span>
-</mark>
-, CLEAN PUMP AND MOTOR.
-<mark class="entity" style="background: #ddd; padding: 0.45em 0.6em; margin: 0 0.25em; line-height: 1; border-radius: 0.35em;">
-    1-91120-PM1
-    <span style="font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; vertical-align: middle; margin-left: 0.5rem">cws_component</span>
-</mark>
- REQUIRES OIL.
-<mark class="entity" style="background: #ddd; padding: 0.45em 0.6em; margin: 0 0.25em; line-height: 1; border-radius: 0.35em;">
-    91120
-    <span style="font-size: 0.8em; font-weight: bold; line-height: 1; border-radius: 0.35em; vertical-align: middle; margin-left: 0.5rem">cws_component</span>
-</mark>
-, CLEAN TRASH SCREEN</div></span></div>
-</div>
 </section>
 <section id="Processing-work-order-accumulatively">
 <h2>Processing work order accumulatively<a class="headerlink" href="#Processing-work-order-accumulatively" title="Link to this heading">¶</a></h2>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>matcher.reset()
@@ -211,113 +180,17 @@ matcher._entStatus
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     Start to extract health status
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     End of health status extraction!
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     Start to extract causal relation using OPM model information
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     End of causal relation extraction!
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     Start to extract health status
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     End of health status extraction!
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     Start to extract causal relation using OPM model information
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     End of causal relation extraction!
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     Start to extract health status
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     End of health status extraction!
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     Start to extract causal relation using OPM model information
-28-May-25 09:58:00 dackar.workflows.WorkOrderProcessing INFO     End of causal relation extraction!
-</pre></div></div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
-</pre></div>
-</div>
-<div class="output_area rendered_html docutils container">
-<div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
-<table border="1" class="dataframe">
-  <thead>
-    <tr style="text-align: right;">
-      <th></th>
-      <th>entity</th>
-      <th>alias</th>
-      <th>entity_text</th>
-      <th>status</th>
-      <th>conjecture</th>
-      <th>negation</th>
-      <th>negation_text</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>0</th>
-      <td>1-91120-P1</td>
-      <td>unit 1 pump</td>
-      <td>unit 1 pump</td>
-      <td>CLEAN PUMP AND MOTOR</td>
-      <td>False</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>1-91120-PM1</td>
-      <td>unit 1 pump motor</td>
-      <td>unit 1 pump motor</td>
-      <td>OIL</td>
-      <td>False</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-    <tr>
-      <th>2</th>
-      <td>91120</td>
-      <td>pump</td>
-      <td>pump</td>
-      <td>CLEAN TRASH SCREEN</td>
-      <td>False</td>
-      <td>False</td>
-      <td></td>
-    </tr>
-  </tbody>
-</table>
-</div></div>
-</div>
 </section>
 <section id="Accessing-attributes-of-entities">
 <h2>Accessing attributes of entities<a class="headerlink" href="#Accessing-attributes-of-entities" title="Link to this heading">¶</a></h2>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>for ent in doc.ents:
     print(ent.text, ent._.alias, ent.ent_id_, ent.label_)
 </pre></div>
 </div>
-</div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-1-91120-P1 unit 1 pump OPM cws_component
-1-91120-PM1 unit 1 pump motor OPM cws_component
-91120 pump OPM cws_component
-</pre></div></div>
 </div>
 </section>
 </section>

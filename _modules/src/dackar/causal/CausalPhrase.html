@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>src.dackar.workflows.WorkOrderProcessing &mdash; DACKAR 0.1 documentation</title>
+  <title>src.dackar.causal.CausalPhrase &mdash; DACKAR 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
@@ -70,7 +70,7 @@
       <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
           <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
           <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
-      <li class="breadcrumb-item active">src.dackar.workflows.WorkOrderProcessing</li>
+      <li class="breadcrumb-item active">src.dackar.causal.CausalPhrase</li>
       <li class="wy-breadcrumbs-aside">
       </li>
   </ul>
@@ -79,7 +79,7 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <h1>Source code for src.dackar.workflows.WorkOrderProcessing</h1><div class="highlight"><pre>
+  <h1>Source code for src.dackar.causal.CausalPhrase</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">Created on March, 2024</span>
@@ -95,10 +95,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">..text_processing.Preprocessing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Preprocessing</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..utils.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">getOnlyWords</span><span class="p">,</span> <span class="n">getShortAcronym</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">..config</span><span class="w"> </span><span class="kn">import</span> <span class="n">nlpConfig</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.WorkflowBase</span><span class="w"> </span><span class="kn">import</span> <span class="n">WorkflowBase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.CausalBase</span><span class="w"> </span><span class="kn">import</span> <span class="n">CausalBase</span>
 
 <div class="viewcode-block" id="logger">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.logger">[docs]</a>
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalPhrase/index.html#src.dackar.causal.CausalPhrase.logger">[docs]</a>
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
 
 
@@ -125,11 +125,11 @@
   <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;alias&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="WorkOrderProcessing">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.WorkOrderProcessing">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">WorkOrderProcessing</span><span class="p">(</span><span class="n">WorkflowBase</span><span class="p">):</span>
+<div class="viewcode-block" id="CausalPhrase">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalPhrase/index.html#src.dackar.causal.CausalPhrase.CausalPhrase">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CausalPhrase</span><span class="p">(</span><span class="n">CausalBase</span><span class="p">):</span>
 <span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Class to process CWS work order dataset</span>
+<span class="sd">    Class to process short phrase dataset</span>
 <span class="sd">  &quot;&quot;&quot;</span>
   <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="s1">&#39;SSC&#39;</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="s1">&#39;causal&#39;</span><span class="p">,</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -146,24 +146,19 @@
 <span class="sd">        None</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="s1">&#39;causal&#39;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-<div class="viewcode-block" id="WorkOrderProcessing._allRelPairs">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.WorkOrderProcessing._allRelPairs">[docs]</a>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span> <span class="o">=</span> <span class="p">[]</span></div>
 
-
-<div class="viewcode-block" id="WorkOrderProcessing.reset">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.WorkOrderProcessing.reset">[docs]</a>
+<div class="viewcode-block" id="CausalPhrase.reset">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalPhrase/index.html#src.dackar.causal.CausalPhrase.CausalPhrase.reset">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Reset rule-based matcher</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">_entStatus</span> <span class="o">=</span> <span class="kc">None</span></div>
 
 
-<div class="viewcode-block" id="WorkOrderProcessing.addKeywords">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.WorkOrderProcessing.addKeywords">[docs]</a>
+<div class="viewcode-block" id="CausalPhrase.addKeywords">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalPhrase/index.html#src.dackar.causal.CausalPhrase.CausalPhrase.addKeywords">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">addKeywords</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">keywords</span><span class="p">,</span> <span class="n">ktype</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Method to update self._causalKeywords or self._statusKeywords</span>
@@ -186,8 +181,8 @@
           <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;keyword &quot;</span><span class="si">{}</span><span class="s1">&quot; cannot be accepted, valid keys for the keywords are &quot;</span><span class="si">{}</span><span class="s1">&quot;&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="s1">&#39;,&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_statusKeywords</span><span class="o">.</span><span class="n">keys</span><span class="p">()))))</span></div>
 
 
-<div class="viewcode-block" id="WorkOrderProcessing.extractInformation">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.WorkOrderProcessing.extractInformation">[docs]</a>
+<div class="viewcode-block" id="CausalPhrase.extractInformation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalPhrase/index.html#src.dackar.causal.CausalPhrase.CausalPhrase.extractInformation">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">extractInformation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      extract information</span>
@@ -220,17 +215,17 @@
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;End of health status extraction!&#39;</span><span class="p">)</span>
 
     <span class="c1"># Extract entity relations</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Start to extract causal relation&#39;</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Start to extract general entity relation&#39;</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">extractRelDep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span><span class="p">)</span>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_causalRelationGeneral</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_relationNames</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_relationGeneral</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_relationNames</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="s1">&#39;output_relation_file&#39;</span> <span class="ow">in</span> <span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">]:</span>
-      <span class="bp">self</span><span class="o">.</span><span class="n">_causalRelationGeneral</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;output_relation_file&#39;</span><span class="p">],</span> <span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_relationNames</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;End of causal relation extraction!&#39;</span><span class="p">)</span></div>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_relationGeneral</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">nlpConfig</span><span class="p">[</span><span class="s1">&#39;files&#39;</span><span class="p">][</span><span class="s1">&#39;output_relation_file&#39;</span><span class="p">],</span> <span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_relationNames</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;End of general entity relation extraction!&#39;</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="WorkOrderProcessing.extractHealthStatus">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.WorkOrderProcessing.extractHealthStatus">[docs]</a>
+<div class="viewcode-block" id="CausalPhrase.extractHealthStatus">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalPhrase/index.html#src.dackar.causal.CausalPhrase.CausalPhrase.extractHealthStatus">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">extractHealthStatus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">matchedSents</span><span class="p">,</span> <span class="n">predSynonyms</span><span class="o">=</span><span class="p">[],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">      Extract health status and relation</span>
@@ -307,78 +302,8 @@
           <span class="k">else</span><span class="p">:</span>
             <span class="c1"># if the entity not among subj and obj, it may not need to report it</span>
             <span class="k">pass</span></div>
-
-
-<div class="viewcode-block" id="WorkOrderProcessing.extractRelDep">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/workflows/WorkOrderProcessing/index.html#src.dackar.workflows.WorkOrderProcessing.WorkOrderProcessing.extractRelDep">[docs]</a>
-  <span class="k">def</span><span class="w"> </span><span class="nf">extractRelDep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">matchedSents</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-
-<span class="sd">      Args:</span>
-
-<span class="sd">        matchedSents: list, the list of matched sentences</span>
-
-<span class="sd">      Returns:</span>
-
-<span class="sd">        (subject tuple, predicate, object tuple): generator, the extracted causal relation</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">subjList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj:pass&#39;</span><span class="p">]</span>
-    <span class="n">objList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">matchedSents</span><span class="p">:</span>
-      <span class="n">ents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getCustomEnts</span><span class="p">(</span><span class="n">sent</span><span class="o">.</span><span class="n">ents</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_entID</span><span class="p">])</span>
-      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ents</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">continue</span>
-      <span class="n">root</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">root</span>
-      <span class="n">allRelPairs</span> <span class="o">=</span> <span class="p">[]</span>
-      <span class="n">subjEnt</span> <span class="o">=</span> <span class="p">[]</span>
-      <span class="n">subjConjEnt</span> <span class="o">=</span> <span class="p">[]</span>
-      <span class="n">objEnt</span> <span class="o">=</span> <span class="p">[]</span>
-      <span class="n">objConjEnt</span> <span class="o">=</span> <span class="p">[]</span>
-
-      <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">ents</span><span class="p">:</span>
-        <span class="n">entRoot</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
-        <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-          <span class="n">text</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span>
-        <span class="k">else</span><span class="p">:</span>
-          <span class="n">text</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">text</span>
-        <span class="c1"># entity at the beginning of sentence</span>
-        <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span> <span class="o">==</span> <span class="n">sent</span><span class="o">.</span><span class="n">start</span><span class="p">:</span>
-          <span class="n">subjEnt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;conj&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="p">:</span>
-          <span class="n">subjConjEnt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">subjList</span><span class="p">:</span>
-          <span class="n">subjEnt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-        <span class="c1"># elif entRoot.dep_ in [&#39;obj&#39;, &#39;dobj&#39;]: # mainly for short sentence or phrase</span>
-        <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="n">objList</span><span class="p">:</span>
-          <span class="n">objEnt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">i</span> <span class="o">&gt;</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span> <span class="ow">and</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;conj&#39;</span><span class="p">]:</span>
-          <span class="n">objConjEnt</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-      <span class="c1"># subj</span>
-      <span class="k">for</span> <span class="n">subj</span> <span class="ow">in</span> <span class="n">subjEnt</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">subjConj</span> <span class="ow">in</span> <span class="n">subjConjEnt</span><span class="p">:</span>
-          <span class="n">allRelPairs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">subj</span><span class="p">,</span> <span class="s1">&#39;conj&#39;</span><span class="p">,</span> <span class="n">subjConj</span><span class="p">])</span>
-        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">objEnt</span><span class="p">:</span>
-          <span class="n">allRelPairs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">subj</span><span class="p">,</span> <span class="n">root</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">obj</span><span class="p">])</span>
-        <span class="k">for</span> <span class="n">objConj</span> <span class="ow">in</span> <span class="n">objConjEnt</span><span class="p">:</span>
-          <span class="n">allRelPairs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">subj</span><span class="p">,</span> <span class="n">root</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">objConj</span><span class="p">])</span>
-      <span class="c1"># subjconj</span>
-      <span class="k">for</span> <span class="n">subjConj</span> <span class="ow">in</span> <span class="n">subjConjEnt</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">objEnt</span><span class="p">:</span>
-          <span class="n">allRelPairs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">subjConj</span><span class="p">,</span> <span class="n">root</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">obj</span><span class="p">])</span>
-        <span class="k">for</span> <span class="n">objConj</span> <span class="ow">in</span> <span class="n">objConjEnt</span><span class="p">:</span>
-          <span class="n">allRelPairs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">subjConj</span><span class="p">,</span> <span class="n">root</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">objConj</span><span class="p">])</span>
-      <span class="c1"># obj</span>
-      <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">objEnt</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">objConj</span> <span class="ow">in</span> <span class="n">objConjEnt</span><span class="p">:</span>
-          <span class="n">allRelPairs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">obj</span><span class="p">,</span> <span class="s1">&#39;conj&#39;</span><span class="p">,</span> <span class="n">objConj</span><span class="p">])</span>
-
-      <span class="c1"># handle specific case</span>
-      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">allRelPairs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ents</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">ents</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span> <span class="ow">and</span> <span class="n">ents</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">i</span> <span class="o">&gt;</span> <span class="n">root</span><span class="o">.</span><span class="n">i</span><span class="p">:</span>
-          <span class="n">allRelPairs</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">ents</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">root</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">ents</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">text</span><span class="p">])</span>
-
-      <span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span> <span class="o">+=</span> <span class="n">allRelPairs</span></div>
 </div>
+
 
 </pre></div>
 
