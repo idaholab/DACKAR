@@ -46,9 +46,9 @@ from ..utils.nlp.nlp_utils import extractNER
 from ..utils.opm.OPLparser import OPMobject
 from ..utils.mbse.LMLparser import LMLobject
 
-from .RuleBasedMatcher import RuleBasedMatcher
-from .WorkOrderProcessing import WorkOrderProcessing
-from .OperatorShiftLogsProcessing import OperatorShiftLogs
+from ..causal.CausalSentence import CausalSentence
+from ..causal.CausalPhrase import CausalPhrase
+from ..causal.CausalSimple import CausalSimple
 from .. import config as defaultConfig
 
 from ..validate import validateToml
@@ -176,11 +176,11 @@ class WorkflowManager:
         self.write(entStatus, 'causal_ner_status.csv', style='csv')
       # output causal data
       causalRelation = self._causalFlow.getAttribute('causalRelation')
-      causalRelationGeneral = self._causalFlow.getAttribute('causalRelationGeneral')
+      relationGeneral = self._causalFlow.getAttribute('relationGeneral')
       if causalRelation is not None and len(causalRelation) != 0:
         self.write(causalRelation, 'causal_relation.csv', style='csv')
-      if causalRelationGeneral is not None and len(causalRelationGeneral) != 0:
-        self.write(causalRelationGeneral, 'causal_relation_general.csv', style='csv')
+      if relationGeneral is not None and len(relationGeneral) != 0:
+        self.write(relationGeneral, 'relation_general.csv', style='csv')
 
       doc = self._causalFlow.getAttribute('doc')
 
@@ -362,11 +362,11 @@ class WorkflowManager:
       method = self._nlpConfig['causal']['type'] if 'type' in self._nlpConfig['causal'] else None
     if method is not None:
       if method == 'general':
-        matcher = RuleBasedMatcher(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
-      elif method == 'wo':
-        matcher = WorkOrderProcessing(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
-      elif method == 'osl':
-        matcher = OperatorShiftLogs(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+        matcher = CausalSentence(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+      elif method == 'phrase':
+        matcher = CausalPhrase(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+      elif method == 'simple':
+        matcher = CausalSimple(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       else:
         raise IOError(f'Unrecognized causal type {method}')
       matcher.addEntityPattern(self._entPatternName, self._patterns)

@@ -13,11 +13,11 @@ from spacy.tokens import Span
 from collections import deque
 
 from ..config import nlpConfig
-from .WorkflowBase import WorkflowBase
+from .CausalBase import CausalBase
 
 logger = logging.getLogger('DACKAR.Causal')
 
-class RuleBasedMatcher(WorkflowBase):
+class CausalSentence(CausalBase):
   """
     Rule Based Matcher Class
   """
@@ -89,19 +89,24 @@ class RuleBasedMatcher(WorkflowBase):
     self._causalRelationGeneral = None
 
     logger.info('End of health status extraction!')
-    ## causal relation
+    ## Extract causal relation
     logger.info('Start to extract causal relation using OPM model information')
-    self.extractRelDep(self._matchedSents)
+    self.extractCausalRelDep(self._matchedSents)
     dfCausals = pd.DataFrame(self._extractedCausals, columns=self._causalNames)
     self._causalRelation = dfCausals
     dfCausals.to_csv(nlpConfig['files']['output_causal_effect_file'], columns=self._causalNames)
     logger.info('End of causal relation extraction!')
-    ## print extracted relation
-    # logger.info('Start to use general extraction method to extract causal relation')
-    # print(*self.extract(self._matchedSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[]), sep='\n')
-    # logger.info('End of causal relation extraction using general extraction method!')
 
-    # collect general cause effect info
+    # Extract general entity relations
+    logger.info('Start to extract general entity relations')
+    self.extractRelDep(self._matchedSents)
+    if len(self._allRelPairs) > 0:
+      self._relationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+      if self._screen:
+        logger.info(self._relationGeneral)
+    logger.info('End of general entity relation extraction!')
+
+    # Collect general cause effect info in (subj, causalKeywords, obj), this can be combined with method "extractCausalRelDep"
     logger.info('Start to use general extraction method to extract causal relation')
     matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
     extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
@@ -421,7 +426,7 @@ class RuleBasedMatcher(WorkflowBase):
     toVisit = deque([root]) # queue for bfs
     while len(toVisit) > 0:
       child = toVisit.popleft()
-      # print("child", child, child.dep_)
+      # logger.debug("child", child, child.dep_)
       if child.dep_ in deps:
         # to handle preposition
         try:
@@ -434,7 +439,7 @@ class RuleBasedMatcher(WorkflowBase):
         #   return self.findRightObj(nbor, deps=['pobj'])
         return child
       elif child.dep_ == 'compound' and \
-         child.head.dep_ in deps: # check if contained in compound
+        child.head.dep_ in deps: # check if contained in compound
         return child
       toVisit.extend(list(child.children))
     return None
@@ -490,9 +495,9 @@ class RuleBasedMatcher(WorkflowBase):
           return ent
     return ent
 
-  def extractRelDep(self, matchedSents):
+  def extractCausalRelDep(self, matchedSents):
     """
-
+      Extract causal Relation between entities
       Args:
 
         matchedSents: list, the list of matched sentences
@@ -666,11 +671,6 @@ class RuleBasedMatcher(WorkflowBase):
           self.collectExtactedCausals(causeList, effectList, cEnt, sent, conjecture)
       if len(causeEffectPair) != 0:
         allCauseEffectPairs.append(causeEffectPair)
-
-    # print("Identified Cause-Effect Pairs:")
-    # for elem in allCauseEffectPairs:
-    #   for i in elem:
-    #     print(i)
 
   def identifyCauseEffectForNsuj(self, cRoot, cEntsIndex, causalEnts, orderedEnts, validRightSSCEnts, reverse=False):
     """

@@ -1,13 +1,13 @@
-from dackar.workflows.RuleBasedMatcher import RuleBasedMatcher
-from dackar.workflows.OperatorShiftLogsProcessing import OperatorShiftLogs
-from dackar.workflows.WorkOrderProcessing import WorkOrderProcessing
+from dackar.causal.CausalSentence import CausalSentence
+from dackar.causal.CausalSimple import CausalSimple
+from dackar.causal.CausalPhrase import CausalPhrase
 from dackar.config import nlpConfig
 from dackar.utils.nlp.nlp_utils import generatePatternList
 import spacy
 import pandas as pd
 
 
-class TestWorkFlows:
+class TestCausal:
 
   nlp = spacy.load("en_core_web_lg", exclude=[])
   entId = 'test'
@@ -44,11 +44,11 @@ class TestWorkFlows:
 
   def get_matcher(self, method):
     if method == 'general':
-      matcher = RuleBasedMatcher(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
-    elif method == 'wo':
-      matcher = WorkOrderProcessing(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
-    elif method == 'osl':
-      matcher = OperatorShiftLogs(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
+      matcher = CausalSentence(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
+    elif method == 'phrase':
+      matcher = CausalPhrase(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
+    elif method == 'simple':
+      matcher = CausalSimple(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
     else:
       raise IOError(f'Unrecognized causal type {method}')
     patterns = self.generatePattern()
@@ -71,10 +71,10 @@ class TestWorkFlows:
 
 
   def test_wo(self):
-    matcher = self.get_matcher(method='wo')
+    matcher = self.get_matcher(method='phrase')
     matcher(self.doc)
     df = matcher.getAttribute('entStatus')
-    dfCausal = matcher.getAttribute('causalRelationGeneral')
+    dfCausal = matcher.getAttribute('relationGeneral')
     print(dfCausal)
     assert df['entity'].tolist() == ['pump bearings']
     assert df['label'].tolist() == ['test_label']
@@ -84,10 +84,10 @@ class TestWorkFlows:
     assert dfCausal['object'].tolist()[0] == 'shaft'
 
   def test_osl(self):
-    matcher = self.get_matcher(method='osl')
+    matcher = self.get_matcher(method='simple')
     matcher(self.doc)
     df = matcher.getAttribute('entStatus')
-    dfCausal = matcher.getAttribute('causalRelationGeneral')
+    dfCausal = matcher.getAttribute('relationGeneral')
     print(dfCausal)
     assert df['entity'].tolist() == ['pump bearings', 'shaft']
     assert df['label'].tolist() == ['test_label', 'test_label']
