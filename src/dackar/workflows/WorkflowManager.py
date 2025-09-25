@@ -48,7 +48,7 @@ from ..utils.mbse.LMLparser import LMLobject
 
 from ..causal.CausalSentence import CausalSentence
 from ..causal.CausalPhrase import CausalPhrase
-from ..causal.OperatorShiftLogsProcessing import OperatorShiftLogs
+from ..causal.CausalSimple import CausalSimple
 from .. import config as defaultConfig
 
 from ..validate import validateToml
@@ -365,8 +365,8 @@ class WorkflowManager:
         matcher = CausalSentence(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       elif method == 'phrase':
         matcher = CausalPhrase(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
-      elif method == 'osl':
-        matcher = OperatorShiftLogs(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
+      elif method == 'simple':
+        matcher = CausalSimple(self._nlp, entID=self._entId, causalKeywordID=self._causalID)
       else:
         raise IOError(f'Unrecognized causal type {method}')
       matcher.addEntityPattern(self._entPatternName, self._patterns)

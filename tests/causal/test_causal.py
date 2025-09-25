@@ -1,5 +1,5 @@
 from dackar.causal.CausalSentence import CausalSentence
-from dackar.causal.OperatorShiftLogsProcessing import OperatorShiftLogs
+from dackar.causal.CausalSimple import CausalSimple
 from dackar.causal.CausalPhrase import CausalPhrase
 from dackar.config import nlpConfig
 from dackar.utils.nlp.nlp_utils import generatePatternList
@@ -45,10 +45,10 @@ class TestCausal:
   def get_matcher(self, method):
     if method == 'general':
       matcher = CausalSentence(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
-    elif method == 'wo':
+    elif method == 'phrase':
       matcher = CausalPhrase(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
-    elif method == 'osl':
-      matcher = OperatorShiftLogs(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
+    elif method == 'simple':
+      matcher = CausalSimple(self.nlp, entID=self.entId, causalKeywordID=self.causalID)
     else:
       raise IOError(f'Unrecognized causal type {method}')
     patterns = self.generatePattern()
@@ -71,7 +71,7 @@ class TestCausal:
 
 
   def test_wo(self):
-    matcher = self.get_matcher(method='wo')
+    matcher = self.get_matcher(method='phrase')
     matcher(self.doc)
     df = matcher.getAttribute('entStatus')
     dfCausal = matcher.getAttribute('relationGeneral')
@@ -84,7 +84,7 @@ class TestCausal:
     assert dfCausal['object'].tolist()[0] == 'shaft'
 
   def test_osl(self):
-    matcher = self.get_matcher(method='osl')
+    matcher = self.get_matcher(method='simple')
     matcher(self.doc)
     df = matcher.getAttribute('entStatus')
     dfCausal = matcher.getAttribute('relationGeneral')

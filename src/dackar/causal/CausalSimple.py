@@ -50,7 +50,7 @@ if not Token.has_extension('action'):
 if not Token.has_extension('edep'):
   Token.set_extension("edep", default=None)
 
-class OperatorShiftLogs(CausalBase):
+class CausalSimple(CausalBase):
   """
     Class to process OPG Operator Shift Logs dataset
   """

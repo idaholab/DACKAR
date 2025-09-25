@@ -173,7 +173,7 @@ nlp_schema = {
             "type": {
               "type": "string",
               "description": "Type of causal analysis",
-              "enum": ["general", "phrase", "osl"]
+              "enum": ["general", "phrase", "simple"]
             }
           },
           "additionalProperties": False
