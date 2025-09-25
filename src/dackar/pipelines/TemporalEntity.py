@@ -134,7 +134,7 @@ class Temporal(object):
         |
         # Ordinal-Day-Month-Year
         (?:
-            """ + ordinalPattern + """
+            """ + ordinalPattern + r"""
             \s+
             (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* # Month name
             (?:                         # Year is optional
@@ -144,7 +144,7 @@ class Temporal(object):
         )
         |
         (?:
-            """ + ordinalPattern + """
+            """ + ordinalPattern + r"""
             \s+
             of
             \s+
@@ -159,7 +159,7 @@ class Temporal(object):
         (?:
             (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*  # Month name
             \s+
-            """ + ordinalPattern + """
+            """ + ordinalPattern + r"""
             (?:                         # Year is optional
                 \s+
                 \d{4}                   # Year

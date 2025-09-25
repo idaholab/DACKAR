@@ -73,10 +73,9 @@ class OperatorShiftLogs(WorkflowBase):
       self.nlp.add_pipe('mergeEntitiesWithSameID', after='aliasResolver')
 
     self._allRelPairs = []
-    self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
     self._subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
     self._objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
-    self._extractedInfoNames = ['Entity', 'Status', 'Amod', 'Action', 'Dep', 'Alias', 'Negation', 'Conjecture', 'Sentence']
+    self._entInfoNames = ['entity', 'label', 'status', 'amod', 'action', 'dep', 'alias', 'negation', 'conjecture', 'sentence']
 
   def reset(self):
     """
@@ -84,7 +83,7 @@ class OperatorShiftLogs(WorkflowBase):
     """
     super().reset()
     self._allRelPairs = []
-    self._entStatus = None
+    self._entInfoNames = None
 
   def textProcess(self):
     """
@@ -139,19 +138,20 @@ class OperatorShiftLogs(WorkflowBase):
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if ents is not None:
         for ent in ents:
-            entInfo.append([ent.text, ent._.status, ent._.status_amod, ent._.action, ent._.edep, ent._.alias, ent._.neg_text, sent._.conjecture, sent.text])
+            entInfo.append([ent.text, ent.label_, ent._.status, ent._.status_amod, ent._.action, ent._.edep, ent._.alias, ent._.neg_text, sent._.conjecture, sent.text.strip('\n')])
     if len(entInfo) > 0:
-      self.dataframeEntities = pd.DataFrame(entInfo, columns=self._extractedInfoNames)
+      self._entStatus = pd.DataFrame(entInfo, columns=self._entInfoNames)
 
     # Extract entity relations
     logger.info('Start to extract entity relations')
     self.extractRelDep(self._matchedSents)
     # dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
     # dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+
     if len(self._allRelPairs) > 0:
-      self.dataframeRelations = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+      self._causalRelationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
       if self._screen:
-        print(self.dataframeRelations)
+        print(self._causalRelationGeneral)
     logger.info('End of entity relation extraction!')
 
     if self._causalKeywordID in self._entityLabels:
@@ -160,6 +160,7 @@ class OperatorShiftLogs(WorkflowBase):
       self.extractCausalRelDep(self._matchedSents)
       logger.info('End of causal relation extraction!')
       if len(self._rawCausalList) > 0:
+        # self._rawCausalList contains all identified entities ordered by index
         for l in self._rawCausalList:
           print(l, l[0].sent)
         # print(self._rawCausalList)
@@ -363,7 +364,7 @@ class OperatorShiftLogs(WorkflowBase):
         (subject tuple, predicate, object tuple): generator, the extracted causal relation
     """
     subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
-    # objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
+    objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
     for sent in matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if ents is None or len(ents) <= 1:
@@ -388,7 +389,8 @@ class OperatorShiftLogs(WorkflowBase):
           subjConjEnt.append(text)
         elif entRoot.dep_ in subjList:
           subjEnt.append(text)
-        elif entRoot.dep_ in ['obj', 'dobj']:
+        # elif entRoot.dep_ in ['obj', 'dobj']: # mainly for short sentence or phrase
+        elif entRoot.dep_ in objList:
           objEnt.append(text)
         elif entRoot.i > root.i and entRoot.dep_ in ['conj']:
           objConjEnt.append(text)
@@ -410,6 +412,11 @@ class OperatorShiftLogs(WorkflowBase):
       for obj in objEnt:
         for objConj in objConjEnt:
           allRelPairs.append([obj, 'conj', objConj])
+
+      # handle specific case
+      if len(allRelPairs) == 0:
+        if len(ents) == 2 and ents[0].root.i < root.i and ents[1].root.i > root.i:
+          allRelPairs.append([ents[0].text, root.text, ents[1].text])
 
       self._allRelPairs += allRelPairs
 
@@ -454,7 +461,7 @@ class OperatorShiftLogs(WorkflowBase):
           if not self.isSubElements(obj, sscEnts+causalEnts):
             causalPairs.append((obj, obj.i))
 
-      # mergePhrase pipelie can merge "( Issue" into single entity.
+      # mergePhrase pipeline can merge "( Issue" into single entity.
       causalPairs = sorted(causalPairs, key=itemgetter(1))
 
       causalPairs = [elem[0] for elem in causalPairs]

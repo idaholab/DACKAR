@@ -44,7 +44,7 @@ class WorkOrderProcessing(WorkflowBase):
   """
     Class to process CWS work order dataset
   """
-  def __init__(self, nlp, entID='SSC', *args, **kwargs):
+  def __init__(self, nlp, entID='SSC', causalKeywordID='causal',*args, **kwargs):
     """
       Construct
 
@@ -60,7 +60,6 @@ class WorkOrderProcessing(WorkflowBase):
     """
     super().__init__(nlp, entID, causalKeywordID='causal', *args, **kwargs)
     self._allRelPairs = []
-    self._relationNames = ['Subj_Entity', 'Relation', 'Obj_Entity']
 
   def reset(self):
     """
@@ -107,43 +106,28 @@ class WorkOrderProcessing(WorkflowBase):
     logger.info('Start to extract health status')
     self.extractHealthStatus(self._matchedSents)
 
-    ## Access status and output to an ordered csv file
-    entList = []
-    aliasList = []
-    entTextList = []
-    statusList = []
-    cjList = []
-    negList = []
-    negTextList = []
+    rows = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.status is not None:
-          entList.append(ent.text)
-          aliasList.append(ent._.alias)
-          if ent._.alias is not None:
-            entTextList.append(ent._.alias)
-          else:
-            entTextList.append(ent.text)
-          statusList.append(ent._.status)
-          cjList.append(ent._.conjecture)
-          negList.append(ent._.neg)
-          negTextList.append(ent._.neg_text)
+          row = {'entity':ent.text,'label': ent.label_, 'alias':ent._.alias, 'status':ent._.status, 'conjecture':ent._.conjecture, 'negation':ent._.neg, 'negation_text': ent._.neg_text}
+          rows.append(row)
+    self._entStatus = pd.DataFrame(rows)
 
-    # Extracted information can be treated as attributes for given entity
-    dfStatus = pd.DataFrame({'entity':entList, 'alias':aliasList, 'entity_text': entTextList, 'status':statusList, 'conjecture':cjList, 'negation':negList, 'negation_text': negTextList})
     if 'output_status_file' in nlpConfig['files']:
-      dfStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity', 'alias', 'entity_text', 'status', 'conjecture', 'negation', 'negation_text'])
+      self._entStatus.to_csv(nlpConfig['files']['output_status_file'], columns=['entity','label', 'alias', 'status', 'conjecture', 'negation', 'negation_text'])
 
-    self._entStatus = dfStatus
+    # self._entStatus = dfStatus
     logger.info('End of health status extraction!')
 
     # Extract entity relations
-    logger.info('Start to extract causal relation using OPM model information')
+    logger.info('Start to extract causal relation')
     self.extractRelDep(self._matchedSents)
-    dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+    self._causalRelationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
+
     if 'output_relation_file' in nlpConfig['files']:
-      dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
+      self._causalRelationGeneral.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)
     logger.info('End of causal relation extraction!')
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
@@ -235,7 +219,7 @@ class WorkOrderProcessing(WorkflowBase):
         (subject tuple, predicate, object tuple): generator, the extracted causal relation
     """
     subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
-    # objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
+    objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
     for sent in matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       if len(ents) <= 1:
@@ -260,7 +244,8 @@ class WorkOrderProcessing(WorkflowBase):
           subjConjEnt.append(text)
         elif entRoot.dep_ in subjList:
           subjEnt.append(text)
-        elif entRoot.dep_ in ['obj', 'dobj']:
+        # elif entRoot.dep_ in ['obj', 'dobj']: # mainly for short sentence or phrase
+        elif entRoot.dep_ in objList:
           objEnt.append(text)
         elif entRoot.i > root.i and entRoot.dep_ in ['conj']:
           objConjEnt.append(text)
@@ -269,18 +254,23 @@ class WorkOrderProcessing(WorkflowBase):
         for subjConj in subjConjEnt:
           allRelPairs.append([subj, 'conj', subjConj])
         for obj in objEnt:
-          allRelPairs.append([subj, root, obj])
+          allRelPairs.append([subj, root.text, obj])
         for objConj in objConjEnt:
-          allRelPairs.append([subj, root, objConj])
+          allRelPairs.append([subj, root.text, objConj])
       # subjconj
       for subjConj in subjConjEnt:
         for obj in objEnt:
-          allRelPairs.append([subjConj, root, obj])
+          allRelPairs.append([subjConj, root.text, obj])
         for objConj in objConjEnt:
-          allRelPairs.append([subjConj, root, objConj])
+          allRelPairs.append([subjConj, root.text, objConj])
       # obj
       for obj in objEnt:
         for objConj in objConjEnt:
           allRelPairs.append([obj, 'conj', objConj])
+
+      # handle specific case
+      if len(allRelPairs) == 0:
+        if len(ents) == 2 and ents[0].root.i < root.i and ents[1].root.i > root.i:
+          allRelPairs.append([ents[0].text, root.text, ents[1].text])
 
       self._allRelPairs += allRelPairs

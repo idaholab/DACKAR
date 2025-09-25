@@ -17,7 +17,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('DACKAR.utils')
 
 ###########################################################################
 
@@ -28,7 +28,7 @@ def displayNER(doc, includePunct=False):
     Args:
 
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
-      includePunct: bool, True if the punctuaction is included
+      includePunct: bool, True if the punctuation is included
 
     Returns:
 
@@ -38,9 +38,9 @@ def displayNER(doc, includePunct=False):
   for i, t in enumerate(doc):
     if not t.is_punct or includePunct:
       row = {'token': i,
-             'text': t.text, 'lemma': t.lemma_,
-             'pos': t.pos_, 'dep': t.dep_, 'ent_type': t.ent_type_,
-             'ent_iob_': t.ent_iob_}
+            'text': t.text, 'lemma': t.lemma_,
+            'pos': t.pos_, 'dep': t.dep_, 'ent_type': t.ent_type_,
+            'ent_iob_': t.ent_iob_}
       if doc.has_extension('coref_chains'):
         if t.has_extension('coref_chains') and t._.coref_chains: # neuralcoref attributes
           row['coref_chains'] = t._.coref_chains.pretty_representation
@@ -263,3 +263,24 @@ def customTokenizer(nlp):
                             token_match=nlp.tokenizer.token_match,
                             rules=nlp.Defaults.tokenizer_exceptions)
   return nlp
+
+
+def extractNER(doc):
+  """
+    Generate data frame for visualization of spaCy doc with custom NER.
+
+    Args:
+
+      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
+
+    Returns:
+
+      df: pandas.DataFrame, data frame contains attributes of NER tokens
+  """
+  rows = []
+  for ent in doc.ents:
+    row = {'entity':ent, 'label': ent.label_, 'id': ent.ent_id_, 'alias':ent._.alias, 'start': ent.start, 'end': ent.end}
+    rows.append(row)
+  df = pd.DataFrame(rows)
+  df.index.name = None
+  return df

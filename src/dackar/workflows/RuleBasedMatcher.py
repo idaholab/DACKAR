@@ -15,7 +15,7 @@ from collections import deque
 from ..config import nlpConfig
 from .WorkflowBase import WorkflowBase
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('DACKAR.Causal')
 
 class RuleBasedMatcher(WorkflowBase):
   """
@@ -36,6 +36,8 @@ class RuleBasedMatcher(WorkflowBase):
         None
     """
     super().__init__(nlp, entID, causalKeywordID, *args, **kwargs)
+    self._causalRelation = None
+    self._causalRelationGeneral = None
 
   def reset(self):
     """
@@ -59,73 +61,39 @@ class RuleBasedMatcher(WorkflowBase):
     ## health status
     logger.info('Start to extract health status')
     self.extractHealthStatus(self._matchedSents)
-    ## Access health status and output to an ordered csv file
-    entList = []
-    hsList = []
-    svList = []
-    kwList = []
-    cjList = []
-    sentList = []
-    hsPrependAmod = []
-    hsPrepend = []
-    hsAppend = []
-    hsAppendAmod = []
-    negList = []
-    negTextList = []
+
+    rows = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.health_status is not None:
-          entList.append(ent.text)
-          hsList.append(ent._.health_status)
-          svList.append(ent._.ent_status_verb)
-          kwList.append(ent._.hs_keyword)
-          cjList.append(ent._.conjecture)
-          sentList.append(sent.text.strip('\n'))
-          hsPrepend.append(ent._.health_status_prepend)
-          hsPrependAmod.append(ent._.health_status_prepend_amod)
-          hsAppend.append(ent._.health_status_append)
-          hsAppendAmod.append(ent._.health_status_append_amod)
-          negList.append(ent._.neg)
-          negTextList.append(ent._.neg_text)
+          row = {'entity':ent.text, 'label':ent.label_, 'alias':ent._.alias, 'root':ent._.ent_status_verb, 'status keyword':ent._.hs_keyword, 'health status':ent._.health_status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
+              'health status prepend': ent._.health_status_prepend, 'health status prepend adjectival modifier':ent._.health_status_prepend_amod, 'health status append': ent._.health_status_append,
+              'health status append adjectival modifier': ent._.health_status_append_amod, 'negation':ent._.neg, 'negation text': ent._.neg_text}
 
-    ## include 'root' in the output
-    df = pd.DataFrame({'entities':entList, 'root':svList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList,
-                       'health status prepend': hsPrepend, 'health status prepend adjectival modifier':hsPrependAmod, 'health status append': hsAppend,
-                       'health status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
-    df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'root','status keywords', 'health status prepend adjectival modifier', 'health status prepend', 'health status', 'health status append adjectival modifier', 'health status append', 'sentence'])
-    self._entHS = df
-    # df = pd.DataFrame({'entities':entList, 'status keywords':kwList, 'health status':hsList, 'conjecture':cjList, 'sentence':sentList})
-    # df.to_csv(nlpConfig['files']['output_health_status_file'], columns=['entities', 'status keywords', 'health statuses', 'conjecture', 'sentence'])
+          rows.append(row)
+    self._entHS = pd.DataFrame(rows)
 
+    rows = []
     for sent in self._matchedSents:
       ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
       for ent in ents:
         if ent._.status is not None:
-          entList.append(ent.text)
-          hsList.append(ent._.status)
-          svList.append(ent._.ent_status_verb)
-          cjList.append(ent._.conjecture)
-          sentList.append(sent.text.strip('\n'))
-          hsPrepend.append(ent._.status_prepend)
-          hsPrependAmod.append(ent._.status_prepend_amod)
-          hsAppend.append(ent._.status_append)
-          hsAppendAmod.append(ent._.status_append_amod)
-          negList.append(ent._.neg)
-          negTextList.append(ent._.neg_text)
+          row = {'entity':ent.text, 'label':ent.label_, 'alias':ent._.alias, 'status keyword':ent._.ent_status_verb, 'status':ent._.status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
+                'status prepend': ent._.status_prepend, 'status prepend adjectival modifier':ent._.status_prepend_amod, 'status append': ent._.status_append,
+                'status append adjectival modifier': ent._.status_append_amod, 'negation':ent._.neg, 'negation text': ent._.neg_text}
+          rows.append(row)
+    self._entStatus = pd.DataFrame(rows)
 
-    ## include 'root' in the output
-    dfStatus = pd.DataFrame({'entities':entList, 'status keywords':svList, 'status':hsList, 'conjecture':cjList, 'sentence':sentList,
-                       'status prepend': hsPrepend, 'status prepend adjectival modifier':hsPrependAmod, 'status append': hsAppend,
-                       'status append adjectival modifier': hsAppendAmod, 'negation':negList, 'negation text': negTextList})
-    # df.to_csv(nlpConfig['files']['output_status_file'], columns=['entities', 'conjecture', 'negation', 'negation text', 'status keyword', 'status prepend adjectival modifier', 'status prepend', 'status', 'status append adjectival modifier', 'status append', 'sentence'])
-    self._entStatus = dfStatus
+    self._causalRelation = None
+    self._causalRelationGeneral = None
 
     logger.info('End of health status extraction!')
     ## causal relation
     logger.info('Start to extract causal relation using OPM model information')
     self.extractRelDep(self._matchedSents)
     dfCausals = pd.DataFrame(self._extractedCausals, columns=self._causalNames)
+    self._causalRelation = dfCausals
     dfCausals.to_csv(nlpConfig['files']['output_causal_effect_file'], columns=self._causalNames)
     logger.info('End of causal relation extraction!')
     ## print extracted relation
@@ -137,7 +105,8 @@ class RuleBasedMatcher(WorkflowBase):
     logger.info('Start to use general extraction method to extract causal relation')
     matchedCauseEffectSents = self.collectCauseEffectSents(self._doc)
     extractedCauseEffects = self.extract(matchedCauseEffectSents, predSynonyms=self._causalKeywords['VERB'], exclPrepos=[])
-    print(*extractedCauseEffects)
+    self._causalRelationGeneral = pd.DataFrame(extractedCauseEffects, columns=self._relationNames)
+
     logger.info('End of causal relation extraction using general extraction method!')
 
   def extractHealthStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
@@ -639,7 +608,7 @@ class RuleBasedMatcher(WorkflowBase):
             if cRootHead.dep_ in ['xcomp', 'advcl', 'relcl']:
               causeList, effectList = self.identifyCauseEffectForClauseModifier(cRootHead, rootCause, validLeftSSCEnts, validRightSSCEnts)
             elif cRoot.dep_ in ['attr']:
-              causeList, effectList = self.identifyCauseEffectForAttr(self, cRootHead, validLeftSSCEnts, validRightSSCEnts)
+              causeList, effectList = self.identifyCauseEffectForAttr(cRootHead, validLeftSSCEnts, validRightSSCEnts)
               if rootCause is None:
                 rootCause = (causeList, effectList, conjecture)
             elif cRoot.dep_ in ['nsubj']:
@@ -657,7 +626,7 @@ class RuleBasedMatcher(WorkflowBase):
             if cRootHead.dep_ in ['xcomp', 'advcl', 'relcl']:
               causeList, effectList = self.identifyCauseEffectForClauseModifier(cRootHead, rootCause, validLeftSSCEnts, validRightSSCEnts, reverse=True)
             elif cRoot.dep_ in ['attr']:
-              causeList, effectList = self.identifyCauseEffectForAttr(self, cRootHead, validLeftSSCEnts, validRightSSCEnts, reverse=True)
+              causeList, effectList = self.identifyCauseEffectForAttr(cRootHead, validLeftSSCEnts, validRightSSCEnts, reverse=True)
               if rootCause is None:
                 rootCause = (causeList, effectList, conjecture)
             elif cRoot.dep_ in ['nsubj']:

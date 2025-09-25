@@ -1,0 +1,132 @@
+[nlp]
+language_model = "en_core_web_lg"
+logger = "dackar.log"
+
+[nlp.ent]
+label = "cws_component"
+id = "OPM"
+
+[nlp.files]
+text = "../data/cws_data.txt"
+entity = "../data/entities.csv"
+opm = "../opm_models/cws.html"
+
+[nlp.processing]
+# normalize
+bullet_points = true
+hyphenated_words = true
+quotation_marks = true
+whitespace = true
+numerize = true
+# remove
+brackets = true
+html_tags = true
+punctuation = ["*","+",":","=","\\","^","_","|","~", "..", "..."]
+# replace
+currency_symbols = true
+emails = true
+emojis = true
+hashtags = true
+numbers = true
+phone_numbers = true
+urls = true
+user_handles = true
+
+[nlp.ner]
+unit = true
+temporal_relation = true
+temporal = true
+temporal_attribute = true
+location = true
+emergent_activity = true
+conjecture = true
+
+[nlp.causal]
+type = 'general' # other options: general: "rule based method", wo: "work order", osl: "operator shift log"
+
+[nlp.outputs]
+csv = true
+visualize = true
+
+[nlp.analysis]
+type = 'causal' # other options: 'ner': 'named entity recognition', 'causal': 'rule based causal analysis'
+
+
+####################################
+
+[neo4j]
+uri = "neo4j://localhost:7687"
+pwd = "123456789"
+config_file_path = "/Users/wangc/Library/Application Support/Neo4j Desktop/Application/relate-data/dbmss/dbms-28cea4a5-ad08-4fed-94a1-70d44e297586/conf/neo4j.conf"
+import_folder_path = "/Users/wangc/projects/DACKAR/examples/KG_demo/"
+reset = true
+
+[[neo4j.node]]
+file = "../examples/KG_demo/test_nodes.csv"
+label = "MBSE"
+attribute = {'nodeId'='nodeId', 'label'='label', 'ID'='ID', 'type'='type'}
+
+[[neo4j.node]]
+file = "../examples/KG_demo/test_monit_vars.csv"
+label = "monitor_var"
+attribute = {'nodeId'='varID'}
+
+[[neo4j.node]]
+file = "../examples/KG_demo/test_AD.csv"
+label = "anomaly_detect"
+attribute = {'nodeId'='AD_ID', 'type'='type'}
+
+[[neo4j.node]]
+file = "../examples/KG_demo/test_anomalies.csv"
+label = "anomaly"
+attribute = {'nodeId'='anom_ID', 'time_initial'='t_in', 'time_final'='t_fin'}
+
+[[neo4j.edge]]
+file = "../examples/KG_demo/test_edges.csv"
+source_label = "MBSE"
+target_label = "MBSE"
+label = "MBSE_link"
+label_attribute = {'prop'='type'}
+source_attribute = {'nodeId'='sourceNodeId'}
+target_attribute = {'nodeId'='targetNodeId'}
+
+[[neo4j.edge]]
+file = "../examples/KG_demo/test_monit_vars.csv"
+source_label = "monitor_var"
+target_label = "MBSE"
+label = "monitoring"
+source_attribute = {'nodeId'='varID'}
+target_attribute = {'nodeId'='MBSE_ID'}
+
+[[neo4j.edge]]
+file = "../examples/KG_demo/test_AD.csv"
+source_label = "anomaly_detect"
+target_label = "monitor_var"
+label = "input_from"
+source_attribute = {'nodeId'='AD_ID'}
+target_attribute = {'nodeId'='var_ID'}
+
+[[neo4j.edge]]
+file = "../examples/KG_demo/test_anomalies.csv"
+source_label = "anomaly"
+target_label = "anomaly_detect"
+label = "detected_by"
+source_attribute = {'nodeId'='anom_ID'}
+target_attribute = {'nodeId'='AD_ID'}
+
+
+########################################
+
+[similarity]
+disambiguation = true
+delta = 0.8
+source = "source file"
+target = "target file"
+
+
+##########################################
+[anomaly]
+normalize = 'robust'
+method = 'normal'
+kdp = true
+data = ""
