@@ -103,7 +103,7 @@ class CausalSentence(CausalBase):
     if len(self._allRelPairs) > 0:
       self._relationGeneral = pd.DataFrame(self._allRelPairs, columns=self._relationNames)
       if self._screen:
-        print(self._relationGeneral)
+        logger.info(self._relationGeneral)
     logger.info('End of general entity relation extraction!')
 
     # Collect general cause effect info in (subj, causalKeywords, obj), this can be combined with method "extractCausalRelDep"
@@ -426,7 +426,7 @@ class CausalSentence(CausalBase):
     toVisit = deque([root]) # queue for bfs
     while len(toVisit) > 0:
       child = toVisit.popleft()
-      # print("child", child, child.dep_)
+      # logger.debug("child", child, child.dep_)
       if child.dep_ in deps:
         # to handle preposition
         try:
@@ -671,11 +671,6 @@ class CausalSentence(CausalBase):
           self.collectExtactedCausals(causeList, effectList, cEnt, sent, conjecture)
       if len(causeEffectPair) != 0:
         allCauseEffectPairs.append(causeEffectPair)
-
-    # print("Identified Cause-Effect Pairs:")
-    # for elem in allCauseEffectPairs:
-    #   for i in elem:
-    #     print(i)
 
   def identifyCauseEffectForNsuj(self, cRoot, cEntsIndex, causalEnts, orderedEnts, validRightSSCEnts, reverse=False):
     """
