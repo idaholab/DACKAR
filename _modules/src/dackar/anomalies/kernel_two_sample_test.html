@@ -1,0 +1,397 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.anomalies.kernel_two_sample_test &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.anomalies.kernel_two_sample_test</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.anomalies.kernel_two_sample_test</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on July, 2025</span>
+
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="c1"># Code modified from https://github.com/emanuele/kernel_two_sample_test</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sys</span><span class="w"> </span><span class="kn">import</span> <span class="n">stdout</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">pairwise_kernels</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="MMD2u">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.MMD2u">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">MMD2u</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to perform MMD^2_u unbiased statistic using U-statistics.</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        K: np.array, 2-D matrix</span>
+<span class="sd">        m: int, size of first vector</span>
+<span class="sd">        n: int, size of second vector</span>
+<span class="sd">      Return:</span>
+<span class="sd">        val: float, MMD^2_u unbiased statistic using U-statistics</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">Kx</span> <span class="o">=</span> <span class="n">K</span><span class="p">[:</span><span class="n">m</span><span class="p">,</span> <span class="p">:</span><span class="n">m</span><span class="p">]</span>
+    <span class="n">Ky</span> <span class="o">=</span> <span class="n">K</span><span class="p">[</span><span class="n">m</span><span class="p">:,</span> <span class="n">m</span><span class="p">:]</span>
+    <span class="n">Kxy</span> <span class="o">=</span> <span class="n">K</span><span class="p">[:</span><span class="n">m</span><span class="p">,</span> <span class="n">m</span><span class="p">:]</span>
+    <span class="n">val</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="p">(</span><span class="n">m</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="n">Kx</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">-</span> <span class="n">Kx</span><span class="o">.</span><span class="n">diagonal</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span> <span class="o">+</span> \
+          <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">n</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">-</span> <span class="mf">1.0</span><span class="p">))</span> <span class="o">*</span> <span class="p">(</span><span class="n">Ky</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">-</span> <span class="n">Ky</span><span class="o">.</span><span class="n">diagonal</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span> <span class="o">-</span> \
+          <span class="mf">2.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">m</span> <span class="o">*</span> <span class="n">n</span><span class="p">)</span> <span class="o">*</span> <span class="n">Kxy</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">val</span></div>
+
+
+<div class="viewcode-block" id="MMD2b">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.MMD2b">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">MMD2b</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to perform MMD^2 biased statistics using V-statistics</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        K: np.array, 2-D matrix</span>
+<span class="sd">        m: int, size of first vector</span>
+<span class="sd">        n: int, size of second vector</span>
+<span class="sd">      Return:</span>
+<span class="sd">        out: float, MMD^2 biased statistics using V-statistics</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">Kx</span> <span class="o">=</span> <span class="n">K</span><span class="p">[:</span><span class="n">m</span><span class="p">,</span> <span class="p">:</span><span class="n">m</span><span class="p">]</span>
+    <span class="n">Ky</span> <span class="o">=</span> <span class="n">K</span><span class="p">[</span><span class="n">m</span><span class="p">:,</span> <span class="n">m</span><span class="p">:]</span>
+    <span class="n">Kxy</span> <span class="o">=</span> <span class="n">K</span><span class="p">[:</span><span class="n">m</span><span class="p">,</span> <span class="n">m</span><span class="p">:]</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="mf">1.0</span><span class="o">/</span><span class="p">(</span><span class="n">m</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span> <span class="o">*</span> <span class="n">Kx</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">+</span> <span class="mf">1.0</span><span class="o">/</span><span class="p">(</span><span class="n">n</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">*</span><span class="n">Ky</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">-</span> <span class="mf">2.0</span><span class="o">/</span><span class="p">(</span><span class="n">m</span><span class="o">*</span><span class="n">n</span><span class="p">)</span><span class="o">*</span><span class="n">Kxy</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="MMD2u_UCB">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.MMD2u_UCB">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">MMD2u_UCB</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.05</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to calculate the uniform convergence bound for MMD2u</span>
+<span class="sd">      </span>
+<span class="sd">      Args:</span>
+<span class="sd">        K: np.array, 2-D matrix</span>
+<span class="sd">        m: int, sample size</span>
+<span class="sd">        alpha: float, acceptance value for hypothesis testing</span>
+<span class="sd">      Return:</span>
+<span class="sd">        ucb: float, uniform convergence bound for MMD2u</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">alpha</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">alpha</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;alpha should be within [0,1], but got </span><span class="si">{</span><span class="n">alpha</span><span class="si">}</span><span class="s1">&#39;</span>
+    <span class="n">Kxy</span> <span class="o">=</span> <span class="n">K</span><span class="p">[:</span><span class="n">m</span><span class="p">,</span> <span class="n">m</span><span class="p">:]</span>
+    <span class="n">maxKxy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">Kxy</span><span class="p">)))</span>
+    <span class="n">ucb</span> <span class="o">=</span> <span class="mf">4.0</span><span class="o">*</span><span class="n">maxKxy</span><span class="o">/</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">1.0</span><span class="o">/</span><span class="n">alpha</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">ucb</span></div>
+
+
+
+<div class="viewcode-block" id="MMD2b_UCB">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.MMD2b_UCB">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">MMD2b_UCB</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.05</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to calculate the uniform convergence bound for MMD2b</span>
+<span class="sd">      </span>
+<span class="sd">      Args:</span>
+<span class="sd">        K: np.array, 2-D matrix</span>
+<span class="sd">        m: int, sample size</span>
+<span class="sd">        alpha: float, acceptance value for hypothesis testing</span>
+<span class="sd">      Return:</span>
+<span class="sd">        ucb: float, uniform convergence bound for MMD2b</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">alpha</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">alpha</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s1">&#39;alpha should be within [0,1], but got </span><span class="si">{</span><span class="n">alpha</span><span class="si">}</span><span class="s1">&#39;</span>
+    <span class="n">Kxy</span> <span class="o">=</span> <span class="n">K</span><span class="p">[:</span><span class="n">m</span><span class="p">,</span> <span class="n">m</span><span class="p">:]</span>
+    <span class="n">maxKxy</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">Kxy</span><span class="p">)))</span>
+    <span class="n">ucb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span><span class="o">*</span><span class="n">maxKxy</span><span class="o">/</span><span class="n">m</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span><span class="o">+</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mf">2.0</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mf">1.0</span><span class="o">/</span><span class="n">alpha</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">ucb</span></div>
+
+
+
+<div class="viewcode-block" id="compute_null_distribution">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.compute_null_distribution">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_null_distribution</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">iterations</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                              <span class="n">random_state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">marker_interval</span><span class="o">=</span><span class="mi">500</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to calculate the bootstrap null-distribution of MMD2u.</span>
+<span class="sd">      </span>
+<span class="sd">      Args:</span>
+<span class="sd">        K: np.array, 2-D matrix</span>
+<span class="sd">        m: int, size of first vector</span>
+<span class="sd">        n: int, size of second vector</span>
+<span class="sd">        iterations: int, number of bootstrap iterations</span>
+<span class="sd">        verbose: bool, flag to provide calculation details</span>
+<span class="sd">        random_state: np class, numpy random number generator class</span>
+<span class="sd">        marker_interval: int, interval where calculation details are displayed</span>
+<span class="sd">      Return:</span>
+<span class="sd">        mmd2u_null: np.array, null-distribution of MMD2u</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">random_state</span><span class="p">)</span> <span class="o">==</span> <span class="nb">type</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomState</span><span class="p">()):</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">random_state</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">RandomState</span><span class="p">(</span><span class="n">random_state</span><span class="p">)</span>
+
+    <span class="n">mmd2u_null</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">iterations</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">iterations</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">verbose</span> <span class="ow">and</span> <span class="p">(</span><span class="n">i</span> <span class="o">%</span> <span class="n">marker_interval</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">i</span><span class="p">),</span>
+            <span class="n">stdout</span><span class="o">.</span><span class="n">flush</span><span class="p">()</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">permutation</span><span class="p">(</span><span class="n">m</span><span class="o">+</span><span class="n">n</span><span class="p">)</span>
+        <span class="n">K_i</span> <span class="o">=</span> <span class="n">K</span><span class="p">[</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]]</span>
+        <span class="n">mmd2u_null</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">MMD2u</span><span class="p">(</span><span class="n">K_i</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">mmd2u_null</span></div>
+
+
+
+<div class="viewcode-block" id="compute_null_distribution_given_permutations">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.compute_null_distribution_given_permutations">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_null_distribution_given_permutations</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">permutation</span><span class="p">,</span>
+                                                 <span class="n">iterations</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to calculate the bootstrap null-distribution of MMD2u given predefined permutations.</span>
+<span class="sd">      </span>
+<span class="sd">      Args:</span>
+<span class="sd">        K: np.array, 2-D matrix</span>
+<span class="sd">        m: int, size of first vector</span>
+<span class="sd">        n: int, size of second vector</span>
+<span class="sd">        permutation: np.array, array of permutations</span>
+<span class="sd">        iterations: int, number of bootstrap iterations</span>
+<span class="sd">      Return:</span>
+<span class="sd">        mmd2u_null: np.array, null-distribution of MMD2u given predefined permutations</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">iterations</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">iterations</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">permutation</span><span class="p">)</span>
+
+    <span class="n">mmd2u_null</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">iterations</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">iterations</span><span class="p">):</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">permutation</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="n">K_i</span> <span class="o">=</span> <span class="n">K</span><span class="p">[</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">]]</span>
+        <span class="n">mmd2u_null</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">MMD2u</span><span class="p">(</span><span class="n">K_i</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">mmd2u_null</span></div>
+
+
+
+<div class="viewcode-block" id="kernel_two_sample_test">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.kernel_two_sample_test">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">kernel_two_sample_test</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">kernel_function</span><span class="o">=</span><span class="s1">&#39;rbf&#39;</span><span class="p">,</span> <span class="n">iterations</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>
+                           <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.05</span><span class="p">,</span> <span class="n">thin</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to calculate MMD^2_u, its null distribution and the p-value of the kernel two-sample test.</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        X: np.array, first vector</span>
+<span class="sd">        Y: np.array, second vector</span>
+<span class="sd">        kernel_function: string, type of kenerl function. Valid values are: additive_chi2, chi2, </span>
+<span class="sd">                                 linear, poly, polynomial, rbf, laplacian, sigmoid, cosine</span>
+<span class="sd">        iterations: int, number of iterations</span>
+<span class="sd">        verbose: bool, flag to provide calculation details</span>
+<span class="sd">        random_state: np class, numpy random number generator class</span>
+<span class="sd">        alpha: float, acceptance value for hypothesis testing</span>
+<span class="sd">        thin: int, sample size for thinning calculation</span>
+<span class="sd">        **kwargs: dict, dictionary of parameteres that are passed to pairwise_kernels() as kernel parameters. </span>
+<span class="sd">                        E.g. if kernel_two_sample_test(..., kernel_function=&#39;rbf&#39;, gamma=0.1), then this will </span>
+<span class="sd">                        result in getting the kernel through kernel_function(metric=&#39;rbf&#39;, gamma=0.1).</span>
+<span class="sd">      Return:</span>
+<span class="sd">        mmd2u: float, MMD^2_u unbiased statistic using U-statistics</span>
+<span class="sd">        mmd2u_null: np.array, null-distribution of MMD2u</span>
+<span class="sd">        p_value: float, calculated p-value for hypothesis testing</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">Y</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">Y</span> <span class="o">=</span> <span class="n">Y</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">thin</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">thin</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">thin</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Try to perform thin calculation, but get non-integer value for &quot;thin: </span><span class="si">{</span><span class="n">thin</span><span class="si">}</span><span class="s1">&quot;&#39;</span><span class="p">)</span>
+            <span class="n">thin</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">thin</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="n">X</span><span class="p">[</span><span class="mi">0</span><span class="p">::</span><span class="n">thin</span><span class="p">,</span> <span class="p">:]</span>
+        <span class="n">Y</span> <span class="o">=</span> <span class="n">Y</span><span class="p">[</span><span class="mi">0</span><span class="p">::</span><span class="n">thin</span><span class="p">,</span> <span class="p">:]</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">Y</span><span class="p">)</span>
+    <span class="n">XY</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">vstack</span><span class="p">([</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">])</span>
+    <span class="n">K</span> <span class="o">=</span> <span class="n">pairwise_kernels</span><span class="p">(</span><span class="n">XY</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="n">kernel_function</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">mmd2u</span> <span class="o">=</span> <span class="n">MMD2u</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;MMD^2_u = </span><span class="si">%s</span><span class="s2">&quot;</span> <span class="o">%</span> <span class="n">mmd2u</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Computing the null distribution.&quot;</span><span class="p">)</span>
+    <span class="n">ucb</span> <span class="o">=</span> <span class="n">MMD2u_UCB</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;UCB bound for MMD^2_u is </span><span class="si">{</span><span class="n">ucb</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">mmd2u_null</span> <span class="o">=</span> <span class="n">compute_null_distribution</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span>
+                                           <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span>
+                                           <span class="n">random_state</span><span class="o">=</span><span class="n">random_state</span><span class="p">)</span>
+    <span class="n">p_value</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1.0</span><span class="o">/</span><span class="n">iterations</span><span class="p">,</span> <span class="p">(</span><span class="n">mmd2u_null</span> <span class="o">&gt;</span> <span class="n">mmd2u</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">/</span>
+                  <span class="nb">float</span><span class="p">(</span><span class="n">iterations</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">verbose</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;p-value ~= </span><span class="si">%s</span><span class="s2"> </span><span class="se">\t</span><span class="s2"> (resolution : </span><span class="si">%s</span><span class="s2">)&quot;</span> <span class="o">%</span> <span class="p">(</span><span class="n">p_value</span><span class="p">,</span> <span class="mf">1.0</span><span class="o">/</span><span class="n">iterations</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">p_value</span> <span class="o">&lt;</span> <span class="n">alpha</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Deviaition from null hyothesis is statistically significant at test level </span><span class="si">{</span><span class="n">alpha</span><span class="si">}</span><span class="s2">, reject null hyothesis, </span><span class="se">\n</span><span class="s2"> </span><span class="se">\</span>
+<span class="s2">                         i.e., the two samples are from different distributions!&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">mmd2u</span><span class="p">,</span> <span class="n">mmd2u_null</span><span class="p">,</span> <span class="n">p_value</span></div>
+
+
+<div class="viewcode-block" id="chebyshevTesting">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.chebyshevTesting">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">chebyshevTesting</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">kernel_function</span><span class="o">=</span><span class="s1">&#39;rbf&#39;</span><span class="p">,</span> <span class="n">iterations</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>
+                           <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to perform Chebyshev testing using Chebyshev&#39;s inequality</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        X: np.array, first vector</span>
+<span class="sd">        Y: np.array, second vector</span>
+<span class="sd">        kernel_function: string, type of kernel function</span>
+<span class="sd">        iterations: int, number of bootstrap iterations</span>
+<span class="sd">        verbose: bool, flag to provide calculation details</span>
+<span class="sd">        random_state: np class, numpy random number generator class</span>
+<span class="sd">        alpha: float, acceptance value for hypothesis testing</span>
+<span class="sd">        **kwargs: dict, dictionary of parameteres that are passed to pairwise_kernels() as kernel parameters.</span>
+<span class="sd">      Return:</span>
+<span class="sd">        accept: bool, outcome of Chebyshev testing          </span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">accept</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">mmd2u</span><span class="p">,</span> <span class="n">mmd2u_null</span><span class="p">,</span> <span class="n">p_value</span> <span class="o">=</span> <span class="n">kernel_two_sample_test</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">Y</span><span class="p">,</span> <span class="n">kernel_function</span><span class="o">=</span><span class="n">kernel_function</span><span class="p">,</span> <span class="n">iterations</span><span class="o">=</span><span class="n">iterations</span><span class="p">,</span>
+                           <span class="n">verbose</span><span class="o">=</span><span class="n">verbose</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="n">random_state</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+    <span class="n">accept</span> <span class="o">=</span> <span class="n">chebyshevTesting_precomputed_mmd</span><span class="p">(</span><span class="n">mmd2u</span><span class="p">,</span> <span class="n">mmd2u_null</span><span class="p">,</span> <span class="n">alpha</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">accept</span></div>
+
+
+<div class="viewcode-block" id="chebyshevTesting_precomputed_mmd">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/kernel_two_sample_test/index.html#src.dackar.anomalies.kernel_two_sample_test.chebyshevTesting_precomputed_mmd">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">chebyshevTesting_precomputed_mmd</span><span class="p">(</span><span class="n">mmd2u</span><span class="p">,</span> <span class="n">mmd2u_null</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.01</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to perform MMD Chebyshev testing </span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        mmd2u: float, MMD^2_u unbiased statistic using U-statistics</span>
+<span class="sd">        mmd2u_null: np.array, null-distribution of MMD2u</span>
+<span class="sd">        alpha: float, acceptance value for hypothesis testing</span>
+<span class="sd">      Return:</span>
+<span class="sd">        accept: bool, outcome of Chebyshev testing </span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">accept</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">mu</span> <span class="o">=</span> <span class="n">mmd2u_null</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
+    <span class="n">sigma</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">mmd2u_null</span><span class="p">)</span>
+    <span class="n">nu</span> <span class="o">=</span> <span class="mf">1.0</span><span class="o">/</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">alpha</span><span class="p">))</span>
+    <span class="n">diff</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">mmd2u</span><span class="o">-</span><span class="n">mu</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">diff</span> <span class="o">&lt;</span> <span class="n">nu</span> <span class="o">*</span> <span class="n">sigma</span><span class="p">:</span>
+        <span class="n">accept</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Chebyshev Inequality holds: </span><span class="si">{</span><span class="n">diff</span><span class="si">}</span><span class="s2"> &lt; </span><span class="si">{</span><span class="n">nu</span><span class="o">*</span><span class="n">sigma</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">accept</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Chebyshev Inequality does not hold: </span><span class="si">{</span><span class="n">diff</span><span class="si">}</span><span class="s2"> &gt; </span><span class="si">{</span><span class="n">nu</span><span class="o">*</span><span class="n">sigma</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">accept</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

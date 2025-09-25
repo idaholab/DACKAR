@@ -1,0 +1,326 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Temporal correlation analysis between discrete point events and times eries data &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+      <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Temporal correlation analysis between discrete point events and times eries data</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/notebooks/test_correlation.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Temporal-correlation-analysis-between-discrete-point-events-and-times-eries-data">
+<h1>Temporal correlation analysis between discrete point events and times eries data<a class="headerlink" href="#Temporal-correlation-analysis-between-discrete-point-events-and-times-eries-data" title="Link to this heading">¶</a></h1>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import pairwise_distances
+
+import os, sys
+
+cwd = os.getcwd()
+frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, &#39;src&#39;))
+sys.path.append(frameworkDir)
+
+from dackar.utils.num import t_score
+
+np.random.seed(6)
+</pre></div>
+</div>
+</div>
+<section id="Generate-example-time-series">
+<h2>Generate example time series<a class="headerlink" href="#Generate-example-time-series" title="Link to this heading">¶</a></h2>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>def generateSeries(maxT, t1, t2, tsql, sqlDur):
+    N  = 5000
+    N_spk = 7
+
+    cpu        = np.zeros(N)
+    t          = np.linspace(0,maxT,N)
+    noise_base = np.random.normal(0,0.005,N)
+
+    spikesLoc = np.random.randint(low=0, high=N, size=N_spk)
+    spikesDT  = np.random.randint(low=10, high=20, size=N_spk)
+
+    difference_array_1 = np.absolute(t-t1)
+    index1 = difference_array_1.argmin()
+
+    difference_array_2 = np.absolute(t-t2)
+    index2 = difference_array_2.argmin()
+
+    cpu[0:index1] = .3
+    cpu[index2:N] = .3
+    cpu[index1:index2] = .9
+    cpu = cpu + noise_base
+
+    # random spikes
+    for i in range(N_spk):
+        noise_spike = np.absolute(np.random.normal(0,0.04, spikesDT[i]))
+        for dt in range(spikesDT[i]):
+            cpu[spikesLoc[i] + dt] = cpu[spikesLoc[i] + dt] + noise_spike[dt]
+
+    # SQL spikes
+    noiseSQL = np.absolute(np.random.normal(0,0.08, sqlDur))
+    for dt in range(sqlDur):
+        cpu[tsql + dt] = cpu[tsql + dt] + noiseSQL[dt]
+
+    print(&#39;Anomaly ratio: total&#39;, (index2-index1 + np.sum(spikesDT[i]))/N)
+    print(&#39;Anomaly ratio: large spikes:&#39;, (index2-index1)/N)
+    print(&#39;Anomaly ratio: small spikes&#39;, (np.sum(spikesDT[i]))/N)
+
+    return t,cpu
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Generate-temporal-location-of-a-set-of-events">
+<h2>Generate temporal location of a set of events<a class="headerlink" href="#Generate-temporal-location-of-a-set-of-events" title="Link to this heading">¶</a></h2>
+<p>True positive events:</p>
+<ul class="simple">
+<li><p>E1: located right before rump-up</p></li>
+<li><p>E2: located right after rump-up</p></li>
+<li><p>E3: located right before rump-down</p></li>
+<li><p>E4: located right after rump-down</p></li>
+<li><p>E5: located in the middle of squared pulse True negative events:</p></li>
+<li><p>EA: located before the squared pulse</p></li>
+<li><p>EB: located after the squared pulse</p></li>
+<li><p>EC: located after the squared pulse</p></li>
+</ul>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>maxT = 1000
+t1 = 300
+t2 = 370
+tsql   = 650
+sqlDur = 50
+t, cpu = generateSeries(maxT, t1, t2, tsql, sqlDur)
+
+difference_array_1 = np.absolute(t-t1)
+loc1 = difference_array_1.argmin()
+difference_array_2 = np.absolute(t-t2)
+loc2 = difference_array_2.argmin()
+
+# True negative
+E1_loc = loc1 - 10
+E2_loc = loc1 + 10
+E3_loc = loc2 - 10
+E4_loc = loc2 + 10
+E5_loc = loc1 + 35
+
+# True positive
+EA = 200
+difference_array_0 = np.absolute(t-EA)
+EA_loc = difference_array_0.argmin()
+
+EB = 500
+difference_array_0 = np.absolute(t-EB)
+EB_loc = difference_array_0.argmin()
+
+EC = 900
+difference_array_0 = np.absolute(t-EC)
+EC_loc = difference_array_0.argmin()
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>plt.close()
+fig, ax = plt.subplots()
+ax.plot(t,cpu)
+
+plt.xlabel(&#39;time [s]&#39;)
+plt.ylabel(&#39;cpu load [%]&#39;)
+plt.show()
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>windowSize = 100
+omegaSize = 500
+alpha = 0.05
+N_iterations = 100
+alpha_value = 0.0736
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=E1_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=E2_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=E3_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=E4_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=E5_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=EA_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=EB_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>t_score.event2TStest(E_loc=EC_loc, TS=cpu, iterations=N_iterations, alphaTest=alpha, alphaOmegaset=alpha_value, windowSize=windowSize, omegaSize=omegaSize)
+</pre></div>
+</div>
+</div>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

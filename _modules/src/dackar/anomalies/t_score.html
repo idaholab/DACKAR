@@ -1,0 +1,480 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.anomalies.t_score &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.anomalies.t_score</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.anomalies.t_score</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on July, 2025</span>
+
+<span class="sd">@author: wangc, mandd</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">pairwise_distances</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/t_score/index.html#src.dackar.anomalies.t_score.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.kernel_two_sample_test</span><span class="w"> </span><span class="kn">import</span> <span class="n">kernel_two_sample_test</span>
+
+
+<div class="viewcode-block" id="getL">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/t_score/index.html#src.dackar.anomalies.t_score.getL">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">getL</span><span class="p">(</span><span class="n">loc</span><span class="p">,</span><span class="n">window</span><span class="p">,</span><span class="n">array</span><span class="p">,</span><span class="nb">type</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to extract a portion of a time series</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        loc: int, reference location in the time series for the selected portion</span>
+<span class="sd">        window: np.array, size of the selected portion of the time series</span>
+<span class="sd">        array: np.array, original time series</span>
+<span class="sd">        type: string, type of the selected portion of the time series (rear or front)</span>
+<span class="sd">      Return:</span>
+<span class="sd">        timeseriesPortion: np array, size of the selected portion of the time series</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;rear&#39;</span><span class="p">,</span><span class="s1">&#39;front&#39;</span><span class="p">]:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s1">&#39;getL method: Specificed type to select portion of time series (&#39;</span> <span class="o">+</span> <span class="nb">str</span> <span class="p">(</span><span class="nb">type</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;) is not allowed. Type can be either rear or front.&#39;</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="o">==</span><span class="s1">&#39;rear&#39;</span><span class="p">:</span>
+            <span class="n">l</span> <span class="o">=</span> <span class="n">array</span><span class="p">[</span><span class="n">loc</span><span class="p">:</span><span class="n">loc</span><span class="o">+</span><span class="n">window</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="nb">type</span><span class="o">==</span><span class="s1">&#39;front&#39;</span><span class="p">:</span>
+            <span class="n">l</span> <span class="o">=</span> <span class="n">array</span><span class="p">[</span><span class="n">loc</span><span class="o">-</span><span class="n">window</span><span class="p">:</span><span class="n">loc</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s1">&#39;error&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s1">&#39;getL method: Provided time series has incorrect data type.&#39;</span><span class="p">)</span>
+    
+    <span class="n">timeseriesPortion</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">timeseriesPortion</span></div>
+
+
+
+<div class="viewcode-block" id="omega">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/t_score/index.html#src.dackar.anomalies.t_score.omega">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">omega</span><span class="p">(</span><span class="n">window</span><span class="p">,</span><span class="n">array</span><span class="p">,</span><span class="n">Nsamples</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to extract set of portions of a time series</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        window: np.array, size of the selected portion of the time series</span>
+<span class="sd">        array: np.array, original time series</span>
+<span class="sd">        Nsamples: int, number of portions to be selected</span>
+<span class="sd">      Return:</span>
+<span class="sd">        omegaSet: np.array, set of Nsamples portions of a time series</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">array</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="n">omegaSet</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="n">Nsamples</span><span class="p">,</span><span class="n">window</span><span class="p">])</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="p">(</span><span class="n">size</span><span class="o">-</span><span class="n">window</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="n">Nsamples</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">Nsamples</span><span class="p">):</span>
+            <span class="n">omegaSet</span><span class="p">[</span><span class="n">i</span><span class="p">,:]</span> <span class="o">=</span> <span class="n">array</span><span class="p">[</span><span class="n">start</span><span class="p">[</span><span class="n">i</span><span class="p">]:</span><span class="n">start</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">+</span><span class="n">window</span><span class="p">]</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">):</span>
+        <span class="n">omegaSet</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c1"># pd.Series with Date as index, the length with window is not consistent</span>
+        <span class="c1"># omegaSet=np.zeros([Nsamples,len(array[:array.index[0]+window])])</span>
+        <span class="n">high</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">array</span><span class="p">[:</span><span class="n">array</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">-</span><span class="n">window</span><span class="p">])</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">low</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">high</span><span class="o">=</span><span class="n">high</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">Nsamples</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">Nsamples</span><span class="p">):</span>
+            <span class="n">loc</span> <span class="o">=</span> <span class="n">array</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="n">start</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span>
+            <span class="n">sample</span> <span class="o">=</span> <span class="n">array</span><span class="p">[</span><span class="n">loc</span><span class="p">:</span><span class="n">loc</span><span class="o">+</span><span class="n">window</span><span class="p">]</span>
+            <span class="n">omegaSet</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">sample</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">omegaSet</span></div>
+
+
+<div class="viewcode-block" id="choice">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/t_score/index.html#src.dackar.anomalies.t_score.choice">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">choice</span><span class="p">(</span><span class="n">array</span><span class="p">,</span><span class="n">Nsamples</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to randomly choose Nsamples out of an array (replace is set to True)</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        array: np.array, array of values to be sampled</span>
+<span class="sd">        Nsamples: int, number of elements of array to be selected</span>
+<span class="sd">      Return:</span>
+<span class="sd">        sampled: np.array, set of Nsamples elements randomly chosen from array</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">sampled</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">array</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">Nsamples</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">sampled</span></div>
+
+
+<div class="viewcode-block" id="t_score">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/t_score/index.html#src.dackar.anomalies.t_score.t_score">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">t_score</span><span class="p">(</span><span class="n">array_front</span><span class="p">,</span> <span class="n">array_rear</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to calculate the statistical difference between two arrays using t-test</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        array_front: np.array, first array</span>
+<span class="sd">        array_rear: np.array, second array</span>
+<span class="sd">      Return:</span>
+<span class="sd">        tscore: float, outcome of t-test</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="n">array_front</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="n">array_rear</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">array_front</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+
+        <span class="n">mean_front</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">array_front</span><span class="p">)</span>
+        <span class="n">var_front</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">array_front</span><span class="p">)</span>
+
+        <span class="n">mean_rear</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">array_rear</span><span class="p">)</span>
+        <span class="n">var_rear</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">var</span><span class="p">(</span><span class="n">array_rear</span><span class="p">)</span>
+
+        <span class="n">tscore</span> <span class="o">=</span> <span class="p">(</span><span class="n">mean_front</span><span class="o">-</span><span class="n">mean_rear</span><span class="p">)</span><span class="o">/</span><span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">var_front</span><span class="o">+</span><span class="n">var_rear</span><span class="p">)</span><span class="o">/</span><span class="n">n</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;t_score error: the two provided array have different sizes.&quot;</span><span class="p">)</span>
+        <span class="n">tscore</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">tscore</span></div>
+
+
+<div class="viewcode-block" id="MMD_test">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/t_score/index.html#src.dackar.anomalies.t_score.MMD_test">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">MMD_test</span><span class="p">(</span><span class="n">test_array</span><span class="p">,</span> <span class="n">omegaSet</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">alphaTest</span><span class="p">,</span> <span class="n">alphaOmegaset</span><span class="p">,</span> <span class="n">printFlag</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to calculate the statistical difference between an array and a set of arrays </span>
+<span class="sd">      using the Maximum Mean Discrepancy testing method</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        test_array: np.array, array of values to be tested against omegaSet</span>
+<span class="sd">        omegaSet: np.ndarray or list, population of arrays</span>
+<span class="sd">        iterations: int, number of iterartions required to compute MMD^2_u</span>
+<span class="sd">        alphaTest: float, acceptance value for hypothesis testing (single array testing)</span>
+<span class="sd">        alphaOmegaset: float, acceptance value for hypothesis testing (omegaSet testing)</span>
+<span class="sd">        printFlag: bool, flag to plot MMD distribution</span>
+<span class="sd">      Return:</span>
+<span class="sd">        p_value: float, p-value obtained from MMD testing</span>
+<span class="sd">        testOutput: bool, logical outcome of MMD testing</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="n">omegaSetDim</span>  <span class="o">=</span> <span class="n">omegaSet</span><span class="o">.</span><span class="n">ndim</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="n">omegaSetDim</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">omegaSetDim</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="k">if</span> <span class="n">omegaSetDim</span><span class="o">==</span><span class="mi">1</span><span class="p">:</span>
+        <span class="n">sigma2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="n">pairwise_distances</span><span class="p">(</span><span class="n">test_array</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">omegaSet</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">metric</span><span class="o">=</span><span class="s1">&#39;euclidean&#39;</span><span class="p">))</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">mmd2u</span><span class="p">,</span> <span class="n">mmd2u_null</span><span class="p">,</span> <span class="n">p_value</span> <span class="o">=</span> <span class="n">kernel_two_sample_test</span><span class="p">(</span><span class="n">test_array</span><span class="p">,</span> <span class="n">omegaSet</span><span class="p">,</span>
+                                                            <span class="n">kernel_function</span><span class="o">=</span><span class="s1">&#39;rbf&#39;</span><span class="p">,</span>
+                                                            <span class="n">iterations</span><span class="o">=</span><span class="n">iterations</span><span class="p">,</span>
+                                                            <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="o">/</span><span class="n">sigma2</span><span class="p">,</span>
+                                                            <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="c1"># print(&quot;Null hypothesis: the two sub-series are generated from the same distribution&quot;)</span>
+        <span class="k">if</span> <span class="n">p_value</span> <span class="o">&lt;</span> <span class="n">alphaTest</span><span class="p">:</span>
+            <span class="n">nullHypothesis</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">testOutput</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;The p-value is: </span><span class="si">{</span><span class="nb">round</span><span class="p">(</span><span class="n">p_value</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="si">}</span><span class="s1">, which is less than the significant level: </span><span class="si">{</span><span class="n">alphaTest</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+            <span class="c1"># print(&quot;The null hypothesis got rejected&quot;)</span>
+            <span class="c1"># print(&#39;The two sub-series are generated from two different distributions&#39;)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">nullHypothesis</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">testOutput</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;The p-value is: </span><span class="si">{</span><span class="nb">round</span><span class="p">(</span><span class="n">p_value</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="si">}</span><span class="s1">, which is larger than the significant level: </span><span class="si">{</span><span class="n">alphaTest</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+            <span class="c1"># print(&quot;The null hypothesis got accepted&quot;)</span>
+            <span class="c1"># print(&#39;The two sub-series are generated from the same distributions&#39;)</span>
+        <span class="k">return</span> <span class="n">p_value</span><span class="p">,</span> <span class="n">testOutput</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">omegaSetSize</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">)</span>
+        <span class="n">mmd2u_arr</span>    <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">omegaSetSize</span><span class="p">)</span>
+        <span class="n">mmd2u_null_agg</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">p_value_arr</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">omegaSetSize</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+            <span class="n">sigma2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">omegaSet</span><span class="o">.</span><span class="n">ravel</span><span class="p">())</span><span class="o">**</span><span class="mi">2</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="n">ravelData</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">omegaSet</span><span class="p">:</span>
+                <span class="n">ravelData</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">sigma2</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">std</span><span class="p">(</span><span class="n">ravelData</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">omegaSetSize</span><span class="p">):</span>
+            <span class="c1"># sigma2 = np.median(pairwise_distances(test_array.reshape(-1, 1), omegaSet[i,:].reshape(-1, 1), metric=&#39;euclidean&#39;))**2</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">omegaSet</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">omegaSet</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="p">:]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">omegaSet</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">mmd2u_arr</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">mmd2u_null</span><span class="p">,</span> <span class="n">p_value_arr</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">kernel_two_sample_test</span><span class="p">(</span><span class="n">test_array</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span>
+                                                                              <span class="n">kernel_function</span><span class="o">=</span><span class="s1">&#39;rbf&#39;</span><span class="p">,</span>
+                                                                              <span class="n">iterations</span><span class="o">=</span><span class="n">iterations</span><span class="p">,</span>
+                                                                              <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="o">/</span><span class="n">sigma2</span><span class="p">,</span>
+                                                                              <span class="n">verbose</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">mmd2u_null_agg</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">mmd2u_null</span><span class="p">))</span>
+        <span class="c1"># if printFlag:</span>
+        <span class="c1">#     fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, figsize=(20, 6))</span>
+        <span class="c1">#     ax1.hist(mmd2u_arr,   bins=30, alpha=0.35, density=True, color=&#39;green&#39;, label=&#39;mmd2u&#39;)</span>
+        <span class="c1">#     ax1.legend()</span>
+
+        <span class="c1">#     ax2.hist(p_value_arr, bins=30, alpha=0.35, density=True, color=&#39;red&#39;, label=&#39;p_value&#39;)</span>
+        <span class="c1">#     ax2.legend()</span>
+
+        <span class="c1">#     ax3.scatter(mmd2u_arr, p_value_arr, marker=&#39;.&#39;)</span>
+        <span class="c1">#     ax3.set_xlabel(&#39;mmd2u&#39;)</span>
+        <span class="c1">#     ax3.set_ylabel(&#39;p_value&#39;)</span>
+
+        <span class="c1">#     plt.show()</span>
+
+
+        <span class="c1"># the number of rejections for the null hypothesis in two sample testing</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="p">(</span><span class="n">p_value_arr</span><span class="o">&lt;</span><span class="n">alphaTest</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+        <span class="c1"># print(&#39;Number of rejection ratio for the null hypothesis in two sample testing for two given sub-series is:&#39;, count/omegaSetSize)</span>
+        <span class="c1"># probability two signals are from the same distribution</span>
+        <span class="n">p_value</span> <span class="o">=</span> <span class="mf">1.</span> <span class="o">-</span> <span class="n">count</span><span class="o">/</span><span class="n">omegaSetSize</span>
+        <span class="c1"># Null hypothesis: the sub-series are generated from the normal conditions of full time-series</span>
+        <span class="c1"># if the probability lower than alphaOmegaset, reject the null hypothesis</span>
+        <span class="c1"># print(&quot;Null hypothesis: the sub-series are generated from the normal conditions of full time-series&quot;)</span>
+
+        <span class="k">if</span> <span class="n">p_value</span> <span class="o">&lt;</span> <span class="n">alphaOmegaset</span><span class="p">:</span>
+            <span class="n">nullHypothesis</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">testOutput</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;The probability of the sub-series are generated from the normal conditions of full time-series is </span><span class="si">{</span><span class="n">p_value</span><span class="si">}</span><span class="s2">, which is smaller than given test value </span><span class="si">{</span><span class="n">alphaOmegaset</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="c1"># print(&quot;The null hypothesis got rejected&quot;)</span>
+            <span class="c1"># print(&#39;The sub-series is correlated to the anomaly events&#39;)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">nullHypothesis</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">testOutput</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;The probability of the sub-series are generated from the normal conditions of full time-series is </span><span class="si">{</span><span class="n">p_value</span><span class="si">}</span><span class="s2">, which is greater than given test value </span><span class="si">{</span><span class="n">alphaOmegaset</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="c1"># print(&quot;The null hypothesis got accepted&quot;)</span>
+            <span class="c1"># print(&#39;The sub-series is not correlated to the anomaly events&#39;)</span>
+
+        <span class="k">if</span> <span class="n">printFlag</span><span class="p">:</span>
+            <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+            <span class="n">bin1</span> <span class="o">=</span><span class="mi">30</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">mmd2u_null_agg</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="n">bin1</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;red&#39;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;$MMD^2_u$ Null Distribution&#39;</span><span class="p">,</span> <span class="n">stacked</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">bin2</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="nb">max</span><span class="p">(</span><span class="n">mmd2u_arr</span><span class="p">)</span> <span class="o">-</span> <span class="nb">min</span><span class="p">(</span><span class="n">mmd2u_arr</span><span class="p">))</span><span class="o">/</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">mmd2u_null_agg</span><span class="p">)</span> <span class="o">-</span> <span class="nb">min</span><span class="p">(</span><span class="n">mmd2u_null_agg</span><span class="p">))</span><span class="o">*</span><span class="n">bin1</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">mmd2u_arr</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="n">bin2</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;blue&#39;</span>  <span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;$MMD^2_u$ True Distribution&#39;</span><span class="p">,</span> <span class="n">stacked</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;$MMD^2_u$&#39;</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;$p(MMD^2_u)$&#39;</span><span class="p">)</span>
+            <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s1">&#39;$MMD^2_u$: null-distribution and true distribution: with $p$-value=</span><span class="si">%s</span><span class="s1">&#39;</span>
+          <span class="o">%</span> <span class="nb">round</span><span class="p">(</span><span class="n">p_value</span><span class="p">,</span><span class="mi">5</span><span class="p">))</span>
+            <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">p_value</span><span class="p">,</span> <span class="n">testOutput</span></div>
+
+
+<div class="viewcode-block" id="event2TStest">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/anomalies/t_score/index.html#src.dackar.anomalies.t_score.event2TStest">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">event2TStest</span><span class="p">(</span><span class="n">E_loc</span><span class="p">,</span> <span class="n">TS</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">alphaTest</span><span class="p">,</span> <span class="n">alphaOmegaset</span><span class="p">,</span> <span class="n">windowSize</span><span class="p">,</span> <span class="n">omegaSize</span><span class="p">,</span> <span class="n">returnMinPval</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">      Method designed to assess temporal correlation of an event E and a time series TS</span>
+
+<span class="sd">      Args:</span>
+<span class="sd">        E_loc: int, temporal location of event E</span>
+<span class="sd">        TS: np.array, univariate time series</span>
+<span class="sd">        iterations: int, number of iterartions required to compute MMD^2_u</span>
+<span class="sd">        alphaTest: float, acceptance value for hypothesis testing (single array testing)</span>
+<span class="sd">        alphaOmegaset: float, acceptance value for hypothesis testing (omegaSet testing)</span>
+<span class="sd">        windowSize: int, size of time window prior and after event occurence</span>
+<span class="sd">        omegaSize: int, number of samples from time series TS</span>
+<span class="sd">        returnMinPval: bool, flag that indictae whether to return p-value of MMD assessment</span>
+<span class="sd">      Return:</span>
+<span class="sd">        relation: string, outcome of the event to timeseries temporal analysis</span>
+<span class="sd">        minPval: float, p-value of MMD assessment</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">omegaSet</span> <span class="o">=</span> <span class="n">omega</span><span class="p">(</span><span class="n">windowSize</span><span class="p">,</span><span class="n">TS</span><span class="p">,</span><span class="n">omegaSize</span><span class="p">)</span>
+    <span class="n">L_front</span>  <span class="o">=</span> <span class="n">getL</span><span class="p">(</span><span class="n">E_loc</span><span class="p">,</span><span class="n">windowSize</span><span class="p">,</span><span class="n">TS</span><span class="p">,</span><span class="s1">&#39;front&#39;</span><span class="p">)</span>
+    <span class="n">L_rear</span>   <span class="o">=</span> <span class="n">getL</span><span class="p">(</span><span class="n">E_loc</span><span class="p">,</span><span class="n">windowSize</span><span class="p">,</span><span class="n">TS</span><span class="p">,</span><span class="s1">&#39;rear&#39;</span><span class="p">)</span>
+    <span class="n">L_front_rear</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">L_front</span><span class="p">,</span> <span class="n">L_rear</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+    <span class="n">minPval</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;=============================================&#39;</span><span class="p">)</span>
+    <span class="c1"># print(&#39;MMD Testing&#39;)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Computing statitics for Lfront vs. omega&quot;</span><span class="p">)</span>
+    <span class="n">p_val_f</span> <span class="p">,</span> <span class="n">test_out_f</span> <span class="o">=</span> <span class="n">MMD_test</span><span class="p">(</span><span class="n">L_front</span><span class="p">,</span> <span class="n">omegaSet</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">alphaTest</span><span class="p">,</span> <span class="n">alphaOmegaset</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Correlated?&#39;</span><span class="p">,</span> <span class="n">test_out_f</span><span class="p">,</span> <span class="s1">&#39;p value:&#39;</span><span class="p">,</span> <span class="n">p_val_f</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">p_val_f</span> <span class="o">&lt;</span> <span class="n">minPval</span><span class="p">:</span>
+        <span class="n">minPval</span> <span class="o">=</span> <span class="n">p_val_f</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Computing statistics for Lrear vs. omega&quot;</span><span class="p">)</span>
+    <span class="n">p_val_r</span> <span class="p">,</span> <span class="n">test_out_r</span> <span class="o">=</span> <span class="n">MMD_test</span><span class="p">(</span><span class="n">L_rear</span><span class="p">,</span> <span class="n">omegaSet</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">alphaTest</span><span class="p">,</span> <span class="n">alphaOmegaset</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Correlated?&#39;</span><span class="p">,</span> <span class="n">test_out_r</span><span class="p">,</span> <span class="s1">&#39;p value:&#39;</span><span class="p">,</span> <span class="n">p_val_r</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">p_val_r</span> <span class="o">&lt;</span> <span class="n">minPval</span><span class="p">:</span>
+        <span class="n">minPval</span> <span class="o">=</span> <span class="n">p_val_r</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Computing statitics for Lfront vs. Lrear&quot;</span><span class="p">)</span>
+    <span class="n">p_val_3</span> <span class="p">,</span> <span class="n">test_out_3</span> <span class="o">=</span> <span class="n">MMD_test</span><span class="p">(</span><span class="n">L_rear</span><span class="p">,</span> <span class="n">L_front</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">alphaTest</span><span class="p">,</span> <span class="n">alphaOmegaset</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Correlated?&#39;</span><span class="p">,</span> <span class="n">test_out_3</span><span class="p">,</span> <span class="s1">&#39;p value:&#39;</span><span class="p">,</span> <span class="n">p_val_3</span><span class="p">)</span>
+
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Computing statitics for Lfront u Lrear vs. omega&quot;</span><span class="p">)</span>
+    <span class="n">p_val_4</span><span class="p">,</span> <span class="n">test_out_4</span> <span class="o">=</span> <span class="n">MMD_test</span><span class="p">(</span><span class="n">L_front_rear</span><span class="p">,</span> <span class="n">omegaSet</span><span class="p">,</span> <span class="n">iterations</span><span class="p">,</span> <span class="n">alphaTest</span><span class="p">,</span> <span class="n">alphaOmegaset</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Correlated?&#39;</span><span class="p">,</span> <span class="n">test_out_4</span><span class="p">,</span> <span class="s1">&#39;p value:&#39;</span><span class="p">,</span> <span class="n">p_val_4</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">p_val_4</span> <span class="o">&lt;</span> <span class="n">minPval</span><span class="p">:</span>
+        <span class="n">minPval</span> <span class="o">=</span> <span class="n">p_val_4</span>
+
+    <span class="c1"># tscore = t_score(L_front, L_rear)</span>
+
+    <span class="n">relation</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1">###############################################</span>
+    <span class="c1">#   Old detection logic</span>
+    <span class="c1">#</span>
+    <span class="c1"># if test_out_3==False or test_out_4==False:</span>
+    <span class="c1">#     # add more output info here [congjian]</span>
+    <span class="c1">#     print(&#39;S and E are uncorrelated&#39;)</span>
+    <span class="c1">#     relation = &#39;S and E are uncorrelated&#39;</span>
+    <span class="c1"># elif test_out_r==True  and test_out_f==False:</span>
+    <span class="c1">#     print(&#39;E --&gt; S&#39;)</span>
+    <span class="c1">#     relation = &#39;E --&gt; S&#39;</span>
+    <span class="c1"># elif test_out_r==False and test_out_f==True:</span>
+    <span class="c1">#     print(&#39;S --&gt; E&#39;)</span>
+    <span class="c1">#     relation = &#39;S --&gt; E&#39;</span>
+    <span class="c1"># elif test_out_r==True  and test_out_f==True:</span>
+    <span class="c1">#     print(&#39;S;E&#39;)</span>
+    <span class="c1">#     relation = &#39;S;E&#39;</span>
+    <span class="c1">#     &#39;&#39;&#39;</span>
+    <span class="c1">#     if p_val_f&gt;p_val_r:</span>
+    <span class="c1">#           print(&#39;S --&gt;* E&#39;)</span>
+    <span class="c1">#     else:</span>
+    <span class="c1">#           print(&#39;E --&gt;* S&#39;)</span>
+    <span class="c1">#     &#39;&#39;&#39;</span>
+    <span class="c1"># else:</span>
+    <span class="c1">#     print(&#39;S and E are undecided&#39;)</span>
+    <span class="c1">#     relation = &#39;S and E are undecided&#39;</span>
+
+    <span class="c1">#####################################</span>
+    <span class="c1"># New Detection Logic</span>
+    <span class="c1">#</span>
+    <span class="k">if</span>   <span class="n">test_out_r</span><span class="o">==</span><span class="kc">True</span>  <span class="ow">and</span> <span class="n">test_out_f</span><span class="o">==</span><span class="kc">False</span><span class="p">:</span>
+        <span class="n">relation</span> <span class="o">=</span> <span class="s1">&#39;E --&gt; S&#39;</span>
+    <span class="k">elif</span> <span class="n">test_out_r</span><span class="o">==</span><span class="kc">False</span> <span class="ow">and</span> <span class="n">test_out_f</span><span class="o">==</span><span class="kc">True</span><span class="p">:</span>
+        <span class="n">relation</span> <span class="o">=</span> <span class="s1">&#39;S --&gt; E&#39;</span>
+    <span class="k">elif</span> <span class="n">test_out_r</span><span class="o">==</span><span class="kc">True</span>  <span class="ow">and</span> <span class="n">test_out_f</span><span class="o">==</span><span class="kc">True</span><span class="p">:</span>
+        <span class="c1">#relation = &#39;S;E&#39;</span>
+        <span class="k">if</span> <span class="n">p_val_f</span><span class="o">&lt;</span><span class="n">p_val_r</span><span class="p">:</span>
+            <span class="n">relation</span> <span class="o">=</span> <span class="s1">&#39;S --&gt;* E&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">relation</span> <span class="o">=</span> <span class="s1">&#39;E --&gt;* S&#39;</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">test_out_4</span><span class="p">:</span>
+            <span class="n">relation</span> <span class="o">=</span> <span class="s1">&#39;S;E&#39;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">test_out_3</span><span class="p">:</span>
+                <span class="c1"># S and E may be correlated</span>
+                <span class="n">relation</span> <span class="o">=</span> <span class="s1">&#39;S?E&#39;</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># S and E are uncorrelated</span>
+                <span class="n">relation</span> <span class="o">=</span> <span class="s1">&#39;S!E&#39;</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Identified relation: &#39;</span><span class="p">,</span> <span class="n">relation</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">returnMinPval</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">relation</span><span class="p">,</span> <span class="n">minPval</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">relation</span></div>
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
