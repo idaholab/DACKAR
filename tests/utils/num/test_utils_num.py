@@ -1,4 +1,4 @@
-from dackar.utils.num import kernel_two_sample_test as K2ST
+from dackar.anomalies import kernel_two_sample_test as K2ST
 
 import numpy as np
 import matplotlib.pyplot as plt
