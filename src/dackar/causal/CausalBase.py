@@ -34,7 +34,7 @@ from ..pipelines.CustomPipelineComponents import pysbdSentenceBoundaries
 from ..config import nlpConfig
 from ..text_processing.Preprocessing import Preprocessing
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('DACKAR')
 
 ## temporary add stream handler
 # ch = logging.StreamHandler()
@@ -131,9 +131,9 @@ if not Token.has_extension('alias'):
   Token.set_extension("alias", default=None)
 
 
-class WorkflowBase(object):
+class CausalBase(object):
   """
-    Base Class for Workflow Analysis
+    Base Class for Causal Analysis
   """
   def __init__(self, nlp, entID='SSC', causalKeywordID='causal', *args, **kwargs):
     """
@@ -206,6 +206,7 @@ class WorkflowBase(object):
     self._entID = entID
     self._causalKeywordID = causalKeywordID
     self._causalNames = ['cause', 'cause health status', 'causal keyword', 'effect', 'effect health status', 'sentence', 'conjecture']
+    self._relationNames = ['subject', 'relation', 'object']
     self._extractedCausals = [] # list of tuples, each tuple represents one causal-effect, i.e., (cause, cause health status, cause keyword, effect, effect health status, sentence)
     self._causalSentsNoEnts = []
     self._rawCausalList = []
@@ -215,7 +216,10 @@ class WorkflowBase(object):
     self._screen = False
     self.dataframeRelations = None
     self.dataframeEntities = None
-
+    self._causalRelation = None
+    self._causalRelationGeneral = None
+    self._relationGeneral = None
+    self._allRelPairs = []
     self._textProcess = self.textProcess()
 
   def reset(self):
@@ -229,9 +233,25 @@ class WorkflowBase(object):
     self._rawCausalList = []
     self._causalSentsOneEnt = []
     self._entHS = None
+    self._entStatus = None
     self._doc = None
     self.dataframeRelations = None
     self.dataframeEntities = None
+    self._causalRelation = None
+    self._causalRelationGeneral = None
+    self._relationGeneral = None
+    self._allRelPairs = []
+
+  def getAttribute(self, name):
+    """Get self attribute data
+
+    Args:
+        name (str): name of protected variable
+
+    Returns:
+        pandas.DataFrame: attribute data
+    """
+    return getattr(self, '_'+name)
 
   def textProcess(self):
     """
@@ -766,7 +786,7 @@ class WorkflowBase(object):
         #   return self.findRightObj(nbor, deps=['pobj'])
         return child
       elif child.dep_ == 'compound' and \
-         child.head.dep_ in deps: # check if contained in compound
+        child.head.dep_ in deps: # check if contained in compound
         return child
       toVisit.extend(list(child.children))
     return None
@@ -936,7 +956,7 @@ class WorkflowBase(object):
         else:
           return child
       elif child.dep_ == 'compound' and \
-         child.head.dep_ in deps: # check if contained in compound
+        child.head.dep_ in deps: # check if contained in compound
         return child
       toVisit.extend(list(child.children))
     return None
@@ -1138,7 +1158,7 @@ class WorkflowBase(object):
         amod = self.getStatusForPobj(ent, include=include)
       else:
         amod = self.getAmod(ent, ent.start, ent.end, include=include)
-         # status = self.getCompoundOnly(ent, entHS)
+        # status = self.getCompoundOnly(ent, entHS)
 
       passive = self.isPassive(root)
       neg, negText = self.isNegation(root)
@@ -1241,3 +1261,70 @@ class WorkflowBase(object):
     return status
 
 
+  def extractRelDep(self, matchedSents):
+    """
+      Extract general relationship between entities
+      Args:
+
+        matchedSents: list, the list of matched sentences
+
+      Returns:
+
+        (subject tuple, predicate, object tuple): generator, the extracted causal relation
+    """
+    subjList = ['nsubj', 'nsubjpass', 'nsubj:pass']
+    objList = ['pobj', 'dobj', 'iobj', 'obj', 'obl', 'oprd']
+    for sent in matchedSents:
+      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      if len(ents) <= 1:
+        continue
+      root = sent.root
+      allRelPairs = []
+      subjEnt = []
+      subjConjEnt = []
+      objEnt = []
+      objConjEnt = []
+
+      for ent in ents:
+        entRoot = ent.root
+        if ent._.alias is not None:
+          text = ent._.alias
+        else:
+          text = ent.text
+        # entity at the beginning of sentence
+        if ent.start == sent.start:
+          subjEnt.append(text)
+        elif entRoot.dep_ in ['conj'] and entRoot.i < root.i:
+          subjConjEnt.append(text)
+        elif entRoot.dep_ in subjList:
+          subjEnt.append(text)
+        # elif entRoot.dep_ in ['obj', 'dobj']: # mainly for short sentence or phrase
+        elif entRoot.dep_ in objList:
+          objEnt.append(text)
+        elif entRoot.i > root.i and entRoot.dep_ in ['conj']:
+          objConjEnt.append(text)
+      # subj
+      for subj in subjEnt:
+        for subjConj in subjConjEnt:
+          allRelPairs.append([subj, 'conj', subjConj])
+        for obj in objEnt:
+          allRelPairs.append([subj, root.text, obj])
+        for objConj in objConjEnt:
+          allRelPairs.append([subj, root.text, objConj])
+      # subjconj
+      for subjConj in subjConjEnt:
+        for obj in objEnt:
+          allRelPairs.append([subjConj, root.text, obj])
+        for objConj in objConjEnt:
+          allRelPairs.append([subjConj, root.text, objConj])
+      # obj
+      for obj in objEnt:
+        for objConj in objConjEnt:
+          allRelPairs.append([obj, 'conj', objConj])
+
+      # handle specific case
+      if len(allRelPairs) == 0:
+        if len(ents) == 2 and ents[0].root.i < root.i and ents[1].root.i > root.i:
+          allRelPairs.append([ents[0].text, root.text, ents[1].text])
+
+      self._allRelPairs += allRelPairs
