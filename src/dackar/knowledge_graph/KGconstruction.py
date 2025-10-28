@@ -14,6 +14,8 @@ from dackar.utils.mbse.customMBSEparser import customMBSEobject
 # External Modules #
 import pandas as pd
 import os, sys
+import tomllib
+import jsonschema
 
 class KG:
     def __init__(self, config_file_path, import_folder_path, uri, pwd, processedDataFolder):
@@ -25,9 +27,23 @@ class KG:
         # Create python to neo4j driver
         self.py2neo = Py2Neo(uri=uri, user='neo4j', pwd=pwd)
 
-        self.graphSchemas = []
+        self.graphSchemas = {}
 
-    def graphCheck(self):
+        self.equipmentIDs = []
+
+        self.predefinedGraphSchemas = {'conditionReportSchema'  : 'conditionReportSchema.toml',
+                                       'customMbseSchema'       : 'customMbseSchema.toml',
+                                       'monitoringSystemSchema' : 'monitoringSystemSchema.toml',
+                                       'nuclearEntitySchema'    : 'nuclearEntitySchema.toml',
+                                       'numericPerfomanceSchema': 'numericPerfomanceSchema.toml'}
+
+    def resetGraph(self):
+        self.py2neo.reset()
+    
+    def importGraphSchemas(filename):
+        pass
+
+    def schemaValidation(self, constructionSchema, graphSchema):
         pass
 
     def mbseWorkflow(self, name, type, nodesFile, edgesFile):
@@ -36,31 +52,71 @@ class KG:
                                          edgesFile, 
                                          path=self.processedDataFolder)
             
-            mbseModel.printEquipmentID()
+            self.equipmentIDs = self.equipmentIDs + mbseModel.returnIDs()
             mbseModel.plot(name)
+
+            label = 'MBSE'
+            attribute = {'ID':'ID', 'type':'type'}
+            self.py2neo.load_csv_for_nodes(os.path.join(self.processedDataFolder, nodesFile), label, attribute)
+
+            l1='MBSE'
+            p1={'ID':'sourceNodeId'}
+            l2='MBSE'
+            p2 ={'ID':'targetNodeId'}
+            lr = 'MBSE_link'
+            pr = {'prop':'type'}
+            self.py2neo.load_csv_for_relations(os.path.join(self.processedDataFolder, edgesFile), l1, p1, l2, p2, lr, pr)
     
         elif type =='LML':
             pass
     
     def anomalyWorkflow(self, filename, constructionSchema):
-        graphSchemas = BBD
+        graphSchema = TBD
 
-    # Congjian: how to add relations across schemas????
-    # use Json/toml for validation
-
-    nodeConstructionSchema = {'nodeLabel1': {'property1': 'node.colA', 'property2': 'node.colB'},
-                              'nodeLabel2': {'property1': 'node.colC'}}
-    
-    edgeConstructionSchema = [{'source': ('nodeLabel1.property1','col1'),
-                               'target': ('nodeLabel2.property1','col2'),
-                               'type': 'edgeType',
-                               'properties': {'property1': 'colAlpha', 'property2': 'colBeta'}}]
-    
-    constructionSchema = {'nodes': nodeConstructionSchema,
-                          'edges': edgeConstructionSchema}
-
-    def kgConstructionWorkflow(self, dataframe, graphSchemas, constructionSchema):
         #TODO: Check constructionSchema against graphSchemas
+
+        label = 'anomaly'
+        attribute = {'ID':'ID', 'time_initial':'start_date', 'time_final':'end_date'}
+        self.py2neo.load_csv_for_nodes(filename, label, attribute)
+
+        l1='anomaly'
+        p1={'ID':'ID'}
+        l2='monitored_var'
+        p2 ={'ID':'monitored_variable'}
+        lr = 'detected_by'
+        pr = None
+        self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
+
+        pass
+
+    def monitoringWorkflow(self, filename, constructionSchema):
+        graphSchema = TBD
+
+        #TODO: Check constructionSchema against graphSchemas
+
+        label = 'monitored_var'
+        attribute = {'ID':'varID'}
+        self.py2neo.load_csv_for_nodes(filename, label, attribute)
+
+        l1='monitored_var'
+        p1={'ID':'varID'}
+        l2='MBSE'
+        p2 ={'ID':'equip_ID'}
+        lr = 'monitors'
+        pr = None
+        self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
+
+
+    def eventReportWorkflow(self, filename, constructionSchema, pipelines):
+        graphSchemas = TBD
+
+        #TODO: Check constructionSchema against graphSchemas
+
+        pass
+
+    def kgConstructionWorkflow(self, dataframe, graphSchema, constructionSchema):
+
+        self.schemaValidation(self, constructionSchema, graphSchema)
 
         for node in constructionSchema['nodes'].keys(): 
             map = {value: key for key, value in constructionSchema['nodes'][node].items()} 
@@ -72,9 +128,23 @@ class KG:
             self.py2neo.load_dataframe_for_relations(dataframe, 
                                                      l1='sourceLabel', p1='sourceNodeId', 
                                                      l2='targetLabel', p2='targetNodeId', 
-                                                     lr='relationshipType', 
-                                                     pr=None)
+                                                     lr=edge['type'], 
+                                                     pr=edge['properties'])
         
+'''
+    nodeConstructionSchema = {'nodeLabel1': {'property1': 'node.colA', 'property2': 'node.colB'},
+                              'nodeLabel2': {'property1': 'node.colC'}}
+    
+    edgeConstructionSchema = [{'source': ('nodeLabel1.property1','col1'),
+                               'target': ('nodeLabel2.property1','col2'),
+                               'type': 'edgeType',
+                               'properties': {'property1': 'colAlpha', 'property2': 'colBeta'}}]
+    
+    constructionSchema = {'nodes': nodeConstructionSchema,
+                          'edges': edgeConstructionSchema}
+'''
+
+
 '''       
 # Load nodes
 label = 'anomaly'
