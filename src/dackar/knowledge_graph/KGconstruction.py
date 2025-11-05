@@ -29,8 +29,6 @@ class KG:
 
         self.graphSchemas = {}
 
-        self.equipmentIDs = []
-
         self.predefinedGraphSchemas = {'conditionReportSchema'  : 'conditionReportSchema.toml',
                                        'customMbseSchema'       : 'customMbseSchema.toml',
                                        'monitoringSystemSchema' : 'monitoringSystemSchema.toml',
@@ -40,12 +38,61 @@ class KG:
     def resetGraph(self):
         self.py2neo.reset()
     
-    def importGraphSchemas(filename):
+    def importGraphSchema(graphSchemaName, TomlFilename):
+        # Check imported graphSchema against self.graphSchemas
+
+        # Add graphSchema to self.graphSchemas
+
         pass
 
-    def schemaValidation(self, constructionSchema, graphSchema):
+    def schemaValidation(self, constructionSchema):
         pass
 
+    def genericWorkflow(self, data, constructionSchema):
+        # Check constructionSchema against self.graphSchemas  
+
+        # Parse data (pd.dataframe?) and update KG
+
+        '''
+        ---- Example of construction schema ----
+
+            constructionSchema = {'nodes': nodeConstructionSchema,
+                                  'edges': edgeConstructionSchema}
+
+            nodeConstructionSchema = {'nodeLabel1': {'property1': 'node.colA', 'property2': 'node.colB'},
+                                      'nodeLabel2': {'property1': 'node.colC'}}
+            
+            edgeConstructionSchema = [{'source': ('nodeLabel1.property1','col1'),
+                                       'target': ('nodeLabel2.property1','col2'),
+                                       'type': 'edgeType',
+                                       'properties': {'property1': 'colAlpha', 'property2': 'colBeta'}}] 
+        '''
+
+
+        '''
+        ---- Example of graph schema (toml file) ----
+
+        title = "Graph Schema for ..."
+        version = "1.0"
+
+        # Nodes
+        [node.label1]
+        description = "This node represents ..."
+        properties = [{name = "prop1", type = "date",   required = bool},
+                      {name = "prop2", type = "string", required = bool},
+        ]
+
+        # Relationships
+        [relationships.relation1]
+        description = "relation1 indicates ... "
+        from_entity = entity1
+        to_entity = entity2
+        properties = [{name = "prop1", type = "int"  , required = bool},
+                      {name = "prop2", type = "float", required = bool},
+        ]
+        '''
+
+    # These are workflows specific to the RIAM project
     def mbseWorkflow(self, name, type, nodesFile, edgesFile):
         if type =='customMBSE':
             mbseModel = customMBSEobject(nodesFile,
@@ -131,18 +178,7 @@ class KG:
                                                      lr=edge['type'], 
                                                      pr=edge['properties'])
         
-'''
-    nodeConstructionSchema = {'nodeLabel1': {'property1': 'node.colA', 'property2': 'node.colB'},
-                              'nodeLabel2': {'property1': 'node.colC'}}
-    
-    edgeConstructionSchema = [{'source': ('nodeLabel1.property1','col1'),
-                               'target': ('nodeLabel2.property1','col2'),
-                               'type': 'edgeType',
-                               'properties': {'property1': 'colAlpha', 'property2': 'colBeta'}}]
-    
-    constructionSchema = {'nodes': nodeConstructionSchema,
-                          'edges': edgeConstructionSchema}
-'''
+
 
 
 '''       
