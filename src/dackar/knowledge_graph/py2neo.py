@@ -109,18 +109,17 @@ class Py2Neo:
         """
         if pr is not None:
             query = f"""
-                MERGE (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
-                MERGE (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
+                MATCH (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
+                MATCH (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
                 MERGE (l1)-[r:{lr} {{ {', '.join([f'{k}: ${k}' for k in pr.keys()])} }} ]->(l2)
             """
             tx.run(query, **pr)
         else:
             query = f"""
-                MERGE (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
-                MERGE (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
+                MATCH (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
+                MATCH (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
                 MERGE (l1)-[r:{lr}]->(l2)
             """
-            # print(query)
             tx.run(query)
 
     def find_nodes(self, label, properties=None):
@@ -278,7 +277,7 @@ class Py2Neo:
         """
         assert set(properties).issubset(set(df.columns))
         for _, row in df.iterrows():
-            self.create_node(labels, row.to_dict())
+            self.create_node(labels, row[properties].to_dict())
 
     # Load csv function to create relations
     def load_dataframe_for_relations(self, df, l1='sourceLabel', p1='sourceNodeId', l2='targetLabel', p2='targetNodeId', lr='relationshipType', pr=None):
@@ -297,17 +296,19 @@ class Py2Neo:
         # for nodes. Future development need to be performed.
         # label (l1/l2), properties (p1/p2), and relation label (lr), relation properties (pr)
         valid = []
+
         valid.extend([l1, l2, lr, p1, p2])
         if pr is not None:
             valid.extend(pr)
+
         assert set(valid).issubset(set(df.columns))
 
         with self.__driver.session() as session:
             for _, row in df.iterrows():
                 l1_ = row[l1]
-                p1_ = {'nodeId': row[p1]}
+                p1_ = {p1: row[p1]}
                 l2_ = row[l2]
-                p2_ = {'nodeId': row[p2]}
+                p2_ = {p2: row[p2]}
                 lr_ = row[lr]
                 if pr is not None:
                     pr_ = row[pr].to_dict()

@@ -16,16 +16,19 @@ import pandas as pd
 import os, sys
 import tomllib
 import jsonschema
+import copy
 
 class KG:
-    def __init__(self, config_file_path, import_folder_path, uri, pwd, processedDataFolder):
+    #def __init__(self, config_file_path, import_folder_path, uri, pwd, user, processedDataFolder):
+    def __init__(self, config_file_path, uri, pwd, user):    
         # Change import folder to user specific location
-        set_neo4j_import_folder(config_file_path, import_folder_path)
+
+        #set_neo4j_import_folder(config_file_path, import_folder_path)
         
-        self.processedDataFolder = processedDataFolder
+        #self.processedDataFolder = processedDataFolder
 
         # Create python to neo4j driver
-        self.py2neo = Py2Neo(uri=uri, user='neo4j', pwd=pwd)
+        self.py2neo = Py2Neo(uri=uri, user=user, pwd=pwd)
 
         self.graphSchemas = {}
 
@@ -51,23 +54,42 @@ class KG:
     def genericWorkflow(self, data, constructionSchema):
         # Check constructionSchema against self.graphSchemas  
 
-        # Parse data (pd.dataframe?) and update KG
+        # Parse data (pd.dataframe) and update KG
+        # Nodes
+        if 'nodes' in constructionSchema:
+            data_temp = copy.deepcopy(data)
+            for node in constructionSchema['nodes'].keys(): 
+                mapping = {value: key for key, value in constructionSchema['nodes'][node].items()}
+                data_renamed = data_temp.rename(columns=mapping)
+                self.py2neo.load_dataframe_for_nodes(df=data_renamed, labels=node, properties=list(mapping.values()))
+        
+        # Relations
+        # --> TODO: check nodes exist
+        if 'relations' in constructionSchema:
+            data_temp = copy.deepcopy(data)
+            for rel in constructionSchema['relations']: 
+                source_node_label = next(iter(rel['source'])).split('.')[0]
+                source_node_prop  = next(iter(rel['source'])).split('.')[1]
 
-        '''
-        ---- Example of construction schema ----
+                target_node_label = next(iter(rel['target'])).split('.')[0]
+                target_node_prop  = next(iter(rel['target'])).split('.')[1]
 
-            constructionSchema = {'nodes': nodeConstructionSchema,
-                                  'edges': edgeConstructionSchema}
+                mapping = {}
+                data_renamed = data_temp.rename(columns={next(iter(rel['source'].values())):source_node_prop,
+                                                         next(iter(rel['target'].values())):target_node_prop})
+                
+                for prop in rel['properties'].keys():
+                    data_renamed = data_renamed.rename(columns={rel['properties'][prop]: prop})
+                
+                data_renamed[source_node_label] = source_node_label
+                data_renamed[target_node_label] = target_node_label
+                data_renamed[rel['type']] = rel['type']
 
-            nodeConstructionSchema = {'nodeLabel1': {'property1': 'node.colA', 'property2': 'node.colB'},
-                                      'nodeLabel2': {'property1': 'node.colC'}}
-            
-            edgeConstructionSchema = [{'source': ('nodeLabel1.property1','col1'),
-                                       'target': ('nodeLabel2.property1','col2'),
-                                       'type': 'edgeType',
-                                       'properties': {'property1': 'colAlpha', 'property2': 'colBeta'}}] 
-        '''
-
+                self.py2neo.load_dataframe_for_relations(df=data_renamed, 
+                                                         l1=source_node_label, p1=source_node_prop, 
+                                                         l2=target_node_label, p2=target_node_prop, 
+                                                         lr=rel['type'], 
+                                                         pr=list(rel['properties'].keys()))
 
         '''
         ---- Example of graph schema (toml file) ----
@@ -78,18 +100,32 @@ class KG:
         # Nodes
         [node.label1]
         description = "This node represents ..."
-        properties = [{name = "prop1", type = "date",   required = bool},
-                      {name = "prop2", type = "string", required = bool},
-        ]
+        properties = {"prop1": {type="date",   required=bool},
+                      "prop2": {type="string", required=bool}}
 
         # Relationships
         [relationships.relation1]
         description = "relation1 indicates ... "
         from_entity = entity1
         to_entity = entity2
-        properties = [{name = "prop1", type = "int"  , required = bool},
-                      {name = "prop2", type = "float", required = bool},
-        ]
+        properties = {"prop1": {type="int",   required=bool},
+                      "prop2": {type="float", required=bool}}
+
+
+
+        ---- Example of construction schema ----
+
+        constructionSchema = {'nodes': nodeConstructionSchema,
+                              'relations': edgeConstructionSchema}
+
+        nodeConstructionSchema = {'nodeLabel1': {'property1': 'node.colA', 'property2': 'node.colB'},
+                                  'nodeLabel2': {'property1': 'node.colC'}}
+        
+        edgeConstructionSchema = [{'source': {'nodeLabel1.property1':'col1'},
+                                   'target': {'nodeLabel2.property1':'col2'},
+                                   'type'  : 'edgeType',
+                                   'properties': {'property1': 'colAlpha', 'property2': 'colBeta'}}] 
+
         '''
 
     # These are workflows specific to the RIAM project
@@ -155,7 +191,7 @@ class KG:
 
 
     def eventReportWorkflow(self, filename, constructionSchema, pipelines):
-        graphSchemas = TBD
+        graphSchema = TBD
 
         #TODO: Check constructionSchema against graphSchemas
 
