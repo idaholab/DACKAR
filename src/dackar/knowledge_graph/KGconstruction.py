@@ -15,8 +15,9 @@ from dackar.utils.mbse.customMBSEparser import customMBSEobject
 import pandas as pd
 import os, sys
 import tomllib
-import jsonschema
+from jsonschema import validate, ValidationError
 import copy
+from pathlib import Path
 
 class KG:
     #def __init__(self, config_file_path, import_folder_path, uri, pwd, user, processedDataFolder):
@@ -32,6 +33,34 @@ class KG:
 
         self.graphSchemas = {}
 
+        self.schemaSchema = {"type": "object",
+                             "properties": {"title"   : {"type": "string", "description": "Data object that is target of the schema"},
+                                            "version" : {"type": "number", "description": "Development version of the schema"},
+                                            "node"    : {"description": "Data element encapsulated in the node",
+                                                         "type": "object",
+                                                         "properties" : {"node_description": {"type": "string", "description": "Type of relationship encapsulated in the relation between two nodes"},
+                                                                         "node_properties": {"type": "array", 
+                                                                                             "description": "Allowed properties associate with the node", 
+                                                                                             "items": {"type": "object",
+                                                                                                       "properties": {"name"    : {"type": "string",  "description": "Name of the node property"},
+                                                                                                                      "type"    : {"type": "string",  "description": "Type of the node property"},
+                                                                                                                      "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}},
+                                                                                                       "required":["name","type","optional"],
+                                                                                                      }
+                                                                                            }
+                                                                        },
+                                                         "required":["node_description"]           
+                                                        },
+                                            "relation": {"description": "Data element encapsulated in the edge",
+                                                         "type": "object",
+                                                         "properties" : {"relation_description": {"type": "string", "description": "Type of relationship encapsulated in the relation between two nodes"},
+                                                                         "from_entity": {"type": "string", "description": "Label of the departure node"},
+                                                                         "to_entity"  : {"type": "string", "description": "Label of the arrival node"}},
+                                                         "required":["relation_description","from_entity","to_entity"],
+                                                        }
+                                            },
+                            "required":["title"]}
+
         self.predefinedGraphSchemas = {'conditionReportSchema'  : 'conditionReportSchema.toml',
                                        'customMbseSchema'       : 'customMbseSchema.toml',
                                        'monitoringSystemSchema' : 'monitoringSystemSchema.toml',
@@ -40,16 +69,48 @@ class KG:
 
     def resetGraph(self):
         self.py2neo.reset()
+
+    def checkSchemaStructure(self, importedSchema):
+        try:
+            validate(instance=importedSchema, schema=self.schemaSchema)
+            print("TOML content is valid against the schema.")
+        except tomllib.TOMLDecodeError as e:
+            print(f"TOML syntax error: {e}")
+        except ValidationError as e:
+            print(f"TOML schema validation error: {e.message}")
     
-    def importGraphSchema(graphSchemaName, TomlFilename):
+    def importGraphSchema(self, graphSchemaName, tomlFilename):         
+        config_path = Path(tomlFilename)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {tomlFilename}")
+
+        with open(config_path, 'rb') as f:
+            config_data = tomllib.load(f)
+
+        self.checkSchemaStructure(config_data)
+
+        # Check structure of imported graphSchema
+        for node in config_data['node'].keys():
+            pass
         # Check imported graphSchema against self.graphSchemas
+        for node in config_data['node'].keys():
+            for schema in self.graphSchemas:
+                if node in schema['node'].keys():
+                    print('Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
 
-        # Add graphSchema to self.graphSchemas
+        for relation in config_data['relation'].keys():
+            for schema in self.graphSchemas:
+                if relation in schema['relation'].keys():
+                    print('Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
 
-        pass
+        self.graphSchemas[graphSchemaName] = config_data
+        return config_data
 
     def schemaValidation(self, constructionSchema):
-        pass
+        for node in constructionSchema['nodes']:
+            for schema in self.graphSchemas:
+                if node in schema['node'].keys():
+                    pass
 
     def genericWorkflow(self, data, constructionSchema):
         # Check constructionSchema against self.graphSchemas  
