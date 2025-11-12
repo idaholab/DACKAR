@@ -28,6 +28,8 @@ class KG:
         
         #self.processedDataFolder = processedDataFolder
 
+        self.datatypes = ['string', 'int', 'float', 'boolean', 'datetime']
+
         # Create python to neo4j driver
         self.py2neo = Py2Neo(uri=uri, user=user, pwd=pwd)
 
@@ -49,13 +51,22 @@ class KG:
                                                                                                       }
                                                                                             }
                                                                         },
-                                                         "required":["node_description"]           
+                                                         "required":["node_description","node_properties"]           
                                                         },
                                             "relation": {"description": "Data element encapsulated in the edge",
                                                          "type": "object",
                                                          "properties" : {"relation_description": {"type": "string", "description": "Type of relationship encapsulated in the relation between two nodes"},
                                                                          "from_entity": {"type": "string", "description": "Label of the departure node"},
-                                                                         "to_entity"  : {"type": "string", "description": "Label of the arrival node"}},
+                                                                         "to_entity"  : {"type": "string", "description": "Label of the arrival node"},
+                                                                         "relation_properties": {"type": "array",
+                                                                                                 "description": "Allowed properties associate with the relation",
+                                                                                                 "items": {"type": "object",
+                                                                                                           "properties": {"name"    : {"type": "string",  "description": "Name of the relation property"},
+                                                                                                                          "type"    : {"type": "string",  "description": "Type of the node property"},
+                                                                                                                          "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}},
+                                                                                                                          "required":["name","type","optional"],
+                                                                                                      }
+                                                                                            }},
                                                          "required":["relation_description","from_entity","to_entity"],
                                                         }
                                             },
@@ -70,7 +81,7 @@ class KG:
     def resetGraph(self):
         self.py2neo.reset()
 
-    def checkSchemaStructure(self, importedSchema):
+    def _checkSchemaStructure(self, importedSchema):
         try:
             validate(instance=importedSchema, schema=self.schemaSchema)
             print("TOML content is valid against the schema.")
@@ -86,13 +97,16 @@ class KG:
 
         with open(config_path, 'rb') as f:
             config_data = tomllib.load(f)
-
-        self.checkSchemaStructure(config_data)
-
+        
         # Check structure of imported graphSchema
-        for node in config_data['node'].keys():
-            pass
+        self._checkSchemaStructure(config_data)
+
+        #TODO: check datatypes against self.datatypes
+
         # Check imported graphSchema against self.graphSchemas
+        if graphSchemaName in list(self.graphSchemas.keys()):
+            print('Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas')
+
         for node in config_data['node'].keys():
             for schema in self.graphSchemas:
                 if node in schema['node'].keys():
@@ -106,11 +120,33 @@ class KG:
         self.graphSchemas[graphSchemaName] = config_data
         return config_data
 
-    def schemaValidation(self, constructionSchema):
+    def _schemaReturnNodeProperties(self, nodeLabel):
+        for schema in self.graphSchemas:
+            if nodeLabel in schema['node'].keys():
+                node_properties = schema['node'][nodeLabel]['node_properties']
+                df = pd.DataFrame(node_properties)
+                return df
+        print('Node not found')
+        return None
+
+    def _schemaValidation(self, constructionSchema):
+        # For each node check that required properties are listed
         for node in constructionSchema['nodes']:
-            for schema in self.graphSchemas:
-                if node in schema['node'].keys():
-                    pass
+            specified_prop = set(constructionSchema['nodes'][node].keys())
+            
+            prop_df = self._schemaReturnNodeProperties(node)
+            allowed_properties = set(prop_df['name'])
+            
+            selected_prop_df = prop_df[prop_df['optional']==False]
+            req_properties = set(selected_prop_df['name'])
+
+            if not req_properties.issubset(specified_prop):
+                print('Node ' + str(node) + 'requires all these properties: ' + str(req_properties))
+
+            if not specified_prop.issubset(allowed_properties):
+                print('Node ' + str(node) + 'requires these properties: ' + str(allowed_properties))
+        
+        # For each relation check that required properties are listed
 
     def genericWorkflow(self, data, constructionSchema):
         # Check constructionSchema against self.graphSchemas  
@@ -260,7 +296,7 @@ class KG:
 
     def kgConstructionWorkflow(self, dataframe, graphSchema, constructionSchema):
 
-        self.schemaValidation(self, constructionSchema, graphSchema)
+        self._schemaValidation(self, constructionSchema, graphSchema)
 
         for node in constructionSchema['nodes'].keys(): 
             map = {value: key for key, value in constructionSchema['nodes'][node].items()} 
