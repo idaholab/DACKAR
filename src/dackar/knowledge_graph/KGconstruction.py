@@ -46,8 +46,9 @@ class KG:
                                                                                              "items": {"type": "object",
                                                                                                        "properties": {"name"    : {"type": "string",  "description": "Name of the node property"},
                                                                                                                       "type"    : {"type": "string",  "description": "Type of the node property"},
-                                                                                                                      "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}},
-                                                                                                       "required":["name","type","optional"],
+                                                                                                                      "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}
+                                                                                                                      },
+                                                                                                       "required":["name","type","optional"]
                                                                                                       }
                                                                                             }
                                                                         },
@@ -63,11 +64,13 @@ class KG:
                                                                                                  "items": {"type": "object",
                                                                                                            "properties": {"name"    : {"type": "string",  "description": "Name of the relation property"},
                                                                                                                           "type"    : {"type": "string",  "description": "Type of the node property"},
-                                                                                                                          "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}},
-                                                                                                                          "required":["name","type","optional"],
+                                                                                                                          "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}
+                                                                                                                          },
+                                                                                                           "required":["name","type","optional"]
                                                                                                       }
-                                                                                            }},
-                                                         "required":["relation_description","from_entity","to_entity"],
+                                                                                            }
+                                                                        },
+                                                         "required":["relation_description","from_entity","to_entity"]
                                                         }
                                             },
                             "required":["title"]}
