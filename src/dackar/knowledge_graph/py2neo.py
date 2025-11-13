@@ -107,6 +107,7 @@ class Py2Neo:
             lr (str): relationship label
             pr (dict, optional): attributes for relationship. Defaults to None.
         """
+        # Keep the MERGE parts, check node existance prior _create_relation
         if pr is not None:
             query = f"""
                 MATCH (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})

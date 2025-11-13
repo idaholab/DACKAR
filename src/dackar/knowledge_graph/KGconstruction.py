@@ -1,4 +1,9 @@
 # Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
+"""
+Created on September, 2025
+
+@author: mandd, wangc
+"""
 
 import os, sys
 import re
@@ -18,23 +23,33 @@ import tomllib
 from jsonschema import validate, ValidationError
 import copy
 from pathlib import Path
+from datetime import datetime
 
 class KG:
-    #def __init__(self, config_file_path, import_folder_path, uri, pwd, user, processedDataFolder):
-    def __init__(self, config_file_path, uri, pwd, user):    
+    """
+    Class designed to automate and check knowledge graph construction
+    """
+    def __init__(self, config_file_path, import_folder_path, uri, pwd, user):
+        """
+        Method designed to initialize the KG class
+        @ In, config_file_path, string, DBMS database folder
+        @ In, import_folder_path, string, folder which contains data to be imported
+        @ In, uri, string, uri = "bolt://localhost:7687" for a single instance or uri = "neo4j://localhost:7687" for a cluster
+        @ In, user, string, default to 'neo4j'
+        @ In, pwd, string, password the the neo4j DBMS database 
+        @ Out, None
+        """
         # Change import folder to user specific location
+        set_neo4j_import_folder(config_file_path, import_folder_path)
 
-        #set_neo4j_import_folder(config_file_path, import_folder_path)
-        
-        #self.processedDataFolder = processedDataFolder
-
-        self.datatypes = ['string', 'int', 'float', 'boolean', 'datetime']
+        self.datatypes = ['str', 'int', 'float', 'bool', 'datetime']
 
         # Create python to neo4j driver
         self.py2neo = Py2Neo(uri=uri, user=user, pwd=pwd)
 
-        self.graphSchemas = {}
+        self.graphSchemas = {} # dictionary containing the set of schemas of the knowledge graph
 
+        # this is the schema for the set of schemas of the knowledge graph
         self.schemaSchema = {"type": "object",
                              "properties": {"title"   : {"type": "string", "description": "Data object that is target of the schema"},
                                             "version" : {"type": "number", "description": "Development version of the schema"},
@@ -74,7 +89,8 @@ class KG:
                                                         }
                                             },
                             "required":["title"]}
-
+        
+        # set of predefined schemas available in DACKAR egenrated for the RIAM project
         self.predefinedGraphSchemas = {'conditionReportSchema'  : 'conditionReportSchema.toml',
                                        'customMbseSchema'       : 'customMbseSchema.toml',
                                        'monitoringSystemSchema' : 'monitoringSystemSchema.toml',
@@ -82,9 +98,44 @@ class KG:
                                        'numericPerfomanceSchema': 'numericPerfomanceSchema.toml'}
 
     def resetGraph(self):
+        """
+        Method designed to reset knowledge graph
+        @ In, None 
+        @ Out, None
+        """
         self.py2neo.reset()
 
+    def _crossSchemasCheck(self):
+        """
+        Method designed to perform a series of checks across the defined schemas
+        @ In, None 
+        @ Out, None
+        """
+        self.nodeSet = set()
+        self.relSet  = set()
+        self.relationList = {}
+
+        for schema in self.graphSchemas:
+            for node in self.graphSchemas[schema]['node']:
+                self.nodeSet.add(node)
+        
+        for schema in self.graphSchemas:
+            for rel in self.graphSchemas[schema]['relation']:
+                origin = self.graphSchemas[schema]['relation'][rel]['from_entity']
+                destin = self.graphSchemas[schema]['relation'][rel]['to_entity']
+
+                # check that the defined relations link nodes that have been defined
+                if origin not in self.nodeSet:
+                    print('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined')
+                if destin not in self.nodeSet:
+                    print('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined')                
+
     def _checkSchemaStructure(self, importedSchema):
+        """
+        Method designed to check importedSchema against self.schemaSchema
+        @ In, importedSchema, dict, schema parsed by tomllib from .toml file
+        @ Out, None
+        """
         try:
             validate(instance=importedSchema, schema=self.schemaSchema)
             print("TOML content is valid against the schema.")
@@ -94,45 +145,92 @@ class KG:
             print(f"TOML schema validation error: {e.message}")
     
     def importGraphSchema(self, graphSchemaName, tomlFilename):         
-        config_path = Path(tomlFilename)
-        if not config_path.exists():
+        """
+        Method that imports new schema contained in a .toml file
+        @ In, importedSchema, dict, schema parsed by tomllib from .toml file
+        @ In, tomlFilename, string, .toml file contained the new schema
+        @ Out, None
+        """
+        full_path = Path(tomlFilename)
+        if not full_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {tomlFilename}")
 
-        with open(config_path, 'rb') as f:
+        with open(full_path, 'rb') as f:
             config_data = tomllib.load(f)
         
         # Check structure of imported graphSchema
         self._checkSchemaStructure(config_data)
 
-        #TODO: check datatypes against self.datatypes
+        #check data types against self.datatypes
+        self._checkSchemaDataTypes(config_data)
 
         # Check imported graphSchema against self.graphSchemas
+        # check schema name is not used before
         if graphSchemaName in list(self.graphSchemas.keys()):
             print('Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas')
-
+        
+        # check nodes are not already defined
         for node in config_data['node'].keys():
             for schema in self.graphSchemas:
                 if node in schema['node'].keys():
                     print('Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
-
+        
+        # check relations are not already defined
         for relation in config_data['relation'].keys():
             for schema in self.graphSchemas:
                 if relation in schema['relation'].keys():
                     print('Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
 
+        self._crossSchemasCheck()
+        
         self.graphSchemas[graphSchemaName] = config_data
-        return config_data
+
+    def _checkSchemaDataTypes(self, schema):
+        """
+        Method that checks that the datatypes defined in the new schema are part of the allowed data 
+        types contained in self.datatypes
+        @ In, schema, dict, schema parsed by tomllib from .toml file
+        @ Out, None
+        """
+        for node in schema['node']:
+            for prop in schema['node'][node]['node_properties']:
+                if prop['type'] not in self.datatypes:
+                    print('Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed')
 
     def _schemaReturnNodeProperties(self, nodeLabel):
+        """
+        Method that returns the properties of the node nodeLabel
+        @ In, nodeLabel, string, ID of the node label 
+        @ Out, propdf, dataframe, dataframe containing nodeLabel properties
+        """
         for schema in self.graphSchemas:
             if nodeLabel in schema['node'].keys():
                 node_properties = schema['node'][nodeLabel]['node_properties']
-                df = pd.DataFrame(node_properties)
-                return df
+                propdf = pd.DataFrame(node_properties)
+                return propdf
         print('Node not found')
         return None
+    
+    def _schemaReturnRelationProperties(self, relation):
+        """
+        Method that returns the properties of the selected relation
+        @ In, relation, string, ID of the node label 
+        @ Out, propdf, dataframe, dataframe containing relation properties
+        """
+        for schema in self.graphSchemas:
+            if relation in schema['relation'].keys():
+                relation_properties = schema['relation'][relation]['relation_properties']
+                propdf = pd.DataFrame(relation_properties)
+                return propdf
+        print('Relation not found')
+        return None
 
-    def _schemaValidation(self, constructionSchema):
+    def _constructionSchemaValidation(self, constructionSchema):
+        """
+        Method that validate the constructionSchema against defined schemas.
+        @ In, constructionSchema, dict, construction schema (see above)
+        @ Out, None
+        """
         # For each node check that required properties are listed
         for node in constructionSchema['nodes']:
             specified_prop = set(constructionSchema['nodes'][node].keys())
@@ -150,9 +248,43 @@ class KG:
                 print('Node ' + str(node) + 'requires these properties: ' + str(allowed_properties))
         
         # For each relation check that required properties are listed
+        for rel in constructionSchema['relations']:
+            specified_prop = set(rel['properties'])
+
+            prop_df = self._schemaReturnRelationProperties(rel)
+            allowed_properties = set(prop_df['name'])
+            
+            selected_prop_df = prop_df[prop_df['optional']==False]
+            req_properties = set(selected_prop_df['name'])
+
+            if not req_properties.issubset(specified_prop):
+                print('Relation ' + str(rel) + 'requires all these properties: ' + str(req_properties))
+
+            if not specified_prop.issubset(allowed_properties):
+                print('Relation ' + str(rel) + 'requires these properties: ' + str(allowed_properties))
 
     def genericWorkflow(self, data, constructionSchema):
+        """
+        Method designed to importa data into knowledge graph according to constructionSchema
+        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph 
+        @ Out, constructionSchema, dict, dataframe containing relation properties. A construction schema is defined as follows:
+
+            constructionSchema = {'nodes'    : nodeConstructionSchema,
+                                  'relations': edgeConstructionSchema}
+
+            nodeConstructionSchema = {'nodeLabel1': {'property1': 'dataframe.colA', 'property2': 'dataframe.colB'},
+                                      'nodeLabel2': {'property1': 'dataframe.colC'}}
+            
+            edgeConstructionSchema = [{'source': {'nodeLabel1.property1':'dataframe.col1'},
+                                       'target': {'nodeLabel2.property1':'dataframe.col2'},
+                                       'type'  : 'edgeType',
+                                       'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}] 
+        """
         # Check constructionSchema against self.graphSchemas  
+        self._constructionSchemaValidation(self, constructionSchema)
+
+        # Check datatypes of data
+        self._checkDataframeDatatypes(data, constructionSchema)
 
         # Parse data (pd.dataframe) and update KG
         # Nodes
@@ -190,159 +322,133 @@ class KG:
                                                          l2=target_node_label, p2=target_node_prop, 
                                                          lr=rel['type'], 
                                                          pr=list(rel['properties'].keys()))
-
-        '''
-        ---- Example of graph schema (toml file) ----
-
-        title = "Graph Schema for ..."
-        version = "1.0"
-
-        # Nodes
-        [node.label1]
-        description = "This node represents ..."
-        properties = {"prop1": {type="date",   required=bool},
-                      "prop2": {type="string", required=bool}}
-
-        # Relationships
-        [relationships.relation1]
-        description = "relation1 indicates ... "
-        from_entity = entity1
-        to_entity = entity2
-        properties = {"prop1": {type="int",   required=bool},
-                      "prop2": {type="float", required=bool}}
-
-
-
-        ---- Example of construction schema ----
-
-        constructionSchema = {'nodes': nodeConstructionSchema,
-                              'relations': edgeConstructionSchema}
-
-        nodeConstructionSchema = {'nodeLabel1': {'property1': 'node.colA', 'property2': 'node.colB'},
-                                  'nodeLabel2': {'property1': 'node.colC'}}
         
-        edgeConstructionSchema = [{'source': {'nodeLabel1.property1':'col1'},
-                                   'target': {'nodeLabel2.property1':'col2'},
-                                   'type'  : 'edgeType',
-                                   'properties': {'property1': 'colAlpha', 'property2': 'colBeta'}}] 
+    def _checkDataframeDatatypes(self, data, constructionSchema):
+        """
+        Method that checks that data elements match format specified in the graph schemas
+        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph 
+        @ In, constructionSchema, dict, dataframe containing relation properties
+        @ Out, None
+        """  
+        for node in constructionSchema['nodes']:
+            for prop in constructionSchema['nodes']:
+                allowedDatatype = self._returnNodePropertyDatatype(node,prop)
+                df_datatype = data[constructionSchema['nodes'][node][prop]]
+                if allowedDatatype != set(df_datatype.map(type)): 
+                    print('Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(df_datatype) + ') does \\'
+                          'not match datatype defined in schema (' + str(df_datatype) + ')')
 
-        '''
+    def _returnNodePropertyDatatype(self, nodeID, propID):
+        """
+        Method that returns the allowed type of a specified node property
+        @ In, node, string, specific node label 
+        @ In, prop, string, specific node property
+        @ Out, string, allowed type of the specified node property
+        """        
+        for schema in self.graphSchemas:
+            for node in self.graphSchemas[schema]:
+                if node==nodeID and propID in self.graphSchemas[schema][node]:
+                    allowedtype = self.graphSchemas[schema][node][propID][type]
+                    return allowedtype
 
-    # These are workflows specific to the RIAM project
-    def mbseWorkflow(self, name, type, nodesFile, edgesFile):
-        if type =='customMBSE':
-            mbseModel = customMBSEobject(nodesFile,
-                                         edgesFile, 
-                                         path=self.processedDataFolder)
-            
-            self.equipmentIDs = self.equipmentIDs + mbseModel.returnIDs()
-            mbseModel.plot(name)
 
-            label = 'MBSE'
-            attribute = {'ID':'ID', 'type':'type'}
-            self.py2neo.load_csv_for_nodes(os.path.join(self.processedDataFolder, nodesFile), label, attribute)
-
-            l1='MBSE'
-            p1={'ID':'sourceNodeId'}
-            l2='MBSE'
-            p2 ={'ID':'targetNodeId'}
-            lr = 'MBSE_link'
-            pr = {'prop':'type'}
-            self.py2neo.load_csv_for_relations(os.path.join(self.processedDataFolder, edgesFile), l1, p1, l2, p2, lr, pr)
-    
-        elif type =='LML':
-            pass
-    
-    def anomalyWorkflow(self, filename, constructionSchema):
-        graphSchema = TBD
-
-        #TODO: Check constructionSchema against graphSchemas
-
-        label = 'anomaly'
-        attribute = {'ID':'ID', 'time_initial':'start_date', 'time_final':'end_date'}
-        self.py2neo.load_csv_for_nodes(filename, label, attribute)
-
-        l1='anomaly'
-        p1={'ID':'ID'}
-        l2='monitored_var'
-        p2 ={'ID':'monitored_variable'}
-        lr = 'detected_by'
-        pr = None
-        self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
-
+    def _returnRelationPropertyDatatype(self, node, prop):
+        """
+        Method that returns the allowed type of a specified relation property.
+        @ In, node, string, specific relation 
+        @ In, prop, string, specific node property
+        @ Out, string, allowed type of the specified relation property
+        """
         pass
 
-    def monitoringWorkflow(self, filename, constructionSchema):
-        graphSchema = TBD
+    
+def stringToDatetimeConverter(date_string, format_code):
+    datetime_object = datetime.strptime(date_string, format_code)
+    return datetime_object
 
-        #TODO: Check constructionSchema against graphSchemas
+'''      
+# These are workflows specific to the RIAM project
+def mbseWorkflow(self, name, type, nodesFile, edgesFile):
+    if type =='customMBSE':
+        mbseModel = customMBSEobject(nodesFile,
+                                        edgesFile, 
+                                        path=self.processedDataFolder)
+        
+        self.equipmentIDs = self.equipmentIDs + mbseModel.returnIDs()
+        mbseModel.plot(name)
 
-        label = 'monitored_var'
-        attribute = {'ID':'varID'}
-        self.py2neo.load_csv_for_nodes(filename, label, attribute)
+        label = 'MBSE'
+        attribute = {'ID':'ID', 'type':'type'}
+        self.py2neo.load_csv_for_nodes(os.path.join(self.processedDataFolder, nodesFile), label, attribute)
 
-        l1='monitored_var'
-        p1={'ID':'varID'}
+        l1='MBSE'
+        p1={'ID':'sourceNodeId'}
         l2='MBSE'
-        p2 ={'ID':'equip_ID'}
-        lr = 'monitors'
-        pr = None
-        self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
+        p2 ={'ID':'targetNodeId'}
+        lr = 'MBSE_link'
+        pr = {'prop':'type'}
+        self.py2neo.load_csv_for_relations(os.path.join(self.processedDataFolder, edgesFile), l1, p1, l2, p2, lr, pr)
 
-
-    def eventReportWorkflow(self, filename, constructionSchema, pipelines):
-        graphSchema = TBD
-
-        #TODO: Check constructionSchema against graphSchemas
-
+    elif type =='LML':
         pass
 
-    def kgConstructionWorkflow(self, dataframe, graphSchema, constructionSchema):
+def anomalyWorkflow(self, filename, constructionSchema):
+    graphSchema = TBD
 
-        self._schemaValidation(self, constructionSchema, graphSchema)
+    #TODO: Check constructionSchema against graphSchemas
 
-        for node in constructionSchema['nodes'].keys(): 
-            map = {value: key for key, value in constructionSchema['nodes'][node].items()} 
-            tempDataframe = dataframe.rename(columns=map)
-            self.py2neo.load_dataframe_for_nodes(tempDataframe, node, map.keys())
-        
-        # Incomplete
-        for edge in constructionSchema['edges']:
-            self.py2neo.load_dataframe_for_relations(dataframe, 
-                                                     l1='sourceLabel', p1='sourceNodeId', 
-                                                     l2='targetLabel', p2='targetNodeId', 
-                                                     lr=edge['type'], 
-                                                     pr=edge['properties'])
-        
+    label = 'anomaly'
+    attribute = {'ID':'ID', 'time_initial':'start_date', 'time_final':'end_date'}
+    self.py2neo.load_csv_for_nodes(filename, label, attribute)
+
+    l1='anomaly'
+    p1={'ID':'ID'}
+    l2='monitored_var'
+    p2 ={'ID':'monitored_variable'}
+    lr = 'detected_by'
+    pr = None
+    self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
+
+    pass
+
+def monitoringWorkflow(self, filename, constructionSchema):
+    graphSchema = TBD
+
+    #TODO: Check constructionSchema against graphSchemas
+
+    label = 'monitored_var'
+    attribute = {'ID':'varID'}
+    self.py2neo.load_csv_for_nodes(filename, label, attribute)
+
+    l1='monitored_var'
+    p1={'ID':'varID'}
+    l2='MBSE'
+    p2 ={'ID':'equip_ID'}
+    lr = 'monitors'
+    pr = None
+    self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
 
 
+def eventReportWorkflow(self, filename, constructionSchema, pipelines):
+    graphSchema = TBD
 
-'''       
-# Load nodes
-label = 'anomaly'
-self.py2neo.load_csv_for_nodes(file_path, label, nodeAttributes)
+    #TODO: Check constructionSchema against graphSchemas
 
-# Load edges
-l1='anomaly'
-p1={'ID':'ID'}
-l2='monitored_var'
-p2 ={'ID':'monitored_variable'}
-lr = 'detected_by'
-pr = None
-self.py2neo.load_csv_for_relations(file_path, l1, p1, l2, p2, lr, pr)
-''' 
+    pass
 
-'''file_path = 'processed_data/mbse_model_nodes_kg.csv'
-label = 'MBSE'
-attribute = {'ID':'ID', 'type':'type'}
-self.py2neo.load_csv_for_nodes(file_path, label, attribute)
+def kgConstructionWorkflow(self, dataframe, graphSchema, constructionSchema):
 
-file_path = 'processed_data/mbse_model_edges_kg.csv'
-l1='MBSE'
-p1={'ID':'sourceNodeId'}
-l2='MBSE'
-p2 ={'ID':'targetNodeId'}
-lr = 'MBSE_link'
-pr = {'prop':'type'}
-self.py2neo.load_csv_for_relations(file_path, l1, p1, l2, p2, lr, pr)'''
+    self._schemaValidation(self, constructionSchema, graphSchema)
 
+    for node in constructionSchema['nodes'].keys(): 
+        map = {value: key for key, value in constructionSchema['nodes'][node].items()} 
+        tempDataframe = dataframe.rename(columns=map)
+        self.py2neo.load_dataframe_for_nodes(tempDataframe, node, map.keys())
+    
+    # Incomplete
+    for edge in constructionSchema['edges']:
+        self.py2neo.load_dataframe_for_relations(dataframe, 
+                                                    l1='sourceLabel', p1='sourceNodeId', 
+                                                    l2='targetLabel', p2='targetNodeId', 
+                                                    lr=edge['type'], 
+                                                    pr=edge['properties'])  '''
