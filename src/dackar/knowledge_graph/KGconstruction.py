@@ -25,6 +25,8 @@ import copy
 from pathlib import Path
 from datetime import datetime
 
+from dateutil.parser import parse
+
 class KG:
     """
     Class designed to automate and check knowledge graph construction
@@ -40,7 +42,8 @@ class KG:
         @ Out, None
         """
         # Change import folder to user specific location
-        set_neo4j_import_folder(config_file_path, import_folder_path)
+        if import_folder_path is not None:
+            set_neo4j_import_folder(config_file_path, import_folder_path)
 
         self.datatypes = ['str', 'int', 'float', 'bool', 'datetime']
 
@@ -60,7 +63,7 @@ class KG:
                                                                                              "description": "Allowed properties associate with the node", 
                                                                                              "items": {"type": "object",
                                                                                                        "properties": {"name"    : {"type": "string",  "description": "Name of the node property"},
-                                                                                                                      "type"    : {"type": "string",  "description": "Type of the node property"},
+                                                                                                                      "type"    : {"type": "string",  "description": "Type of the node property", "enum": self.datatypes},
                                                                                                                       "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}
                                                                                                                       },
                                                                                                        "required":["name","type","optional"]
@@ -204,8 +207,8 @@ class KG:
         @ Out, propdf, dataframe, dataframe containing nodeLabel properties
         """
         for schema in self.graphSchemas:
-            if nodeLabel in schema['node'].keys():
-                node_properties = schema['node'][nodeLabel]['node_properties']
+            if nodeLabel in self.graphSchemas[schema]['node'].keys():
+                node_properties = self.graphSchemas[schema]['node'][nodeLabel]['node_properties']
                 propdf = pd.DataFrame(node_properties)
                 return propdf
         print('Node not found')
@@ -218,50 +221,52 @@ class KG:
         @ Out, propdf, dataframe, dataframe containing relation properties
         """
         for schema in self.graphSchemas:
-            if relation in schema['relation'].keys():
-                relation_properties = schema['relation'][relation]['relation_properties']
+            if relation in self.graphSchemas[schema]['relation']:
+                relation_properties = self.graphSchemas[schema]['relation'][relation]['relation_properties']
                 propdf = pd.DataFrame(relation_properties)
                 return propdf
         print('Relation not found')
         return None
-
+                                      
     def _constructionSchemaValidation(self, constructionSchema):
         """
-        Method that validate the constructionSchema against defined schemas.
-        @ In, constructionSchema, dict, construction schema (see above)
+        Method that validates the constructionSchema against defined schemas
+        @ In, constructionSchema, dict, construction schema 
         @ Out, None
         """
         # For each node check that required properties are listed
-        for node in constructionSchema['nodes']:
-            specified_prop = set(constructionSchema['nodes'][node].keys())
-            
-            prop_df = self._schemaReturnNodeProperties(node)
-            allowed_properties = set(prop_df['name'])
-            
-            selected_prop_df = prop_df[prop_df['optional']==False]
-            req_properties = set(selected_prop_df['name'])
+        if 'nodes' in constructionSchema:
+            for node in constructionSchema['nodes']:
+                specified_prop = set(constructionSchema['nodes'][node].keys())
+                
+                prop_df = self._schemaReturnNodeProperties(node)
+                allowed_properties = set(prop_df['name'])
+                
+                selected_prop_df = prop_df[prop_df['optional']==False]
+                req_properties = set(selected_prop_df['name'])
 
-            if not req_properties.issubset(specified_prop):
-                print('Node ' + str(node) + 'requires all these properties: ' + str(req_properties))
+                if not req_properties.issubset(specified_prop):
+                    print('Node ' + str(node) + 'requires all these properties: ' + str(req_properties))
 
-            if not specified_prop.issubset(allowed_properties):
-                print('Node ' + str(node) + 'requires these properties: ' + str(allowed_properties))
-        
+                if not specified_prop.issubset(allowed_properties):
+                    print('Node ' + str(node) + 'requires these properties: ' + str(allowed_properties))
+            
         # For each relation check that required properties are listed
-        for rel in constructionSchema['relations']:
-            specified_prop = set(rel['properties'])
+        if 'relations' in constructionSchema:
+            for rel in constructionSchema['relations']:
+                specified_prop = set(constructionSchema['relations'][rel]['properties'])
 
-            prop_df = self._schemaReturnRelationProperties(rel)
-            allowed_properties = set(prop_df['name'])
-            
-            selected_prop_df = prop_df[prop_df['optional']==False]
-            req_properties = set(selected_prop_df['name'])
+                prop_df = self._schemaReturnRelationProperties(rel)
+                allowed_properties = set(prop_df['name'])
+                
+                selected_prop_df = prop_df[prop_df['optional']==False]
+                req_properties = set(selected_prop_df['name'])
 
-            if not req_properties.issubset(specified_prop):
-                print('Relation ' + str(rel) + 'requires all these properties: ' + str(req_properties))
+                if not req_properties.issubset(specified_prop):
+                    print('Relation ' + str(rel) + 'requires all these properties: ' + str(req_properties))
 
-            if not specified_prop.issubset(allowed_properties):
-                print('Relation ' + str(rel) + 'requires these properties: ' + str(allowed_properties))
+                if not specified_prop.issubset(allowed_properties):
+                    print('Relation ' + str(rel) + 'requires these properties: ' + str(allowed_properties))
 
     def genericWorkflow(self, data, constructionSchema):
         """
@@ -281,7 +286,7 @@ class KG:
                                        'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}] 
         """
         # Check constructionSchema against self.graphSchemas  
-        self._constructionSchemaValidation(self, constructionSchema)
+        self._constructionSchemaValidation(constructionSchema)
 
         # Check datatypes of data
         self._checkDataframeDatatypes(data, constructionSchema)
@@ -300,43 +305,56 @@ class KG:
         if 'relations' in constructionSchema:
             data_temp = copy.deepcopy(data)
             for rel in constructionSchema['relations']: 
-                source_node_label = next(iter(rel['source'])).split('.')[0]
-                source_node_prop  = next(iter(rel['source'])).split('.')[1]
+                source_node_label = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[0]
+                source_node_prop  = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[1]
 
-                target_node_label = next(iter(rel['target'])).split('.')[0]
-                target_node_prop  = next(iter(rel['target'])).split('.')[1]
+                target_node_label = next(iter(constructionSchema['relations'][rel]['target'])).split('.')[0]
+                target_node_prop  = next(iter(constructionSchema['relations'][rel]['target'])).split('.')[1]
 
                 mapping = {}
-                data_renamed = data_temp.rename(columns={next(iter(rel['source'].values())):source_node_prop,
-                                                         next(iter(rel['target'].values())):target_node_prop})
+                data_renamed = data_temp.rename(columns={next(iter(constructionSchema['relations'][rel]['source'].values())):source_node_prop,
+                                                         next(iter(constructionSchema['relations'][rel]['target'].values())):target_node_prop})
                 
-                for prop in rel['properties'].keys():
-                    data_renamed = data_renamed.rename(columns={rel['properties'][prop]: prop})
+                for prop in constructionSchema['relations'][rel]['properties'].keys():
+                    data_renamed = data_renamed.rename(columns={constructionSchema['relations'][rel]['properties'][prop]: prop})
                 
                 data_renamed[source_node_label] = source_node_label
                 data_renamed[target_node_label] = target_node_label
-                data_renamed[rel['type']] = rel['type']
+                data_renamed[rel] = rel
 
                 self.py2neo.load_dataframe_for_relations(df=data_renamed, 
                                                          l1=source_node_label, p1=source_node_prop, 
                                                          l2=target_node_label, p2=target_node_prop, 
-                                                         lr=rel['type'], 
-                                                         pr=list(rel['properties'].keys()))
+                                                         lr=rel, 
+                                                         pr=list(constructionSchema['relations'][rel]['properties'].keys()))
         
     def _checkDataframeDatatypes(self, data, constructionSchema):
         """
-        Method that checks that data elements match format specified in the graph schemas
+        Method that checks that data elements in data match format specified in the graph schemas
         @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph 
         @ In, constructionSchema, dict, dataframe containing relation properties
         @ Out, None
         """  
-        for node in constructionSchema['nodes']:
-            for prop in constructionSchema['nodes']:
-                allowedDatatype = self._returnNodePropertyDatatype(node,prop)
-                df_datatype = data[constructionSchema['nodes'][node][prop]]
-                if allowedDatatype != set(df_datatype.map(type)): 
-                    print('Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(df_datatype) + ') does \\'
-                          'not match datatype defined in schema (' + str(df_datatype) + ')')
+        # Check nodes data types
+        if 'nodes' in constructionSchema:
+            for node in constructionSchema['nodes']:
+                for prop in constructionSchema['nodes'][node]:
+                    allowedDatatype = self._returnNodePropertyDatatype(node,prop)
+                    df_datatype = data[constructionSchema['nodes'][node][prop]]
+                    #print(allowedDatatype,set(df_datatype.map(type)))
+                    if allowedDatatype != set(df_datatype.map(type)): 
+                        print('Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(df_datatype.map(type))) + ') does \\'
+                              'not match datatype defined in schema (' + str(allowedDatatype) + ')')
+                    
+        # Check relations data types
+        if 'relations' in constructionSchema:
+            for rel in constructionSchema['relations']:
+                for prop in constructionSchema['relations'][rel]['properties']:
+                    allowedDatatype = self._returnRelationPropertyDatatype(rel,prop)
+                    df_datatype = data[constructionSchema['relations'][rel]['properties'][prop]]
+                    if allowedDatatype != set(df_datatype.map(type)): 
+                        print('Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(df_datatype) + ') does \\'
+                              'not match datatype defined in schema (' + str(df_datatype) + ')')
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
         """
@@ -345,29 +363,64 @@ class KG:
         @ In, prop, string, specific node property
         @ Out, string, allowed type of the specified node property
         """        
+        allowedtype = None
         for schema in self.graphSchemas:
-            for node in self.graphSchemas[schema]:
-                if node==nodeID and propID in self.graphSchemas[schema][node]:
-                    allowedtype = self.graphSchemas[schema][node][propID][type]
-                    return allowedtype
+            for node in self.graphSchemas[schema]['node']:
+                if node==nodeID:# and propID in self.graphSchemas[schema][node]:
+                    for prop in self.graphSchemas[schema]['node'][node]['node_properties']:
+                        if prop['name']==propID:
+                            allowedtype = prop['type']
+                            return allowedtype
+        if allowedtype is None:
+            print('_returnNodePropertyDatatype error retrieving prop')
 
-
-    def _returnRelationPropertyDatatype(self, node, prop):
+    def _returnRelationPropertyDatatype(self, relID, propID):
         """
         Method that returns the allowed type of a specified relation property.
         @ In, node, string, specific relation 
         @ In, prop, string, specific node property
         @ Out, string, allowed type of the specified relation property
         """
-        pass
+        allowedtype = None
+        for schema in self.graphSchemas:
+            for rel in self.graphSchemas[schema]['relation']:
+                if rel==relID:
+                    for prop in self.graphSchemas[schema]['relation'][rel]['relation_properties']:
+                        if prop['name']==propID:
+                            allowedtype = prop['type']
+                            return allowedtype 
+        if allowedtype is None:
+            print('_returnRelationPropertyDatatype error')
 
     
-def stringToDatetimeConverter(date_string, format_code):
-    datetime_object = datetime.strptime(date_string, format_code)
-    return datetime_object
+def stringToDatetimeConverterFlexible(date_string, format_code=None):
+    """
+    Method that convert a string into datetime according to specific format
+    @ In, date_string, string, string containing date 
+    @ In, format_code, string, datetime specific format
+    @ Out, datetime_object, datetime, datetime object
+    """
+    formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S",
+        "%d-%m-%Y %H:%M",
+        "%Y-%m-%d"
+    ]
+    if format_code is not None:
+        formats.append(format_code)
 
-'''      
-# These are workflows specific to the RIAM project
+        for fmt in formats:
+            try:
+                return datetime.strptime(date_string, fmt)
+            except ValueError:
+                raise ValueError(f"Unable to parse date string: {date_string}")
+    else:
+        try:
+            return parse(date_string)
+        except ValueError:
+            raise ValueError(f"Unable to parse date string: {date_string}")
+
+'''   
 def mbseWorkflow(self, name, type, nodesFile, edgesFile):
     if type =='customMBSE':
         mbseModel = customMBSEobject(nodesFile,
@@ -436,19 +489,4 @@ def eventReportWorkflow(self, filename, constructionSchema, pipelines):
 
     pass
 
-def kgConstructionWorkflow(self, dataframe, graphSchema, constructionSchema):
-
-    self._schemaValidation(self, constructionSchema, graphSchema)
-
-    for node in constructionSchema['nodes'].keys(): 
-        map = {value: key for key, value in constructionSchema['nodes'][node].items()} 
-        tempDataframe = dataframe.rename(columns=map)
-        self.py2neo.load_dataframe_for_nodes(tempDataframe, node, map.keys())
-    
-    # Incomplete
-    for edge in constructionSchema['edges']:
-        self.py2neo.load_dataframe_for_relations(dataframe, 
-                                                    l1='sourceLabel', p1='sourceNodeId', 
-                                                    l2='targetLabel', p2='targetNodeId', 
-                                                    lr=edge['type'], 
-                                                    pr=edge['properties'])  '''
+'''
