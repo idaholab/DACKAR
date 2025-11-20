@@ -24,8 +24,8 @@ from jsonschema import validate, ValidationError
 import copy
 from pathlib import Path
 from datetime import datetime
-
 from dateutil.parser import parse
+from pandas.api.types import infer_dtype
 
 class KG:
     """
@@ -45,7 +45,7 @@ class KG:
         if import_folder_path is not None:
             set_neo4j_import_folder(config_file_path, import_folder_path)
 
-        self.datatypes = ['str', 'int', 'float', 'bool', 'datetime']
+        self.datatypes = ['string', 'integer', 'floating', 'boolean', 'datetime']
 
         # Create python to neo4j driver
         self.py2neo = Py2Neo(uri=uri, user=user, pwd=pwd)
@@ -341,8 +341,7 @@ class KG:
                 for prop in constructionSchema['nodes'][node]:
                     allowedDatatype = self._returnNodePropertyDatatype(node,prop)
                     df_datatype = data[constructionSchema['nodes'][node][prop]]
-                    #print(allowedDatatype,set(df_datatype.map(type)))
-                    if allowedDatatype != set(df_datatype.map(type)): 
+                    if allowedDatatype != infer_dtype(df_datatype): 
                         print('Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(df_datatype.map(type))) + ') does \\'
                               'not match datatype defined in schema (' + str(allowedDatatype) + ')')
                     
@@ -352,7 +351,7 @@ class KG:
                 for prop in constructionSchema['relations'][rel]['properties']:
                     allowedDatatype = self._returnRelationPropertyDatatype(rel,prop)
                     df_datatype = data[constructionSchema['relations'][rel]['properties'][prop]]
-                    if allowedDatatype != set(df_datatype.map(type)): 
+                    if allowedDatatype != infer_dtype(df_datatype):  
                         print('Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(df_datatype) + ') does \\'
                               'not match datatype defined in schema (' + str(df_datatype) + ')')
 
