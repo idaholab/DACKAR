@@ -110,15 +110,15 @@ class Py2Neo:
         # Keep the MERGE parts, check node existance prior _create_relation
         if pr is not None:
             query = f"""
-                MATCH (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
-                MATCH (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
+                MATCH (l1:{l1} {{ {', '.join([f'{k}:${k}' for k in p1.keys()])} }})
+                MATCH (l2:{l2} {{ {', '.join([f'{k}:${k}' for k in p2.keys()])} }})
                 MERGE (l1)-[r:{lr} {{ {', '.join([f'{k}: ${k}' for k in pr.keys()])} }} ]->(l2)
             """
             tx.run(query, **pr)
         else:
             query = f"""
-                MATCH (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
-                MATCH (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
+                MATCH (l1:{l1} {{ {', '.join([f'{k}:${k}' for k in p1.keys()])} }})
+                MATCH (l2:{l2} {{ {', '.join([f'{k}:${k}' for k in p2.keys()])} }})
                 MERGE (l1)-[r:{lr}]->(l2)
             """
             tx.run(query)
@@ -152,7 +152,7 @@ class Py2Neo:
         if properties is None:
             query = f"MATCH (n:{label}) RETURN n"
         else:
-            query = f"""MATCH (n:{label} {{ {', '.join([f'{k}:"{v}"' for k, v in properties.items()])} }}) RETURN n"""
+            query = f"""MATCH (n:{label} {{ {', '.join([f'{k}:${k}' for k in properties.keys()])} }}) RETURN n"""
         result = tx.run(query)
         values = [record.values() for record in result]
         return values
