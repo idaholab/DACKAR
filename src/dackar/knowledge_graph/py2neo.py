@@ -301,7 +301,7 @@ class Py2Neo:
         valid.extend([l1, l2, lr, p1, p2])
         if pr is not None:
             valid.extend(pr)
-
+        
         assert set(valid).issubset(set(df.columns))
 
         with self.__driver.session() as session:
