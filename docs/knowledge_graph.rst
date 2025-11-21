@@ -106,7 +106,7 @@ Knowledge Graph Construction Through Schemas
   For each of these two entities, a textual description is provided along with the specifics of the allowed properties 
   (i.e., name, data-type, required/optional setting, property description). 
 
-  An example, the following schema defines two nodes (i.e., cause and effect nodes) and a relations between them
+  An example, the following schema defines two nodes (i.e., cause and effect nodes) and a relation between them
   .. literalinclude:: ../src/dackar/knowledge_graph/schemas/sampleSchema.toml
      :language: toml
      :linenos:
@@ -114,7 +114,7 @@ Knowledge Graph Construction Through Schemas
   In this example, each node is characterized by two properties (prop1 and prop2 for the cause node, ID_A and ID_B for the 
   consequence node). 
   The defined relation represents a cause-effect relation that link a "cause" node to a "consequence" node where one single 
-  propoerty is defined (i.e., "intensity").
+  property is defined (i.e., "intensity").
 
   In DACKAR the user can define multiple schemas (each described in its own .toml file) depending on the specific application.
 
@@ -145,7 +145,7 @@ Knowledge Graph Construction Through Schemas
                                                         }
                                           }
                             }
-  In the provided construction schema the user can soecify either niodes, relations, or both. 
+  In the provided construction schema the user can specify either nodes, relations, or both. 
 
   The following checks are performed when new data is required to be loaded in the knowledge graph according to a construction 
   schema:
