@@ -137,13 +137,15 @@ Knowledge Graph Construction Through Schemas
     dataframe)
 
       constructionSchema = {'nodes'    : {'nodeLabel1': {'property1': 'dataframe.colA', 'property2': 'dataframe.colB'},
-                                          'nodeLabel2': {'property3': 'dataframe.colC'}},
-                            'relations': [{'source': {'nodeLabel1.property1':'dataframe.col1'},
-                                           'target': {'nodeLabel2.property3':'dataframe.col2'},
-                                           'type'  : 'relationType',
-                                           'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}
-                                          ] 
+                                          'nodeLabel2': {'property3': 'dataframe.colC'}
+                                          },
+                            'relations': {'causality': {'source': {'cause.prop1':'A'},
+                                                        'target': {'consequence.ID_B':'D'},
+                                                        'properties': {'intensity': 'prop_rel'}
+                                                        }
+                                          }
                             }
+  In the provided construction schema the user can soecify either niodes, relations, or both. 
 
   The following checks are performed when new data is required to be loaded in the knowledge graph according to a construction 
   schema:
