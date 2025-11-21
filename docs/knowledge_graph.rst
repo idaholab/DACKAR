@@ -125,20 +125,29 @@ Knowledge Graph Construction Through Schemas
 
   In this context, knowledge graphs are constructed from pandas dataframes. In addition, the user is required to provide
   a construction schema that defines the nodes and relations to be populated in the knowledge graph.
-  A construction schema is defined in the form of a python dictionary as follows:
-      constructionSchema = {'nodes'    : nodeConstructionSchema,
-                            'relations': edgeConstructionSchema}
+  A construction schema is defined in the form of a python dictionary.
+  The following example indicates that two nodes are created:
+  - Node with label nodeLabel1 is characterized by two properties (i.e., property1 and property2) whose values are indicated in 
+    the columns colA and colB of the provided dataframe
+  - Node with label nodeLabel2 is characterized by one property (i.e., property3) whose values are indicated in 
+    column colC of the provided dataframe
+  and one relation is also created:
+  - Relation of type relationType links a node with label nodeLabel1 (with property1 values contained in col1 of the provided 
+    dataframe) to a node with label nodeLabel2 (with property3 values contained in col2 of the provided 
+    dataframe)
 
-      nodeConstructionSchema = {'nodeLabel1': {'property1': 'dataframe.colA', 'property2': 'dataframe.colB'},
-                                'nodeLabel2': {'property1': 'dataframe.colC'}}
-      
-      edgeConstructionSchema = [{'source': {'nodeLabel1.property1':'dataframe.col1'},
-                                  'target': {'nodeLabel2.property1':'dataframe.col2'},
-                                  'type'  : 'edgeType',
-                                  'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}] 
+      constructionSchema = {'nodes'    : {'nodeLabel1': {'property1': 'dataframe.colA', 'property2': 'dataframe.colB'},
+                                          'nodeLabel2': {'property3': 'dataframe.colC'}},
+                            'relations': [{'source': {'nodeLabel1.property1':'dataframe.col1'},
+                                           'target': {'nodeLabel2.property3':'dataframe.col2'},
+                                           'type'  : 'relationType',
+                                           'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}
+                                          ] 
+                            }
 
   The following checks are performed when new data is required to be loaded in the knowledge graph according to a construction 
   schema:
-  - []
+  - Check that all properties for each node and relations are specified according to the set of pre-defined schemas
+  - Check that the data types for each node and relations according to the set of pre-defined schemas
 
 
