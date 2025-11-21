@@ -83,3 +83,62 @@ Connect to Neo4j via DACKAR Py2Neo Module
 
 .. _neo4j: https://neo4j.com/download/
 .. _neo4j_python_driver: https://github.com/neo4j/neo4j-python-driver
+
+
+Knowledge Graph Construction Through Schemas
+-------------------------------------
+
+* Knowledge Graph Schemas
+  
+  The objective of a schema is to provide precise guidelines on the construction of knowledge graphs.
+  A schema in a knowledge graph defines the structure (i.e., what types of nodes and edges are allowed), 
+  semantics, and constraints of the data (i.e., data type formats) represented in the graph. 
+  It formalizes the meaning of entities (nodes) and relationships (edges), ensuring that data is interpreted consistently 
+  across systems and users.
+  In addition, it provides a common framework to unify disparate data sources under a shared vocabulary, which is especially 
+  valuable in enterprise environments where data silos are common.
+  By encoding relationships and constraints, schemas enable advanced reasoning (such as deducing new facts from existing 
+  ones) using logic-based AI/ML techniques.
+  In AI contexts, schemas help large language models and other algorithms understand the structure and semantics of the data, 
+  enabling more accurate parsing, querying, and text generation.
+
+  In DACKAR a schema is defined through a .toml file where the allowed set of nodes and relations are defined.
+  For each of these two entities, a textual description is provided along with the specifics of the allowed properties 
+  (i.e., name, data-type, required/optional setting, property description). 
+
+  An example, the following schema defines two nodes (i.e., cause and effect nodes) and a relations between them
+  .. literalinclude:: ../src/dackar/knowledge_graph/schemas/sampleSchema.toml
+     :language: toml
+     :linenos:
+     :caption: Example of knowledge graph schema
+  In this example, each node is characterized by two properties (prop1 and prop2 for the cause node, ID_A and ID_B for the 
+  consequence node). 
+  The defined relation represents a cause-effect relation that link a "cause" node to a "consequence" node where one single 
+  propoerty is defined (i.e., "intensity").
+
+  In DACKAR the user can define multiple schemas (each described in its own .toml file) depending on the specific application.
+
+  The following checks for each provided schema are performed
+  - Validation against main schema
+  - Data type check for each property
+  - Check for redundancy against other nodes/relations defined in other schemas
+
+  In this context, knowledge graphs are constructed from pandas dataframes. In addition, the user is required to provide
+  a construction schema that defines the nodes and relations to be populated in the knowledge graph.
+  A construction schema is defined in the form of a python dictionary as follows:
+      constructionSchema = {'nodes'    : nodeConstructionSchema,
+                            'relations': edgeConstructionSchema}
+
+      nodeConstructionSchema = {'nodeLabel1': {'property1': 'dataframe.colA', 'property2': 'dataframe.colB'},
+                                'nodeLabel2': {'property1': 'dataframe.colC'}}
+      
+      edgeConstructionSchema = [{'source': {'nodeLabel1.property1':'dataframe.col1'},
+                                  'target': {'nodeLabel2.property1':'dataframe.col2'},
+                                  'type'  : 'edgeType',
+                                  'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}] 
+
+  The following checks are performed when new data is required to be loaded in the knowledge graph according to a construction 
+  schema:
+  - []
+
+
