@@ -40,7 +40,7 @@ class KG:
         @ In, import_folder_path, string, folder which contains data to be imported
         @ In, uri, string, uri = "bolt://localhost:7687" for a single instance or uri = "neo4j://localhost:7687" for a cluster
         @ In, user, string, default to 'neo4j'
-        @ In, pwd, string, password the the neo4j DBMS database 
+        @ In, pwd, string, password the the neo4j DBMS database
         @ Out, None
         """
         # Change import folder to user specific location
@@ -61,8 +61,8 @@ class KG:
                                             "node"    : {"description": "Data element encapsulated in the node",
                                                          "type": "object",
                                                          "properties" : {"node_description": {"type": "string", "description": "Type of relationship encapsulated in the relation between two nodes"},
-                                                                         "node_properties": {"type": "array", 
-                                                                                             "description": "Allowed properties associate with the node", 
+                                                                         "node_properties": {"type": "array",
+                                                                                             "description": "Allowed properties associate with the node",
                                                                                              "items": {"type": "object",
                                                                                                        "properties": {"name"    : {"type": "string",  "description": "Name of the node property"},
                                                                                                                       "type"    : {"type": "string",  "description": "Type of the node property", "enum": self.datatypes},
@@ -72,7 +72,7 @@ class KG:
                                                                                                       }
                                                                                             }
                                                                         },
-                                                         "required":["node_description","node_properties"]           
+                                                         "required":["node_description","node_properties"]
                                                         },
                                             "relation": {"description": "Data element encapsulated in the edge",
                                                          "type": "object",
@@ -94,7 +94,7 @@ class KG:
                                                         }
                                             },
                             "required":["title"]}
-        
+
         # set of predefined schemas available in DACKAR egenrated for the RIAM project
         self.predefinedGraphSchemas = {'conditionReportSchema'  : 'conditionReportSchema.toml',
                                        'customMbseSchema'       : 'customMbseSchema.toml',
@@ -105,7 +105,7 @@ class KG:
     def resetGraph(self):
         """
         Method designed to reset knowledge graph
-        @ In, None 
+        @ In, None
         @ Out, None
         """
         self.py2neo.reset()
@@ -113,7 +113,7 @@ class KG:
     def _crossSchemasCheck(self):
         """
         Method designed to perform a series of checks across the defined schemas
-        @ In, None 
+        @ In, None
         @ Out, None
         """
         self.nodeSet = set()
@@ -123,7 +123,7 @@ class KG:
         for schema in self.graphSchemas:
             for node in self.graphSchemas[schema]['node']:
                 self.nodeSet.add(node)
-        
+
         for schema in self.graphSchemas:
             for rel in self.graphSchemas[schema]['relation']:
                 origin = self.graphSchemas[schema]['relation'][rel]['from_entity']
@@ -133,7 +133,7 @@ class KG:
                 if origin not in self.nodeSet:
                     logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined')
                 if destin not in self.nodeSet:
-                    logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined')                
+                    logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined')
 
     def _checkSchemaStructure(self, importedSchema):
         """
@@ -148,8 +148,8 @@ class KG:
             print(f"TOML syntax error: {e}")
         except ValidationError as e:
             print(f"TOML schema validation error: {e.message}")
-    
-    def importGraphSchema(self, graphSchemaName, tomlFilename):         
+
+    def importGraphSchema(self, graphSchemaName, tomlFilename):
         """
         Method that imports new schema contained in a .toml file
         @ In, importedSchema, dict, schema parsed by tomllib from .toml file
@@ -162,7 +162,7 @@ class KG:
 
         with open(full_path, 'rb') as f:
             config_data = tomllib.load(f)
-        
+
         # Check structure of imported graphSchema
         self._checkSchemaStructure(config_data)
 
@@ -173,13 +173,13 @@ class KG:
         # check schema name is not used before
         if graphSchemaName in list(self.graphSchemas.keys()):
             logging.error('Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas')
-        
+
         # check nodes are not already defined
         for node in config_data['node'].keys():
             for schema in self.graphSchemas:
                 if node in schema['node'].keys():
                     logging.error('Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
-        
+
         # check relations are not already defined
         for relation in config_data['relation'].keys():
             for schema in self.graphSchemas:
@@ -187,12 +187,12 @@ class KG:
                     logging.error('Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
 
         self._crossSchemasCheck()
-        
+
         self.graphSchemas[graphSchemaName] = config_data
 
     def _checkSchemaDataTypes(self, schema):
         """
-        Method that checks that the datatypes defined in the new schema are part of the allowed data 
+        Method that checks that the datatypes defined in the new schema are part of the allowed data
         types contained in self.datatypes
         @ In, schema, dict, schema parsed by tomllib from .toml file
         @ Out, None
@@ -205,7 +205,7 @@ class KG:
     def _schemaReturnNodeProperties(self, nodeLabel):
         """
         Method that returns the properties of the node nodeLabel
-        @ In, nodeLabel, string, ID of the node label 
+        @ In, nodeLabel, string, ID of the node label
         @ Out, propdf, dataframe, dataframe containing nodeLabel properties
         """
         for schema in self.graphSchemas:
@@ -214,11 +214,11 @@ class KG:
                 propdf = pd.DataFrame(node_properties)
                 return propdf
         return None
-    
+
     def _schemaReturnRelationProperties(self, relation):
         """
         Method that returns the properties of the selected relation
-        @ In, relation, string, ID of the node label 
+        @ In, relation, string, ID of the node label
         @ Out, propdf, dataframe, dataframe containing relation properties
         """
         for schema in self.graphSchemas:
@@ -227,11 +227,11 @@ class KG:
                 propdf = pd.DataFrame(relation_properties)
                 return propdf
         return None
-    
+
     def _constructionSchemaStructureValidation(self, constructionSchema):
         """
-        Method that validates the structure of constructionSchema 
-        @ In, constructionSchema, dict, construction schema 
+        Method that validates the structure of constructionSchema
+        @ In, constructionSchema, dict, construction schema
         @ Out, None
         """
         for key in constructionSchema.keys():
@@ -253,21 +253,21 @@ class KG:
                     logging.error('Key ' + str(key) + 'in the construction schema should be a list')
             else:
                 logging.error('Key ' + str(key) + 'in the construction schema is not allowed (allowed: nodes, relations)')
-                                      
+
     def _constructionSchemaValidation(self, constructionSchema):
         """
         Method that validates the constructionSchema against defined schemas
-        @ In, constructionSchema, dict, construction schema 
+        @ In, constructionSchema, dict, construction schema
         @ Out, None
         """
         # For each node check that required properties are listed
         if 'nodes' in constructionSchema:
             for node in constructionSchema['nodes']:
                 specified_prop = set(constructionSchema['nodes'][node].keys())
-                
+
                 prop_df = self._schemaReturnNodeProperties(node)
                 allowed_properties = set(prop_df['name'])
-                
+
                 selected_prop_df = prop_df[prop_df['optional']==False]
                 req_properties = set(selected_prop_df['name'])
 
@@ -276,7 +276,7 @@ class KG:
 
                 if not specified_prop.issubset(allowed_properties):
                     logging.error('Node ' + str(node) + 'requires these properties: ' + str(allowed_properties))
-            
+
         # For each relation check that required properties are listed
         if 'relations' in constructionSchema:
             for rel in constructionSchema['relations']:
@@ -284,7 +284,7 @@ class KG:
 
                 prop_df = self._schemaReturnRelationProperties(rel)
                 allowed_properties = set(prop_df['name'])
-                
+
                 selected_prop_df = prop_df[prop_df['optional']==False]
                 req_properties = set(selected_prop_df['name'])
 
@@ -297,7 +297,7 @@ class KG:
     def genericWorkflow(self, data, constructionSchema):
         """
         Method designed to importa data into knowledge graph according to constructionSchema
-        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph 
+        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph
         @ Out, constructionSchema, dict, dataframe containing relation properties. A construction schema is defined as follows:
 
             constructionSchema = {'nodes'    : nodeConstructionSchema,
@@ -305,16 +305,16 @@ class KG:
 
             nodeConstructionSchema = {'nodeLabel1': {'property1': 'dataframe.colA', 'property2': 'dataframe.colB'},
                                       'nodeLabel2': {'property1': 'dataframe.colC'}}
-            
+
             edgeConstructionSchema = [{'source': {'nodeLabel1.property1':'dataframe.col1'},
                                        'target': {'nodeLabel2.property1':'dataframe.col2'},
                                        'type'  : 'edgeType',
-                                       'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}] 
+                                       'properties': {'property1': 'dataframe.colAlpha', 'property2': 'dataframe.colBeta'}}]
         """
         # Check structure of constructionSchema
         self._constructionSchemaStructureValidation(constructionSchema)
-        
-        # Check constructionSchema against self.graphSchemas  
+
+        # Check constructionSchema against self.graphSchemas
         self._constructionSchemaValidation(constructionSchema)
 
         # Check datatypes of data
@@ -324,16 +324,16 @@ class KG:
         # Nodes
         if 'nodes' in constructionSchema:
             data_temp = copy.deepcopy(data)
-            for node in constructionSchema['nodes'].keys(): 
+            for node in constructionSchema['nodes'].keys():
                 mapping = {value: key for key, value in constructionSchema['nodes'][node].items()}
                 data_renamed = data_temp.rename(columns=mapping)
                 self.py2neo.load_dataframe_for_nodes(df=data_renamed, labels=node, properties=list(mapping.values()))
-        
+
         # Relations
         # --> TODO: check nodes exist
         if 'relations' in constructionSchema:
             data_temp = copy.deepcopy(data)
-            for rel in constructionSchema['relations']: 
+            for rel in constructionSchema['relations']:
                 source_node_label = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[0]
                 source_node_prop  = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[1]
 
@@ -343,54 +343,54 @@ class KG:
                 mapping = {}
                 data_renamed = data_temp.rename(columns={next(iter(constructionSchema['relations'][rel]['source'].values())):source_node_prop,
                                                          next(iter(constructionSchema['relations'][rel]['target'].values())):target_node_prop})
-                
+
                 for prop in constructionSchema['relations'][rel]['properties'].keys():
                     data_renamed = data_renamed.rename(columns={constructionSchema['relations'][rel]['properties'][prop]: prop})
-                
+
                 data_renamed[source_node_label] = source_node_label
                 data_renamed[target_node_label] = target_node_label
                 data_renamed[rel] = rel
 
-                self.py2neo.load_dataframe_for_relations(df=data_renamed, 
-                                                         l1=source_node_label, p1=source_node_prop, 
-                                                         l2=target_node_label, p2=target_node_prop, 
-                                                         lr=rel, 
+                self.py2neo.load_dataframe_for_relations(df=data_renamed,
+                                                         l1=source_node_label, p1=source_node_prop,
+                                                         l2=target_node_label, p2=target_node_prop,
+                                                         lr=rel,
                                                          pr=list(constructionSchema['relations'][rel]['properties'].keys()))
-        
+
     def _checkDataframeDatatypes(self, data, constructionSchema):
         """
         Method that checks that data elements in data match format specified in the graph schemas
-        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph 
+        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph
         @ In, constructionSchema, dict, dataframe containing relation properties
         @ Out, None
-        """  
+        """
         # Check nodes data types
         if 'nodes' in constructionSchema:
             for node in constructionSchema['nodes']:
                 for prop in constructionSchema['nodes'][node]:
                     allowedDatatype = self._returnNodePropertyDatatype(node,prop)
                     df_datatype = data[constructionSchema['nodes'][node][prop]]
-                    if allowedDatatype != infer_dtype(df_datatype): 
+                    if allowedDatatype != infer_dtype(df_datatype):
                         logging.error('Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(df_datatype.map(type))) + ') does \\'
                                       'not match datatype defined in schema (' + str(allowedDatatype) + ')')
-                    
+
         # Check relations data types
         if 'relations' in constructionSchema:
             for rel in constructionSchema['relations']:
                 for prop in constructionSchema['relations'][rel]['properties']:
                     allowedDatatype = self._returnRelationPropertyDatatype(rel,prop)
                     df_datatype = data[constructionSchema['relations'][rel]['properties'][prop]]
-                    if allowedDatatype != infer_dtype(df_datatype):  
+                    if allowedDatatype != infer_dtype(df_datatype):
                         logging.error('Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(df_datatype) + ') does \\'
                                       'not match datatype defined in schema (' + str(df_datatype) + ')')
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
         """
         Method that returns the allowed type of a specified node property
-        @ In, node, string, specific node label 
+        @ In, node, string, specific node label
         @ In, prop, string, specific node property
         @ Out, string, allowed type of the specified node property
-        """        
+        """
         allowedtype = None
         for schema in self.graphSchemas:
             for node in self.graphSchemas[schema]['node']:
@@ -405,7 +405,7 @@ class KG:
     def _returnRelationPropertyDatatype(self, relID, propID):
         """
         Method that returns the allowed type of a specified relation property.
-        @ In, node, string, specific relation 
+        @ In, node, string, specific relation
         @ In, prop, string, specific node property
         @ Out, string, allowed type of the specified relation property
         """
@@ -416,15 +416,15 @@ class KG:
                     for prop in self.graphSchemas[schema]['relation'][rel]['relation_properties']:
                         if prop['name']==propID:
                             allowedtype = prop['type']
-                            return allowedtype 
+                            return allowedtype
         if allowedtype is None:
             logging.error('_returnRelationPropertyDatatype error')
 
-    
+
 def stringToDatetimeConverterFlexible(date_string, format_code=None):
     """
     Method that convert a string into datetime according to specific format
-    @ In, date_string, string, string containing date 
+    @ In, date_string, string, string containing date
     @ In, format_code, string, datetime specific format
     @ Out, datetime_object, datetime, datetime object
     """
@@ -448,13 +448,13 @@ def stringToDatetimeConverterFlexible(date_string, format_code=None):
         except ValueError:
             raise ValueError(f"Unable to parse date string: {date_string}")
 
-'''   
+
 def mbseWorkflow(self, name, type, nodesFile, edgesFile):
     if type =='customMBSE':
         mbseModel = customMBSEobject(nodesFile,
-                                        edgesFile, 
+                                        edgesFile,
                                         path=self.processedDataFolder)
-        
+
         self.equipmentIDs = self.equipmentIDs + mbseModel.returnIDs()
         mbseModel.plot(name)
 
@@ -472,7 +472,7 @@ def mbseWorkflow(self, name, type, nodesFile, edgesFile):
 
     elif type =='LML':
         pass
-
+'''
 def anomalyWorkflow(self, filename, constructionSchema):
     graphSchema = TBD
 
