@@ -54,6 +54,8 @@ class KG:
 
         self.graphSchemas = {} # dictionary containing the set of schemas of the knowledge graph
 
+        self.graphMetadata = {} # Metadata container of the knowledge graph
+
         # this is the schema for the set of schemas of the knowledge graph
         self.schemaSchema = {"type": "object",
                              "properties": {"title"   : {"type": "string", "description": "Data object that is target of the schema"},
@@ -448,12 +450,12 @@ def stringToDatetimeConverterFlexible(date_string, format_code=None):
         except ValueError:
             raise ValueError(f"Unable to parse date string: {date_string}")
 
-
+'''
 def mbseWorkflow(self, name, type, nodesFile, edgesFile):
     if type =='customMBSE':
         mbseModel = customMBSEobject(nodesFile,
-                                        edgesFile,
-                                        path=self.processedDataFolder)
+                                     edgesFile,
+                                     path=self.processedDataFolder)
 
         self.equipmentIDs = self.equipmentIDs + mbseModel.returnIDs()
         mbseModel.plot(name)
@@ -472,7 +474,7 @@ def mbseWorkflow(self, name, type, nodesFile, edgesFile):
 
     elif type =='LML':
         pass
-'''
+
 def anomalyWorkflow(self, filename, constructionSchema):
     graphSchema = TBD
 
