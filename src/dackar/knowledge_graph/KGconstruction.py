@@ -430,12 +430,11 @@ def stringToDatetimeConverterFlexible(date_string, format_code=None):
     @ In, format_code, string, datetime specific format
     @ Out, datetime_object, datetime, datetime object
     """
-    formats = [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y/%m/%d %H:%M:%S",
-        "%d-%m-%Y %H:%M",
-        "%Y-%m-%d"
-    ]
+    formats = ["%Y-%m-%d %H:%M:%S",
+               "%Y/%m/%d %H:%M:%S",
+               "%d-%m-%Y %H:%M",
+               "%Y-%m-%d"]
+    
     if format_code is not None:
         formats.append(format_code)
 
@@ -473,29 +472,36 @@ def mbseWorkflow(self, name, type, nodesFile, edgesFile):
         self.py2neo.load_csv_for_relations(os.path.join(self.processedDataFolder, edgesFile), l1, p1, l2, p2, lr, pr)
 
     elif type =='LML':
+        # TODO Implement LML reader
         pass
 
-def anomalyWorkflow(self, filename, constructionSchema):
-    graphSchema = TBD
-
-    #TODO: Check constructionSchema against graphSchemas
+def anomalyWorkflow(self, dataframe, constructionSchema, monitorVars):
+    graphSchemaFile = self.predefinedGraphSchemas['numericPerfomanceSchema']
+    if 'numericPerfomanceSchema' not in self.graphSchemas.keys():
+        self.importGraphSchema('numericPerfomanceSchema', graphSchemaFile)
 
     label = 'anomaly'
-    attribute = {'ID':'ID', 'time_initial':'start_date', 'time_final':'end_date'}
-    self.py2neo.load_csv_for_nodes(filename, label, attribute)
+    if 'ID' in constructionSchema.keys():
+        attribute = {'ID':constructionSchema['ID'], 
+                     'time_initial':constructionSchema['time_initial'], 
+                     'time_final'  :constructionSchema['time_final']}
+    else:
+        attribute = {'time_initial':constructionSchema['time_initial'], 
+                     'time_final'  :constructionSchema['time_final']}
+    self.py2neo.load_dataframe_for_nodes(dataframe, label, attribute)
 
-    l1='anomaly'
-    p1={'ID':'ID'}
-    l2='monitored_var'
-    p2 ={'ID':'monitored_variable'}
-    lr = 'detected_by'
-    pr = None
-    self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
+    for var in monitorVars:
+        l1 = 'anomaly'
+        p1 = constructionSchema['time_initial']
+        l2 = 'monitored_var'
+        p2 = var
+        lr = 'detected_by'
+        pr = None
+        self.py2neo.load_dataframe_for_relations(dataframe, l1, p1, l2, p2, lr, pr)
 
-    pass
 
-def monitoringWorkflow(self, filename, constructionSchema):
-    graphSchema = TBD
+def monitoringWorkflow(self, monitor_dict, constructionSchema):
+    #monitor_dict = {varID: mbseID}
 
     #TODO: Check constructionSchema against graphSchemas
 
