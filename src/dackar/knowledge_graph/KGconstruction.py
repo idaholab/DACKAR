@@ -15,6 +15,7 @@ frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, os.pardir, 'src'))
 from dackar.knowledge_graph.py2neo import Py2Neo
 from dackar.knowledge_graph.graph_utils import set_neo4j_import_folder
 from dackar.utils.mbse.customMBSEparser import customMBSEobject
+from dackar.utils.tagKeywordListReader import entityLibrary
 
 # External Modules #
 import pandas as pd
@@ -55,6 +56,8 @@ class KG:
         self.graphSchemas = {} # dictionary containing the set of schemas of the knowledge graph
 
         self.graphMetadata = {} # Metadata container of the knowledge graph
+
+        self.entityLibrary = entityLibrary('../../../data/tag_keywords_lists.xlsx')
 
         # this is the schema for the set of schemas of the knowledge graph
         self.schemaSchema = {"type": "object",
@@ -449,9 +452,13 @@ def stringToDatetimeConverterFlexible(date_string, format_code=None):
         except ValueError:
             raise ValueError(f"Unable to parse date string: {date_string}")
 
-'''
+"""
 def mbseWorkflow(self, name, type, nodesFile, edgesFile):
     if type =='customMBSE':
+        if 'customMbseSchema' not in self.graphSchemas.keys():
+            graphSchemaFile = self.predefinedGraphSchemas['customMbseSchema']
+            self.importGraphSchema('customMbseSchema', graphSchemaFile)
+        
         mbseModel = customMBSEobject(nodesFile,
                                      edgesFile,
                                      path=self.processedDataFolder)
@@ -476,8 +483,8 @@ def mbseWorkflow(self, name, type, nodesFile, edgesFile):
         pass
 
 def anomalyWorkflow(self, dataframe, constructionSchema, monitorVars):
-    graphSchemaFile = self.predefinedGraphSchemas['numericPerfomanceSchema']
     if 'numericPerfomanceSchema' not in self.graphSchemas.keys():
+        graphSchemaFile = self.predefinedGraphSchemas['numericPerfomanceSchema']
         self.importGraphSchema('numericPerfomanceSchema', graphSchemaFile)
 
     label = 'anomaly'
@@ -493,36 +500,98 @@ def anomalyWorkflow(self, dataframe, constructionSchema, monitorVars):
     for var in monitorVars:
         l1 = 'anomaly'
         p1 = constructionSchema['time_initial']
-        l2 = 'monitored_var'
+        l2 = 'monitored_variable'
         p2 = var
         lr = 'detected_by'
         pr = None
         self.py2neo.load_dataframe_for_relations(dataframe, l1, p1, l2, p2, lr, pr)
 
 
-def monitoringWorkflow(self, monitor_dict, constructionSchema):
-    #monitor_dict = {varID: mbseID}
+def monitoringWorkflow(self, dataframe, constructionSchema):
+    if 'monitoringSystemSchema' not in self.graphSchemas.keys():
+        graphSchemaFile = self.predefinedGraphSchemas['monitoringSystemSchema']
+        self.importGraphSchema('monitoringSystemSchema', graphSchemaFile)
 
-    #TODO: Check constructionSchema against graphSchemas
+    #constructionSchema.keys() = [variable, ID, mbse}
 
-    label = 'monitored_var'
-    attribute = {'ID':'varID'}
-    self.py2neo.load_csv_for_nodes(filename, label, attribute)
+    label = 'monitored_variable'
+    properties = {'ID': constructionSchema['ID']}
+    if 'variable' in constructionSchema.keys():
+        properties['variable'] = constructionSchema['variable']
+    self.load_dataframe_for_nodes(dataframe, label, properties)
 
-    l1='monitored_var'
-    p1={'ID':'varID'}
-    l2='MBSE'
-    p2 ={'ID':'equip_ID'}
+    l1='monitored_variable'
+    p1={'ID':constructionSchema['ID']}
+    l2='mbse_entity'
+    p2 ={'ID':constructionSchema['mbse']}
     lr = 'monitors'
     pr = None
-    self.py2neo.load_csv_for_relations(filename, l1, p1, l2, p2, lr, pr)
+    self.load_dataframe_for_relations(dataframe, l1, p1, l2, p2, lr, pr)
 
 
-def eventReportWorkflow(self, filename, constructionSchema, pipelines):
-    graphSchema = TBD
+def conditionReportWorkflow(self, dataframe, constructionSchema):
+    #constructionSchema = {'date': [],
+    #                    'ID': [],
+    #                    'conjecture': [],
+    #                    'mbse_entity': [],
+    #                    'nuclear_entity': [],
+    #                    'temporal_entity': []}
 
-    #TODO: Check constructionSchema against graphSchemas
+    
+    if 'conditionReportSchema' not in self.graphSchemas.keys():
+        graphSchemaFile = self.predefinedGraphSchemas['conditionReportSchema']
+        self.importGraphSchema('conditionReportSchema', graphSchemaFile)
 
-    pass
+    label = 'condition_report'
+    node_properties = {'date': constructionSchema['date'],
+                       'ID': constructionSchema['ID']}
+    if 'conjecture' in constructionSchema.keys():
+        node_properties['conjecture'] = constructionSchema['conjecture']
+    self.load_dataframe_for_nodes(dataframe, label, node_properties)
 
-'''
+    for index, row in dataframe.iterrows():
+        for ent in row[constructionSchema['nuclear_entity']]:
+            if self.find_nodes('nuclear_entity',{'ID':ent}):
+                # Entity node is already present
+                self.create_relation(l1='condition_report', 
+                                    p1={'ID': row[constructionSchema['ID']]}, 
+                                    l2='nuclear_entity', 
+                                    p2={'entity': ent}, 
+                                    lr='refers')
+            else:
+                # Entity node is not present
+                derivedClass = self.entityLibrary.searchEntityInfo(ent)
+                properties = {'entity': ent,
+                              'class': derivedClass}
+                self.create_node('nuclear_entity', properties)
+                self.create_relation(l1='condition_report', 
+                                    p1={'ID': row[constructionSchema['ID']]}, 
+                                    l2='nuclear_entity', 
+                                    p2={'entity': ent}, 
+                                    lr='refers')
+
+        for ent in row[constructionSchema['temporal_entity']]:
+            properties = {'datetime': ent}
+            self.create_node('temporal_entity', properties)
+            self.create_relation(l1='condition_report', 
+                                 p1={'ID': row[constructionSchema['ID']]}, 
+                                 l2='temporal_entity', 
+                                 p2={'datetime': ent}, 
+                                 lr='temporal_reference')
+
+        for ent in row[constructionSchema['mbse_entity']]:
+            if self.find_nodes('mbse_entity',{'ID':ent}):
+                self.create_relation(l1='condition_report', 
+                                     p1={'ID': row[constructionSchema['ID']]}, 
+                                     l2='mbse_entity', 
+                                     p2={'ID':ent}, 
+                                     lr='mentions')
+            elif self.find_nodes('mbse_entity',{'label':ent}):
+                self.create_relation(l1='condition_report', 
+                                     p1={'ID': row[constructionSchema['ID']]}, 
+                                     l2='mbse_entity', 
+                                     p2={'label':ent}, 
+                                     lr='mentions')
+            else:
+                print('Error, MBSE entity not found')
+"""
