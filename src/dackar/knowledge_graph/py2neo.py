@@ -16,7 +16,8 @@ Created on March, 2025
 
 
 from neo4j import GraphDatabase
-
+import logging
+logger = logging.getLogger(__name__)
 
 class Py2Neo:
 
@@ -36,7 +37,7 @@ class Py2Neo:
         try:
             self.__driver = GraphDatabase.driver(self.__uri, auth=(self.__user, self.__pwd))
         except Exception as e:
-            print("Failed to create the driver:", e)
+            logger.error("Failed to create the driver:", e)
 
     def close(self):
         """Close the python neo4j connection
@@ -52,7 +53,7 @@ class Py2Neo:
         try:
             self.__driver = GraphDatabase.driver(self.__uri, auth=(self.__user, self.__pwd))
         except Exception as e:
-            print("Failed to restart the driver:", e)
+            logger.error("Failed to restart the driver:", e)
 
     def create_node(self, label, properties):
         """Create a new graph node
@@ -74,8 +75,13 @@ class Py2Neo:
             label (str): node label will be used by neo4j
             properties (dict): node attributes
         """
-        query = f"MERGE (n:{label} {{ {', '.join([f'{k}: ${k}' for k in properties.keys()])} }})"
-        # print(query)
+        if isinstance(label, list):
+            expanded_label = ":".join(label)
+            query = f"MERGE (n:{expanded_label} {{ {', '.join([f'{k}: ${k}' for k in properties.keys()])} }})"
+        elif isinstance(label, str):
+            query = f"MERGE (n:{label} {{ {', '.join([f'{k}: ${k}' for k in properties.keys()])} }})"
+        else:
+            logger.error('Label provided for node creation is neither a list or a string')
         tx.run(query, **properties)
 
 
@@ -120,7 +126,6 @@ class Py2Neo:
                 MERGE (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
                 MERGE (l1)-[r:{lr}]->(l2)
             """
-            # print(query)
             tx.run(query)
 
     def find_nodes(self, label, properties=None):
@@ -170,11 +175,22 @@ class Py2Neo:
 
     @staticmethod
     def _load_csv_nodes(tx, file_path, label, attribute):
-        query = f"""
-        LOAD CSV WITH HEADERS FROM 'file:///{file_path}' AS row
-        MERGE (e:{label} {{ {', '.join([f'{k}:row.{v}' for k,v in attribute.items()])} }});
-        """
-        # print(query)
+        if isinstance(label, list):
+            expanded_label = ":".join(label)
+            query = f"""
+            LOAD CSV WITH HEADERS FROM 'file:///{file_path}' AS row
+            MERGE (e:{expanded_label} {{ {', '.join([f'{k}:row.{v}' for k,v in attribute.items()])} }});
+            """
+        elif isinstance(label, str):
+            query = f"""
+            LOAD CSV WITH HEADERS FROM 'file:///{file_path}' AS row
+            MERGE (e:{label} {{ {', '.join([f'{k}:row.{v}' for k,v in attribute.items()])} }});
+            """
+        else:
+            logger.error('Label provided for node creation is neither a list or a string')
+
+
+
         tx.run(query)
 
     # Load csv function to create relations
@@ -211,7 +227,6 @@ class Py2Neo:
                 MERGE (l2:{l2} {{ {', '.join([f'{k}:row.{v}' for k,v in p2.items()])} }})
                 MERGE (l1)-[r:{lr}]->(l2)
             """
-        # print(query)
         tx.run(query)
 
     def query(self, query, parameters=None, db=None):
@@ -234,7 +249,7 @@ class Py2Neo:
             session = self.__driver.session(database=db) if db is not None else self.__driver.session()
             response = list(session.run(query, **parameters))
         except Exception as e:
-            print("Query failed:", e)
+            logger.error("Query failed:", e)
         finally:
             if session is not None:
                 session.close()
