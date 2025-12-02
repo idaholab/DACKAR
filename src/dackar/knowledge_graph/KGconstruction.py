@@ -57,7 +57,7 @@ class KG:
 
         self.graphMetadata = {} # Metadata container of the knowledge graph --> TODO: discuss how to manage it
 
-        self.entityLibrary = entityLibrary('../../../data/tag_keywords_lists.xlsx')
+        self.entityLibrary = entityLibrary(os.path.join(frameworkDir, os.pardir, 'data', 'tag_keywords_lists.xlsx'))  
 
         # this is the base schema for the set of schemas of the knowledge graph
         self.schemaSchema = {"type": "object",
