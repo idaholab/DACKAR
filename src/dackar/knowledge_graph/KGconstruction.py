@@ -55,11 +55,11 @@ class KG:
 
         self.graphSchemas = {} # dictionary containing the set of schemas of the knowledge graph
 
-        self.graphMetadata = {} # Metadata container of the knowledge graph
+        self.graphMetadata = {} # Metadata container of the knowledge graph --> TODO: discuss how to manage it
 
         self.entityLibrary = entityLibrary('../../../data/tag_keywords_lists.xlsx')
 
-        # this is the schema for the set of schemas of the knowledge graph
+        # this is the base schema for the set of schemas of the knowledge graph
         self.schemaSchema = {"type": "object",
                              "properties": {"title"   : {"type": "string", "description": "Data object that is target of the schema"},
                                             "version" : {"type": "number", "description": "Development version of the schema"},
@@ -77,7 +77,7 @@ class KG:
                                                                                                       }
                                                                                             }
                                                                         },
-                                                         "required":["node_description","node_properties"]
+                                                         "required":["node_description"]
                                                         },
                                             "relation": {"description": "Data element encapsulated in the edge",
                                                          "type": "object",
@@ -105,7 +105,8 @@ class KG:
                                        'customMbseSchema'       : 'customMbseSchema.toml',
                                        'monitoringSystemSchema' : 'monitoringSystemSchema.toml',
                                        'nuclearEntitySchema'    : 'nuclearEntitySchema.toml',
-                                       'numericPerfomanceSchema': 'numericPerfomanceSchema.toml'}
+                                       'numericPerfomanceSchema': 'numericPerfomanceSchema.toml',
+                                       'causalSchema'           : 'causalSchema.toml'}
 
     def resetGraph(self):
         """
@@ -121,23 +122,32 @@ class KG:
         @ In, None
         @ Out, None
         """
-        self.nodeSet = set()
-        self.relSet  = set()
-        self.relationList = {}
+        self.nodeList = []
+        self.relationList = []
 
         for schema in self.graphSchemas:
             for node in self.graphSchemas[schema]['node']:
-                self.nodeSet.add(node)
+                # check that the node is not duplicated
+                if node in self.nodeList:
+                    logging.error('Schema ' + str(schema) + ' - Node ' + str(node) + ' has been defined twice')
+                else:
+                    self.nodeList.append(node)
 
         for schema in self.graphSchemas:
             for rel in self.graphSchemas[schema]['relation']:
+                # check that the relation is not duplicated
+                if rel in self.relationList:
+                    logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ' has been defined twice')
+                else:
+                    self.relationList.append(rel)
+
+                # check that the defined relations link nodes that have been defined
                 origin = self.graphSchemas[schema]['relation'][rel]['from_entity']
                 destin = self.graphSchemas[schema]['relation'][rel]['to_entity']
 
-                # check that the defined relations link nodes that have been defined
-                if origin not in self.nodeSet:
+                if origin not in self.nodeList:
                     logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined')
-                if destin not in self.nodeSet:
+                if destin not in self.nodeList:
                     logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined')
 
     def _checkSchemaStructure(self, importedSchema):
@@ -150,9 +160,9 @@ class KG:
             validate(instance=importedSchema, schema=self.schemaSchema)
             logging.info("TOML content is valid against the schema.")
         except tomllib.TOMLDecodeError as e:
-            print(f"TOML syntax error: {e}")
+            logging.error(f"TOML syntax error: {e}")
         except ValidationError as e:
-            print(f"TOML schema validation error: {e.message}")
+            logging.error(f"TOML schema validation error: {e.message}")
 
     def importGraphSchema(self, graphSchemaName, tomlFilename):
         """
@@ -213,12 +223,15 @@ class KG:
         @ In, nodeLabel, string, ID of the node label
         @ Out, propdf, dataframe, dataframe containing nodeLabel properties
         """
+        propdf = None
         for schema in self.graphSchemas:
             if nodeLabel in self.graphSchemas[schema]['node'].keys():
                 node_properties = self.graphSchemas[schema]['node'][nodeLabel]['node_properties']
                 propdf = pd.DataFrame(node_properties)
                 return propdf
-        return None
+        
+        if propdf is None:
+            logging.error('Node ' + str(nodeLabel) + ' does not have any property')
 
     def _schemaReturnRelationProperties(self, relation):
         """
@@ -226,12 +239,15 @@ class KG:
         @ In, relation, string, ID of the node label
         @ Out, propdf, dataframe, dataframe containing relation properties
         """
+        propdf = None
         for schema in self.graphSchemas:
             if relation in self.graphSchemas[schema]['relation']:
                 relation_properties = self.graphSchemas[schema]['relation'][relation]['relation_properties']
                 propdf = pd.DataFrame(relation_properties)
                 return propdf
-        return None
+        
+        if propdf is None:
+            logging.error('Relation ' + str(relation) + ' does not have any property')
 
     def _constructionSchemaStructureValidation(self, constructionSchema):
         """
