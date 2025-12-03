@@ -5,9 +5,6 @@ Created on September, 2025
 @author: mandd, wangc
 """
 
-import os, sys
-import re
-
 cwd = os.getcwd()
 frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, os.pardir, 'src'))
 
@@ -18,6 +15,7 @@ from dackar.utils.mbse.customMBSEparser import customMBSEobject
 from dackar.utils.tagKeywordListReader import entityLibrary
 
 # External Modules #
+import re
 import pandas as pd
 import os, sys
 import tomllib
