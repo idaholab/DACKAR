@@ -22,6 +22,7 @@ import pandas as pd
 import os, sys
 import tomllib
 from jsonschema import validate, ValidationError
+import json
 import copy
 from pathlib import Path
 from datetime import datetime
@@ -60,45 +61,9 @@ class KG:
         self.entityLibrary = entityLibrary(os.path.join(frameworkDir, os.pardir, 'data', 'tag_keywords_lists.xlsx'))  
 
         # this is the base schema for the set of schemas of the knowledge graph
-        self.schemaSchema = {"type": "object",
-                             "properties": {"title"   : {"type": "string", "description": "Data object that is target of the schema"},
-                                            "version" : {"type": "number", "description": "Development version of the schema"},
-                                            "node"    : {"description": "Data element encapsulated in the node",
-                                                         "type": "object",
-                                                         "properties" : {"node_description": {"type": "string", "description": "Type of relationship encapsulated in the relation between two nodes"},
-                                                                         "node_properties": {"type": "array",
-                                                                                             "description": "Allowed properties associate with the node",
-                                                                                             "items": {"type": "object",
-                                                                                                       "properties": {"name"    : {"type": "string",  "description": "Name of the node property"},
-                                                                                                                      "type"    : {"type": "string",  "description": "Type of the node property", "enum": self.datatypes},
-                                                                                                                      "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}
-                                                                                                                      },
-                                                                                                       "required":["name","type","optional"]
-                                                                                                      }
-                                                                                            }
-                                                                        },
-                                                         "required":["node_description"]
-                                                        },
-                                            "relation": {"description": "Data element encapsulated in the edge",
-                                                         "type": "object",
-                                                         "properties" : {"relation_description": {"type": "string", "description": "Type of relationship encapsulated in the relation between two nodes"},
-                                                                         "from_entity": {"type": "string", "description": "Label of the departure node"},
-                                                                         "to_entity"  : {"type": "string", "description": "Label of the arrival node"},
-                                                                         "relation_properties": {"type": "array",
-                                                                                                 "description": "Allowed properties associate with the relation",
-                                                                                                 "items": {"type": "object",
-                                                                                                           "properties": {"name"    : {"type": "string",  "description": "Name of the relation property"},
-                                                                                                                          "type"    : {"type": "string",  "description": "Type of the node property"},
-                                                                                                                          "optional": {"type": "boolean", "description": "Specifies if this property is required or not"}
-                                                                                                                          },
-                                                                                                           "required":["name","type","optional"]
-                                                                                                      }
-                                                                                            }
-                                                                        },
-                                                         "required":["relation_description","from_entity","to_entity"]
-                                                        }
-                                            },
-                            "required":["title"]}
+        baseSchemaLocation = os.path.join(frameworkDir, 'dackar', 'knowledge_graph', 'schemas', 'baseSchema.json')
+        with open(baseSchemaLocation, "r") as f:
+            self.baseSchema = json.load(f)
 
         # set of predefined schemas available in DACKAR egenrated for the RIAM project
         self.predefinedGraphSchemas = {'conditionReportSchema'  : 'conditionReportSchema.toml',
@@ -152,12 +117,12 @@ class KG:
 
     def _checkSchemaStructure(self, importedSchema):
         """
-        Method designed to check importedSchema against self.schemaSchema
+        Method designed to check importedSchema against self.baseSchema
         @ In, importedSchema, dict, schema parsed by tomllib from .toml file
         @ Out, None
         """
         try:
-            validate(instance=importedSchema, schema=self.schemaSchema)
+            validate(instance=importedSchema, schema=self.baseSchema)
             logging.info("TOML content is valid against the schema.")
         except tomllib.TOMLDecodeError as e:
             logging.error(f"TOML syntax error: {e}")
