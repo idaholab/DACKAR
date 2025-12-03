@@ -4,16 +4,6 @@ Created on September, 2025
 
 @author: mandd, wangc
 """
-
-cwd = os.getcwd()
-frameworkDir = os.path.abspath(os.path.join(cwd, os.pardir, os.pardir, 'src'))
-
-# Internal Modules #
-from dackar.knowledge_graph.py2neo import Py2Neo
-from dackar.knowledge_graph.graph_utils import set_neo4j_import_folder
-from dackar.utils.mbse.customMBSEparser import customMBSEobject
-from dackar.utils.tagKeywordListReader import entityLibrary
-
 # External Modules #
 import re
 import pandas as pd
@@ -28,6 +18,16 @@ from dateutil.parser import parse
 from pandas.api.types import infer_dtype
 
 import logging
+
+currentDir = os.path.dirname(__file__)
+
+# Internal Modules #
+from dackar.knowledge_graph.py2neo import Py2Neo
+from dackar.knowledge_graph.visualize_schema import createIteractiveFile 
+from dackar.knowledge_graph.graph_utils import set_neo4j_import_folder
+from dackar.utils.mbse.customMBSEparser import customMBSEobject
+from dackar.utils.tagKeywordListReader import entityLibrary
+
 
 class KG:
     """
@@ -56,20 +56,20 @@ class KG:
 
         self.graphMetadata = {} # Metadata container of the knowledge graph --> TODO: discuss how to manage it
 
-        self.entityLibrary = entityLibrary(os.path.join(frameworkDir, os.pardir, 'data', 'tag_keywords_lists.xlsx'))
+        self.entityLibrary = entityLibrary(os.path.join(currentDir, os.pardir, os.pardir, os.pardir, 'data', 'tag_keywords_lists.xlsx'))
 
         # this is the base schema for the set of schemas of the knowledge graph
-        baseSchemaLocation = os.path.join(frameworkDir, 'dackar', 'knowledge_graph', 'schemas', 'baseSchema.json')
+        baseSchemaLocation = os.path.join(currentDir, 'schemas', 'baseSchema.json')
         with open(baseSchemaLocation, "r") as f:
             self.baseSchema = json.load(f)
 
         # set of predefined schemas available in DACKAR egenrated for the RIAM project
-        self.predefinedGraphSchemas = {'conditionReportSchema'  : 'conditionReportSchema.toml',
-                                       'customMbseSchema'       : 'customMbseSchema.toml',
-                                       'monitoringSystemSchema' : 'monitoringSystemSchema.toml',
-                                       'nuclearEntitySchema'    : 'nuclearEntitySchema.toml',
-                                       'numericPerfomanceSchema': 'numericPerfomanceSchema.toml',
-                                       'causalSchema'           : 'causalSchema.toml'}
+        self.predefinedGraphSchemas = {'conditionReportSchema'  : os.path.join(currentDir,'schemas','conditionReportSchema.toml'),
+                                       'customMbseSchema'       : os.path.join(currentDir,'schemas','customMbseSchema.toml'),
+                                       'monitoringSystemSchema' : os.path.join(currentDir,'schemas','monitoringSystemSchema.toml'),
+                                       'nuclearEntitySchema'    : os.path.join(currentDir,'schemas','nuclearEntitySchema.toml'),
+                                       'numericPerfomanceSchema': os.path.join(currentDir,'schemas','numericPerfomanceSchema.toml'),
+                                       'causalSchema'           : os.path.join(currentDir,'schemas','causalSchema.toml')}
 
     def resetGraph(self):
         """
@@ -135,8 +135,10 @@ class KG:
         @ Out, None
         """
         full_path = Path(tomlFilename)
+        print('+++++++++++++')
+        print(full_path)
         if not full_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {tomlFilename}")
+            raise FileNotFoundError(f"Schema file not found: {tomlFilename}")
 
         with open(full_path, 'rb') as f:
             config_data = tomllib.load(f)
@@ -403,6 +405,10 @@ class KG:
                             return allowedtype
         if allowedtype is None:
             logging.error('_returnRelationPropertyDatatype error')
+
+    #def _createIteractivePlot(self):
+    #    schemaList = list(self.graphSchemas.values())
+    #    createIteractiveFile(schemaList)
 
 
 def stringToDatetimeConverterFlexible(date_string, format_code=None):
