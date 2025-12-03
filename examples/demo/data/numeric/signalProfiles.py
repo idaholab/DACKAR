@@ -11,7 +11,7 @@ def binaryProfile(freqFact=None,
         This method generates a periodic square wave function with noise included.
         Orignal parameteres of this function are:
         * frequency: np.pi * 2
-        * noise: sigma=.03 
+        * noise: sigma=.03
 
         Args:
 
@@ -35,36 +35,36 @@ def binaryProfile(freqFact=None,
     """
 
     t = np.linspace(0, 3, 500, endpoint=False)
-    
+
     if freqFact is None:
         data = sig.square(np.pi * 2 * t)
     else:
         data = sig.square(np.pi * 2 * freqFact * t)
-    
+
     if ampAnomaly is not None:
         data = data * ampAnomaly
-     
+
     if sigmaAnomaly is not None:
         noise = np.random.normal(0,sigmaAnomaly,500)
     else:
         noise = np.random.normal(0,.03,500)
-    
+
     data = data + noise
-    
+
     if nullLoc is not None:
-        data[nullLoc:(nullLoc+nullDur)] = 0  
-        
+        data[nullLoc:(nullLoc+nullDur)] = 0
+
     if offsetVar is not None:
         data = data + offsetVar
 
     if impLoc is not None:
         data[impLoc] = data[impLoc] + impVal
 
-    return data  
+    return data
 
 
-def impulse(fc, bw, sigmaNoise=.05, 
-            offset=None,     
+def impulse(fc, bw, sigmaNoise=.05,
+            offset=None,
             impLoc=None,    impVal=None,
             offsetLoc=None, offsetDur=None, offsetVar=None,
             noiseLoc=None,  noiseDur=None,
@@ -107,17 +107,17 @@ def impulse(fc, bw, sigmaNoise=.05,
 
     if freezeLoc is not None:
         impulse[freezeLoc:(freezeLoc+freezeDur)] = impulse[freezeLoc]
-    
+
     if offset is not None:
         impulse = impulse + offset
-    
+
     noise = np.random.normal(0, sigmaNoise, 200)
-    
+
     if noiseLoc is not None:
         noise[noiseLoc:(noiseLoc+noiseDur)] = noise [noiseLoc:(noiseLoc+noiseDur)] * 2.0
-    
-    signal = impulse + noise 
-    
+
+    signal = impulse + noise
+
     if impLoc is not None:
         signal[impLoc] = signal[impLoc] + impVal
 
@@ -130,8 +130,8 @@ def impulse(fc, bw, sigmaNoise=.05,
     return signal
 
 
-def yearProfile(impLoc=None,    impFac=None, 
-                freezeLoc=None, freezeDur=None, 
+def yearProfile(impLoc=None,    impFac=None,
+                freezeLoc=None, freezeDur=None,
                 noiseLoc=None,  noiseDur=None,
                 offsetLoc=None, offsetDur=None,
                 driftLoc=None,  driftDur= None, driftFact=None):
@@ -153,9 +153,9 @@ def yearProfile(impLoc=None,    impFac=None,
         offsetLoc: integer, location in the [0,365] range for a vertical offset anomaly of .2
         offsetDur: integer, duration in the [0,365] range for a vertical offset anomaly
 
-        driftLoc: integer, location in the [0,365] range for a drift anomaly 
-        driftDur: integer, duration in the [0,365] range for a drift anomaly 
-        driftFact: float, coefficient for the drift anomaly 
+        driftLoc: integer, location in the [0,365] range for a drift anomaly
+        driftDur: integer, duration in the [0,365] range for a drift anomaly
+        driftFact: float, coefficient for the drift anomaly
 
         Returns:
 
@@ -180,8 +180,8 @@ def yearProfile(impLoc=None,    impFac=None,
 
     if impLoc is not None:
         signal[impLoc] = signal[impLoc]*impFac
-    
+
     if freezeLoc is not None:
         signal[freezeLoc:(freezeLoc+freezeDur)] = signal[freezeLoc-1]
-    
+
     return signal

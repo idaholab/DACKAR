@@ -56,7 +56,7 @@ class KG:
 
         self.graphMetadata = {} # Metadata container of the knowledge graph --> TODO: discuss how to manage it
 
-        self.entityLibrary = entityLibrary(os.path.join(frameworkDir, os.pardir, 'data', 'tag_keywords_lists.xlsx'))  
+        self.entityLibrary = entityLibrary(os.path.join(frameworkDir, os.pardir, 'data', 'tag_keywords_lists.xlsx'))
 
         # this is the base schema for the set of schemas of the knowledge graph
         baseSchemaLocation = os.path.join(frameworkDir, 'dackar', 'knowledge_graph', 'schemas', 'baseSchema.json')
@@ -192,7 +192,7 @@ class KG:
                 node_properties = self.graphSchemas[schema]['node'][nodeLabel]['node_properties']
                 propdf = pd.DataFrame(node_properties)
                 return propdf
-        
+
         if propdf is None:
             logging.error('Node ' + str(nodeLabel) + ' does not have any property')
 
@@ -208,7 +208,7 @@ class KG:
                 relation_properties = self.graphSchemas[schema]['relation'][relation]['relation_properties']
                 propdf = pd.DataFrame(relation_properties)
                 return propdf
-        
+
         if propdf is None:
             logging.error('Relation ' + str(relation) + ' does not have any property')
 
@@ -416,7 +416,7 @@ def stringToDatetimeConverterFlexible(date_string, format_code=None):
                "%Y/%m/%d %H:%M:%S",
                "%d-%m-%Y %H:%M",
                "%Y-%m-%d"]
-    
+
     if format_code is not None:
         formats.append(format_code)
 
@@ -437,7 +437,7 @@ def mbseWorkflow(self, name, type, nodesFile, edgesFile):
         if 'customMbseSchema' not in self.graphSchemas.keys():
             graphSchemaFile = self.predefinedGraphSchemas['customMbseSchema']
             self.importGraphSchema('customMbseSchema', graphSchemaFile)
-        
+
         mbseModel = customMBSEobject(nodesFile,
                                      edgesFile,
                                      path=self.processedDataFolder)
@@ -468,11 +468,11 @@ def anomalyWorkflow(self, dataframe, constructionSchema, monitorVars):
 
     label = 'anomaly'
     if 'ID' in constructionSchema.keys():
-        attribute = {'ID':constructionSchema['ID'], 
-                     'time_initial':constructionSchema['time_initial'], 
+        attribute = {'ID':constructionSchema['ID'],
+                     'time_initial':constructionSchema['time_initial'],
                      'time_final'  :constructionSchema['time_final']}
     else:
-        attribute = {'time_initial':constructionSchema['time_initial'], 
+        attribute = {'time_initial':constructionSchema['time_initial'],
                      'time_final'  :constructionSchema['time_final']}
     self.py2neo.load_dataframe_for_nodes(dataframe, label, attribute)
 
@@ -516,7 +516,7 @@ def conditionReportWorkflow(self, dataframe, constructionSchema):
     #                    'nuclear_entity': [],
     #                    'temporal_entity': []}
 
-    
+
     if 'conditionReportSchema' not in self.graphSchemas.keys():
         graphSchemaFile = self.predefinedGraphSchemas['conditionReportSchema']
         self.importGraphSchema('conditionReportSchema', graphSchemaFile)
@@ -532,10 +532,10 @@ def conditionReportWorkflow(self, dataframe, constructionSchema):
         for ent in row[constructionSchema['nuclear_entity']]:
             if self.find_nodes('nuclear_entity',{'ID':ent}):
                 # Entity node is already present
-                self.create_relation(l1='condition_report', 
-                                    p1={'ID': row[constructionSchema['ID']]}, 
-                                    l2='nuclear_entity', 
-                                    p2={'entity': ent}, 
+                self.create_relation(l1='condition_report',
+                                    p1={'ID': row[constructionSchema['ID']]},
+                                    l2='nuclear_entity',
+                                    p2={'entity': ent},
                                     lr='refers')
             else:
                 # Entity node is not present
@@ -543,33 +543,33 @@ def conditionReportWorkflow(self, dataframe, constructionSchema):
                 properties = {'entity': ent,
                               'class': derivedClass}
                 self.create_node('nuclear_entity', properties)
-                self.create_relation(l1='condition_report', 
-                                    p1={'ID': row[constructionSchema['ID']]}, 
-                                    l2='nuclear_entity', 
-                                    p2={'entity': ent}, 
+                self.create_relation(l1='condition_report',
+                                    p1={'ID': row[constructionSchema['ID']]},
+                                    l2='nuclear_entity',
+                                    p2={'entity': ent},
                                     lr='refers')
 
         for ent in row[constructionSchema['temporal_entity']]:
             properties = {'datetime': ent}
             self.create_node('temporal_entity', properties)
-            self.create_relation(l1='condition_report', 
-                                 p1={'ID': row[constructionSchema['ID']]}, 
-                                 l2='temporal_entity', 
-                                 p2={'datetime': ent}, 
+            self.create_relation(l1='condition_report',
+                                 p1={'ID': row[constructionSchema['ID']]},
+                                 l2='temporal_entity',
+                                 p2={'datetime': ent},
                                  lr='temporal_reference')
 
         for ent in row[constructionSchema['mbse_entity']]:
             if self.find_nodes('mbse_entity',{'ID':ent}):
-                self.create_relation(l1='condition_report', 
-                                     p1={'ID': row[constructionSchema['ID']]}, 
-                                     l2='mbse_entity', 
-                                     p2={'ID':ent}, 
+                self.create_relation(l1='condition_report',
+                                     p1={'ID': row[constructionSchema['ID']]},
+                                     l2='mbse_entity',
+                                     p2={'ID':ent},
                                      lr='mentions')
             elif self.find_nodes('mbse_entity',{'label':ent}):
-                self.create_relation(l1='condition_report', 
-                                     p1={'ID': row[constructionSchema['ID']]}, 
-                                     l2='mbse_entity', 
-                                     p2={'label':ent}, 
+                self.create_relation(l1='condition_report',
+                                     p1={'ID': row[constructionSchema['ID']]},
+                                     l2='mbse_entity',
+                                     p2={'label':ent},
                                      lr='mentions')
             else:
                 print('Error, MBSE entity not found')

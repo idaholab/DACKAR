@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger("my logger")
 c_handler = logging.StreamHandler()
 logger.addHandler(c_handler)
-logger.setLevel(logging.DEBUG) 
+logger.setLevel(logging.DEBUG)
 
 class customMBSEobject(object):
     """
@@ -25,8 +25,8 @@ class customMBSEobject(object):
 
         Args:
 
-            nodesFilename: file, file in .csv format containing all nodes 
-            edgesFilename: file, file in .csv format containing all edges 
+            nodesFilename: file, file in .csv format containing all nodes
+            edgesFilename: file, file in .csv format containing all edges
 
         Returns:
 
@@ -53,7 +53,7 @@ class customMBSEobject(object):
         edgesFileKg = edgesFileSplit[0] + '_kg.' + edgesFileSplit[1]
 
         self.printOnFiles(nodesFileKg,edgesFileKg)
-    
+
     def checkModel(self):
         """
         Method designed to pcheck model consistency
@@ -67,8 +67,8 @@ class customMBSEobject(object):
             None
         """
         self.checkNodes()
-        self.checkEdges()       
-    
+        self.checkEdges()
+
     def parseFiles(self):
         """
         Method designed to parse the node and edge files
@@ -87,7 +87,7 @@ class customMBSEobject(object):
         self.nodesDf = self.nodesDf.apply(lambda x: x.astype(str).str.lower())
 
         self.listIDs = self.nodesDf['ID'].dropna().to_list()
-        
+
         # parse edges
         self.edgesDf = pd.read_csv(self.edgesFilename, sep=',', skip_blank_lines=True, dtype=str)
         self.edgesDf.dropna(how='all', inplace=True)
@@ -122,13 +122,13 @@ class customMBSEobject(object):
         else:
              logger.info("List of node IDs check - Error: duplicate IDs were found:")
              logger.info(self.nodesDf[duplicateIDs])
-        
+
         #check for structure of each row
         logger.info("Entity check...")
         for index, row in self.nodesDf.iterrows():
             if row['type'] not in set(self.allowedNodeTypes):
                 raise IOError('Type of row ' + str(index) + ' in node file is not allowed. Allowed types: ' +str(self.allowedNodeTypes))
-            
+
             if pd.isnull(row['type']) and pd.isnull(row['ID']):
                 raise IOError('Entity of row ' + str(index) + ' in node file: Error - neither type nor ID have been specified')
         logger.info("Entities check: Pass")
@@ -179,11 +179,11 @@ class customMBSEobject(object):
             if pd.isnull(row['sourceNodeId']) or pd.isnull(row['targetNodeId']):
                 logger.info(row)
                 raise IOError('Edge ' + str(index) + ' in edge file: Error - both sourceNodeId and targetNodeId need to be specified')
-             
+
             if row['type'] not in set(self.allowedEdgeTypes):
                 logger.info(row)
                 raise IOError('Type of row ' + str(index) + ' in edge file is not allowed. Allowed types: ' +str(self.allowedEdgeTypes))
-            
+
             if row['type']=='link' and pd.isnull(row['medium']):
                 logger.info(row)
                 raise IOError('Edge ' + str(index) + ' in edge file: Error - link does not have a medium specified')
@@ -197,9 +197,9 @@ class customMBSEobject(object):
         entities_edge_list = sourceNodeId_list + targetNodeId_list
         diff3 = set(self.listIDs) - set(entities_edge_list)
         if diff3:
-            raise IOError('Error - Node file: these entities in the node file were not mentioned in the edge file: ' + str(diff3))        
+            raise IOError('Error - Node file: these entities in the node file were not mentioned in the edge file: ' + str(diff3))
         logger.info("Edges check: Pass")
-        
+
         # Provide info of outgoing only nodes
         outgoingSet = set(sourceNodeId_list) - set(targetNodeId_list)
         logger.info('List of outgoing only nodes:' + str(outgoingSet))
@@ -220,7 +220,7 @@ class customMBSEobject(object):
             self.listIDs, list, list of IDs specified in the MBSE model
         """
         return self.listIDs
-    
+
     def addNodesEdges(self, new_node_dict, new_edge_dicts):
         """
         Method designed to return list of IDs included in the model
@@ -232,12 +232,12 @@ class customMBSEobject(object):
         Returns:
 
             self.listIDs, list, list of IDs specified in the MBSE model
-        """        
+        """
         self.nodesDf.loc[len(self.nodesDf)] = new_node_dict
-        
+
         for edge in new_edge_dicts:
             self.edgesDf.loc[len(self.edgesDf)] = edge
-        
+
         self.listIDs = self.nodesDf['ID'].dropna().to_list()
 
     def printOnFiles(self,nodes_file,edges_file):
@@ -251,7 +251,7 @@ class customMBSEobject(object):
         Returns:
 
             self.listIDs, list, list of IDs specified in the MBSE model
-        """  
+        """
 
         self.nodesDf.to_csv(nodes_file, index=False)
         self.edgesDf.to_csv(edges_file, index=False)

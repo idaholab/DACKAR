@@ -53,7 +53,7 @@ def MMD2b(K, m, n):
 def MMD2u_UCB(K, m, alpha=0.05):
     """
       Method designed to calculate the uniform convergence bound for MMD2u
-      
+
       Args:
         K: np.array, 2-D matrix
         m: int, sample size
@@ -71,7 +71,7 @@ def MMD2u_UCB(K, m, alpha=0.05):
 def MMD2b_UCB(K, m, alpha=0.05):
     """
       Method designed to calculate the uniform convergence bound for MMD2b
-      
+
       Args:
         K: np.array, 2-D matrix
         m: int, sample size
@@ -90,7 +90,7 @@ def compute_null_distribution(K, m, n, iterations=1000, verbose=False,
                               random_state=None, marker_interval=500):
     """
       Method designed to calculate the bootstrap null-distribution of MMD2u.
-      
+
       Args:
         K: np.array, 2-D matrix
         m: int, size of first vector
@@ -123,7 +123,7 @@ def compute_null_distribution_given_permutations(K, m, n, permutation,
                                                  iterations=None):
     """
       Method designed to calculate the bootstrap null-distribution of MMD2u given predefined permutations.
-      
+
       Args:
         K: np.array, 2-D matrix
         m: int, size of first vector
@@ -153,15 +153,15 @@ def kernel_two_sample_test(X, Y, kernel_function='rbf', iterations=2000,
       Args:
         X: np.array, first vector
         Y: np.array, second vector
-        kernel_function: string, type of kenerl function. Valid values are: additive_chi2, chi2, 
+        kernel_function: string, type of kenerl function. Valid values are: additive_chi2, chi2,
                                  linear, poly, polynomial, rbf, laplacian, sigmoid, cosine
         iterations: int, number of iterations
         verbose: bool, flag to provide calculation details
         random_state: np class, numpy random number generator class
         alpha: float, acceptance value for hypothesis testing
         thin: int, sample size for thinning calculation
-        **kwargs: dict, dictionary of parameteres that are passed to pairwise_kernels() as kernel parameters. 
-                        E.g. if kernel_two_sample_test(..., kernel_function='rbf', gamma=0.1), then this will 
+        **kwargs: dict, dictionary of parameteres that are passed to pairwise_kernels() as kernel parameters.
+                        E.g. if kernel_two_sample_test(..., kernel_function='rbf', gamma=0.1), then this will
                         result in getting the kernel through kernel_function(metric='rbf', gamma=0.1).
       Return:
         mmd2u: float, MMD^2_u unbiased statistic using U-statistics
@@ -222,7 +222,7 @@ def chebyshevTesting(X, Y, kernel_function='rbf', iterations=2000,
         alpha: float, acceptance value for hypothesis testing
         **kwargs: dict, dictionary of parameteres that are passed to pairwise_kernels() as kernel parameters.
       Return:
-        accept: bool, outcome of Chebyshev testing          
+        accept: bool, outcome of Chebyshev testing
     """
     accept = False
     mmd2u, mmd2u_null, p_value = kernel_two_sample_test(X, Y, kernel_function=kernel_function, iterations=iterations,
@@ -232,14 +232,14 @@ def chebyshevTesting(X, Y, kernel_function='rbf', iterations=2000,
 
 def chebyshevTesting_precomputed_mmd(mmd2u, mmd2u_null, alpha=0.01):
     """
-      Method designed to perform MMD Chebyshev testing 
+      Method designed to perform MMD Chebyshev testing
 
       Args:
         mmd2u: float, MMD^2_u unbiased statistic using U-statistics
         mmd2u_null: np.array, null-distribution of MMD2u
         alpha: float, acceptance value for hypothesis testing
       Return:
-        accept: bool, outcome of Chebyshev testing 
+        accept: bool, outcome of Chebyshev testing
     """
     accept = False
     mu = mmd2u_null.mean()

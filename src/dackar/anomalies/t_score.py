@@ -33,7 +33,7 @@ def getL(loc,window,array,type):
     """
     if type not in ['rear','front']:
         logger.error('getL method: Specificed type to select portion of time series (' + str (type) + ') is not allowed. Type can be either rear or front.')
-    
+
     if isinstance(array, np.ndarray) or isinstance(array, pd.Series):
         if type=='rear':
             l = array[loc:loc+window]
@@ -43,7 +43,7 @@ def getL(loc,window,array,type):
             logger.error('error')
     else:
         logger.error('getL method: Provided time series has incorrect data type.')
-    
+
     timeseriesPortion = np.asarray(l)
     return timeseriesPortion
 
@@ -118,7 +118,7 @@ def t_score(array_front, array_rear):
 
 def MMD_test(test_array, omegaSet, iterations, alphaTest, alphaOmegaset, printFlag=True):
     """
-      Method designed to calculate the statistical difference between an array and a set of arrays 
+      Method designed to calculate the statistical difference between an array and a set of arrays
       using the Maximum Mean Discrepancy testing method
 
       Args:
