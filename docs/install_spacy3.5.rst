@@ -32,7 +32,7 @@ Install the Required Libraries
 
   conda activate dackar_libs
 
-  pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
+  pip install torch==2.8.0 spacy==3.5 stumpy textacy matplotlib nltk==3.8.1 coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
 
 ..  conda install -c conda-forge pandas
 .. scikit-learn 1.2.2 is required for quantulum3
@@ -62,7 +62,7 @@ Required NLTK Data for Similarity Analysis
 
 .. code-block:: bash
 
-  python -m nltk.downloader all
+  python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
 
 Retrain Quantulum3 Classifier (Optional)
 ----------------------------------------
@@ -104,10 +104,11 @@ For this project, users can also try these steps:
   mkdir corpora
   mkdir taggers
   mkdir tokenizers
-  Dowload wordnet, averaged_perceptron_tagger, punkt
+  Dowload wordnet, averaged_perceptron_tagger, punkt, brown
   cp -r wordnet ~/nltk_data/corpora/
   cp -r averaged_perceptron_tagger ~/nltk_data/taggers/
   cp -r punkt ~/nltk_data/tokenizers
+  cp -r brown ~/nltk_data/corpora
 
 .. _en_core_web_lg-3.5.0.whl: https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
 .. _coreferee: https://github.com/richardpaulhudson/coreferee/tree/master/models/coreferee_model_en.zip
