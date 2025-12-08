@@ -138,7 +138,7 @@ class KG:
     def importGraphSchema(self, graphSchemaName, tomlFilename):
         """
         Method that imports new schema contained in a .toml file
-        @ In, importedSchema, dict, schema parsed by tomllib from .toml file
+        @ In, graphSchemaName, string, name of the schema to be imported
         @ In, tomlFilename, string, .toml file contained the new schema
         @ Out, None
         """
@@ -414,7 +414,7 @@ class KG:
         Method that returns the allowed type of a specified node property
         @ In, nodeID, string, specific node label
         @ In, propID, string, specific node property
-        @ Out, string, allowed type of the specified node property
+        @ Out, allowedType, string, allowed type of the specified node property
         """
         allowedType = None
         for schema in self.graphSchemas:
@@ -432,7 +432,7 @@ class KG:
         Method that returns the allowed type of a specified relation property.
         @ In, relID, string, specific relation
         @ In, propID, string, specific node property
-        @ Out, string, allowed type of the specified relation property
+        @ Out, allowedType, string, allowed type of the specified relation property
         """
         allowedType = None
         for schema in self.graphSchemas:
