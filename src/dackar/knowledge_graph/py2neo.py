@@ -75,7 +75,6 @@ class Py2Neo:
             properties (dict): node attributes
         """
         query = f"MERGE (n:{label} {{ {', '.join([f'{k}: ${k}' for k in properties.keys()])} }})"
-        # print(query)
         tx.run(query, **properties)
 
 
@@ -183,7 +182,6 @@ class Py2Neo:
         LOAD CSV WITH HEADERS FROM 'file:///{file_path}' AS row
         MERGE (e:{label} {{ {', '.join([f'{k}:row.{v}' for k,v in attribute.items()])} }});
         """
-        # print(query)
         tx.run(query)
 
     # Load csv function to create relations
@@ -220,7 +218,6 @@ class Py2Neo:
                 MERGE (l2:{l2} {{ {', '.join([f'{k}:row.{v}' for k,v in p2.items()])} }})
                 MERGE (l1)-[r:{lr}]->(l2)
             """
-        # print(query)
         tx.run(query)
 
     def query(self, query, parameters=None, db=None):
@@ -287,7 +284,6 @@ class Py2Neo:
         """
         assert set(properties).issubset(set(df.columns))
         for _, row in df.iterrows():
-            # print(labels, row[properties].to_dict())
             self.create_node(labels, row[properties].to_dict())
 
     # Load csv function to create relations

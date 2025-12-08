@@ -23,7 +23,7 @@ currentDir = os.path.dirname(__file__)
 
 # Internal Modules #
 from dackar.knowledge_graph.py2neo import Py2Neo
-from dackar.knowledge_graph.visualize_schema import createIteractiveFile 
+#from dackar.knowledge_graph.visualize_schema import createIteractiveFile 
 from dackar.knowledge_graph.graph_utils import set_neo4j_import_folder
 from dackar.utils.mbse.customMBSEparser import customMBSEobject
 from dackar.utils.tagKeywordListReader import entityLibrary
@@ -92,7 +92,9 @@ class KG:
             for node in self.graphSchemas[schema]['node']:
                 # check that the node is not duplicated
                 if node in self.nodeList:
-                    logging.error('Schema ' + str(schema) + ' - Node ' + str(node) + ' has been defined twice')
+                    message = 'Schema ' + str(schema) + ' - Node ' + str(node) + ' has been defined twice'
+                    logging.error(message)
+                    raise ValueError(message)
                 else:
                     self.nodeList.append(node)
 
@@ -100,7 +102,9 @@ class KG:
             for rel in self.graphSchemas[schema]['relation']:
                 # check that the relation is not duplicated
                 if rel in self.relationList:
-                    logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ' has been defined twice')
+                    message = 'Duplicate relation definition encountered: ' + str(rel) + ' in schema: ' + str(schema)
+                    logging.error(message)
+                    raise ValueError(message)
                 else:
                     self.relationList.append(rel)
 
@@ -109,10 +113,14 @@ class KG:
                 destin = self.graphSchemas[schema]['relation'][rel]['to_entity']
 
                 if origin not in self.nodeList:
-                    logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined')
+                    message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined'
+                    logging.error(message)
+                    raise ValueError(message)
                 if destin not in self.nodeList:
-                    logging.error('Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined')
-
+                    message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined'
+                    logging.error(message)
+                    raise ValueError(message)
+                
     def _checkSchemaStructure(self, importedSchema):
         """
         Method designed to check importedSchema against self.baseSchema
@@ -134,13 +142,12 @@ class KG:
         @ In, tomlFilename, string, .toml file contained the new schema
         @ Out, None
         """
-        full_path = Path(tomlFilename)
-        print('+++++++++++++')
-        print(full_path)
-        if not full_path.exists():
+        fullPath = Path(tomlFilename)
+
+        if not fullPath.exists():
             raise FileNotFoundError(f"Schema file not found: {tomlFilename}")
 
-        with open(full_path, 'rb') as f:
+        with open(fullPath, 'rb') as f:
             config_data = tomllib.load(f)
 
         # Check structure of imported graphSchema
@@ -152,19 +159,24 @@ class KG:
         # Check imported graphSchema against self.graphSchemas
         # check schema name is not used before
         if graphSchemaName in list(self.graphSchemas.keys()):
-            logging.error('Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas')
-
+            message = 'Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas'
+            logging.error(message)
+            raise ValueError(message)
+        
         # check nodes are not already defined
         for node in config_data['node'].keys():
             for schema in self.graphSchemas:
                 if node in schema['node'].keys():
-                    logging.error('Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
-
+                    message = 'Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
+                    logging.error(message)
+                    raise ValueError(message)
         # check relations are not already defined
         for relation in config_data['relation'].keys():
             for schema in self.graphSchemas:
                 if relation in schema['relation'].keys():
-                    logging.error('Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema))
+                    message = 'Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
+                    logging.error(message)
+                    raise ValueError(message)
 
         self._crossSchemasCheck()
 
@@ -180,8 +192,9 @@ class KG:
         for node in schema['node']:
             for prop in schema['node'][node]['node_properties']:
                 if prop['type'] not in self.datatypes:
-                    logging.error('Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed')
-
+                    message = 'Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
+                    logging.error(message)
+                    raise ValueError(message)
     def _schemaReturnNodeProperties(self, nodeLabel):
         """
         Method that returns the properties of the node nodeLabel
@@ -191,13 +204,15 @@ class KG:
         propdf = None
         for schema in self.graphSchemas:
             if nodeLabel in self.graphSchemas[schema]['node'].keys():
-                node_properties = self.graphSchemas[schema]['node'][nodeLabel]['node_properties']
-                propdf = pd.DataFrame(node_properties)
+                nodeProperties = self.graphSchemas[schema]['node'][nodeLabel]['node_properties']
+                propdf = pd.DataFrame(nodeProperties)
                 return propdf
 
         if propdf is None:
-            logging.error('Node ' + str(nodeLabel) + ' does not have any property')
-
+            message = 'Node ' + str(nodeLabel) + ' does not have any property'
+            logging.error(message)
+            raise ValueError(message)
+        
     def _schemaReturnRelationProperties(self, relation):
         """
         Method that returns the properties of the selected relation
@@ -207,12 +222,14 @@ class KG:
         propdf = None
         for schema in self.graphSchemas:
             if relation in self.graphSchemas[schema]['relation']:
-                relation_properties = self.graphSchemas[schema]['relation'][relation]['relation_properties']
-                propdf = pd.DataFrame(relation_properties)
+                relationProperties = self.graphSchemas[schema]['relation'][relation]['relation_properties']
+                propdf = pd.DataFrame(relationProperties)
                 return propdf
 
         if propdf is None:
-            logging.error('Relation ' + str(relation) + ' does not have any property')
+            message = 'Relation ' + str(relation) + ' does not have any property'
+            logging.error(message)
+            raise ValueError(message)
 
     def _constructionSchemaStructureValidation(self, constructionSchema):
         """
@@ -225,20 +242,32 @@ class KG:
                 if isinstance(constructionSchema[key], dict):
                     for kkey in constructionSchema[key].keys():
                         if not isinstance(constructionSchema['nodes'][kkey], dict):
-                            logging.error('Key ' + str(kkey) + 'in the construction schema should be a dictionary')
+                            message = 'Key ' + str(kkey) + 'in the construction schema should be a dictionary'
+                            logging.error(message)
+                            raise ValueError(message) 
                 else:
-                    logging.error('Key ' + str(key) + 'in the construction schema should be a dictionary')
+                    message = 'Key ' + str(key) + 'in the construction schema should be a dictionary'
+                    logging.error(message)
+                    raise ValueError(message)
             elif key=='relations':
                 if isinstance(constructionSchema[key], dict):
                     for kkey in constructionSchema[key].keys():
                         if not isinstance(constructionSchema['relations'][kkey], dict):
-                            logging.error('Key ' + str(kkey) + 'in the construction schema should be a dictionary')
+                            message = 'Key ' + str(kkey) + 'in the construction schema should be a dictionary'
+                            logging.error(message)
+                            raise ValueError(message)
                         if list(constructionSchema['relations'][kkey].keys())!=['source','target','properties']:
-                            logging.error('Relation ' + str(kkey) + ' needs to contain these keys: source, target, properties')
+                            message = 'Relation ' + str(kkey) + ' needs to contain these keys: source, target, properties'
+                            logging.error(message)
+                            raise ValueError(message)
                 else:
-                    logging.error('Key ' + str(key) + 'in the construction schema should be a list')
+                    message = 'Key ' + str(key) + 'in the construction schema should be a list'
+                    logging.error(message)
+                    raise ValueError(message)
             else:
-                logging.error('Key ' + str(key) + 'in the construction schema is not allowed (allowed: nodes, relations)')
+                message = 'Key ' + str(key) + 'in the construction schema is not allowed (allowed: nodes, relations)'
+                logging.error(message)
+                raise ValueError(message)
 
     def _constructionSchemaValidation(self, constructionSchema):
         """
@@ -249,37 +278,44 @@ class KG:
         # For each node check that required properties are listed
         if 'nodes' in constructionSchema:
             for node in constructionSchema['nodes']:
-                specified_prop = set(constructionSchema['nodes'][node].keys())
+                specifiedProp = set(constructionSchema['nodes'][node].keys())
 
-                prop_df = self._schemaReturnNodeProperties(node)
-                allowed_properties = set(prop_df['name'])
+                propDf = self._schemaReturnNodeProperties(node)
+                allowedProperties = set(propDf['name'])
 
-                selected_prop_df = prop_df[prop_df['optional']==False]
-                req_properties = set(selected_prop_df['name'])
+                selectedPropDf = propDf[propDf['optional']==False]
+                reqProperties = set(selectedPropDf['name'])
 
-                if not req_properties.issubset(specified_prop):
-                    logging.error('Node ' + str(node) + 'requires all these properties: ' + str(req_properties))
-
-                if not specified_prop.issubset(allowed_properties):
-                    logging.error('Node ' + str(node) + 'requires these properties: ' + str(allowed_properties))
+                if not reqProperties.issubset(specifiedProp):
+                    message = 'Node ' + str(node) + 'requires all these properties: ' + str(reqProperties)
+                    logging.error(message)
+                    raise ValueError(message)
+                if not specifiedProp.issubset(allowedProperties):
+                    message = 'Node ' + str(node) + 'requires these properties: ' + str(allowedProperties)
+                    logging.error(message)
+                    raise ValueError(message)                    
 
         # For each relation check that required properties are listed
         if 'relations' in constructionSchema:
             for rel in constructionSchema['relations']:
-                specified_prop = set(constructionSchema['relations'][rel]['properties'])
+                specifiedProp = set(constructionSchema['relations'][rel]['properties'])
 
-                prop_df = self._schemaReturnRelationProperties(rel)
-                allowed_properties = set(prop_df['name'])
+                propDf = self._schemaReturnRelationProperties(rel)
+                allowedProperties = set(propDf['name'])
 
-                selected_prop_df = prop_df[prop_df['optional']==False]
-                req_properties = set(selected_prop_df['name'])
+                selectedPropDf = propDf[propDf['optional']==False]
+                reqProperties = set(selectedPropDf['name'])
 
-                if not req_properties.issubset(specified_prop):
-                    logging.error('Relation ' + str(rel) + 'requires all these properties: ' + str(req_properties))
+                if not reqProperties.issubset(specifiedProp):
+                    message = 'Relation ' + str(rel) + 'requires all these properties: ' + str(reqProperties)
+                    logging.error(message)
+                    raise ValueError(message)
 
-                if not specified_prop.issubset(allowed_properties):
-                    logging.error('Relation ' + str(rel) + 'requires these properties: ' + str(allowed_properties))
-
+                if not specifiedProp.issubset(allowedProperties):
+                    message = 'Relation ' + str(rel) + 'requires these properties: ' + str(allowedProperties)
+                    logging.error(message)
+                    raise ValueError(message)
+                
     def genericWorkflow(self, data, constructionSchema):
         """
         Method designed to importa data into knowledge graph according to constructionSchema
@@ -355,55 +391,57 @@ class KG:
             for node in constructionSchema['nodes']:
                 for prop in constructionSchema['nodes'][node]:
                     allowedDatatype = self._returnNodePropertyDatatype(node,prop)
-                    df_datatype = data[constructionSchema['nodes'][node][prop]]
-                    if allowedDatatype != infer_dtype(df_datatype):
-                        logging.error('Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(df_datatype.map(type))) + ') does \\'
-                                      'not match datatype defined in schema (' + str(allowedDatatype) + ')')
+                    dfDatatype = data[constructionSchema['nodes'][node][prop]]
+                    if allowedDatatype != infer_dtype(dfDatatype):
+                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(dfDatatype.map(type))) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
+                        logging.error(message)
+                        raise ValueError(message)
 
         # Check relations data types
         if 'relations' in constructionSchema:
             for rel in constructionSchema['relations']:
                 for prop in constructionSchema['relations'][rel]['properties']:
                     allowedDatatype = self._returnRelationPropertyDatatype(rel,prop)
-                    df_datatype = data[constructionSchema['relations'][rel]['properties'][prop]]
-                    if allowedDatatype != infer_dtype(df_datatype):
-                        logging.error('Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(df_datatype) + ') does \\'
-                                      'not match datatype defined in schema (' + str(df_datatype) + ')')
+                    dfDatatype = data[constructionSchema['relations'][rel]['properties'][prop]]
+                    if allowedDatatype != infer_dtype(dfDatatype):
+                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(dfDatatype) + ') does not match datatype defined in schema (' + str(dfDatatype) + ')'
+                        logging.error(message)
+                        raise ValueError(message)
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
         """
         Method that returns the allowed type of a specified node property
-        @ In, node, string, specific node label
-        @ In, prop, string, specific node property
+        @ In, nodeID, string, specific node label
+        @ In, propID, string, specific node property
         @ Out, string, allowed type of the specified node property
         """
-        allowedtype = None
+        allowedType = None
         for schema in self.graphSchemas:
             for node in self.graphSchemas[schema]['node']:
                 if node==nodeID:# and propID in self.graphSchemas[schema][node]:
                     for prop in self.graphSchemas[schema]['node'][node]['node_properties']:
                         if prop['name']==propID:
-                            allowedtype = prop['type']
-                            return allowedtype
-        if allowedtype is None:
+                            allowedType = prop['type']
+                            return allowedType
+        if allowedType is None:
             logging.error('_returnNodePropertyDatatype error retrieving prop')
 
     def _returnRelationPropertyDatatype(self, relID, propID):
         """
         Method that returns the allowed type of a specified relation property.
-        @ In, node, string, specific relation
-        @ In, prop, string, specific node property
+        @ In, relID, string, specific relation
+        @ In, propID, string, specific node property
         @ Out, string, allowed type of the specified relation property
         """
-        allowedtype = None
+        allowedType = None
         for schema in self.graphSchemas:
             for rel in self.graphSchemas[schema]['relation']:
                 if rel==relID:
                     for prop in self.graphSchemas[schema]['relation'][rel]['relation_properties']:
                         if prop['name']==propID:
-                            allowedtype = prop['type']
-                            return allowedtype
-        if allowedtype is None:
+                            allowedType = prop['type']
+                            return allowedType
+        if allowedType is None:
             logging.error('_returnRelationPropertyDatatype error')
 
     #def _createIteractivePlot(self):
