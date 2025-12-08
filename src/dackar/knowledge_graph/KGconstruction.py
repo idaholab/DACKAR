@@ -33,19 +33,19 @@ class KG:
     """
     Class designed to automate and check knowledge graph construction
     """
-    def __init__(self, config_file_path, import_folder_path, uri, pwd, user):
+    def __init__(self, configFilePath, importFolderPath, uri, pwd, user):
         """
         Method designed to initialize the KG class
-        @ In, config_file_path, string, DBMS database folder
-        @ In, import_folder_path, string, folder which contains data to be imported
+        @ In, configFilePath, string, DBMS database folder
+        @ In, importFolderPath, string, folder which contains data to be imported
         @ In, uri, string, uri = "bolt://localhost:7687" for a single instance or uri = "neo4j://localhost:7687" for a cluster
         @ In, user, string, default to 'neo4j'
         @ In, pwd, string, password the the neo4j DBMS database
         @ Out, None
         """
         # Change import folder to user specific location
-        if import_folder_path is not None:
-            set_neo4j_import_folder(config_file_path, import_folder_path)
+        if importFolderPath is not None:
+            set_neo4j_import_folder(configFilePath, importFolderPath)
 
         self.datatypes = ['string', 'integer', 'floating', 'boolean', 'datetime']
 
@@ -148,13 +148,13 @@ class KG:
             raise FileNotFoundError(f"Schema file not found: {tomlFilename}")
 
         with open(fullPath, 'rb') as f:
-            config_data = tomllib.load(f)
+            configData = tomllib.load(f)
 
         # Check structure of imported graphSchema
-        self._checkSchemaStructure(config_data)
+        self._checkSchemaStructure(configData)
 
         #check data types against self.datatypes
-        self._checkSchemaDataTypes(config_data)
+        self._checkSchemaDataTypes(configData)
 
         # Check imported graphSchema against self.graphSchemas
         # check schema name is not used before
@@ -164,14 +164,14 @@ class KG:
             raise ValueError(message)
         
         # check nodes are not already defined
-        for node in config_data['node'].keys():
+        for node in configData['node'].keys():
             for schema in self.graphSchemas:
                 if node in schema['node'].keys():
                     message = 'Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
                     logging.error(message)
                     raise ValueError(message)
         # check relations are not already defined
-        for relation in config_data['relation'].keys():
+        for relation in configData['relation'].keys():
             for schema in self.graphSchemas:
                 if relation in schema['relation'].keys():
                     message = 'Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
@@ -180,7 +180,7 @@ class KG:
 
         self._crossSchemasCheck()
 
-        self.graphSchemas[graphSchemaName] = config_data
+        self.graphSchemas[graphSchemaName] = configData
 
     def _checkSchemaDataTypes(self, schema):
         """
@@ -195,6 +195,7 @@ class KG:
                     message = 'Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
                     logging.error(message)
                     raise ValueError(message)
+                
     def _schemaReturnNodeProperties(self, nodeLabel):
         """
         Method that returns the properties of the node nodeLabel
@@ -345,37 +346,37 @@ class KG:
         # Parse data (pd.dataframe) and update KG
         # Nodes
         if 'nodes' in constructionSchema:
-            data_temp = copy.deepcopy(data)
+            dataMasked = copy.deepcopy(data)
             for node in constructionSchema['nodes'].keys():
                 mapping = {value: key for key, value in constructionSchema['nodes'][node].items()}
-                data_renamed = data_temp.rename(columns=mapping)
-                self.py2neo.load_dataframe_for_nodes(df=data_renamed, labels=node, properties=list(mapping.values()))
+                dataRenamed = dataMasked.rename(columns=mapping)
+                self.py2neo.load_dataframe_for_nodes(df=dataRenamed, labels=node, properties=list(mapping.values()))
 
         # Relations
         # --> TODO: check nodes exist
         if 'relations' in constructionSchema:
-            data_temp = copy.deepcopy(data)
+            dataMasked = copy.deepcopy(data)
             for rel in constructionSchema['relations']:
-                source_node_label = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[0]
-                source_node_prop  = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[1]
+                sourceNodeLabel = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[0]
+                sourceNodeProp  = next(iter(constructionSchema['relations'][rel]['source'])).split('.')[1]
 
-                target_node_label = next(iter(constructionSchema['relations'][rel]['target'])).split('.')[0]
-                target_node_prop  = next(iter(constructionSchema['relations'][rel]['target'])).split('.')[1]
+                targetNodeLabel = next(iter(constructionSchema['relations'][rel]['target'])).split('.')[0]
+                targetNodeProp  = next(iter(constructionSchema['relations'][rel]['target'])).split('.')[1]
 
                 mapping = {}
-                data_renamed = data_temp.rename(columns={next(iter(constructionSchema['relations'][rel]['source'].values())):source_node_prop,
-                                                         next(iter(constructionSchema['relations'][rel]['target'].values())):target_node_prop})
+                dataRenamed = dataMasked.rename(columns={next(iter(constructionSchema['relations'][rel]['source'].values())):sourceNodeProp,
+                                                         next(iter(constructionSchema['relations'][rel]['target'].values())):targetNodeProp})
 
                 for prop in constructionSchema['relations'][rel]['properties'].keys():
-                    data_renamed = data_renamed.rename(columns={constructionSchema['relations'][rel]['properties'][prop]: prop})
+                    dataRenamed = dataRenamed.rename(columns={constructionSchema['relations'][rel]['properties'][prop]: prop})
 
-                data_renamed[source_node_label] = source_node_label
-                data_renamed[target_node_label] = target_node_label
-                data_renamed[rel] = rel
+                dataRenamed[sourceNodeLabel] = sourceNodeLabel
+                dataRenamed[targetNodeLabel] = targetNodeLabel
+                dataRenamed[rel] = rel
 
-                self.py2neo.load_dataframe_for_relations(df=data_renamed,
-                                                         l1=source_node_label, p1=source_node_prop,
-                                                         l2=target_node_label, p2=target_node_prop,
+                self.py2neo.load_dataframe_for_relations(df=dataRenamed,
+                                                         l1=sourceNodeLabel, p1=sourceNodeProp,
+                                                         l2=targetNodeLabel, p2=targetNodeProp,
                                                          lr=rel,
                                                          pr=list(constructionSchema['relations'][rel]['properties'].keys()))
 
@@ -424,7 +425,7 @@ class KG:
                             allowedType = prop['type']
                             return allowedType
         if allowedType is None:
-            logging.error('_returnNodePropertyDatatype error retrieving prop')
+            ValueError('_returnNodePropertyDatatype error retrieving prop')
 
     def _returnRelationPropertyDatatype(self, relID, propID):
         """
@@ -442,38 +443,40 @@ class KG:
                             allowedType = prop['type']
                             return allowedType
         if allowedType is None:
-            logging.error('_returnRelationPropertyDatatype error')
+            ValueError('_returnRelationPropertyDatatype error')
 
     #def _createIteractivePlot(self):
     #    schemaList = list(self.graphSchemas.values())
     #    createIteractiveFile(schemaList)
 
 
-def stringToDatetimeConverterFlexible(date_string, format_code=None):
+def stringToDatetimeConverterFlexible(dateString, formatCode=None):
     """
     Method that convert a string into datetime according to specific format
-    @ In, date_string, string, string containing date
-    @ In, format_code, string, datetime specific format
-    @ Out, datetime_object, datetime, datetime object
+    @ In, dateString, string, string containing date
+    @ In, formatCode, string, datetime specific format
+    @ Out, datetimeObject, datetime, datetime object
     """
     formats = ["%Y-%m-%d %H:%M:%S",
                "%Y/%m/%d %H:%M:%S",
                "%d-%m-%Y %H:%M",
                "%Y-%m-%d"]
 
-    if format_code is not None:
-        formats.append(format_code)
+    if formatCode is not None:
+        formats.append(formatCode)
 
         for fmt in formats:
             try:
-                return datetime.strptime(date_string, fmt)
+                datetimeObject = datetime.strptime(dateString, fmt)
+                return datetimeObject
             except ValueError:
-                raise ValueError(f"Unable to parse date string: {date_string}")
+                raise ValueError(f"Unable to parse date string: {dateString}")
     else:
         try:
-            return parse(date_string)
+            datetimeObject = parse(dateString)
+            return datetimeObject 
         except ValueError:
-            raise ValueError(f"Unable to parse date string: {date_string}")
+            raise ValueError(f"Unable to parse date string: {dateString}")
 
 """
 def mbseWorkflow(self, name, type, nodesFile, edgesFile):
