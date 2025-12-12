@@ -1,5 +1,5 @@
-title = "Custom MBSE Model Graph Schema"
-version = 1.0
+title = "MBSE Graph Schema"
+version = "1.1"
 
 # ====================
 # Node Entities
@@ -8,37 +8,65 @@ version = 1.0
 [node.mbse_entity]
 node_description = "Represents a specific MBSE component, equipment, or system"
 properties = [
-    { name = "label", type = "string", optional = false, description = 'name of the MBSE component, equipment, or system' },
-    { name = "ID", type = "string", optional = false, description = 'unique alphanumeric code associated with the MBSE component, equipment, or system' },
+    { name = "label", type = "string", optional = false, description = "Name of the MBSE component, equipment, or system" },
+    { name = "ID", type = "string", optional = false, description = "Unique alphanumeric code associated with the MBSE component, equipment, or system" },
+    { name = "type", type = "enum", optional = true, description = "Type of MBSE entity", enum_values = ["system", "subsystem", "component", "equipment", "interface"] },
+    { name = "status", type = "enum", optional = true, description = "Operational status of the entity", enum_values = ["active", "inactive", "under_maintenance", "decommissioned"] },
+    { name = "location", type = "string", optional = true, description = "Physical or logical location of the entity within the plant or system" }
+]
+
+[node.function]
+node_description = "Represents a function within the component, equipment, or system describing its operational behavior or purpose"
+properties = [
+    { name = "name", type = "string", optional = false, description = "Name of the function" },
+    { name = "description", type = "string", optional = true, description = "Description of the function's purpose" },
+    { name = "criticality", type = "enum", optional = true, description = "Importance of the function to system operation", enum_values = ["low", "medium", "high", "mission_critical"] },
+    { name = "mode", type = "enum", optional = true, description = "Mode of function execution", enum_values = ["automatic", "manual", "hybrid"] }
+]
+
+[node.interface_entity]
+node_description = "Represents a defined interface used for communication or integration between MBSE entities."
+properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the interface" },
+    { name = "protocol", type = "string", optional = true, description = "Communication protocol or standard used" },
+    { name = "direction", type = "enum", optional = true, description = "Direction of data or control flow", enum_values = ["input", "output", "bidirectional"] }
 ]
 
 # ====================
 # Relationships
 # ====================
 
-[relation.link]
-relation_description =   """Represents a functional relationship between two entities—such as components equipment 
-                            or systems—where one entity influences, supports, or enables the operation, performance or 
-                            behavior of the other within a defined operational or engineering context."""
+[relation.functional_dependency]
+relation_description = "Represents a functional relationship between two MBSE entities where one influences or enables the other."
 from_entity = "mbse_entity"
 to_entity = "mbse_entity"
-
 
 [relation.composition]
-relation_description =   """Denotes a hierarchical or structural relationship in which one entity—such as a component, 
-                            equipment, or system—is a constituent part of another, indicating that the entities are 
-                            physically or logically assembled together to form a larger, integrated whole. 
-                            This link captures part-whole dependencies essential for understanding system architecture, 
-                            configuration, and functional decomposition."""
+relation_description = "Denotes a hierarchical or structural relationship where one MBSE entity is a constituent part of another."
 from_entity = "mbse_entity"
 to_entity = "mbse_entity"
-
 
 [relation.support]
-relation_description =   """Indicates a non-hierarchical relationship in which one entity—such as a component, equipment, 
-                            or system—provides auxiliary functionality, infrastructure, or services that enable, enhance, 
-                            or maintain the operation of another entity. This link captures dependencies where the supporting 
-                            entity is not a direct part of the other, but is essential for its sustained performance, reliability, 
-                            or availability within a broader system context."""
+relation_description = "Indicates a non-hierarchical relationship where one MBSE entity provides auxiliary functionality or services to another."
 from_entity = "mbse_entity"
 to_entity = "mbse_entity"
+
+[relation.implements]
+relation_description = "Represents the relationship where an MBSE entity implements a specific function."
+from_entity = "mbse_entity"
+to_entity = "function"
+
+[relation.performs_function]
+relation_description = "Indicates that an MBSE entity dynamically performs a function."
+from_entity = "mbse_entity"
+to_entity = "function"
+
+[relation.decomposes]
+relation_description = "Indicates that a function is decomposed into sub-functions."
+from_entity = "function"
+to_entity = "function"
+
+[relation.has_interface]
+relation_description = "Indicates that an MBSE entity uses or exposes a defined interface."
+from_entity = "mbse_entity"
+to_entity = "interface_entity"

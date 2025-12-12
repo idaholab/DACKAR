@@ -23,7 +23,7 @@ currentDir = os.path.dirname(__file__)
 
 # Internal Modules #
 from dackar.knowledge_graph.py2neo import Py2Neo
-#from dackar.knowledge_graph.visualize_schema import createIteractiveFile 
+#from dackar.knowledge_graph.visualize_schema import createIteractiveFile
 from dackar.knowledge_graph.graph_utils import set_neo4j_import_folder
 from dackar.utils.mbse.customMBSEparser import customMBSEobject
 from dackar.utils.tagKeywordListReader import entityLibrary
@@ -120,7 +120,7 @@ class KG:
                     message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined'
                     logging.error(message)
                     raise ValueError(message)
-                
+
     def _checkSchemaStructure(self, importedSchema):
         """
         Method designed to check importedSchema against self.baseSchema
@@ -162,7 +162,7 @@ class KG:
             message = 'Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas'
             logging.error(message)
             raise ValueError(message)
-        
+
         # check nodes are not already defined
         for node in configData['node'].keys():
             for schema in self.graphSchemas:
@@ -195,7 +195,7 @@ class KG:
                     message = 'Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
                     logging.error(message)
                     raise ValueError(message)
-                
+
     def _schemaReturnNodeProperties(self, nodeLabel):
         """
         Method that returns the properties of the node nodeLabel
@@ -213,7 +213,7 @@ class KG:
             message = 'Node ' + str(nodeLabel) + ' does not have any property'
             logging.error(message)
             raise ValueError(message)
-        
+
     def _schemaReturnRelationProperties(self, relation):
         """
         Method that returns the properties of the selected relation
@@ -245,7 +245,7 @@ class KG:
                         if not isinstance(constructionSchema['nodes'][kkey], dict):
                             message = 'Key ' + str(kkey) + 'in the construction schema should be a dictionary'
                             logging.error(message)
-                            raise ValueError(message) 
+                            raise ValueError(message)
                 else:
                     message = 'Key ' + str(key) + 'in the construction schema should be a dictionary'
                     logging.error(message)
@@ -294,7 +294,7 @@ class KG:
                 if not specifiedProp.issubset(allowedProperties):
                     message = 'Node ' + str(node) + 'requires these properties: ' + str(allowedProperties)
                     logging.error(message)
-                    raise ValueError(message)                    
+                    raise ValueError(message)
 
         # For each relation check that required properties are listed
         if 'relations' in constructionSchema:
@@ -316,7 +316,7 @@ class KG:
                     message = 'Relation ' + str(rel) + 'requires these properties: ' + str(allowedProperties)
                     logging.error(message)
                     raise ValueError(message)
-                
+
     def genericWorkflow(self, data, constructionSchema):
         """
         Method designed to importa data into knowledge graph according to constructionSchema
@@ -474,7 +474,7 @@ def stringToDatetimeConverterFlexible(dateString, formatCode=None):
     else:
         try:
             datetimeObject = parse(dateString)
-            return datetimeObject 
+            return datetimeObject
         except ValueError:
             raise ValueError(f"Unable to parse date string: {dateString}")
 

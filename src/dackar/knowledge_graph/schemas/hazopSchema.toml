@@ -1,0 +1,92 @@
+title = "HAZOP Schema"
+version = 1.0
+
+# ====================
+# Node Entities
+# ====================
+
+[node.hazop_study]
+node_description = "A structured and systematic examination of a system or process to identify potential hazards and operability issues."
+node_properties = [
+  { name = "study_id", type = "string", optional = false, description = "Unique identifier for the HAZOP study" },
+  { name = "system_scope", type = "string", optional = false, description = "System or process under analysis" },
+  { name = "date", type = "string", optional = true, description = "Date the study was conducted" },
+  { name = "team_lead", type = "string", optional = true, description = "Person responsible for leading the HAZOP" },
+  { name = "reference_documents", type = "string", optional = true, description = "Supporting documents (e.g., P&IDs, procedures)" }
+]
+
+[node.hazop_node]
+node_description = "A specific location or function in the system where deviations are analyzed (e.g., a valve, pump, or process step)."
+node_properties = [
+  { name = "node_id", type = "string", optional = false, description = "Identifier for the HAZOP node" },
+  { name = "description", type = "string", optional = false, description = "Narrative of the node's function or location" }
+]
+
+[node.deviation]
+node_description = "A deviation from design intent, typically defined by a guideword and process parameter (e.g., 'No Flow')."
+node_properties = [
+  { name = "guideword", type = "string", optional = false, description = "Guideword used (e.g., No, More, Less, Reverse)" },
+  { name = "parameter", type = "string", optional = false, description = "Process variable (e.g., flow, pressure, temperature)" },
+  { name = "deviation_description", type = "string", optional = true, description = "Explanation of the deviation" }
+]
+
+[node.cause]
+node_description = "A condition or failure that could lead to the deviation."
+node_properties = [
+  { name = "cause_description", type = "string", optional = false, description = "Narrative of the cause" }
+]
+
+[node.consequence]
+node_description = "The potential outcome or impact if the deviation occurs."
+node_properties = [
+  { name = "consequence_description", type = "string", optional = false, description = "Narrative of the consequence" },
+  { name = "severity", type = "string", optional = true, description = "Qualitative or quantitative severity rating" }
+]
+
+[node.safeguard]
+node_description = "An existing control or mitigation that reduces the likelihood or impact of the deviation."
+node_properties = [
+  { name = "safeguard_description", type = "string", optional = false, description = "Description of the safeguard" },
+  { name = "type", type = "string", optional = true, description = "Type of safeguard (e.g., alarm, interlock, procedure)" }
+]
+
+[node.recommendation]
+node_description = "A proposed action to address an identified hazard or operability issue."
+node_properties = [
+  { name = "recommendation_text", type = "string", optional = false, description = "Text of the recommendation" },
+  { name = "status", type = "string", optional = true, description = "Implementation status (e.g., open, closed, in progress)" }
+]
+
+# ====================
+# Relationships
+# ====================
+
+[relation.part_of_study]
+relation_description = "Links a HAZOP node to the overall HAZOP study."
+from_entity = "hazop_node"
+to_entity = "hazop_study"
+
+[relation.has_deviation]
+relation_description = "Connects a HAZOP node to a deviation being analyzed."
+from_entity = "hazop_node"
+to_entity = "deviation"
+
+[relation.caused_by]
+relation_description = "Links a deviation to its potential cause."
+from_entity = "deviation"
+to_entity = "cause"
+
+[relation.leads_to]
+relation_description = "Links a deviation to its potential consequence."
+from_entity = "deviation"
+to_entity = "consequence"
+
+[relation.mitigated_by]
+relation_description = "Connects a consequence to an existing safeguard."
+from_entity = "consequence"
+to_entity = "safeguard"
+
+[relation.recommendation_for]
+relation_description = "Links a deviation or consequence to a recommendation."
+from_entity = "recommendation"
+to_entity = "deviation"

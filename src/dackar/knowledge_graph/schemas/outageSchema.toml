@@ -1,0 +1,73 @@
+title = "Outage Graph Schema"
+version = 1.0
+
+# ====================
+# Node 
+# ====================
+
+
+[node.outage_instance]
+node_description = """Represents a specific plant outage event, whether planned or unplanned, during which systems are shut down 
+                      for maintenance, inspection, upgrades, or corrective actions. This entity captures metadata about the outage."""
+
+node_properties = [
+    { name = "ID", type = "str", optional = false, description = "Unique identifier for the outage instance" },
+    { name = "start_date", type = "str", optional = false, description = "Date when the outage began" },
+    { name = "end_date", type = "str", optional = true, description = "Date when the outage ended or is expected to end" },
+    { name = "type", type = "enum", optional = false, description = "Classification of the outage", enum_values = ["planned", "unplanned", "forced", "scheduled"] },
+    { name = "description", type = "str", optional = true, description = "Narrative summary of the outage purpose and scope" },
+    { name = "status", type = "enum", optional = false, description = "Current status of the outage", enum_values = ["scheduled", "in_progress", "completed", "cancelled"] }
+]
+
+[node.outage_activity]
+node_description = """Represents a specific task, inspection, repair, or upgrade performed during an outage. Activities are linked to systems, work orders, and crews."""
+
+node_properties = [
+    { name = "ID", type = "str", optional = false, description = "Unique identifier for the outage activity" },
+    { name = "description", type = "str", optional = false, description = "Detailed description of the activity performed" },
+    { name = "start_time", type = "str", optional = true, description = "Start time of the activity" },
+    { name = "end_time", type = "str", optional = true, description = "End time of the activity" },
+    { name = "status", type = "enum", optional = true, description = "Current status of the activity", enum_values = ["pending", "in_progress", "completed", "delayed"] }
+]
+
+[node.crew]
+node_description = """Represents a team or group of personnel assigned to perform activities during an outage."""
+
+node_properties = [
+    { name = "ID", type = "str", optional = false, description = "Unique identifier for the crew" },
+    { name = "name", type = "str", optional = true, description = "Name or designation of the crew" },
+    { name = "lead", type = "str", optional = true, description = "Crew leader or supervisor" },
+    { name = "organization", type = "str", optional = true, description = "Affiliated organization or department" }
+]
+
+
+
+# ====================
+# Relations
+# ====================
+
+
+[relation.addresses_condition]
+relation_description = """Indicates that the work order was created in response to a specific condition report, linking the corrective or investigative action to the observed anomaly."""
+from_entity = "work_order"
+to_entity = "condition_report"
+
+[relation.targets_entity]
+relation_description = """Indicates that the work order targets a specific system, component, or asset for action, as defined in the MBSE model."""
+from_entity = "work_order"
+to_entity = "mbse_entity"
+
+[relation.has_temporal_reference]
+relation_description = """Indicates that the work order includes a reference to a specific time frame, such as scheduled start or end dates."""
+from_entity = "work_order"
+to_entity = "temporal_entity"
+
+[relation.related_to_event]
+relation_description = """Links the work order to a broader operational or historical event that provides context or justification for the task."""
+from_entity = "work_order"
+to_entity = "event_entity"
+
+[relation.follows_up]
+relation_description = """Indicates that the work order is a follow-up to a previous work order, forming a chain of related actions or investigations."""
+from_entity = "work_order"
+to_entity = "work_order"
