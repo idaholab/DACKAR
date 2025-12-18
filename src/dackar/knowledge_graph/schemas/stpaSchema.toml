@@ -1,0 +1,96 @@
+
+title = "STPA Schema"
+version = 1.0
+
+# ====================
+# Node Entities
+# ====================
+
+[node.control_structure]
+node_description = "A representation of the system’s control architecture, including controllers, actuators, sensors, and controlled processes."
+node_properties = [
+  { name = "structure_id", type = "string", optional = false, description = "Unique identifier for the control structure" },
+  { name = "description", type = "string", optional = false, description = "Narrative of the control structure's purpose and scope" }
+]
+
+[node.controller]
+node_description = "A system component that issues control actions to influence the behavior of a process or component."
+node_properties = [
+  { name = "controller_name", type = "string", optional = false, description = "Name or label of the controller" },
+  { name = "type", type = "string", optional = true, description = "Type of controller (e.g., human, software, hardware)" }
+]
+
+[node.control_action]
+node_description = "An action issued by a controller to influence the controlled process."
+node_properties = [
+  { name = "action_name", type = "string", optional = false, description = "Name of the control action" },
+  { name = "description", type = "string", optional = true, description = "Narrative of the action's intent" }
+]
+
+[node.unsafe_control_action]
+node_description = "A control action that, under certain conditions, can lead to a hazardous state."
+node_properties = [
+  { name = "uca_id", type = "string", optional = false, description = "Unique identifier for the unsafe control action" },
+  { name = "uca_description", type = "string", optional = false, description = "Description of the unsafe control action" },
+  { name = "uca_type", type = "string", optional = true, description = "Type (e.g., not provided, provided incorrectly, too early/late, stopped too soon)" }
+]
+
+[node.hazard]
+node_description = "A system state or condition that, together with a particular set of worst-case environmental conditions, will lead to an accident."
+node_properties = [
+  { name = "hazard_id", type = "string", optional = false, description = "Unique identifier for the hazard" },
+  { name = "hazard_description", type = "string", optional = false, description = "Narrative of the hazard" }
+]
+
+[node.loss]
+node_description = "An unacceptable outcome or consequence resulting from a hazard."
+node_properties = [
+  { name = "loss_id", type = "string", optional = false, description = "Unique identifier for the loss" },
+  { name = "loss_description", type = "string", optional = false, description = "Narrative of the loss" }
+]
+
+[node.safety_constraint]
+node_description = "A requirement or rule that must be enforced to prevent unsafe control actions and hazards."
+node_properties = [
+  { name = "constraint_id", type = "string", optional = false, description = "Unique identifier for the constraint" },
+  { name = "constraint_text", type = "string", optional = false, description = "Text of the safety constraint" }
+]
+
+# ====================
+# Relationships
+# ====================
+
+[relation.issues]
+relation_description = "Links a controller to the control actions it issues."
+from_entity = "controller"
+to_entity = "control_action"
+
+[relation.part_of_structure]
+relation_description = "Links a controller to the control structure it belongs to."
+from_entity = "controller"
+to_entity = "control_structure"
+
+[relation.has_unsafe_variant]
+relation_description = "Links a control action to its unsafe variant."
+from_entity = "control_action"
+to_entity = "unsafe_control_action"
+
+[relation.leads_to_hazard]
+relation_description = "Links an unsafe control action to a hazard it may cause."
+from_entity = "unsafe_control_action"
+to_entity = "hazard"
+
+[relation.results_in_loss]
+relation_description = "Links a hazard to a potential loss."
+from_entity = "hazard"
+to_entity = "loss"
+
+[relation.prevented_by]
+relation_description = "Links a hazard or unsafe control action to a safety constraint that mitigates it."
+from_entity = "safety_constraint"
+to_entity = "hazard"
+
+[relation.enforces]
+relation_description = "Links a controller to the safety constraints it is responsible for enforcing."
+from_entity = "controller"
+to_entity = "safety_constraint"

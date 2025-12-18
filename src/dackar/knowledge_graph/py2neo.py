@@ -75,6 +75,7 @@ class Py2Neo:
             label (str): node label will be used by neo4j
             properties (dict): node attributes
         """
+
         if isinstance(label, list):
             expanded_label = ":".join(label)
             query = f"MERGE (n:{expanded_label} {{ {', '.join([f'{k}: ${k}' for k in properties.keys()])} }})"
@@ -82,6 +83,7 @@ class Py2Neo:
             query = f"MERGE (n:{label} {{ {', '.join([f'{k}: ${k}' for k in properties.keys()])} }})"
         else:
             logger.error('Label provided for node creation is neither a list or a string')
+
         tx.run(query, **properties)
 
 
@@ -113,20 +115,32 @@ class Py2Neo:
             lr (str): relationship label
             pr (dict, optional): attributes for relationship. Defaults to None.
         """
+        # Keep the MERGE parts, check node existance prior _create_relation
         if pr is not None:
             query = f"""
-                MERGE (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
-                MERGE (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
-                MERGE (l1)-[r:{lr} {{ {', '.join([f'{k}: ${k}' for k in pr.keys()])} }} ]->(l2)
+                MERGE (l1:{l1} {{ {', '.join([f'{k}:$p1_{k}' for k in p1.keys()])} }})
+                MERGE (l2:{l2} {{ {', '.join([f'{k}:$p2_{k}' for k in p2.keys()])} }})
+                MERGE (l1)-[r:{lr} {{ {', '.join([f'{k}: $pr_{k}' for k in pr.keys()])} }} ]->(l2)
             """
-            tx.run(query, **pr)
+            params = {
+                **{f"p1_{k}": v for k, v in p1.items()},
+                **{f"p2_{k}": v for k, v in p2.items()},
+                **{f"pr_{k}": v for k, v in pr.items()},
+            }
+            tx.run(query, params)
         else:
             query = f"""
-                MERGE (l1:{l1} {{ {', '.join([f'{k}:"{v}"' for k, v in p1.items()])} }})
-                MERGE (l2:{l2} {{ {', '.join([f'{k}:"{v}"' for k, v in p2.items()])} }})
+                MERGE (l1:{l1} {{ {', '.join([f'{k}:$p1_{k}' for k in p1.keys()])} }})
+                MERGE (l2:{l2} {{ {', '.join([f'{k}:$p2_{k}' for k in p2.keys()])} }})
                 MERGE (l1)-[r:{lr}]->(l2)
             """
-            tx.run(query)
+
+            params = {
+                **{f"p1_{k}": v for k, v in p1.items()},
+                **{f"p2_{k}": v for k, v in p2.items()},
+            }
+            tx.run(query, params)
+
 
     def find_nodes(self, label, properties=None):
         """Find the node in neo4j graph database
@@ -157,8 +171,8 @@ class Py2Neo:
         if properties is None:
             query = f"MATCH (n:{label}) RETURN n"
         else:
-            query = f"""MATCH (n:{label} {{ {', '.join([f'{k}:"{v}"' for k, v in properties.items()])} }}) RETURN n"""
-        result = tx.run(query)
+            query = f"""MATCH (n:{label} {{ {', '.join([f'{k}:${k}' for k in properties.keys()])} }}) RETURN n"""
+        result = tx.run(query, **properties)
         values = [record.values() for record in result]
         return values
 
@@ -188,8 +202,6 @@ class Py2Neo:
             """
         else:
             logger.error('Label provided for node creation is neither a list or a string')
-
-
 
         tx.run(query)
 
@@ -293,7 +305,7 @@ class Py2Neo:
         """
         assert set(properties).issubset(set(df.columns))
         for _, row in df.iterrows():
-            self.create_node(labels, row.to_dict())
+            self.create_node(labels, row[properties].to_dict())
 
     # Load csv function to create relations
     def load_dataframe_for_relations(self, df, l1='sourceLabel', p1='sourceNodeId', l2='targetLabel', p2='targetNodeId', lr='relationshipType', pr=None):
@@ -312,17 +324,19 @@ class Py2Neo:
         # for nodes. Future development need to be performed.
         # label (l1/l2), properties (p1/p2), and relation label (lr), relation properties (pr)
         valid = []
+
         valid.extend([l1, l2, lr, p1, p2])
         if pr is not None:
             valid.extend(pr)
+
         assert set(valid).issubset(set(df.columns))
 
         with self.__driver.session() as session:
             for _, row in df.iterrows():
                 l1_ = row[l1]
-                p1_ = {'nodeId': row[p1]}
+                p1_ = {p1: row[p1]}
                 l2_ = row[l2]
-                p2_ = {'nodeId': row[p2]}
+                p2_ = {p2: row[p2]}
                 lr_ = row[lr]
                 if pr is not None:
                     pr_ = row[pr].to_dict()

@@ -28,7 +28,7 @@ def test_kernel_two_sample_test():
                                                         iterations=iterations,
                                                         gamma=1.0/sigma2,
                                                         verbose=True)
-    
+
     assert abs(mmd2u - (-0.0032396905173185386)) < 1E-8
 
 def test_kernel_two_sample_test():
@@ -38,7 +38,7 @@ def test_kernel_two_sample_test():
                                                         iterations=iterations,
                                                         gamma=1.0/sigma2,
                                                         verbose=True)
-    
+
     assert abs(p_value - 0.875) < 1E-3
 
 np.random.seed(0)
@@ -65,7 +65,7 @@ def test_kernel_two_sample_test():
                                                         iterations=iterations,
                                                         gamma=1.0/sigma2,
                                                         verbose=True)
-    
+
     assert abs(mmd2u - 0.19124120543500756) < 1E-8
 
 def test_kernel_two_sample_test():
@@ -75,7 +75,7 @@ def test_kernel_two_sample_test():
                                                         iterations=iterations,
                                                         gamma=1.0/sigma2,
                                                         verbose=True)
-    
+
     assert abs(p_value - 0.0005) < 1E-5
 
 '''
