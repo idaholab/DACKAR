@@ -1,29 +1,147 @@
-title = "Causality Graph Schema"
-version = 1.0
+
+title = "Failure Mode and Effects Analysis (FMEA) Graph Schema"
+version = "1.0"
 
 # ====================
-# Node 
+# Node Entities
 # ====================
 
-[node.abnormal_event]
-node_description = """Represents a generic abnormal event associated with a specific equipment item, capturing any unexpected, 
-                      irregular, or off-nominal condition that may impact the equipment’s performance, reliability, or safety. 
-                      This node serves as a placeholder for a wide range of event types—including faults, anomalies, or 
-                      operational deviations—detected through monitoring systems, reported by plant staff, or inferred from 
-                      system behavior. It enables semantic linking to related entities such as condition reports, monitoring 
-                      variables, failure modes, and maintenance actions, supporting diagnostics, risk assessment, and operational 
-                      decision-making."""
+[node.fmea_case]
+node_description = """Represents a structured FMEA study or worksheet that analyzes potential failure modes for an item or function,
+                      assesses their effects and causes, evaluates risk (severity, occurrence, detection, RPN), and defines controls
+                      and recommended actions for mitigation."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the FMEA case" },
+    { name = "title", type = "string", optional = true, description = "Short title or name of the FMEA" },
+    { name = "scope", type = "string", optional = true, description = "Scope of the analysis (system, subsystem, component, function)" },
+    { name = "created_on", type = "datetime", optional = false, description = "Timestamp when the FMEA case was created" },
+    { name = "updated_on", type = "datetime", optional = true, description = "Timestamp of the latest update to the FMEA case" },
+    { name = "status", type = "enum", optional = true, description = "Lifecycle state of the FMEA", enum_values = ["draft", "under_review", "approved", "archived"] }
+]
+
+[node.failure_mode]
+node_description = """Represents a specific manner in which an item or function can fail to perform its intended purpose."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the failure mode" },
+    { name = "name", type = "string", optional = false, description = "Name/short label of the failure mode" },
+    { name = "description", type = "string", optional = true, description = "Detailed description of the failure mode" }
+]
+
+[node.cause]
+node_description = """Represents a root cause or contributing factor that can lead to the occurrence of a failure mode."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the cause" },
+    { name = "type", type = "enum", optional = true, description = "Categorization of the cause", enum_values = ["technical", "human", "organizational", "environmental", "unknown"] },
+    { name = "description", type = "string", optional = true, description = "Detailed explanation of the cause" }
+]
+
+[node.effect]
+node_description = """Represents the local or end effect resulting from the occurrence of a failure mode, including impacts on safety, reliability, and performance."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the effect" },
+    { name = "level", type = "enum", optional = true, description = "Level of the effect", enum_values = ["local", "next_higher", "end_effect"] },
+    { name = "description", type = "string", optional = true, description = "Detailed description of the effect" }
+]
+
+[node.control]
+node_description = """Represents a control (existing or proposed) aimed at preventing, detecting, or mitigating the failure mode or its effect."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the control" },
+    { name = "type", type = "enum", optional = false, description = "Control type", enum_values = ["prevention", "detection", "mitigation"] },
+    { name = "description", type = "string", optional = true, description = "Description of the control mechanism or activity" }
+]
+
+[node.risk_assessment]
+node_description = """Represents a risk evaluation record for a failure mode including severity (S), occurrence (O), detection (D), and calculated Risk Priority Number (RPN)."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the risk assessment record" },
+    { name = "severity", type = "int", optional = false, description = "Severity rating (typically 1–10)" },
+    { name = "occurrence", type = "int", optional = false, description = "Occurrence rating (typically 1–10)" },
+    { name = "detection", type = "int", optional = false, description = "Detection rating (typically 1–10)" },
+    { name = "RPN", type = "int", optional = false, description = "Risk Priority Number (S × O × D)" },
+    { name = "notes", type = "string", optional = true, description = "Additional comments or rationale for ratings" }
+]
+
+[node.recommended_action]
+node_description = """Represents a recommended action to reduce risk by lowering severity, occurrence, or improving detection of a failure mode."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the recommended action" },
+    { name = "description", type = "string", optional = false, description = "Detailed description of the recommended action" },
+    { name = "target_dimension", type = "enum", optional = true, description = "Risk dimension targeted by the action", enum_values = ["severity", "occurrence", "detection", "multiple"] },
+    { name = "priority", type = "enum", optional = true, description = "Priority for implementation", enum_values = ["low", "medium", "high", "urgent"] },
+    { name = "owner", type = "string", optional = true, description = "Responsible person/team for implementing the action" },
+    { name = "due_date", type = "datetime", optional = true, description = "Target completion date for the action" }
+]
+
+# Optional linkage to existing schemas
+[node.reference_artifact]
+node_description = """Represents an external artifact referenced by the FMEA (e.g., condition report, anomaly record, diagnostic/prognostic assessment)."""
+node_properties = [
+    { name = "ID", type = "string", optional = false, description = "Unique identifier for the reference artifact" },
+    { name = "type", type = "enum", optional = false, description = "Artifact type", enum_values = ["condition_report", "anomaly", "diagnostic_assessment", "prognostic_assessment", "work_order"] },
+    { name = "ref_ID", type = "string", optional = false, description = "Identifier of the referenced item in its native schema" }
+]
 
 # ====================
-# Relations
+# Relationships
 # ====================
 
-[relation.causes]
-relation_description = """Defines a directed causal relationship between two recorded events or anomaly instances, 
-                          indicating that the occurrence of one event or anomaly has contributed to, triggered, or 
-                          influenced the emergence of the other. This relation captures temporal and logical dependencies 
-                          within operational or system behavior contexts, supporting root cause analysis, fault 
-                          propagation modeling, and the construction of causal chains for diagnostics, risk assessment, 
-                          and decision support."""
-from_entity = "abnormal_event"
-to_entity = "abnormal_event"
+[relation.analyzes_entity]
+relation_description = """Indicates that the FMEA case is analyzing a specific MBSE entity (system, subsystem, component, equipment)."""
+from_entity = "fmea_case"
+to_entity = "mbse_entity"
+
+[relation.analyzes_function]
+relation_description = """Indicates that the FMEA case is analyzing a specific function performed by an MBSE entity."""
+from_entity = "fmea_case"
+to_entity = "function"
+
+[relation.identifies_failure_mode]
+relation_description = """Indicates that the FMEA case has identified a specific failure mode as part of the analysis."""
+from_entity = "fmea_case"
+to_entity = "failure_mode"
+
+[relation.has_cause]
+relation_description = """Links a failure mode to one of its causes."""
+from_entity = "failure_mode"
+to_entity = "cause"
+
+[relation.leads_to_effect]
+relation_description = """Links a failure mode to one of its effects."""
+from_entity = "failure_mode"
+to_entity = "effect"
+
+[relation.has_risk_assessment]
+relation_description = """Associates a failure mode with its risk assessment (S, O, D, RPN)."""
+from_entity = "failure_mode"
+to_entity = "risk_assessment"
+
+[relation.has_control]
+relation_description = """Associates a failure mode (or its effect) with a control (prevention, detection, mitigation)."""
+from_entity = "failure_mode"
+to_entity = "control"
+
+[relation.mitigates_effect]
+relation_description = """Indicates that a control specifically mitigates an effect of a failure mode."""
+from_entity = "control"
+to_entity = "effect"
+
+[relation.recommends_action]
+relation_description = """Indicates that the FMEA case recommends a specific action to reduce risk."""
+from_entity = "fmea_case"
+to_entity = "recommended_action"
+
+[relation.implements_action]
+relation_description = """Links a recommended action to the work order that implements it."""
+from_entity = "recommended_action"
+to_entity = "work_order"
+
+[relation.references_artifact]
+relation_description = """Indicates that the FMEA case references an external artifact (condition report, anomaly, diagnostic/prognostic assessment, or work order)."""
+from_entity = "fmea_case"
+to_entity = "reference_artifact"
+
+[relation.temporal_reference]
+relation_description = """Indicates that the FMEA case or its elements include reference to specific time frames (e.g., review dates, due dates)."""
+from_entity = "fmea_case"
+to_entity = "temporal_entity"
