@@ -93,7 +93,6 @@ class KG:
                 # check that the node is not duplicated
                 if node in self.nodeList:
                     message = 'Schema ' + str(schema) + ' - Node ' + str(node) + ' has been defined twice'
-                    logging.error(message)
                     raise ValueError(message)
                 else:
                     self.nodeList.append(node)
@@ -103,7 +102,6 @@ class KG:
                 # check that the relation is not duplicated
                 if rel in self.relationList:
                     message = 'Duplicate relation definition encountered: ' + str(rel) + ' in schema: ' + str(schema)
-                    logging.error(message)
                     raise ValueError(message)
                 else:
                     self.relationList.append(rel)
@@ -114,11 +112,9 @@ class KG:
 
                 if origin not in self.nodeList:
                     message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined'
-                    logging.error(message)
                     raise ValueError(message)
                 if destin not in self.nodeList:
                     message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined'
-                    logging.error(message)
                     raise ValueError(message)
 
     def _checkSchemaStructure(self, importedSchema):
@@ -168,14 +164,12 @@ class KG:
             for schema in self.graphSchemas:
                 if node in schema['node'].keys():
                     message = 'Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
-                    logging.error(message)
                     raise ValueError(message)
         # check relations are not already defined
         for relation in configData['relation'].keys():
             for schema in self.graphSchemas:
                 if relation in schema['relation'].keys():
                     message = 'Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
-                    logging.error(message)
                     raise ValueError(message)
 
         self._crossSchemasCheck()
@@ -229,7 +223,6 @@ class KG:
 
         if propdf is None:
             message = 'Relation ' + str(relation) + ' does not have any property'
-            logging.error(message)
             raise ValueError(message)
 
     def _constructionSchemaStructureValidation(self, constructionSchema):
@@ -244,30 +237,24 @@ class KG:
                     for kkey in constructionSchema[key].keys():
                         if not isinstance(constructionSchema['nodes'][kkey], dict):
                             message = 'Key ' + str(kkey) + 'in the construction schema should be a dictionary'
-                            logging.error(message)
                             raise ValueError(message)
                 else:
                     message = 'Key ' + str(key) + 'in the construction schema should be a dictionary'
-                    logging.error(message)
                     raise ValueError(message)
             elif key=='relations':
                 if isinstance(constructionSchema[key], dict):
                     for kkey in constructionSchema[key].keys():
                         if not isinstance(constructionSchema['relations'][kkey], dict):
                             message = 'Key ' + str(kkey) + 'in the construction schema should be a dictionary'
-                            logging.error(message)
                             raise ValueError(message)
                         if list(constructionSchema['relations'][kkey].keys())!=['source','target','properties']:
                             message = 'Relation ' + str(kkey) + ' needs to contain these keys: source, target, properties'
-                            logging.error(message)
                             raise ValueError(message)
                 else:
                     message = 'Key ' + str(key) + 'in the construction schema should be a list'
-                    logging.error(message)
                     raise ValueError(message)
             else:
                 message = 'Key ' + str(key) + 'in the construction schema is not allowed (allowed: nodes, relations)'
-                logging.error(message)
                 raise ValueError(message)
 
     def _constructionSchemaValidation(self, constructionSchema):
@@ -289,11 +276,9 @@ class KG:
 
                 if not reqProperties.issubset(specifiedProp):
                     message = 'Node ' + str(node) + 'requires all these properties: ' + str(reqProperties)
-                    logging.error(message)
                     raise ValueError(message)
                 if not specifiedProp.issubset(allowedProperties):
                     message = 'Node ' + str(node) + 'requires these properties: ' + str(allowedProperties)
-                    logging.error(message)
                     raise ValueError(message)
 
         # For each relation check that required properties are listed
@@ -309,12 +294,10 @@ class KG:
 
                 if not reqProperties.issubset(specifiedProp):
                     message = 'Relation ' + str(rel) + 'requires all these properties: ' + str(reqProperties)
-                    logging.error(message)
                     raise ValueError(message)
 
                 if not specifiedProp.issubset(allowedProperties):
                     message = 'Relation ' + str(rel) + 'requires these properties: ' + str(allowedProperties)
-                    logging.error(message)
                     raise ValueError(message)
 
     def genericWorkflow(self, data, constructionSchema):
@@ -395,7 +378,6 @@ class KG:
                     dfDatatype = data[constructionSchema['nodes'][node][prop]]
                     if allowedDatatype != infer_dtype(dfDatatype):
                         message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(dfDatatype.map(type))) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
-                        logging.error(message)
                         raise ValueError(message)
 
         # Check relations data types
@@ -406,7 +388,6 @@ class KG:
                     dfDatatype = data[constructionSchema['relations'][rel]['properties'][prop]]
                     if allowedDatatype != infer_dtype(dfDatatype):
                         message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(dfDatatype) + ') does not match datatype defined in schema (' + str(dfDatatype) + ')'
-                        logging.error(message)
                         raise ValueError(message)
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
