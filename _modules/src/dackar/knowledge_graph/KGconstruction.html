@@ -1,0 +1,782 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.knowledge_graph.KGconstruction &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.knowledge_graph.KGconstruction</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.knowledge_graph.KGconstruction</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Created on September, 2025</span>
+
+<span class="sd">@author: mandd, wangc</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="c1"># External Modules #</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span><span class="o">,</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tomllib</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">jsonschema</span><span class="w"> </span><span class="kn">import</span> <span class="n">validate</span><span class="p">,</span> <span class="n">ValidationError</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dateutil.parser</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas.api.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">infer_dtype</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<div class="viewcode-block" id="currentDir">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.currentDir">[docs]</a>
+<span class="n">currentDir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Internal Modules #</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.knowledge_graph.py2neo</span><span class="w"> </span><span class="kn">import</span> <span class="n">Py2Neo</span>
+<span class="c1">#from dackar.knowledge_graph.visualize_schema import createIteractiveFile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.knowledge_graph.graph_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">set_neo4j_import_folder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.utils.mbse.customMBSEparser</span><span class="w"> </span><span class="kn">import</span> <span class="n">customMBSEobject</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.utils.tagKeywordListReader</span><span class="w"> </span><span class="kn">import</span> <span class="n">entityLibrary</span>
+
+
+<div class="viewcode-block" id="KG">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">KG</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Class designed to automate and check knowledge graph construction</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">configFilePath</span><span class="p">,</span> <span class="n">importFolderPath</span><span class="p">,</span> <span class="n">uri</span><span class="p">,</span> <span class="n">pwd</span><span class="p">,</span> <span class="n">user</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method designed to initialize the KG class</span>
+<span class="sd">        @ In, configFilePath, string, DBMS database folder</span>
+<span class="sd">        @ In, importFolderPath, string, folder which contains data to be imported</span>
+<span class="sd">        @ In, uri, string, uri = &quot;bolt://localhost:7687&quot; for a single instance or uri = &quot;neo4j://localhost:7687&quot; for a cluster</span>
+<span class="sd">        @ In, user, string, default to &#39;neo4j&#39;</span>
+<span class="sd">        @ In, pwd, string, password the the neo4j DBMS database</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Change import folder to user specific location</span>
+        <span class="k">if</span> <span class="n">importFolderPath</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">set_neo4j_import_folder</span><span class="p">(</span><span class="n">configFilePath</span><span class="p">,</span> <span class="n">importFolderPath</span><span class="p">)</span>
+
+<div class="viewcode-block" id="KG.datatypes">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.datatypes">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">datatypes</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;string&#39;</span><span class="p">,</span> <span class="s1">&#39;integer&#39;</span><span class="p">,</span> <span class="s1">&#39;floating&#39;</span><span class="p">,</span> <span class="s1">&#39;boolean&#39;</span><span class="p">,</span> <span class="s1">&#39;datetime&#39;</span><span class="p">]</span></div>
+
+
+        <span class="c1"># Create python to neo4j driver</span>
+<div class="viewcode-block" id="KG.py2neo">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.py2neo">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">py2neo</span> <span class="o">=</span> <span class="n">Py2Neo</span><span class="p">(</span><span class="n">uri</span><span class="o">=</span><span class="n">uri</span><span class="p">,</span> <span class="n">user</span><span class="o">=</span><span class="n">user</span><span class="p">,</span> <span class="n">pwd</span><span class="o">=</span><span class="n">pwd</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG.graphSchemas">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.graphSchemas">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span> <span class="o">=</span> <span class="p">{}</span> <span class="c1"># dictionary containing the set of schemas of the knowledge graph</span></div>
+
+
+<div class="viewcode-block" id="KG.graphMetadata">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.graphMetadata">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">graphMetadata</span> <span class="o">=</span> <span class="p">{}</span> <span class="c1"># Metadata container of the knowledge graph --&gt; TODO: discuss how to manage it</span></div>
+
+
+<div class="viewcode-block" id="KG.entityLibrary">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.entityLibrary">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">entityLibrary</span> <span class="o">=</span> <span class="n">entityLibrary</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">pardir</span><span class="p">,</span> <span class="s1">&#39;data&#39;</span><span class="p">,</span> <span class="s1">&#39;tag_keywords_lists.xlsx&#39;</span><span class="p">))</span></div>
+
+
+        <span class="c1"># this is the base schema for the set of schemas of the knowledge graph</span>
+        <span class="n">baseSchemaLocation</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span> <span class="s1">&#39;schemas&#39;</span><span class="p">,</span> <span class="s1">&#39;baseSchema.json&#39;</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">baseSchemaLocation</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">baseSchema</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+
+        <span class="c1"># set of predefined schemas available in DACKAR egenrated for the RIAM project</span>
+<div class="viewcode-block" id="KG.predefinedGraphSchemas">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.predefinedGraphSchemas">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">predefinedGraphSchemas</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;conditionReportSchema&#39;</span>  <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">&#39;schemas&#39;</span><span class="p">,</span><span class="s1">&#39;conditionReportSchema.toml&#39;</span><span class="p">),</span>
+                                       <span class="s1">&#39;customMbseSchema&#39;</span>       <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">&#39;schemas&#39;</span><span class="p">,</span><span class="s1">&#39;customMbseSchema.toml&#39;</span><span class="p">),</span>
+                                       <span class="s1">&#39;monitoringSystemSchema&#39;</span> <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">&#39;schemas&#39;</span><span class="p">,</span><span class="s1">&#39;monitoringSystemSchema.toml&#39;</span><span class="p">),</span>
+                                       <span class="s1">&#39;nuclearEntitySchema&#39;</span>    <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">&#39;schemas&#39;</span><span class="p">,</span><span class="s1">&#39;nuclearEntitySchema.toml&#39;</span><span class="p">),</span>
+                                       <span class="s1">&#39;numericPerfomanceSchema&#39;</span><span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">&#39;schemas&#39;</span><span class="p">,</span><span class="s1">&#39;numericPerfomanceSchema.toml&#39;</span><span class="p">),</span>
+                                       <span class="s1">&#39;causalSchema&#39;</span>           <span class="p">:</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">currentDir</span><span class="p">,</span><span class="s1">&#39;schemas&#39;</span><span class="p">,</span><span class="s1">&#39;causalSchema.toml&#39;</span><span class="p">)}</span></div>
+
+
+<div class="viewcode-block" id="KG.resetGraph">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.resetGraph">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resetGraph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method designed to reset knowledge graph</span>
+<span class="sd">        @ In, None</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">py2neo</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="KG._crossSchemasCheck">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._crossSchemasCheck">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_crossSchemasCheck</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method designed to perform a series of checks across the defined schemas</span>
+<span class="sd">        @ In, None</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;node&#39;</span><span class="p">]:</span>
+                <span class="c1"># check that the node is not duplicated</span>
+                <span class="k">if</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Schema &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; - Node &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; has been defined twice&#39;</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;relation&#39;</span><span class="p">]:</span>
+                <span class="c1"># check that the relation is not duplicated</span>
+                <span class="k">if</span> <span class="n">rel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Duplicate relation definition encountered: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; in schema: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">relationList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
+
+                <span class="c1"># check that the defined relations link nodes that have been defined</span>
+                <span class="n">origin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;relation&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;from_entity&#39;</span><span class="p">]</span>
+                <span class="n">destin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;relation&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;to_entity&#39;</span><span class="p">]</span>
+
+                <span class="k">if</span> <span class="n">origin</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Schema &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; - Relation &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;: Node label &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">origin</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; is not defined&#39;</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">destin</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">nodeList</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Schema &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; - Relation &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;: Node label &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">destin</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; is not defined&#39;</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._checkSchemaStructure">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._checkSchemaStructure">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_checkSchemaStructure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">importedSchema</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method designed to check importedSchema against self.baseSchema</span>
+<span class="sd">        @ In, importedSchema, dict, schema parsed by tomllib from .toml file</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">validate</span><span class="p">(</span><span class="n">instance</span><span class="o">=</span><span class="n">importedSchema</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">baseSchema</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;TOML content is valid against the schema.&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">tomllib</span><span class="o">.</span><span class="n">TOMLDecodeError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TOML syntax error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TOML schema validation error: </span><span class="si">{</span><span class="n">e</span><span class="o">.</span><span class="n">message</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG.importGraphSchema">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.importGraphSchema">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">importGraphSchema</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graphSchemaName</span><span class="p">,</span> <span class="n">tomlFilename</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that imports new schema contained in a .toml file</span>
+<span class="sd">        @ In, graphSchemaName, string, name of the schema to be imported</span>
+<span class="sd">        @ In, tomlFilename, string, .toml file contained the new schema</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fullPath</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">tomlFilename</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">fullPath</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Schema file not found: </span><span class="si">{</span><span class="n">tomlFilename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fullPath</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">configData</span> <span class="o">=</span> <span class="n">tomllib</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+
+        <span class="c1"># Check structure of imported graphSchema</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_checkSchemaStructure</span><span class="p">(</span><span class="n">configData</span><span class="p">)</span>
+
+        <span class="c1">#check data types against self.datatypes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_checkSchemaDataTypes</span><span class="p">(</span><span class="n">configData</span><span class="p">)</span>
+
+        <span class="c1"># Check imported graphSchema against self.graphSchemas</span>
+        <span class="c1"># check schema name is not used before</span>
+        <span class="k">if</span> <span class="n">graphSchemaName</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="o">.</span><span class="n">keys</span><span class="p">()):</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Schema &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">graphSchemaName</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; is already defined in the exisiting schemas&#39;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="c1"># check nodes are not already defined</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">configData</span><span class="p">[</span><span class="s1">&#39;node&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;node&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Node &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; defined in the new schema is already defined in the exisiting schema &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+        <span class="c1"># check relations are not already defined</span>
+        <span class="k">for</span> <span class="n">relation</span> <span class="ow">in</span> <span class="n">configData</span><span class="p">[</span><span class="s1">&#39;relation&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">relation</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;relation&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Relation &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; defined in the new schema is already defined in the exisiting schema &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_crossSchemasCheck</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">graphSchemaName</span><span class="p">]</span> <span class="o">=</span> <span class="n">configData</span></div>
+
+
+<div class="viewcode-block" id="KG._checkSchemaDataTypes">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._checkSchemaDataTypes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_checkSchemaDataTypes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schema</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that checks that the datatypes defined in the new schema are part of the allowed data</span>
+<span class="sd">        types contained in self.datatypes</span>
+<span class="sd">        @ In, schema, dict, schema parsed by tomllib from .toml file</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;node&#39;</span><span class="p">]:</span>
+            <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">[</span><span class="s1">&#39;node&#39;</span><span class="p">][</span><span class="n">node</span><span class="p">][</span><span class="s1">&#39;node_properties&#39;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">prop</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">datatypes</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Node &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; - Property &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">])</span> <span class="o">+</span> <span class="s1">&#39; data type &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">])</span> <span class="o">+</span> <span class="s1">&#39; is not allowed&#39;</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._schemaReturnNodeProperties">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._schemaReturnNodeProperties">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_schemaReturnNodeProperties</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nodeLabel</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that returns the properties of the node nodeLabel</span>
+<span class="sd">        @ In, nodeLabel, string, ID of the node label</span>
+<span class="sd">        @ Out, propdf, dataframe, dataframe containing nodeLabel properties</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">propdf</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">nodeLabel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;node&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">nodeProperties</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;node&#39;</span><span class="p">][</span><span class="n">nodeLabel</span><span class="p">][</span><span class="s1">&#39;node_properties&#39;</span><span class="p">]</span>
+                <span class="n">propdf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">nodeProperties</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">propdf</span>
+
+        <span class="k">if</span> <span class="n">propdf</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Node &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">nodeLabel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; does not have any property&#39;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._schemaReturnRelationProperties">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._schemaReturnRelationProperties">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_schemaReturnRelationProperties</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relation</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that returns the properties of the selected relation</span>
+<span class="sd">        @ In, relation, string, ID of the node label</span>
+<span class="sd">        @ Out, propdf, dataframe, dataframe containing relation properties</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">propdf</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">relation</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;relation&#39;</span><span class="p">]:</span>
+                <span class="n">relationProperties</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;relation&#39;</span><span class="p">][</span><span class="n">relation</span><span class="p">][</span><span class="s1">&#39;relation_properties&#39;</span><span class="p">]</span>
+                <span class="n">propdf</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">relationProperties</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">propdf</span>
+
+        <span class="k">if</span> <span class="n">propdf</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Relation &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">relation</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; does not have any property&#39;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._constructionSchemaStructureValidation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._constructionSchemaStructureValidation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_constructionSchemaStructureValidation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">constructionSchema</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that validates the structure of constructionSchema</span>
+<span class="sd">        @ In, constructionSchema, dict, construction schema</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">key</span><span class="o">==</span><span class="s1">&#39;nodes&#39;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">kkey</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">][</span><span class="n">kkey</span><span class="p">],</span> <span class="nb">dict</span><span class="p">):</span>
+                            <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Key &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">kkey</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;in the construction schema should be a dictionary&#39;</span>
+                            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Key &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;in the construction schema should be a dictionary&#39;</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">key</span><span class="o">==</span><span class="s1">&#39;relations&#39;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">kkey</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">kkey</span><span class="p">],</span> <span class="nb">dict</span><span class="p">):</span>
+                            <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Key &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">kkey</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;in the construction schema should be a dictionary&#39;</span>
+                            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="nb">list</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">kkey</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="o">!=</span><span class="p">[</span><span class="s1">&#39;source&#39;</span><span class="p">,</span><span class="s1">&#39;target&#39;</span><span class="p">,</span><span class="s1">&#39;properties&#39;</span><span class="p">]:</span>
+                            <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Relation &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">kkey</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39; needs to contain these keys: source, target, properties&#39;</span>
+                            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Key &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;in the construction schema should be a list&#39;</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Key &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;in the construction schema is not allowed (allowed: nodes, relations)&#39;</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._constructionSchemaValidation">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._constructionSchemaValidation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_constructionSchemaValidation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">constructionSchema</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that validates the constructionSchema against defined schemas</span>
+<span class="sd">        @ In, constructionSchema, dict, construction schema</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># For each node check that required properties are listed</span>
+        <span class="k">if</span> <span class="s1">&#39;nodes&#39;</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">]:</span>
+                <span class="n">specifiedProp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">][</span><span class="n">node</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+
+                <span class="n">propDf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_schemaReturnNodeProperties</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+                <span class="n">allowedProperties</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">propDf</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">])</span>
+
+                <span class="n">selectedPropDf</span> <span class="o">=</span> <span class="n">propDf</span><span class="p">[</span><span class="n">propDf</span><span class="p">[</span><span class="s1">&#39;optional&#39;</span><span class="p">]</span><span class="o">==</span><span class="kc">False</span><span class="p">]</span>
+                <span class="n">reqProperties</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">selectedPropDf</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">])</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">reqProperties</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">specifiedProp</span><span class="p">):</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Node &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;requires all these properties: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">reqProperties</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">specifiedProp</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">allowedProperties</span><span class="p">):</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Node &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;requires these properties: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedProperties</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="c1"># For each relation check that required properties are listed</span>
+        <span class="k">if</span> <span class="s1">&#39;relations&#39;</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">]:</span>
+                <span class="n">specifiedProp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;properties&#39;</span><span class="p">])</span>
+
+                <span class="n">propDf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_schemaReturnRelationProperties</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span>
+                <span class="n">allowedProperties</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">propDf</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">])</span>
+
+                <span class="n">selectedPropDf</span> <span class="o">=</span> <span class="n">propDf</span><span class="p">[</span><span class="n">propDf</span><span class="p">[</span><span class="s1">&#39;optional&#39;</span><span class="p">]</span><span class="o">==</span><span class="kc">False</span><span class="p">]</span>
+                <span class="n">reqProperties</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">selectedPropDf</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">])</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">reqProperties</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">specifiedProp</span><span class="p">):</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Relation &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;requires all these properties: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">reqProperties</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">specifiedProp</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">allowedProperties</span><span class="p">):</span>
+                    <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Relation &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;requires these properties: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedProperties</span><span class="p">)</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG.genericWorkflow">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG.genericWorkflow">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">genericWorkflow</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">constructionSchema</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method designed to importa data into knowledge graph according to constructionSchema</span>
+<span class="sd">        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph</span>
+<span class="sd">        @ Out, constructionSchema, dict, dataframe containing relation properties. A construction schema is defined as follows:</span>
+
+<span class="sd">            constructionSchema = {&#39;nodes&#39;    : nodeConstructionSchema,</span>
+<span class="sd">                                  &#39;relations&#39;: edgeConstructionSchema}</span>
+
+<span class="sd">            nodeConstructionSchema = {&#39;nodeLabel1&#39;: {&#39;property1&#39;: &#39;dataframe.colA&#39;, &#39;property2&#39;: &#39;dataframe.colB&#39;},</span>
+<span class="sd">                                      &#39;nodeLabel2&#39;: {&#39;property1&#39;: &#39;dataframe.colC&#39;}}</span>
+
+<span class="sd">            edgeConstructionSchema = [{&#39;source&#39;: {&#39;nodeLabel1.property1&#39;:&#39;dataframe.col1&#39;},</span>
+<span class="sd">                                       &#39;target&#39;: {&#39;nodeLabel2.property1&#39;:&#39;dataframe.col2&#39;},</span>
+<span class="sd">                                       &#39;type&#39;  : &#39;edgeType&#39;,</span>
+<span class="sd">                                       &#39;properties&#39;: {&#39;property1&#39;: &#39;dataframe.colAlpha&#39;, &#39;property2&#39;: &#39;dataframe.colBeta&#39;}}]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check structure of constructionSchema</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_constructionSchemaStructureValidation</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">)</span>
+
+        <span class="c1"># Check constructionSchema against self.graphSchemas</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_constructionSchemaValidation</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">)</span>
+
+        <span class="c1"># Check datatypes of data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_checkDataframeDatatypes</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">constructionSchema</span><span class="p">)</span>
+
+        <span class="c1"># Parse data (pd.dataframe) and update KG</span>
+        <span class="c1"># Nodes</span>
+        <span class="k">if</span> <span class="s1">&#39;nodes&#39;</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">:</span>
+            <span class="n">dataMasked</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                <span class="n">mapping</span> <span class="o">=</span> <span class="p">{</span><span class="n">value</span><span class="p">:</span> <span class="n">key</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">][</span><span class="n">node</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+                <span class="n">dataRenamed</span> <span class="o">=</span> <span class="n">dataMasked</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">mapping</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">py2neo</span><span class="o">.</span><span class="n">load_dataframe_for_nodes</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="n">dataRenamed</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">node</span><span class="p">,</span> <span class="n">properties</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">mapping</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
+
+        <span class="c1"># Relations</span>
+        <span class="c1"># --&gt; TODO: check nodes exist</span>
+        <span class="k">if</span> <span class="s1">&#39;relations&#39;</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">:</span>
+            <span class="n">dataMasked</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">]:</span>
+                <span class="n">sourceNodeLabel</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;source&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">sourceNodeProp</span>  <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;source&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+                <span class="n">targetNodeLabel</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;target&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">targetNodeProp</span>  <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;target&#39;</span><span class="p">]))</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;.&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
+                <span class="n">mapping</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="n">dataRenamed</span> <span class="o">=</span> <span class="n">dataMasked</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;source&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())):</span><span class="n">sourceNodeProp</span><span class="p">,</span>
+                                                         <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;target&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())):</span><span class="n">targetNodeProp</span><span class="p">})</span>
+
+                <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;properties&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
+                    <span class="n">dataRenamed</span> <span class="o">=</span> <span class="n">dataRenamed</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;properties&#39;</span><span class="p">][</span><span class="n">prop</span><span class="p">]:</span> <span class="n">prop</span><span class="p">})</span>
+
+                <span class="n">dataRenamed</span><span class="p">[</span><span class="n">sourceNodeLabel</span><span class="p">]</span> <span class="o">=</span> <span class="n">sourceNodeLabel</span>
+                <span class="n">dataRenamed</span><span class="p">[</span><span class="n">targetNodeLabel</span><span class="p">]</span> <span class="o">=</span> <span class="n">targetNodeLabel</span>
+                <span class="n">dataRenamed</span><span class="p">[</span><span class="n">rel</span><span class="p">]</span> <span class="o">=</span> <span class="n">rel</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">py2neo</span><span class="o">.</span><span class="n">load_dataframe_for_relations</span><span class="p">(</span><span class="n">df</span><span class="o">=</span><span class="n">dataRenamed</span><span class="p">,</span>
+                                                         <span class="n">l1</span><span class="o">=</span><span class="n">sourceNodeLabel</span><span class="p">,</span> <span class="n">p1</span><span class="o">=</span><span class="n">sourceNodeProp</span><span class="p">,</span>
+                                                         <span class="n">l2</span><span class="o">=</span><span class="n">targetNodeLabel</span><span class="p">,</span> <span class="n">p2</span><span class="o">=</span><span class="n">targetNodeProp</span><span class="p">,</span>
+                                                         <span class="n">lr</span><span class="o">=</span><span class="n">rel</span><span class="p">,</span>
+                                                         <span class="n">pr</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;properties&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span></div>
+
+
+<div class="viewcode-block" id="KG._checkDataframeDatatypes">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._checkDataframeDatatypes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_checkDataframeDatatypes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">constructionSchema</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that checks that data elements in data match format specified in the graph schemas</span>
+<span class="sd">        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph</span>
+<span class="sd">        @ In, constructionSchema, dict, dataframe containing relation properties</span>
+<span class="sd">        @ Out, None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Check nodes data types</span>
+        <span class="k">if</span> <span class="s1">&#39;nodes&#39;</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">]:</span>
+                <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">][</span><span class="n">node</span><span class="p">]:</span>
+                    <span class="n">allowedDatatype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_returnNodePropertyDatatype</span><span class="p">(</span><span class="n">node</span><span class="p">,</span><span class="n">prop</span><span class="p">)</span>
+                    <span class="n">dfDatatype</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;nodes&#39;</span><span class="p">][</span><span class="n">node</span><span class="p">][</span><span class="n">prop</span><span class="p">]]</span>
+                    <span class="k">if</span> <span class="n">allowedDatatype</span> <span class="o">!=</span> <span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">):</span>
+                        <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Node: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">node</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;- Property: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;. Dataframe datatype (&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">dfDatatype</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="nb">type</span><span class="p">)))</span> <span class="o">+</span> <span class="s1">&#39;) does not match datatype defined in schema (&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">allowedDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;)&#39;</span>
+                        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+
+        <span class="c1"># Check relations data types</span>
+        <span class="k">if</span> <span class="s1">&#39;relations&#39;</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">]:</span>
+                <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;properties&#39;</span><span class="p">]:</span>
+                    <span class="n">allowedDatatype</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_returnRelationPropertyDatatype</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span><span class="n">prop</span><span class="p">)</span>
+                    <span class="n">dfDatatype</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">constructionSchema</span><span class="p">[</span><span class="s1">&#39;relations&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;properties&#39;</span><span class="p">][</span><span class="n">prop</span><span class="p">]]</span>
+                    <span class="k">if</span> <span class="n">allowedDatatype</span> <span class="o">!=</span> <span class="n">infer_dtype</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">):</span>
+                        <span class="n">message</span> <span class="o">=</span> <span class="s1">&#39;Relation: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;- Property: &#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">prop</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;. Dataframe datatype (&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;) does not match datatype defined in schema (&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">dfDatatype</span><span class="p">)</span> <span class="o">+</span> <span class="s1">&#39;)&#39;</span>
+                        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">message</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._returnNodePropertyDatatype">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._returnNodePropertyDatatype">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_returnNodePropertyDatatype</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nodeID</span><span class="p">,</span> <span class="n">propID</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that returns the allowed type of a specified node property</span>
+<span class="sd">        @ In, nodeID, string, specific node label</span>
+<span class="sd">        @ In, propID, string, specific node property</span>
+<span class="sd">        @ Out, allowedType, string, allowed type of the specified node property</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">allowedType</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;node&#39;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">node</span><span class="o">==</span><span class="n">nodeID</span><span class="p">:</span><span class="c1"># and propID in self.graphSchemas[schema][node]:</span>
+                    <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;node&#39;</span><span class="p">][</span><span class="n">node</span><span class="p">][</span><span class="s1">&#39;node_properties&#39;</span><span class="p">]:</span>
+                        <span class="k">if</span> <span class="n">prop</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="o">==</span><span class="n">propID</span><span class="p">:</span>
+                            <span class="n">allowedType</span> <span class="o">=</span> <span class="n">prop</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span>
+                            <span class="k">return</span> <span class="n">allowedType</span>
+        <span class="k">if</span> <span class="n">allowedType</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;_returnNodePropertyDatatype error retrieving prop&#39;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="KG._returnRelationPropertyDatatype">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.KG._returnRelationPropertyDatatype">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_returnRelationPropertyDatatype</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relID</span><span class="p">,</span> <span class="n">propID</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Method that returns the allowed type of a specified relation property.</span>
+<span class="sd">        @ In, relID, string, specific relation</span>
+<span class="sd">        @ In, propID, string, specific node property</span>
+<span class="sd">        @ Out, allowedType, string, allowed type of the specified relation property</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">allowedType</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">rel</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;relation&#39;</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="n">rel</span><span class="o">==</span><span class="n">relID</span><span class="p">:</span>
+                    <span class="k">for</span> <span class="n">prop</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">graphSchemas</span><span class="p">[</span><span class="n">schema</span><span class="p">][</span><span class="s1">&#39;relation&#39;</span><span class="p">][</span><span class="n">rel</span><span class="p">][</span><span class="s1">&#39;relation_properties&#39;</span><span class="p">]:</span>
+                        <span class="k">if</span> <span class="n">prop</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="o">==</span><span class="n">propID</span><span class="p">:</span>
+                            <span class="n">allowedType</span> <span class="o">=</span> <span class="n">prop</span><span class="p">[</span><span class="s1">&#39;type&#39;</span><span class="p">]</span>
+                            <span class="k">return</span> <span class="n">allowedType</span>
+        <span class="k">if</span> <span class="n">allowedType</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;_returnRelationPropertyDatatype error&#39;</span><span class="p">)</span></div>
+</div>
+
+
+    <span class="c1">#def _createIteractivePlot(self):</span>
+    <span class="c1">#    schemaList = list(self.graphSchemas.values())</span>
+    <span class="c1">#    createIteractiveFile(schemaList)</span>
+
+
+<div class="viewcode-block" id="stringToDatetimeConverterFlexible">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/KGconstruction/index.html#src.dackar.knowledge_graph.KGconstruction.stringToDatetimeConverterFlexible">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">stringToDatetimeConverterFlexible</span><span class="p">(</span><span class="n">dateString</span><span class="p">,</span> <span class="n">formatCode</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Method that convert a string into datetime according to specific format</span>
+<span class="sd">    @ In, dateString, string, string containing date</span>
+<span class="sd">    @ In, formatCode, string, datetime specific format</span>
+<span class="sd">    @ Out, datetimeObject, datetime, datetime object</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">formats</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;%Y/%m/</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;</span><span class="si">%d</span><span class="s2">-%m-%Y %H:%M&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">formatCode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">formats</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">formatCode</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">fmt</span> <span class="ow">in</span> <span class="n">formats</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">datetimeObject</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">dateString</span><span class="p">,</span> <span class="n">fmt</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">datetimeObject</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unable to parse date string: </span><span class="si">{</span><span class="n">dateString</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">datetimeObject</span> <span class="o">=</span> <span class="n">parse</span><span class="p">(</span><span class="n">dateString</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">datetimeObject</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unable to parse date string: </span><span class="si">{</span><span class="n">dateString</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">def mbseWorkflow(self, name, type, nodesFile, edgesFile):</span>
+<span class="sd">    if type ==&#39;customMBSE&#39;:</span>
+<span class="sd">        if &#39;customMbseSchema&#39; not in self.graphSchemas.keys():</span>
+<span class="sd">            graphSchemaFile = self.predefinedGraphSchemas[&#39;customMbseSchema&#39;]</span>
+<span class="sd">            self.importGraphSchema(&#39;customMbseSchema&#39;, graphSchemaFile)</span>
+
+<span class="sd">        mbseModel = customMBSEobject(nodesFile,</span>
+<span class="sd">                                     edgesFile,</span>
+<span class="sd">                                     path=self.processedDataFolder)</span>
+
+<span class="sd">        self.equipmentIDs = self.equipmentIDs + mbseModel.returnIDs()</span>
+<span class="sd">        mbseModel.plot(name)</span>
+
+<span class="sd">        label = &#39;MBSE&#39;</span>
+<span class="sd">        attribute = {&#39;ID&#39;:&#39;ID&#39;, &#39;type&#39;:&#39;type&#39;}</span>
+<span class="sd">        self.py2neo.load_csv_for_nodes(os.path.join(self.processedDataFolder, nodesFile), label, attribute)</span>
+
+<span class="sd">        l1=&#39;MBSE&#39;</span>
+<span class="sd">        p1={&#39;ID&#39;:&#39;sourceNodeId&#39;}</span>
+<span class="sd">        l2=&#39;MBSE&#39;</span>
+<span class="sd">        p2 ={&#39;ID&#39;:&#39;targetNodeId&#39;}</span>
+<span class="sd">        lr = &#39;MBSE_link&#39;</span>
+<span class="sd">        pr = {&#39;prop&#39;:&#39;type&#39;}</span>
+<span class="sd">        self.py2neo.load_csv_for_relations(os.path.join(self.processedDataFolder, edgesFile), l1, p1, l2, p2, lr, pr)</span>
+
+<span class="sd">    elif type ==&#39;LML&#39;:</span>
+<span class="sd">        # TODO Implement LML reader</span>
+<span class="sd">        pass</span>
+
+<span class="sd">def anomalyWorkflow(self, dataframe, constructionSchema, monitorVars):</span>
+<span class="sd">    if &#39;numericPerfomanceSchema&#39; not in self.graphSchemas.keys():</span>
+<span class="sd">        graphSchemaFile = self.predefinedGraphSchemas[&#39;numericPerfomanceSchema&#39;]</span>
+<span class="sd">        self.importGraphSchema(&#39;numericPerfomanceSchema&#39;, graphSchemaFile)</span>
+
+<span class="sd">    label = &#39;anomaly&#39;</span>
+<span class="sd">    if &#39;ID&#39; in constructionSchema.keys():</span>
+<span class="sd">        attribute = {&#39;ID&#39;:constructionSchema[&#39;ID&#39;],</span>
+<span class="sd">                     &#39;time_initial&#39;:constructionSchema[&#39;time_initial&#39;],</span>
+<span class="sd">                     &#39;time_final&#39;  :constructionSchema[&#39;time_final&#39;]}</span>
+<span class="sd">    else:</span>
+<span class="sd">        attribute = {&#39;time_initial&#39;:constructionSchema[&#39;time_initial&#39;],</span>
+<span class="sd">                     &#39;time_final&#39;  :constructionSchema[&#39;time_final&#39;]}</span>
+<span class="sd">    self.py2neo.load_dataframe_for_nodes(dataframe, label, attribute)</span>
+
+<span class="sd">    for var in monitorVars:</span>
+<span class="sd">        l1 = &#39;anomaly&#39;</span>
+<span class="sd">        p1 = constructionSchema[&#39;time_initial&#39;]</span>
+<span class="sd">        l2 = &#39;monitored_variable&#39;</span>
+<span class="sd">        p2 = var</span>
+<span class="sd">        lr = &#39;detected_by&#39;</span>
+<span class="sd">        pr = None</span>
+<span class="sd">        self.py2neo.load_dataframe_for_relations(dataframe, l1, p1, l2, p2, lr, pr)</span>
+
+
+<span class="sd">def monitoringWorkflow(self, dataframe, constructionSchema):</span>
+<span class="sd">    if &#39;monitoringSystemSchema&#39; not in self.graphSchemas.keys():</span>
+<span class="sd">        graphSchemaFile = self.predefinedGraphSchemas[&#39;monitoringSystemSchema&#39;]</span>
+<span class="sd">        self.importGraphSchema(&#39;monitoringSystemSchema&#39;, graphSchemaFile)</span>
+
+<span class="sd">    #constructionSchema.keys() = [variable, ID, mbse}</span>
+
+<span class="sd">    label = &#39;monitored_variable&#39;</span>
+<span class="sd">    properties = {&#39;ID&#39;: constructionSchema[&#39;ID&#39;]}</span>
+<span class="sd">    if &#39;variable&#39; in constructionSchema.keys():</span>
+<span class="sd">        properties[&#39;variable&#39;] = constructionSchema[&#39;variable&#39;]</span>
+<span class="sd">    self.load_dataframe_for_nodes(dataframe, label, properties)</span>
+
+<span class="sd">    l1=&#39;monitored_variable&#39;</span>
+<span class="sd">    p1={&#39;ID&#39;:constructionSchema[&#39;ID&#39;]}</span>
+<span class="sd">    l2=&#39;mbse_entity&#39;</span>
+<span class="sd">    p2 ={&#39;ID&#39;:constructionSchema[&#39;mbse&#39;]}</span>
+<span class="sd">    lr = &#39;monitors&#39;</span>
+<span class="sd">    pr = None</span>
+<span class="sd">    self.load_dataframe_for_relations(dataframe, l1, p1, l2, p2, lr, pr)</span>
+
+
+<span class="sd">def conditionReportWorkflow(self, dataframe, constructionSchema):</span>
+<span class="sd">    #constructionSchema = {&#39;date&#39;: [],</span>
+<span class="sd">    #                    &#39;ID&#39;: [],</span>
+<span class="sd">    #                    &#39;conjecture&#39;: [],</span>
+<span class="sd">    #                    &#39;mbse_entity&#39;: [],</span>
+<span class="sd">    #                    &#39;nuclear_entity&#39;: [],</span>
+<span class="sd">    #                    &#39;temporal_entity&#39;: []}</span>
+
+
+<span class="sd">    if &#39;conditionReportSchema&#39; not in self.graphSchemas.keys():</span>
+<span class="sd">        graphSchemaFile = self.predefinedGraphSchemas[&#39;conditionReportSchema&#39;]</span>
+<span class="sd">        self.importGraphSchema(&#39;conditionReportSchema&#39;, graphSchemaFile)</span>
+
+<span class="sd">    label = &#39;condition_report&#39;</span>
+<span class="sd">    node_properties = {&#39;date&#39;: constructionSchema[&#39;date&#39;],</span>
+<span class="sd">                       &#39;ID&#39;: constructionSchema[&#39;ID&#39;]}</span>
+<span class="sd">    if &#39;conjecture&#39; in constructionSchema.keys():</span>
+<span class="sd">        node_properties[&#39;conjecture&#39;] = constructionSchema[&#39;conjecture&#39;]</span>
+<span class="sd">    self.load_dataframe_for_nodes(dataframe, label, node_properties)</span>
+
+<span class="sd">    for index, row in dataframe.iterrows():</span>
+<span class="sd">        for ent in row[constructionSchema[&#39;nuclear_entity&#39;]]:</span>
+<span class="sd">            if self.find_nodes(&#39;nuclear_entity&#39;,{&#39;ID&#39;:ent}):</span>
+<span class="sd">                # Entity node is already present</span>
+<span class="sd">                self.create_relation(l1=&#39;condition_report&#39;,</span>
+<span class="sd">                                    p1={&#39;ID&#39;: row[constructionSchema[&#39;ID&#39;]]},</span>
+<span class="sd">                                    l2=&#39;nuclear_entity&#39;,</span>
+<span class="sd">                                    p2={&#39;entity&#39;: ent},</span>
+<span class="sd">                                    lr=&#39;refers&#39;)</span>
+<span class="sd">            else:</span>
+<span class="sd">                # Entity node is not present</span>
+<span class="sd">                derivedClass = self.entityLibrary.searchEntityInfo(ent)</span>
+<span class="sd">                properties = {&#39;entity&#39;: ent,</span>
+<span class="sd">                              &#39;class&#39;: derivedClass}</span>
+<span class="sd">                self.create_node(&#39;nuclear_entity&#39;, properties)</span>
+<span class="sd">                self.create_relation(l1=&#39;condition_report&#39;,</span>
+<span class="sd">                                    p1={&#39;ID&#39;: row[constructionSchema[&#39;ID&#39;]]},</span>
+<span class="sd">                                    l2=&#39;nuclear_entity&#39;,</span>
+<span class="sd">                                    p2={&#39;entity&#39;: ent},</span>
+<span class="sd">                                    lr=&#39;refers&#39;)</span>
+
+<span class="sd">        for ent in row[constructionSchema[&#39;temporal_entity&#39;]]:</span>
+<span class="sd">            properties = {&#39;datetime&#39;: ent}</span>
+<span class="sd">            self.create_node(&#39;temporal_entity&#39;, properties)</span>
+<span class="sd">            self.create_relation(l1=&#39;condition_report&#39;,</span>
+<span class="sd">                                 p1={&#39;ID&#39;: row[constructionSchema[&#39;ID&#39;]]},</span>
+<span class="sd">                                 l2=&#39;temporal_entity&#39;,</span>
+<span class="sd">                                 p2={&#39;datetime&#39;: ent},</span>
+<span class="sd">                                 lr=&#39;temporal_reference&#39;)</span>
+
+<span class="sd">        for ent in row[constructionSchema[&#39;mbse_entity&#39;]]:</span>
+<span class="sd">            if self.find_nodes(&#39;mbse_entity&#39;,{&#39;ID&#39;:ent}):</span>
+<span class="sd">                self.create_relation(l1=&#39;condition_report&#39;,</span>
+<span class="sd">                                     p1={&#39;ID&#39;: row[constructionSchema[&#39;ID&#39;]]},</span>
+<span class="sd">                                     l2=&#39;mbse_entity&#39;,</span>
+<span class="sd">                                     p2={&#39;ID&#39;:ent},</span>
+<span class="sd">                                     lr=&#39;mentions&#39;)</span>
+<span class="sd">            elif self.find_nodes(&#39;mbse_entity&#39;,{&#39;label&#39;:ent}):</span>
+<span class="sd">                self.create_relation(l1=&#39;condition_report&#39;,</span>
+<span class="sd">                                     p1={&#39;ID&#39;: row[constructionSchema[&#39;ID&#39;]]},</span>
+<span class="sd">                                     l2=&#39;mbse_entity&#39;,</span>
+<span class="sd">                                     p2={&#39;label&#39;:ent},</span>
+<span class="sd">                                     lr=&#39;mentions&#39;)</span>
+<span class="sd">            else:</span>
+<span class="sd">                print(&#39;Error, MBSE entity not found&#39;)</span>
+<span class="sd">&quot;&quot;&quot;</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
