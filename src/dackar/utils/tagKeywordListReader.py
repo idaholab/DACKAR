@@ -171,7 +171,7 @@ class entityLibrary():
         if '-' in elem:
           self.library[key].append(elem.replace('-',''))
           self.library[key].append(elem.replace('-',' '))
-          
+
           entity.append(elem.replace('-',''))
           category.append(key)
           alias.append(elem)
@@ -183,12 +183,12 @@ class entityLibrary():
         entity.append(elem)
         category.append(key)
         alias.append(elem)
-        
+
 
     library_dict = {'entity'   : entity,
                     'alias'    : alias,
                     'category' : category}
-    
+
     self.library_df = pd.DataFrame.from_dict(library_dict)
 
   def searchEntityInfo(self, entity):
@@ -302,7 +302,7 @@ class entityLibrary():
   def patternCreator(self):
     """
     This method is designed to create patterns from the tags and the corresponding list of keywords.
-    
+
     Args:
 
       None
