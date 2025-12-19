@@ -9,7 +9,7 @@ import re
 import pandas as pd
 import os, sys
 import tomllib
-from jsonschema import validate, ValidationError
+from jsonschema import Draft202012Validator, ValidationError, SchemaError
 import json
 import copy
 from pathlib import Path
@@ -23,7 +23,7 @@ currentDir = os.path.dirname(__file__)
 
 # Internal Modules #
 from dackar.knowledge_graph.py2neo import Py2Neo
-#from dackar.knowledge_graph.visualize_schema import createIteractiveFile
+from dackar.knowledge_graph.visualize_schema import createInteractiveFile
 from dackar.knowledge_graph.graph_utils import set_neo4j_import_folder
 from dackar.utils.mbse.customMBSEparser import customMBSEobject
 from dackar.utils.tagKeywordListReader import entityLibrary
@@ -47,7 +47,7 @@ class KG:
         if importFolderPath is not None:
             set_neo4j_import_folder(configFilePath, importFolderPath)
 
-        self.datatypes = ['string', 'integer', 'floating', 'boolean', 'datetime']
+        self.datatypes = ['string', 'integer', 'floating', 'boolean', 'datetime', 'enum']
 
         # Create python to neo4j driver
         self.py2neo = Py2Neo(uri=uri, user=user, pwd=pwd)
@@ -79,57 +79,92 @@ class KG:
         """
         self.py2neo.reset()
 
-    def _crossSchemasCheck(self):
+    def crossSchemasCheck(self):
         """
-        Method designed to perform a series of checks across the defined schemas
-        @ In, None
-        @ Out, None
+        Perform cross-schema consistency checks:
+        - Detect duplicate node and relation names across schemas
+        - Ensure relations reference defined nodes
+        Logs warnings instead of raising immediately.
         """
-        self.nodeList = []
-        self.relationList = []
+        node_set = set()
+        relation_set = set()
+        errors = []
 
-        for schema in self.graphSchemas:
-            for node in self.graphSchemas[schema]['node']:
-                # check that the node is not duplicated
-                if node in self.nodeList:
-                    message = 'Schema ' + str(schema) + ' - Node ' + str(node) + ' has been defined twice'
-                    raise ValueError(message)
+        # Iterate through all schemas
+        for schema_name, schema_data in self.graphSchemas.items():
+            nodes = schema_data.get("node", {})
+            relations = schema_data.get("relation", {})
+
+            # Validate structure
+            if not isinstance(nodes, dict) or not isinstance(relations, dict):
+                errors.append(f"Schema '{schema_name}' has invalid structure for 'node' or 'relation'.")
+                continue
+
+            # Check nodes for duplicates
+            for node in nodes.keys():
+                if node in node_set:
+                    errors.append(f"Duplicate node '{node}' found in schema '{schema_name}'.")
                 else:
-                    self.nodeList.append(node)
+                    node_set.add(node)
 
-        for schema in self.graphSchemas:
-            for rel in self.graphSchemas[schema]['relation']:
-                # check that the relation is not duplicated
-                if rel in self.relationList:
-                    message = 'Duplicate relation definition encountered: ' + str(rel) + ' in schema: ' + str(schema)
-                    raise ValueError(message)
+            # Check relations for duplicates and validate endpoints
+            for rel_name, rel_info in relations.items():
+                if rel_name in relation_set:
+                    errors.append(f"Duplicate relation '{rel_name}' found in schema '{schema_name}'.")
                 else:
-                    self.relationList.append(rel)
+                    relation_set.add(rel_name)
 
-                # check that the defined relations link nodes that have been defined
-                origin = self.graphSchemas[schema]['relation'][rel]['from_entity']
-                destin = self.graphSchemas[schema]['relation'][rel]['to_entity']
+                # Validate endpoints exist
+                origin = rel_info.get("from_node")
+                destin = rel_info.get("to_node")
+                if origin not in node_set:
+                    errors.append(f"Schema '{schema_name}' relation '{rel_name}': origin node '{origin}' is not defined.")
+                if destin not in node_set:
+                    errors.append(f"Schema '{schema_name}' relation '{rel_name}': destination node '{destin}' is not defined.")
 
-                if origin not in self.nodeList:
-                    message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(origin) + ' is not defined'
-                    raise ValueError(message)
-                if destin not in self.nodeList:
-                    message = 'Schema ' + str(schema) + ' - Relation ' + str(rel) + ': Node label ' + str(destin) + ' is not defined'
-                    raise ValueError(message)
+        # Log all errors or success
+        if errors:
+            for msg in errors:
+                logging.warning(msg)
+        else:
+            logging.info("Cross-schema check passed with no issues.")
 
-    def _checkSchemaStructure(self, importedSchema):
+    def _checkSchemaStructure(self, schemaName, importedSchema):
         """
         Method designed to check importedSchema against self.baseSchema
+        @ In, schemaName, string, name of the schema
         @ In, importedSchema, dict, schema parsed by tomllib from .toml file
         @ Out, None
         """
+
+        # Ensure baseSchema itself is valid
         try:
-            validate(instance=importedSchema, schema=self.baseSchema)
-            logging.info("TOML content is valid against the schema.")
-        except tomllib.TOMLDecodeError as e:
-            logging.error(f"TOML syntax error: {e}")
-        except ValidationError as e:
-            logging.error(f"TOML schema validation error: {e.message}")
+            Draft202012Validator.check_schema(self.baseSchema)
+        except SchemaError as e:
+            logging.error("Base schema is invalid: %s", e)
+            raise  # propagate; importer should fail
+
+        validator = Draft202012Validator(self.baseSchema)
+
+        # Collect ALL errors so the user can fix them in one pass
+        errors = sorted(validator.iter_errors(importedSchema), key=lambda e: e.path)
+
+        if errors:
+            # Build a readable message with locations and reasons
+            lines = [f"Schema '{schemaName}' failed validation against base schema:"]
+            for err in errors:
+                location = "/".join(str(p) for p in err.path) or "<root>"
+                lines.append(f"  - at {location}: {err.message}")
+            message = "\n".join(lines)
+
+            logging.error(message)
+            # Raise a single ValidationError carrying the aggregated message
+            raise ValidationError(message)
+
+        logging.info("Schema '%s' is valid against the base schema.", schemaName)
+
+    def removeGraphSchema(self, graphSchemaName):
+        del self.graphSchemas[graphSchemaName]
 
     def importGraphSchema(self, graphSchemaName, tomlFilename):
         """
@@ -138,8 +173,12 @@ class KG:
         @ In, tomlFilename, string, .toml file contained the new schema
         @ Out, None
         """
-        fullPath = Path(tomlFilename)
 
+        # Basic input validation
+        if not isinstance(graphSchemaName, str) or not graphSchemaName.strip():
+            raise ValueError("graphSchemaName must be a non-empty string.")
+
+        fullPath = Path(tomlFilename)
         if not fullPath.exists():
             raise FileNotFoundError(f"Schema file not found: {tomlFilename}")
 
@@ -147,48 +186,58 @@ class KG:
             configData = tomllib.load(f)
 
         # Check structure of imported graphSchema
-        self._checkSchemaStructure(configData)
+        self._checkSchemaStructure(graphSchemaName, configData)
 
-        #check data types against self.datatypes
-        self._checkSchemaDataTypes(configData)
+        # Access to nodes/relations 
+        new_nodes = configData.get("node", {})
+        new_relations = configData.get("relation", {})
+        if not isinstance(new_nodes, dict) or not isinstance(new_relations, dict):
+            raise ValueError("Schema 'node' and 'relation' sections must be dictionaries.")
 
         # Check imported graphSchema against self.graphSchemas
         # check schema name is not used before
-        if graphSchemaName in list(self.graphSchemas.keys()):
-            message = 'Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas'
-            logging.error(message)
+        if graphSchemaName in self.graphSchemas:
+            message = f"Schema '{graphSchemaName}' is already defined in the existing schemas."
             raise ValueError(message)
 
-        # check nodes are not already defined
-        for node in configData['node'].keys():
-            for schema in self.graphSchemas:
-                if node in schema['node'].keys():
-                    message = 'Node ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
-                    raise ValueError(message)
-        # check relations are not already defined
-        for relation in configData['relation'].keys():
-            for schema in self.graphSchemas:
-                if relation in schema['relation'].keys():
-                    message = 'Relation ' + str(node) + ' defined in the new schema is already defined in the exisiting schema ' + str(schema)
-                    raise ValueError(message)
 
-        self._crossSchemasCheck()
+        # Build sets of existing nodes and relations across all registered schemas
+        existing_nodes = set()
+        existing_relations = set()
+        for existing_name, existing_schema in self.graphSchemas.items():
+            nodes = existing_schema.get("node", {})
+            relations = existing_schema.get("relation", {})
+            if not isinstance(nodes, dict) or not isinstance(relations, dict):
+                raise ValueError(f"Existing schema '{existing_name}' has invalid 'node'/'relation' structure.")
+            existing_nodes.update(nodes.keys())
+            existing_relations.update(relations.keys())
 
+        # Check conflicts
+        for node in new_nodes.keys():
+            if node in existing_nodes:
+                message = (
+                    f"Node '{node}' defined in the new schema '{graphSchemaName}' "
+                    f"is already defined in an existing schema."
+                )
+                raise ValueError(message)
+
+        for relation in new_relations.keys():
+            if relation in existing_relations:
+                message = (
+                    f"Relation '{relation}' defined in the new schema '{graphSchemaName}' "
+                    f"is already defined in an existing schema."
+                )
+                raise ValueError(message)
+
+        # Cross-schema checks should include the new schema; use a copy to avoid mutation
+        prospective_schemas = dict(self.graphSchemas)
+        prospective_schemas[graphSchemaName] = configData
+        #self._crossSchemasCheck()  --> TODO this should be check when all Schemas are imported
+
+        # All checks passed; commit
         self.graphSchemas[graphSchemaName] = configData
+        logging.info(f"Schema '{graphSchemaName}' imported successfully.")
 
-    def _checkSchemaDataTypes(self, schema):
-        """
-        Method that checks that the datatypes defined in the new schema are part of the allowed data
-        types contained in self.datatypes
-        @ In, schema, dict, schema parsed by tomllib from .toml file
-        @ Out, None
-        """
-        for node in schema['node']:
-            for prop in schema['node'][node]['node_properties']:
-                if prop['type'] not in self.datatypes:
-                    message = 'Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
-                    logging.error(message)
-                    raise ValueError(message)
 
     def _schemaReturnNodeProperties(self, nodeLabel):
         """
@@ -426,9 +475,9 @@ class KG:
         if allowedType is None:
             ValueError('_returnRelationPropertyDatatype error')
 
-    #def _createIteractivePlot(self):
-    #    schemaList = list(self.graphSchemas.values())
-    #    createIteractiveFile(schemaList)
+    def _createIteractivePlot(self):
+        schemaList = list(self.graphSchemas.values())
+        createInteractiveFile(schemaList)
 
 
 def stringToDatetimeConverterFlexible(dateString, formatCode=None):
