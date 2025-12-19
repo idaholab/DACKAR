@@ -142,7 +142,7 @@ class Py2Neo:
             tx.run(query, params)
 
 
-    def find_nodes(self, label, properties=None):
+    def find_nodes(self, label, properties={}):
         """Find the node in neo4j graph database
 
         Args:
@@ -189,6 +189,7 @@ class Py2Neo:
 
     @staticmethod
     def _load_csv_nodes(tx, file_path, label, attribute):
+        query = None
         if isinstance(label, list):
             expanded_label = ":".join(label)
             query = f"""
@@ -241,7 +242,7 @@ class Py2Neo:
             """
         tx.run(query)
 
-    def query(self, query, parameters=None, db=None):
+    def query(self, query, parameters={}, db=None):
         """User provided Cypher query statements for python neo4j driver to use to query database
 
         Args:
