@@ -32,7 +32,7 @@ Install the Required Libraries with Python 3.11
 
   conda activate dackar_libs
 
-  pip install textacy spacy==3.8.11 stumpy matplotlib nltk==3.8.1 beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml openai langchain langchain_openai langchain_community langchain-core ollama langchain-ollama cytoolz
+  pip install textacy spacy==3.8.11 stumpy matplotlib nltk==3.8.1 beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml openai langchain langchain_openai langchain_community langchain-core ollama langchain-ollama langchain_neo4j
 
 .. library conflicts for spacy 3.8: coreferee
 .. fix torch to 2.8.0 for windows
