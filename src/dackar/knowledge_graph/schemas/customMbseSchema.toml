@@ -5,17 +5,35 @@ version = "1.1"
 # Node Entities
 # ====================
 
-[node.mbse_entity]
-node_description = "Represents a specific MBSE component, equipment, or system"
+[mbse_entity]
+description = "Design-time MBSE entity (system, subsystem, component, interface)."
 properties = [
-    { name = "label", type = "string", optional = false, description = "Name of the MBSE component, equipment, or system" },
-    { name = "ID", type = "string", optional = false, description = "Unique alphanumeric code associated with the MBSE component, equipment, or system" },
-    { name = "type", type = "enum", optional = true, description = "Type of MBSE entity", enum_values = ["system", "subsystem", "component", "equipment", "interface"] },
-    { name = "status", type = "enum", optional = true, description = "Operational status of the entity", enum_values = ["active", "inactive", "under_maintenance", "decommissioned"] },
-    { name = "location", type = "string", optional = true, description = "Physical or logical location of the entity within the plant or system" }
+  { name = "id", type = "string", description = "Canonical MBSE element id (unique)", required = true },
+  { name = "name", type = "string", description = "Human-readable name", required = true },
+  { name = "type", type = "string", description = "Entity type", enum = ["system","subsystem","component","interface","assembly"], required = true },
+  { name = "model_ref", type = "string", description = "Reference/URI to MBSE model element", required = false },
+  { name = "description", type = "string", description = "Long-form description", required = false },
+  { name = "version", type = "string", description = "Model version or revision", required = false },
+  { name = "created_at", type = "string", description = "ISO8601 creation timestamp", required = false },
+  { name = "updated_at", type = "string", description = "ISO8601 last update timestamp", required = false }
 ]
 
-[node.function]
+[asset]
+description = "Operational instance of a MBSE component; asset-level information where telemetry and work orders attach."
+properties = [
+  { name = "asset_id", type = "string", description = "Unique asset identifier", required = true },
+  { name = "mbse_id", type = "string", description = "MBSE entity id realized by this asset", required = false },
+  { name = "model_id", type = "string", description = "Model number", required = false },
+  { name = "serial_number", type = "string", description = "Manufacturer serial", required = false },
+  { name = "location_id", type = "string", description = "Physical location", required = false },
+  { name = "status", type = "string", description = "Operational status", enum = ["active","inactive","under_maintenance","decommissioned"], required = false },
+  { name = "commissioned_at", type = "string", description = "ISO datetime asset commissioned", required = false },
+  { name = "tags", type = "array", description = "Freeform tags", required = false },
+  { name = "created_at", type = "string", description = "ISO timestamp", required = false },
+  { name = "updated_at", type = "string", description = "ISO timestamp", required = false }
+]
+
+[function]
 node_description = "Represents a function within the component, equipment, or system describing its operational behavior or purpose"
 properties = [
     { name = "name", type = "string", optional = false, description = "Name of the function" },
@@ -24,7 +42,7 @@ properties = [
     { name = "mode", type = "enum", optional = true, description = "Mode of function execution", enum_values = ["automatic", "manual", "hybrid"] }
 ]
 
-[node.interface_entity]
+[interface_entity]
 node_description = "Represents a defined interface used for communication or integration between MBSE entities."
 properties = [
     { name = "ID", type = "string", optional = false, description = "Unique identifier for the interface" },
@@ -36,37 +54,42 @@ properties = [
 # Relationships
 # ====================
 
-[relation.functional_dependency]
+[realizes]
+description = "Asset REALIZES a MBSE entity (instance-to-design mapping)"
+from = "asset"
+to = "mbse_entity"
+properties = [
+  { name = "installed_since", type = "string", description = "ISO date since installation", required = false },
+  { name = "provenance", type = "string", description = "Source system or doc id", required = false }
+]
+
+[functional_dependency]
 relation_description = "Represents a functional relationship between two MBSE entities where one influences or enables the other."
 from_node = "mbse_entity"
 to_node = "mbse_entity"
 
-[relation.composition]
+[composition]
 relation_description = "Denotes a hierarchical or structural relationship where one MBSE entity is a constituent part of another."
 from_node = "mbse_entity"
 to_node = "mbse_entity"
 
-[relation.support]
+[support]
 relation_description = "Indicates a non-hierarchical relationship where one MBSE entity provides auxiliary functionality or services to another."
 from_node = "mbse_entity"
 to_node = "mbse_entity"
 
-[relation.implements]
-relation_description = "Represents the relationship where an MBSE entity implements a specific function."
-from_node = "mbse_entity"
-to_node = "function"
 
-[relation.performs_function]
+[performs_function]
 relation_description = "Indicates that an MBSE entity dynamically performs a function."
 from_node = "mbse_entity"
 to_node = "function"
 
-[relation.decomposes]
+[decomposes]
 relation_description = "Indicates that a function is decomposed into sub-functions."
 from_node = "function"
 to_node = "function"
 
-[relation.has_interface]
+[has_interface]
 relation_description = "Indicates that an MBSE entity uses or exposes a defined interface."
 from_node = "mbse_entity"
 to_node = "interface_entity"

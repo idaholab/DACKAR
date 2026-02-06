@@ -188,25 +188,122 @@ def main():
         st.warning("KG instance is not initialized. Please initialize KG to check loaded schemas.")
 
 
-    # --- Generic workflow data import ---
+    # --- NEW: Persist Construction Schemas (JSON) across reruns ---
+    if "construction_schemas" not in st.session_state:
+        # Each entry: {"Schema Name": str, "File": str, "Source": "uploaded", "Loaded At": str}
+        st.session_state.construction_schemas = []
+
+
+    # --- NEW: Construction Schemas (Upload & Manage) ---
+    st.header("Construction Schemas (Upload & Manage)")
+    cs_file = st.file_uploader("Upload Construction Schema (JSON)", type=["json"])
+    cs_name = st.text_input("Enter Construction Schema Name")
+
+    if st.button("Import Construction Schema"):
+        if cs_file and cs_name:
+            # Ensure local folder exists
+            os.makedirs("construction_schemas", exist_ok=True)
+            cs_path = os.path.join("construction_schemas", f"{cs_name}.json")
+
+            # Save uploaded file to deterministic path
+            with open(cs_path, "wb") as f:
+                f.write(cs_file.getbuffer())
+
+            # Track in session (overwrite if name already exists)
+            existing_idx = next((i for i, e in enumerate(st.session_state.construction_schemas)
+                                if e["Schema Name"] == cs_name), None)
+            meta_entry = {
+                "Schema Name": cs_name,
+                "File": cs_path,
+                "Source": "uploaded",
+                "Loaded At": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            if existing_idx is not None:
+                st.session_state.construction_schemas[existing_idx] = meta_entry
+                st.info(f"Construction schema '{cs_name}' updated.")
+            else:
+                st.session_state.construction_schemas.append(meta_entry)
+                st.success(f"Construction schema '{cs_name}' imported successfully!")
+        else:
+            st.warning("Please provide both a JSON file and a schema name.")
+
+        # List & Remove construction schemas
+        st.subheader("Loaded Construction Schemas")
+        if st.session_state.construction_schemas:
+            df_cs = pd.DataFrame(st.session_state.construction_schemas)
+            st.dataframe(df_cs, use_container_width=True)
+
+            st.divider()
+            st.subheader("Manage Construction Schemas")
+            for idx, entry in enumerate(st.session_state.construction_schemas):
+                cols = st.columns([3, 4, 2, 2])  # Name, File, Source, Remove
+                cols[0].write(f"**{entry['Schema Name']}**")
+                cols[1].write(entry["File"])
+                cols[2].write(entry["Source"])
+
+                if cols[3].button("Remove", key=f"remove_cs_{idx}"):
+                    # Delete file from disk (only our uploaded ones)
+                    try:
+                        file_path = entry["File"]
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                    except Exception as e:
+                        st.warning(f"Could not delete file '{entry['File']}': {e}")
+
+                    # Remove from session and refresh UI
+                    st.session_state.construction_schemas.pop(idx)
+                    st.rerun()
+        else:
+            st.info("No construction schemas loaded yet.")
+
+
+
+    # --- UPDATED: Import Data through Generic Workflow ---
     st.header("Import Data through Generic Workflow")
+
+    # Upload data file
     data_file = st.file_uploader("Upload Data File", type=["csv", "xlsx"])
-    construction_schema_file = st.file_uploader("Upload Construction Schema JSON file", type=["json"])
 
+    # Select a stored construction schema
+    available_cs_names = [e["Schema Name"] for e in st.session_state.construction_schemas]
+    selected_cs_name = st.selectbox("Select a stored Construction Schema", options=available_cs_names) if available_cs_names else None
+
+    # Optional: Preview selected construction schema JSON
+    if selected_cs_name:
+        try:
+            selected_cs_path = next(e["File"] for e in st.session_state.construction_schemas if e["Schema Name"] == selected_cs_name)
+            with open(selected_cs_path, "r") as f:
+                preview_schema = json.load(f)
+            with st.expander("Preview Selected Construction Schema"):
+                st.json(preview_schema)
+        except Exception as e:
+            st.warning(f"Could not load selected construction schema: {e}")
+
+    # Import button
     if st.button("Import Data"):
-        if kg_instance and data_file and construction_schema_file:
-            # Load the data file
-            if data_file.type == "text/csv":
-                data_df = pd.read_csv(data_file)
-            elif data_file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-                data_df = pd.read_excel(data_file)
+        if kg_instance and data_file and selected_cs_name:
+            # Load dataframe robustly based on extension
+            ext = os.path.splitext(data_file.name)[1].lower()
+            try:
+                if ext == ".csv":
+                    data_df = pd.read_csv(data_file)
+                elif ext in (".xlsx", ".xls"):
+                    data_df = pd.read_excel(data_file)
+                else:
+                    st.error(f"Unsupported file type: {ext}")
+                    st.stop()
+            except Exception as e:
+                st.error(f"Failed to read data file: {e}")
+                st.stop()
 
-            # Persist and parse the construction schema
-            construction_schema_path = f"./{construction_schema_file.name}"
-            with open(construction_schema_path, "wb") as f:
-                f.write(construction_schema_file.getbuffer())
-            with open(construction_schema_path, "r") as f:
-                construction_schema = json.load(f)
+            # Load the chosen construction schema JSON from disk
+            try:
+                selected_cs_path = next(e["File"] for e in st.session_state.construction_schemas if e["Schema Name"] == selected_cs_name)
+                with open(selected_cs_path, "r") as f:
+                    construction_schema = json.load(f)
+            except Exception as e:
+                st.error(f"Failed to load construction schema '{selected_cs_name}': {e}")
+                st.stop()
 
             # Execute workflow
             try:
@@ -215,7 +312,8 @@ def main():
             except Exception as e:
                 st.error(f"Failed to import data via genericWorkflow: {e}")
         else:
-            st.warning("Please ensure KG is initialized and both files are provided.")
+            st.warning("Please ensure KG is initialized, a data file is uploaded, and a construction schema is selected.")
+
 
 if __name__ == "__main__":
     main()

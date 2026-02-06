@@ -2,10 +2,14 @@ title = "Causality Graph Schema"
 version = "1.0"
 
 # ====================
+# NOTE: This schema will be deprecated soon 
+# ====================
+
+# ====================
 # Node 
 # ====================
 
-[node.abnormal_event]
+[abnormal_event]
 node_description = """Represents a generic abnormal event associated with a specific equipment item, capturing any unexpected, 
                       irregular, or off-nominal condition that may impact the equipment’s performance, reliability, or safety. 
                       This node serves as a placeholder for a wide range of event types—including faults, anomalies, or 
@@ -13,17 +17,43 @@ node_description = """Represents a generic abnormal event associated with a spec
                       system behavior. It enables semantic linking to related entities such as condition reports, monitoring 
                       variables, failure modes, and maintenance actions, supporting diagnostics, risk assessment, and operational 
                       decision-making."""
+properties = [
+  { name = "id", type = "string", description = "Event unique id", required = true },
+  { name = "event_type", type = "string", description = "Type (alarm|trip|anomaly|degradation)", enum = ["alarm","trip","anomaly","degradation"], required = false },
+  { name = "asset_id", type = "string", description = "Associated asset id", required = false },
+  { name = "component_id", type = "string", description = "Associated MBSE component id", required = false },
+  { name = "timestamp_start", type = "string", description = "ISO start time", required = false },
+  { name = "timestamp_end", type = "string", description = "ISO end time", required = false },
+  { name = "severity", type = "string", description = "Severity", enum = ["LOW","MEDIUM","HIGH","CRITICAL"], required = false },
+  { name = "signature_hash", type = "string", description = "Fingerprint of telemetry signature", required = false },
+  { name = "source_doc_ids", type = "array", description = "Document ids referencing this event", required = false },
+  { name = "created_at", type = "string", description = "ISO timestamp", required = false }
+]
 
 # ====================
 # Relations
 # ====================
 
-[relation.causes]
-relation_description = """Defines a directed causal relationship between two recorded events or anomaly instances, 
-                          indicating that the occurrence of one event or anomaly has contributed to, triggered, or 
-                          influenced the emergence of the other. This relation captures temporal and logical dependencies 
-                          within operational or system behavior contexts, supporting root cause analysis, fault 
-                          propagation modeling, and the construction of causal chains for diagnostics, risk assessment, 
-                          and decision support."""
-from_node = "abnormal_event"
-to_node = "abnormal_event"
+[may_cause]
+description = "Tentative causal hypothesis between two abnormal events."
+from = "abnormal_event"
+to = "abnormal_event"
+properties = [
+  { name = "confidence", type = "object", description = "Structured confidence (structural,evidence,temporal,governance)", required = false },
+  { name = "lag_min_seconds", type = "number", description = "Minimum plausible lag", required = false },
+  { name = "lag_max_seconds", type = "number", description = "Maximum plausible lag", required = false },
+  { name = "path_id", type = "string", description = "KG path identifier", required = false },
+  { name = "provenance_doc_ids", type = "array", description = "Docs supporting claim", required = false },
+  { name = "created_at", type = "string", description = "ISO timestamp", required = false }
+]
+
+[confirmed_cause]
+description = "Analyst-validated cause relation (event -> failure_mode)."
+from = "abnormal_event"
+to = "failure_mode"
+properties = [
+  { name = "confidence", type = "object", description = "Structured confidence object and overall label", required = false },
+  { name = "evidence_refs", type = "array", description = "List of doc_id:section proving the claim", required = false },
+  { name = "analyst_id", type = "string", description = "Approving analyst id", required = false },
+  { name = "created_at", type = "string", description = "ISO timestamp", required = false }
+]

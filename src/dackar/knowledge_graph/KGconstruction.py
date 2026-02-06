@@ -163,8 +163,9 @@ class KG:
 
         logging.info("Schema '%s' is valid against the base schema.", schemaName)
 
-    def removeGraphSchema(self, graphSchemaName):
-        del self.graphSchemas[graphSchemaName]
+    def removeGraphSchema(self, graphSchemaName: str) -> None:
+        if self.graphSchemas.pop(graphSchemaName, None) is None:
+            logging.warning(f"Schema '{graphSchemaName}' not found; nothing removed.")
 
     def importGraphSchema(self, graphSchemaName, tomlFilename):
         """
@@ -254,7 +255,6 @@ class KG:
 
         if propdf is None:
             message = 'Node ' + str(nodeLabel) + ' does not have any property'
-            logging.error(message)
             raise ValueError(message)
 
     def _schemaReturnRelationProperties(self, relation):
@@ -378,14 +378,21 @@ class KG:
         # Parse data (pd.dataframe) and update KG
         # Nodes
         if 'nodes' in constructionSchema:
-            dataMasked = copy.deepcopy(data)
-            for node in constructionSchema['nodes'].keys():
-                mapping = {value: key for key, value in constructionSchema['nodes'][node].items()}
-                dataRenamed = dataMasked.rename(columns=mapping)
-                self.py2neo.load_dataframe_for_nodes(df=dataRenamed, labels=node, properties=list(mapping.values()))
+            dataMasked = data.copy(deep=True)
+            for node, propMap in constructionSchema['nodes'].items():
+                # rename DF columns to property names
+                rename_map = {source_col: prop_name for prop_name, source_col in propMap.items()}
+                df_nodes = dataMasked.rename(columns=rename_map)
+                # pass property names (keys), not original columns (values)
+                self.py2neo.load_dataframe_for_nodes(
+                    df=df_nodes, labels=node, properties=list(propMap.keys())
+                )
+
 
         # Relations
         # --> TODO: check nodes exist
+        """
+        #My code prior copilot changes
         if 'relations' in constructionSchema:
             dataMasked = copy.deepcopy(data)
             for rel in constructionSchema['relations']:
@@ -410,34 +417,70 @@ class KG:
                                                          l1=sourceNodeLabel, p1=sourceNodeProp,
                                                          l2=targetNodeLabel, p2=targetNodeProp,
                                                          lr=rel,
-                                                         pr=list(constructionSchema['relations'][rel]['properties'].keys()))
+                                                         pr=list(constructionSchema['relations'][rel]['properties'].keys()))"""
+                
 
-    def _checkDataframeDatatypes(self, data, constructionSchema):
-        """
-        Method that checks that data elements in data match format specified in the graph schemas
-        @ In, data, pd.dataframe, pandas dataframe containing data to be imported in the knowledge graph
-        @ In, constructionSchema, dict, dataframe containing relation properties
-        @ Out, None
-        """
-        # Check nodes data types
-        if 'nodes' in constructionSchema:
-            for node in constructionSchema['nodes']:
-                for prop in constructionSchema['nodes'][node]:
-                    allowedDatatype = self._returnNodePropertyDatatype(node,prop)
-                    dfDatatype = data[constructionSchema['nodes'][node][prop]]
-                    if allowedDatatype != infer_dtype(dfDatatype):
-                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(dfDatatype.map(type))) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
-                        raise ValueError(message)
-
-        # Check relations data types
         if 'relations' in constructionSchema:
-            for rel in constructionSchema['relations']:
-                for prop in constructionSchema['relations'][rel]['properties']:
-                    allowedDatatype = self._returnRelationPropertyDatatype(rel,prop)
-                    dfDatatype = data[constructionSchema['relations'][rel]['properties'][prop]]
-                    if allowedDatatype != infer_dtype(dfDatatype):
-                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(dfDatatype) + ') does not match datatype defined in schema (' + str(dfDatatype) + ')'
-                        raise ValueError(message)
+            dataMasked = data.copy(deep=True)
+            for rel_type, rel_spec in constructionSchema['relations'].items():
+                src_label, src_prop = next(iter(rel_spec['source'])).split('.')
+                tgt_label, tgt_prop = next(iter(rel_spec['target'])).split('.')
+
+                rename_map = {
+                    next(iter(rel_spec['source'].values())): src_prop,
+                    next(iter(rel_spec['target'].values())): tgt_prop,
+                }
+                for prop_name, source_col in rel_spec['properties'].items():
+                    rename_map[source_col] = prop_name
+
+                df_edges = dataMasked.rename(columns=rename_map)
+                df_edges[src_label] = src_label
+                df_edges[tgt_label] = tgt_label
+                df_edges[rel_type] = rel_type
+
+                self.py2neo.load_dataframe_for_relations(
+                    df=df_edges,
+                    l1=src_label, p1=src_prop,
+                    l2=tgt_label, p2=tgt_prop,
+                    lr=rel_type,
+                    pr=list(rel_spec['properties'].keys())
+                )
+
+    def _checkDataframeDatatypes(self, data: pd.DataFrame, constructionSchema: dict) -> None:
+        def _ok(allowed: str, series: pd.Series) -> bool:
+            inferred = infer_dtype(series)
+            CANON = {
+                'string': {'string', 'unicode'},
+                'integer': {'integer'},
+                'floating': {'floating', 'mixed-integer-float'},
+                'boolean': {'boolean'},
+                'datetime': {'datetime', 'datetime64'},
+                'enum': {'string'},
+            }
+            return inferred in CANON.get(allowed, set())
+
+        if 'nodes' in constructionSchema:
+            for node, props in constructionSchema['nodes'].items():
+                for prop_name, source_col in props.items():
+                    allowed = self._returnNodePropertyDatatype(node, prop_name)
+                    series = data[source_col]
+                    if allowed is None or not _ok(allowed, series):
+                        raise ValueError(
+                            f"Node '{node}' property '{prop_name}': inferred dtype '{infer_dtype(series)}' "
+                            f"does not match schema dtype '{allowed}'."
+                        )
+
+        if 'relations' in constructionSchema:
+            for rel_type, rel_spec in constructionSchema['relations'].items():
+                for prop_name, source_col in rel_spec['properties'].items():
+                    allowed = self._returnRelationPropertyDatatype(rel_type, prop_name)
+                    series = data[source_col]
+                    if allowed is None or not _ok(allowed, series):
+                        raise ValueError(
+                            f"Relation '{rel_type}' property '{prop_name}': inferred dtype '{infer_dtype(series)}' "
+                            f"does not match schema dtype '{allowed}'."
+                        )
+
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
         """
@@ -447,15 +490,15 @@ class KG:
         @ Out, allowedType, string, allowed type of the specified node property
         """
         allowedType = None
-        for schema in self.graphSchemas:
-            for node in self.graphSchemas[schema]['node']:
-                if node==nodeID:# and propID in self.graphSchemas[schema][node]:
-                    for prop in self.graphSchemas[schema]['node'][node]['node_properties']:
-                        if prop['name']==propID:
-                            allowedType = prop['type']
-                            return allowedType
-        if allowedType is None:
-            ValueError('_returnNodePropertyDatatype error retrieving prop')
+
+        for schema_name, schema in self.graphSchemas.items():
+            for node, node_def in schema.get('node', {}).items():
+                if node == nodeID:
+                    for prop in node_def.get('node_properties', []):
+                        if prop.get('name') == propID:
+                            return prop.get('type')
+        raise ValueError(f"_returnNodePropertyDatatype: type for node '{nodeID}' property '{propID}' not found.")
+
 
     def _returnRelationPropertyDatatype(self, relID, propID):
         """
@@ -464,16 +507,15 @@ class KG:
         @ In, propID, string, specific node property
         @ Out, allowedType, string, allowed type of the specified relation property
         """
-        allowedType = None
-        for schema in self.graphSchemas:
-            for rel in self.graphSchemas[schema]['relation']:
-                if rel==relID:
-                    for prop in self.graphSchemas[schema]['relation'][rel]['relation_properties']:
-                        if prop['name']==propID:
-                            allowedType = prop['type']
-                            return allowedType
-        if allowedType is None:
-            ValueError('_returnRelationPropertyDatatype error')
+
+        for schema_name, schema in self.graphSchemas.items():
+            for rel, rel_def in schema.get('relation', {}).items():
+                if rel == relID:
+                    for prop in rel_def.get('relation_properties', []):
+                        if prop.get('name') == propID:
+                            return prop.get('type')
+        raise ValueError(f"_returnRelationPropertyDatatype: type for relation '{relID}' property '{propID}' not found.")
+
 
     def _createIteractivePlot(self):
         schemaList = list(self.graphSchemas.values())
@@ -494,7 +536,6 @@ def stringToDatetimeConverterFlexible(dateString, formatCode=None):
 
     if formatCode is not None:
         formats.append(formatCode)
-
         for fmt in formats:
             try:
                 datetimeObject = datetime.strptime(dateString, fmt)

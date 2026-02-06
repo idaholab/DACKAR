@@ -5,30 +5,35 @@ version = "1.0"
 # Node Entities
 # ====================
 
-[node.anomaly]
+[anomaly]
 node_description =   """Represents a specific occurrence of an anomaly (such as threshold 
                         violations, signal deviations, or unexpected patterns) associated 
                         with a particular component, equipment, or system that have been 
                         detected by monitoring sensors coupled with an anomaly detection 
                         algorithm."""
 
-node_properties = [
-    { name = "t_detection", type = "datetime", optional = false, description = 'The timestamp marking the moment the system first identified the presence of an anomaly.' },
-    { name = "t_final",     type = "datetime", optional = true,  description = 'The timestamp indicating when the system no longer identified the anomaly as present.' },
+properties = [
+  { name = "anomaly_id", type = "string", description = "Anomaly id", required = true },
+  { name = "detector_id", type = "string", description = "Detector id", required = false },
+  { name = "score", type = "number", description = "Anomaly score", required = false },
+  { name = "feature_vector_hash", type = "string", description = "Feature hash", required = false },
+  { name = "detection_method", type = "string", description = "Method used", required = false },
+  { name = "related_event_id", type = "string", description = "Linked abnormal_event", required = false },
+  { name = "timestamp", type = "string", description = "ISO timestamp", required = false }
 ]
 
-[node.diagnostic_assessment]
+[diagnostic_assessment]
 node_description = """Represents an evaluation of the current health or operational state of a system, component, or equipment, typically based on observed data, anomalies, and expert or algorithmic reasoning."""
 
-node_properties = [
-    { name = "ID", type = "string", optional = false, description = "Unique identifier for the diagnostic assessment" },
-    { name = "timestamp", type = "datetime", optional = false, description = "Time when the diagnostic assessment was performed" },
-    { name = "method", type = "string", optional = true, description = "Method or algorithm used for the diagnostic assessment" },
-    { name = "result", type = "string", optional = false, description = "Summary of the diagnostic conclusion (e.g., fault detected, normal operation)" },
-    { name = "confidence", type = "floating", optional = true, description = "Confidence level or probability associated with the diagnostic result" }
+properties = [
+  { name = "diagnostic_id", type = "string", description = "Diagnostic id", required = true },
+  { name = "model_version", type = "string", description = "Model version", required = false },
+  { name = "input_features", type = "array", description = "Features used", required = false },
+  { name = "confidence_intervals", type = "string", description = "Confidence info", required = false },
+  { name = "explainability_snippet", type = "string", description = "Why this diagnosis", required = false }
 ]
 
-[node.prognostic_assessment]
+[prognostic_assessment]
 node_description = """Represents a prediction about the future health, performance, or failure likelihood of a system or component, based on current data, degradation models, or predictive analytics."""
 
 node_properties = [
@@ -44,7 +49,7 @@ node_properties = [
 # Relationships
 # ====================
 
-[relation.detected_by]
+[detected_by]
 relation_description =   """Defines a semantic relationship indicating that a detected anomaly 
                             (such as a deviation from expected operational behavior) was identified 
                             through the observation or analysis of a specific monitoring variable. 
@@ -53,23 +58,17 @@ relation_description =   """Defines a semantic relationship indicating that a de
 from_node = "anomaly"
 to_node = "monitored_variable"
 
-
-[relation.diagnoses]
-relation_description = """Indicates that a diagnostic assessment is associated with a specific anomaly or monitored variable."""
+[diagnosed_from]
+relation_description = """Indicates that a diagnostic assessment is associated with a specific anomaly"""
 from_node = "diagnostic_assessment"
 to_node = "anomaly"
 
-[relation.prognosticates]
-relation_description = """Indicates that a prognostic assessment is associated with a specific MBSE entity or monitored variable, predicting its future state."""
-from_node = "prognostic_assessment"
-to_node = "mbse_entity"
-
-[relation.based_on_diagnostic]
-relation_description = """Indicates that a diagnostic or prognostic assessment is based on data from a monitored variable."""
+[diagnoses]
+relation_description = """Indicates the candidate failure mode of the diagnostic assessment"""
 from_node = "diagnostic_assessment"
-to_node = "monitored_variable"
+to_node = "fmea_failure_mode"
 
-[relation.based_on_prognostic]
-relation_description = """Indicates that a prognostic assessment is based on data from a monitored variable."""
+[prognosticated_from]
+relation_description = """Indicates that a prognostic assessment is associated with with a specific anomaly, predicting its future state."""
 from_node = "prognostic_assessment"
-to_node = "monitored_variable"
+to_node = "anomaly"

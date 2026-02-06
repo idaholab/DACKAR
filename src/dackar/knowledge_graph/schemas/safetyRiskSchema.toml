@@ -5,29 +5,32 @@ version = "1.0"
 # Node Entities
 # ====================
 
-[node.basic_event]
+[basic_event]
 node_description = "A fundamental event in a fault tree representing a component failure or human error with an associated probability."
 properties = [
-  { name = "description", type = "string", optional = false, description = "Narrative of the event" },
-  { name = "value", type = "floating", optional = false, description = "Probability or frequency of occurrence" },
-  { name = "unit",  type = "string", optional = false, description = "Unit of the probability or frequency (e.g., per year)" }
+  { name = "basic_event_id", type = "string", description = "Basic event id", required = true },
+  { name = "mapped_fm_id", type = "string", description = "Mapped failure mode id", required = false },
+  { name = "frequency_per_year", type = "number", description = "Estimated frequency per year", required = false },
+  { name = "uncertainty", type = "string", description = "Uncertainty interval or note", required = false },
+  { name = "source_model", type = "string", description = "PRA model or version", required = false }
 ]
 
-[node.fault_tree]
+[fault_tree]
 node_description = "A logical model representing how basic events combine to cause a top-level system failure."
 properties = [
-  { name = "top event", type = "string", optional = false, description = "The undesired event being analyzed" },
-  { name = "gate type", type = "string", optional = false, description = "Logical gate type (e.g., AND, OR)" }
+  { name = "fault_tree_id", type = "string", description = "ID", required = true },
+  { name = "serialized_tree", type = "string", description = "JSON or DOT text", required = false },
+  { name = "model_version", type = "string", description = "Model version", required = false }
 ]
 
-[node.event_tree]
+[event_tree]
 node_description = "A forward logic model used in PRA to evaluate possible outcomes following an initiating event."
 properties = [
   { name = "initiating event", type = "string", optional = false, description = "Triggering event for the sequence" },
   { name = "sequence outcome", type = "string", optional = false, description = "End state or consequence of the sequence" }
 ]
 
-[node.initiating_event]
+[initiating_event]
 node_description = "An event that initiates a sequence of events potentially leading to an accident or system failure."
 properties = [
   { name = "event description", type = "string", optional = false, description = "Narrative of the initiating event" },
@@ -39,32 +42,27 @@ properties = [
 # Relationships
 # ====================
 
-[relation.subject_to]
-relation_description = "Links an MBSE entity (e.g., component or function) to its associated failure mode."
-from_node = "mbse_entity"
-to_node = "failure_mode"
-
-[relation.represented_in_PRA_by]
+[represented_in_PRA_by]
 relation_description = "Maps a failure mode to a basic event used in PRA quantification."
-from_node = "failure_mode"
+from_node = "fmea_failure_mode"
 to_node = "basic_event"
 
-[relation.modeled_in_PRA_by]
+[modeled_in_PRA_by]
 relation_description = "Connects an initiating event to its corresponding event tree model."
 from_node = "initiating_event"
 to_node = "event_tree"
 
-[relation.sequence_expanded_by]
+[sequence_expanded_by]
 relation_description = "Links an event tree to another event tree that further expands a sequence branch."
 from_node = "event_tree"
 to_node = "event_tree"
 
-[relation.dictate_branching_in]
+[dictate_branching_in]
 relation_description = "Indicates that an initiating event determines the branching logic in a fault tree."
 from_node = "initiating_event"
 to_node = "fault_tree"
 
-[relation.called_in_PRA_in]
+[called_in_PRA_in]
 relation_description = "Shows that a basic event is used within a fault tree structure."
 from_node = "basic_event"
 to_node = "fault_tree"

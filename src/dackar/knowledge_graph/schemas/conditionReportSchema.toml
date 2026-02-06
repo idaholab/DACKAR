@@ -5,19 +5,25 @@ version = "1.0"
 # Node 
 # ====================
 
-[node.condition_report]
+[condition_report]
 node_description = """Represents a structured report documenting an observed abnormal event or condition within 
                       a plant or operational environment. This entity captures descriptive information provided 
                       by plant staff, including the nature, context, and potential implications of the anomaly."""
 
-node_properties = [
-    { name = "date", type = "string", optional = false, description = "The timestamp indicating when the condition report was created or issued by the system or analyst" },
-    { name = "ID", type = "string", optional = false, description = "Unique identification number of the condition report" },
-    { name = "conjecture", type = "boolean", optional = true, description = "Indicates if a conjecture is being presented in the text" },
-    { name = "report_author", type = "string", optional = true, description = "Name or identifier of the person who authored the report" },
-    { name = "location", type = "string", optional = true, description = "Physical or logical location where the condition was observed" },
-    { name = "severity_level", type = "enum", optional = true, description = "Severity classification of the condition", enum_values = ["low", "moderate", "high", "critical"] },
-    { name = "status", type = "enum", optional = true, description = "Current status of the condition report", enum_values = ["open", "closed", "under_review"] }
+properties = [
+  { name = "cr_id", type = "string", description = "Unique condition report id", required = true },
+  { name = "asset_ids", type = "array", description = "Affected assets", required = false },
+  { name = "component_ids", type = "array", description = "Referenced MBSE components", required = false },
+  { name = "reported_at", type = "string", description = "ISO timestamp", required = false },
+  { name = "reported_by", type = "string", description = "Reporter id", required = false },
+  { name = "channel", type = "string", description = "Reporting channel", required = false },
+  { name = "severity", type = "string", description = "Severity", enum = ["low","medium","high","critical"], required = false },
+  { name = "text", type = "string", description = "Raw or summary CR text", required = false },
+  { name = "summary", type = "string", description = "NLP-extracted summary", required = false },
+  { name = "attachment_refs", type = "array", description = "Images or logs", required = false },
+  { name = "related_event_ids", type = "array", description = "Linked abnormal events", required = false },
+  { name = "status_history", type = "array", description = "Status changes", required = false },
+  { name = "created_at", type = "string", description = "ISO timestamp", required = false }
 ]
 
 
@@ -26,7 +32,7 @@ node_properties = [
 # Relations
 # ====================
 
-[relation.refers]
+[refers]
 relation_description = """Indicates that a generalized nuclear-relevant entity such as materials, chemical elements 
                           and compounds, chemical reactions, failure modes, degradation mechanisms, and components 
                           across electrical, hydraulic, and mechanical systems has been explicitly referenced within 
@@ -34,29 +40,15 @@ relation_description = """Indicates that a generalized nuclear-relevant entity s
 from_node = "condition_report"
 to_node= "nuclear_entity"
 
-[relation.mentions]
+[mentions]
 relation_description = """Indicates that a specific system, equipment, or component contained in the provided MBSE model 
                           has been explicitly referenced within a condition report, establishing a contextual link between 
                           the reported abnormal event or condition and the physical or functional asset involved."""
 from_node = "condition_report"
 to_node = "mbse_entity"
 
-[relation.temporal_reference]
-relation_description = """Indicates that the textual report mentions an explicit or implicit reference to a point or span in time."""
-from_node = "condition_report"
-to_node = "temporal_entity"
 
-[relation.caused_by]
-relation_description = """Indicates that the abnormal condition described in the report is attributed to a specific failure mode, degradation mechanism, or initiating event."""
-from_node = "condition_report"
-to_node = "causal_entity"
-
-[relation.related_to_event]
-relation_description = """Links the condition report to a broader operational or historical event that provides context or background."""
-from_node = "condition_report"
-to_node = "event_entity"
-
-[relation.linked_to_report]
+[linked_to_report]
 relation_description = """Connects this condition report to another report that is related by similarity, follow-up, or shared context."""
 from_node = "condition_report"
 to_node = "condition_report"

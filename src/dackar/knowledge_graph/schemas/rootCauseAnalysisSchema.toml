@@ -6,36 +6,44 @@ version = "1.1"
 # ====================
 
 
-[node.rca_case]
+[rca_case]
 node_description = """Represents a structured investigation into the root causes of an observed abnormal condition, failure, or event. 
                       It includes hypotheses, evidence, conclusions, and recommended actions."""
 
-node_properties = [
-    { name = "ID", type = "string", optional = false, description = "Unique identifier for the RCA case" },
-    { name = "start_date", type = "string", optional = false, description = "Date the RCA investigation began" },
-    { name = "end_date", type = "string", optional = true, description = "Date the RCA investigation concluded" },
-    { name = "status", type = "enum", optional = false, description = "Current status of the RCA case", enum_values = ["open", "in_progress", "closed"] },
-    { name = "summary", type = "string", optional = true, description = "Brief summary of the RCA findings" }
+properties = [
+  { name = "rca_id", type = "string", description = "RCA id", required = true },
+  { name = "event_id", type = "string", description = "Linked abnormal_event id", required = true },
+  { name = "summary", type = "string", description = "Summary text", required = false },
+  { name = "kg_paths", type = "array", description = "KG path ids used", required = false },
+  { name = "primary_hypothesis", type = "string", description = "Primary hypothesis", required = false },
+  { name = "alternatives", type = "array", description = "Alternative hypotheses", required = false },
+  { name = "evidence_refs", type = "array", description = "Supporting doc refs", required = false },
+  { name = "analyst_ids", type = "array", description = "Analyst ids", required = false },
+  { name = "signoffs", type = "array", description = "Signoff records", required = false },
+  { name = "created_at", type = "string", description = "ISO timestamp", required = false }
 ]
 
-[node.causal_factor]
+[causal_factor]
 node_description = """Represents a contributing factor identified during the RCA process, which may be technical, human, organizational, or environmental."""
 
-node_properties = [
-    { name = "ID", type = "string", optional = false, description = "Unique identifier for the causal factor" },
-    { name = "type", type = "enum", optional = false, description = "Type of causal factor", enum_values = ["technical", "human", "organizational", "environmental"] },
-    { name = "description", type = "string", optional = false, description = "Detailed explanation of the factor" },
-    { name = "evidence", type = "string", optional = true, description = "Supporting evidence or observations" }
+properties = [
+  { name = "factor_id", type = "string", description = "Factor id", required = true },
+  { name = "description", type = "string", description = "Narrative", required = false },
+  { name = "confidence", type = "object", description = "Structured confidence", required = false },
+  { name = "evidence_refs", type = "array", description = "doc_id:section list", required = false }
 ]
 
-[node.corrective_action]
+[corrective_action]
 node_description = """Represents a proposed or implemented action intended to eliminate or mitigate the root cause or contributing factors."""
 
-node_properties = [
-    { name = "ID", type = "string", optional = false, description = "Unique identifier for the corrective action" },
-    { name = "description", type = "string", optional = false, description = "Detailed description of the action" },
-    { name = "status", type = "enum", optional = true, description = "Implementation status", enum_values = ["planned", "in_progress", "completed", "cancelled"] },
-    { name = "target_date", type = "string", optional = true, description = "Date by which the action is expected to be completed" }
+properties = [
+  { name = "action_id", type = "string", description = "Action id", required = true },
+  { name = "description", type = "string", description = "Action description", required = false },
+  { name = "owner", type = "string", description = "Owner", required = false },
+  { name = "impact_estimate", type = "string", description = "Impact (HIGH/MEDIUM/LOW)", enum = ["HIGH","MEDIUM","LOW"], required = false },
+  { name = "effort_estimate", type = "string", description = "Effort estimate", required = false },
+  { name = "followup_metrics", type = "array", description = "Metrics to monitor", required = false },
+  { name = "implementation_status", type = "string", description = "Status", enum = ["planned","in_progress","done"], required = false }
 ]
 
 
@@ -44,27 +52,27 @@ node_properties = [
 # ====================
 
 
-[relation.investigates]
+[investigates]
 relation_description = """Indicates that the RCA case is investigating a specific condition report or event."""
 from_node = "rca_case"
 to_node = "condition_report"
 
-[relation.identifies_causal_factor]
+[identifies_causal_factor]
 relation_description = """Indicates that the RCA case has identified a specific causal factor."""
 from_node = "rca_case"
 to_node = "causal_factor"
 
-[relation.recommends_action]
+[recommends_action]
 relation_description = """Indicates that the RCA case recommends a specific corrective action."""
 from_node = "rca_case"
 to_node = "corrective_action"
 
-[relation.addresses_causal_factor]
+[addresses_causal_factor]
 relation_description = """Indicates that a corrective action is intended to mitigate or eliminate a specific causal factor."""
 from_node = "corrective_action"
 to_node = "causal_factor"
 
-[relation.related_work_order]
+[related_work_order]
 relation_description = """Links a corrective action to a work order that implements it."""
 from_node = "corrective_action"
 to_node = "work_order"
