@@ -164,3 +164,48 @@ jobs:
           cd tests
           pytest
 
+  Test-DACKAR-Macos-py312:
+    runs-on: macos-latest
+    steps:
+      - name: Setup Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniconda-version: "latest"
+          channels: conda-forge, defaults
+          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
+          auto-update-conda: true
+          auto-activate-base: true
+
+      - name: Job Information
+        run: |
+          echo " The job was automatically triggered by a ${{ github.event_name }} event."
+          echo " This job is now running on a ${{ runner.os }} server"
+          echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+
+      - name: Fetch and Branch
+        uses: actions/checkout@v3
+
+      - name: Install DACKAR Required Libraries
+        run: |
+          pwd
+          conda create -n dackar_libs_new python=3.11
+          conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
+          python -m ensurepip --upgrade
+          python -m pip install --upgrade setuptools
+          pip install textacy spacy==3.8.11 stumpy nltk==3.8.1 matplotlib beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] scikit-learn pyspellchecker pandas wordcloud jsonschema toml langchain_neo4j
+          pip install neo4j jupyterlab
+          pip install pytest
+
+      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
+      - name: Download trained models
+        run: |
+          conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
+          python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
+          python -m spacy download en_core_web_lg
+          quantulum3-training -s
+
+      - name: Test
+        run: |
+          cd tests
+          conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
+          pytest
