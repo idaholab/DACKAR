@@ -1,0 +1,347 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "rca_card.v3_1.schema.json",
+  "title": "RCACard",
+  "description": "Final synthesized RCA card produced from structured reasoning artifacts, evidence retrieval, and constrained LLM synthesis.",
+  "type": "object",
+  "required": [
+    "rca_id",
+    "event_id",
+    "generated_at",
+    "llm_model",
+    "validation_status",
+    "primary_hypothesis",
+    "evidence",
+    "recommended_actions",
+    "provenance"
+  ],
+  "properties": {
+    "rca_id": {
+      "type": "string",
+      "description": "Unique RCA card identifier."
+    },
+    "event_id": {
+      "type": "string",
+      "description": "Target abnormal event identifier."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the RCA card was generated."
+    },
+    "llm_model": {
+      "type": "string",
+      "description": "LLM model used for synthesis."
+    },
+    "input_artifacts": {
+      "type": "object",
+      "description": "References to key input artifacts used during synthesis.",
+      "properties": {
+        "event_id": {
+          "type": "string"
+        },
+        "bundle_id": {
+          "type": "string"
+        },
+        "candidates_ref": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "validation_status": {
+      "type": "object",
+      "required": [
+        "schema_valid",
+        "all_claims_cited",
+        "passed_minimum_evidence_gate",
+        "validation_errors",
+        "retry_count",
+        "fallback_used"
+      ],
+      "properties": {
+        "schema_valid": {
+          "type": "boolean"
+        },
+        "all_claims_cited": {
+          "type": "boolean"
+        },
+        "passed_minimum_evidence_gate": {
+          "type": "boolean"
+        },
+        "validation_errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fallback_used": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "primary_hypothesis": {
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "cause_label",
+        "hypothesis_type",
+        "narrative",
+        "composite_score",
+        "confidence_label",
+        "citations"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string"
+        },
+        "cause_label": {
+          "type": "string"
+        },
+        "hypothesis_type": {
+          "type": "string",
+          "description": "Hypothesis type copied or derived from the selected causality candidate."
+        },
+        "fm_id": {
+          "type": "string"
+        },
+        "narrative": {
+          "type": "string",
+          "description": "Human-readable explanation of the selected primary hypothesis."
+        },
+        "composite_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence_label": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "speculative"
+          ]
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claim_summary",
+              "source_type",
+              "source_id",
+              "excerpt"
+            ],
+            "properties": {
+              "claim_summary": {
+                "type": "string"
+              },
+              "source_type": {
+                "type": "string",
+                "enum": [
+                  "kg_path",
+                  "evidence_snippet",
+                  "telemetry_anomaly",
+                  "fmea_record",
+                  "pm_check",
+                  "operational_context"
+                ]
+              },
+              "source_id": {
+                "type": "string"
+              },
+              "excerpt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "alternatives": {
+      "type": "array",
+      "description": "Alternative non-primary hypotheses considered during synthesis.",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "cause_label",
+          "hypothesis_type",
+          "composite_score",
+          "confidence_label",
+          "reason_not_primary"
+        ],
+        "properties": {
+          "candidate_id": {
+            "type": "string"
+          },
+          "cause_label": {
+            "type": "string"
+          },
+          "hypothesis_type": {
+            "type": "string"
+          },
+          "composite_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "confidence_label": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "speculative"
+            ]
+          },
+          "reason_not_primary": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Evidence records included in the RCA card for traceability.",
+      "items": {
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "source_type",
+          "source_id",
+          "summary",
+          "excerpt"
+        ],
+        "properties": {
+          "evidence_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "kg_path",
+              "evidence_snippet",
+              "telemetry_anomaly",
+              "fmea_record",
+              "pm_check",
+              "operational_context"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "doc_id": {
+            "type": "string"
+          },
+          "authority_level": {
+            "type": "string",
+            "enum": [
+              "mandatory",
+              "guidance",
+              "informational",
+              "unknown"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "description": "Recommended next actions tied to the RCA output.",
+      "items": {
+        "type": "object",
+        "required": [
+          "action_id",
+          "action_type",
+          "description",
+          "priority"
+        ],
+        "properties": {
+          "action_id": {
+            "type": "string"
+          },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "immediate_corrective",
+              "long_term_corrective",
+              "preventive",
+              "monitoring",
+              "procedure_update",
+              "engineering_evaluation"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "target_component_id": {
+            "type": "string"
+          },
+          "linked_candidate_id": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "pipeline_version",
+        "generated_by"
+      ],
+      "properties": {
+        "source_bundle_id": {
+          "type": "string"
+        },
+        "pipeline_version": {
+          "type": "string"
+        },
+        "generated_by": {
+          "type": "string"
+        },
+        "card_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

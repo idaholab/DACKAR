@@ -1,0 +1,315 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "causality_candidates.v3_1.schema.json",
+  "title": "CausalityCandidates",
+  "description": "Ranked causal hypotheses for a target event with TSKR-aware temporal evidence.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "generated_at",
+    "scoring_config",
+    "candidates"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string"
+    },
+    "subgraph_id": {
+      "type": ["string", "null"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+     "scoring_config": {
+       "type": "object",
+       "properties": {
+         "weights": {
+           "type": "object",
+           "properties": {
+             "structural": {
+               "type": "number",
+               "minimum": 0,
+               "maximum": 1
+             },
+             "temporal": {
+               "type": "number",
+               "minimum": 0,
+               "maximum": 1
+             },
+            "telemetry": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+             "evidence": {
+               "type": "number",
+               "minimum": 0,
+               "maximum": 1
+             },
+             "governance": {
+               "type": "number",
+               "minimum": 0,
+               "maximum": 1
+             }
+           },
+          "required": ["structural", "temporal", "telemetry", "evidence", "governance"],
+           "additionalProperties": false
+        },
+        "tskr_enabled": { "type": "boolean" },
+        "minimum_evidence_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minimum_composite_threshold": { "type": "number", "minimum": 0, "maximum": 1 }
+       },
+       "required": ["weights"],
+       "additionalProperties": true
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "hypothesis_type",
+          "cause_node_id",
+          "cause_label",
+          "target_event_id",
+          "kg_path",
+          "scores",
+          "composite_score",
+          "meets_evidence_threshold"
+        ],
+        "properties": {
+          "candidate_id": {
+            "type": "string"
+          },
+          "hypothesis_type": {
+            "type": "string",
+            "enum": [
+              "failure_mode",
+              "historical_event",
+              "component_fault",
+              "procedure_deviation",
+              "maintenance_factor",
+              "external_factor",
+              "unknown"
+            ]
+          },
+          "cause_node_id": {
+            "type": "string"
+          },
+          "cause_label": {
+            "type": "string"
+          },
+          "target_event_id": {
+            "type": "string"
+          },
+          "kg_path": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "node_id",
+                "node_type"
+              ],
+              "properties": {
+                "node_id": {
+                  "type": "string"
+                },
+                "node_type": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "kg_edges": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "scores": {
+            "type": "object",
+            "properties": {
+              "structural": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "temporal": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "telemetry": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "evidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "governance": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "tskr_pattern_match": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "temporal_precedence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "latency_consistency": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "additionalProperties": true,
+            "required": ["structural", "temporal", "telemetry", "evidence", "governance"]
+          },
+          "score_rationale": {
+            "type": "object",
+            "properties": {
+              "structural": {
+                "type": "string"
+              },
+              "temporal": {
+                "type": "string"
+              },
+              "telemetry": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "string"
+              },
+              "governance": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "composite_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "confidence_label": {
+            "type": "string",
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW",
+              "SPECULATIVE"
+            ]
+          },
+          "supporting_evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "temporal_evidence": {
+            "type": "object",
+            "properties": {
+              "tskr_rule_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "matching_signal_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "window_start": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "window_end": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "relation": {
+                "type": "string",
+                "enum": ["simultaneous", "precedes", "follows", "unordered", "unknown"]
+              },
+              "operator_family": {
+                "type": ["string", "null"],
+                "enum": [null, "interval_interval", "interval_point", "point_point"]
+              },
+              "mean_lag_hours": {
+                "type": ["number", "null"]
+              },
+              "support": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": 1
+              },
+              "pattern_id": {
+                "type": ["string", "null"]
+              }
+            },
+            "additionalProperties": true
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "meets_evidence_threshold": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "temporal_relation": {
+            "type": ["string", "null"]
+          },
+          "telemetry_evidence": {
+            "type": "object",
+            "properties": {
+              "signal_count": { "type": "integer", "minimum": 0 },
+              "matching_signal_ids": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "anomaly_window": {
+                "type": "object"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "code_version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

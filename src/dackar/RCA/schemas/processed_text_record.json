@@ -1,0 +1,248 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProcessedTextRecord",
+  "description": "Output of TLP/NLP processing for a single document chunk. Unit of storage in Chroma. One record per chunk per document.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_id", "doc_id", "doc_type", "chunk_index",
+    "embedding_text", "metadata", "provenance"
+  ],
+
+  "properties": {
+
+    "record_id": {
+      "type": "string",
+      "description": "Stable unique identifier for this chunk record. Format: {doc_id}::{chunk_index}."
+    },
+
+    "doc_id":     { "type": "string", "description": "Parent document identifier." },
+    "doc_type":   { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OTHER"] },
+    "chunk_index":{ "type": "integer", "description": "Zero-based chunk position within the document." },
+
+    "embedding_text": {
+      "type": "string",
+      "description": "The string passed to the embedding model. This is a domain-normalized, NLP-condensed summary of the chunk — NOT the raw text. Constructed from: extracted entities + causal statements + normalized failure mode labels + key measurements. Optimized for semantic retrieval against RCA queries."
+    },
+
+    "raw_text_excerpt": {
+      "type": "string",
+      "description": "Short verbatim excerpt from the source chunk (max 500 chars) for human grounding during review. Not embedded."
+    },
+
+    "raw_text_ref": {
+      "type": "string",
+      "description": "Pointer to raw source storage (file path, S3 URI, or document store ID). Raw text is not stored in Chroma."
+    },
+
+    "section_path": {
+      "type": "string",
+      "description": "Hierarchical section path within the document (e.g., '3.2.1 Corrective Actions'). Enables traceback to source section."
+    },
+
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Typed Chroma metadata fields. All fields here are available as hard pre-filters before semantic ranking.",
+      "required": ["asset_ids", "doc_type", "authority_level", "extraction_quality"],
+      "properties": {
+        "asset_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Canonical asset IDs mentioned in this chunk. Used for hard asset-scoping filter in evidence retrieval."
+        },
+        "component_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Canonical component IDs from MBSE model identified in this chunk."
+        },
+        "fm_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Failure mode IDs (from FMEA/KG) resolved from extracted failure mode keywords."
+        },
+        "system": { "type": "string" },
+        "location": { "type": "string" },
+        "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OTHER"] },
+        "authority_level": {
+          "type": "string",
+          "enum": ["mandatory", "guidance", "informational", "unknown"],
+          "description": "Inherited from parent document. Used to weight evidence in scoring."
+        },
+        "doc_version":    { "type": "string" },
+        "created_at":     { "type": "string", "format": "date-time" },
+        "effective_date": { "type": "string", "format": "date-time" },
+        "status":         { "type": "string", "enum": ["reported","assigned","in_progress","completed","closed","unknown"] },
+        "extraction_quality": {
+          "type": "number",
+          "minimum": 0.0, "maximum": 1.0,
+          "description": "NLP/OCR confidence for this chunk. Chunks below config.min_extraction_quality are excluded from retrieval."
+        },
+        "extraction_flags": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["ocr_used","low_confidence_parse","table_detected","image_only","truncated"] }
+        },
+        "pii_masked": { "type": "boolean", "description": "Must be true before embedding or LLM use." }
+      }
+    },
+
+    "extracted_entities": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Structured NLP entity extraction output. Feeds KG node creation and embedding_text construction.",
+      "properties": {
+
+        "assets": {
+          "type": "array",
+          "description": "Plant assets identified in the chunk.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["surface_form", "canonical_id"],
+            "properties": {
+              "surface_form":   { "type": "string", "description": "Text as it appears in the source (e.g., 'pump 101', 'P-101A')." },
+              "canonical_id":   { "type": "string", "description": "Resolved canonical asset_id after entity resolution." },
+              "resolved":       { "type": "boolean" },
+              "confidence":     { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+            }
+          }
+        },
+
+        "components": {
+          "type": "array",
+          "description": "MBSE component entities identified.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["surface_form"],
+            "properties": {
+              "surface_form":  { "type": "string" },
+              "canonical_id":  { "type": "string", "description": "Resolved component_id from MBSE model." },
+              "component_type":{ "type": "string", "description": "e.g., rolling_element_bearing, shaft_seal." },
+              "resolved":      { "type": "boolean" },
+              "confidence":    { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+            }
+          }
+        },
+
+        "failure_modes": {
+          "type": "array",
+          "description": "Failure mode or degradation phenomena identified. Normalized against FMEA taxonomy.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["surface_form"],
+            "properties": {
+              "surface_form": { "type": "string", "description": "e.g., 'bearing wear', 'loss of lubrication'." },
+              "fm_id":        { "type": "string", "description": "Resolved KG FailureMode node ID." },
+              "fm_label":     { "type": "string" },
+              "resolved":     { "type": "boolean" },
+              "confidence":   { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+            }
+          }
+        },
+
+        "degradation_phenomena": {
+          "type": "array",
+          "description": "Degradation mechanisms mentioned (e.g., corrosion, fatigue, wear). From nuclear entity dictionary.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "surface_form": { "type": "string" },
+              "category":     { "type": "string", "description": "Dictionary class (e.g., 'degradation_mechanism', 'failure_type')." },
+              "confidence":   { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+            }
+          }
+        },
+
+        "measurements": {
+          "type": "array",
+          "description": "Numeric values with units extracted from text (e.g., '92.3 degC', 'ISO VG 68').",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "parameter":  { "type": "string" },
+              "value":      { "type": "number" },
+              "unit":       { "type": "string" },
+              "in_spec":    { "type": "boolean", "description": "Compared against engineering limits if resolvable." },
+              "context":    { "type": "string",  "description": "Brief sentence context for grounding." }
+            }
+          }
+        },
+
+        "maintenance_actions": {
+          "type": "array",
+          "description": "Maintenance operations, tools, and treatments identified.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "surface_form":   { "type": "string" },
+              "action_category":{ "type": "string", "description": "e.g., 'lubrication', 'inspection', 'replacement'." },
+              "target_component":{ "type": "string" }
+            }
+          }
+        },
+
+        "temporal_markers": {
+          "type": "array",
+          "description": "Temporal expressions extracted from text that characterize event timing.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "surface_form": { "type": "string", "description": "e.g., 'three days before', 'following the maintenance'." },
+              "resolved_timestamp": { "type": "string", "format": "date-time", "description": "If resolvable to an absolute timestamp." },
+              "relative_reference": { "type": "string", "description": "Anchor event if relative (e.g., 'before:event_id')." }
+            }
+          }
+        }
+      }
+    },
+
+    "extracted_causal_statements": {
+      "type": "array",
+      "description": "Causal language extracted by NLP. Each entry represents a directional causal claim found in the text. Seeds causal candidate generation and TSKR corpus.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statement"],
+        "properties": {
+          "statement":       { "type": "string", "description": "Full extracted sentence containing causal language." },
+          "cause_span":      { "type": "string", "description": "Identified cause text span." },
+          "effect_span":     { "type": "string", "description": "Identified effect text span." },
+          "causal_connectors":{ "type": "array", "items": { "type": "string" },
+                               "description": "Trigger words found: 'caused by', 'resulted in', 'due to', 'following', 'led to'." },
+          "cause_fm_id":     { "type": "string", "description": "Resolved FM ID of cause entity, if resolvable." },
+          "effect_fm_id":    { "type": "string", "description": "Resolved FM ID of effect entity, if resolvable." },
+          "confidence":      { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+        }
+      }
+    },
+
+    "condition_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Structured as-found / as-left condition extracted from WO or CR text.",
+      "properties": {
+        "as_found_text":      { "type": "string" },
+        "as_left_text":       { "type": "string" },
+        "as_found_condition": { "type": "string", "enum": ["acceptable","degraded","failed","unknown"] },
+        "as_left_condition":  { "type": "string", "enum": ["acceptable","degraded","failed","unknown"] }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processed_at", "nlp_pipeline_version", "embedding_model"],
+      "properties": {
+        "processed_at":          { "type": "string", "format": "date-time" },
+        "nlp_pipeline_version":  { "type": "string", "description": "Version of the TLP/NER pipeline." },
+        "embedding_model":       { "type": "string", "description": "Model used to embed embedding_text (e.g., 'ollama/nomic-embed-text')." },
+        "embedding_created_at":  { "type": "string", "format": "date-time" },
+        "source_hash":           { "type": "string", "description": "Hash of the raw source chunk for incremental re-processing detection." },
+        "entity_resolution_version": { "type": "string", "description": "Version of the entity resolution layer used to map surface forms to canonical IDs." }
+      }
+    }
+  }
+}

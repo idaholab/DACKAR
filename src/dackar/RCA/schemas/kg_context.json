@@ -1,0 +1,222 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KGContext",
+  "description": "KG subgraph extracted around the target event asset. Output of Step 5B. Defines the structural search space for causal candidate generation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["subgraph_id", "event_id", "asset_id", "components", "failure_modes"],
+
+  "properties": {
+
+    "subgraph_id":  { "type": "string", "description": "Stable ID for this subgraph snapshot — referenced by evidence_bundle retrieval_scope and causality_candidates." },
+    "event_id":     { "type": "string" },
+    "asset_id":     { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "kg_snapshot_version": {
+      "type": "string",
+      "description": "Version or timestamp of the KG at query time. Required for reproducibility — RCA must be replayable against the KG state that existed at event time."
+    },
+
+    "hop_limit": {
+      "type": "integer",
+      "description": "Maximum hops used to expand the neighborhood. Configurable per system type."
+    },
+
+    "components": {
+      "type": "array",
+      "description": "Component nodes in the subgraph realized by the event asset and its neighbors.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["component_id"],
+        "properties": {
+          "component_id":      { "type": "string", "description": "KG Component node ID." },
+          "component_label":   { "type": "string" },
+          "component_type":    { "type": "string" },
+          "relation_to_asset": {
+            "type": "string",
+            "enum": ["primary", "upstream", "downstream", "adjacent", "same_train"],
+            "description": "Topological relationship of this component to the event asset."
+          },
+          "seed_match_type": {
+            "type": "string",
+            "description": "Development/runtime provenance for why this component was included (e.g., seed, telemetry)."
+          },
+          "hop_distance": {
+            "type": "integer",
+            "description": "Graph hop distance from the event asset."
+          },
+          "edge_types_traversed": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["REALIZES", "UPSTREAM_OF", "DOWNSTREAM_OF", "CONNECTED_TO", "PART_OF", "FEEDS"] },
+            "description": "KG edge types traversed to reach this component."
+          },
+          "in_service": { "type": "boolean" }
+        }
+      }
+    },
+
+    "upstream_paths": {
+      "type": "array",
+      "description": "Explicit upstream causal paths from neighbor components to the event asset.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path_id", "nodes", "edges"],
+        "properties": {
+          "path_id": { "type": "string" },
+          "nodes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Ordered list of KG node IDs from upstream cause to event asset."
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from_node", "to_node", "edge_type"],
+              "properties": {
+                "from_node": { "type": "string" },
+                "to_node":   { "type": "string" },
+                "edge_type": { "type": "string" },
+                "edge_attributes": { "type": "object", "description": "Edge-level temporal or capacity attributes (e.g., install_date, flow_capacity)." }
+              }
+            }
+          },
+          "path_length": { "type": "integer" }
+        }
+      }
+    },
+
+    "downstream_paths": {
+      "type": "array",
+      "description": "Downstream propagation paths — components that could be affected by or have been affected by the event. Mirrors upstream_paths structure.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path_id", "nodes", "edges"],
+        "properties": {
+          "path_id":     { "type": "string" },
+          "nodes":       { "type": "array", "items": { "type": "string" } },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["from_node", "to_node", "edge_type"],
+              "properties": {
+                "from_node":       { "type": "string" },
+                "to_node":         { "type": "string" },
+                "edge_type":       { "type": "string" },
+                "edge_attributes": { "type": "object" }
+              }
+            }
+          },
+          "path_length": { "type": "integer" }
+        }
+      }
+    },
+
+    "failure_modes": {
+      "type": "array",
+      "description": "FMEA failure mode nodes mapped to components in the subgraph.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fm_id"],
+        "properties": {
+          "fm_id":                  { "type": "string", "description": "Canonical failure mode ID in the KG." },
+          "fm_label":               { "type": "string" },
+          "name":                   { "type": "string", "description": "Runtime-friendly label alias for fm_label." },
+          "applies_to_component_id":{ "type": "string" },
+          "component_id":           { "type": "string", "description": "Runtime-friendly alias for applies_to_component_id." },
+
+          "failure_mechanism":      { "type": "string", "description": "Physical mechanism (e.g., fatigue, corrosion, wear, overload)." },
+          "expected_symptoms": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Expected symptom types for this failure mode — matched against event.json symptom_signature.symptom_types."
+          },
+          "expected_anomaly_pattern": {
+            "type": "string",
+            "enum": ["step_change", "gradual_drift", "spike", "oscillation", "dropout", "sustained_exceedance", "unknown"],
+            "description": "Expected telemetry pattern — matched against telemetry_summary anomaly patterns."
+          },
+          "expected_latency_min_days": { "type": "number", "description": "Minimum expected failure progression time from FMEA." },
+          "expected_latency_max_days": { "type": "number" },
+          "fmea_source_ref":           { "type": "string", "description": "Source FMEA document or node reference." },
+          "rpn":                        { "type": "number", "description": "Risk Priority Number from FMEA, if available." }
+        }
+      }
+    },
+
+    "documents_in_neighborhood": {
+      "type": "array",
+      "description": "CR/WO/SOP/ECA document nodes linked to components in the subgraph. Defines the valid document scope for evidence_bundle retrieval.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["doc_id", "doc_type"],
+        "properties": {
+          "doc_id":              { "type": "string" },
+          "doc_type":            { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OTHER"] },
+          "linked_component_id": { "type": "string" },
+          "link_type":           { "type": "string", "description": "KG edge type connecting document to component (e.g., DESCRIBES, CORRECTS, GOVERNS)." },
+          "doc_date":            { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "documents": {
+      "type": "array",
+      "description": "Runtime alias for documents_in_neighborhood used by the current orchestrator.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["doc_id", "doc_type"],
+        "properties": {
+          "doc_id":   { "type": "string" },
+          "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OTHER"] }
+        }
+      }
+    },
+    "past_events": {
+      "type": "array",
+      "description": "Prior abnormal_event nodes in the KG on the same asset or subgraph components.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "asset_id", "timestamp_start"],
+        "properties": {
+          "event_id":        { "type": "string" },
+          "asset_id":        { "type": "string" },
+          "component_id":    { "type": "string" },
+          "event_type":      { "type": "string" },
+          "timestamp_start": { "type": "string", "format": "date-time" },
+          "days_before_current_event": { "type": "number" },
+          "resolved":        { "type": "boolean" },
+          "fm_id":           { "type": "string", "description": "Failure mode linked to this past event, if established." }
+        }
+       }
+    },
+    "seed_context": {
+      "type": "object",
+      "description": "Runtime seeding/provenance used by the current orchestrator during development.",
+      "additionalProperties": true,
+      "properties": {
+        "asset_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "seed_component_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "monitored_variables": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+     }
+   }
+ }

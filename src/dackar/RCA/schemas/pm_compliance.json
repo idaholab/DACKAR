@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PMCompliance",
+  "description": "Planned-vs-executed preventive maintenance compliance assessment for an asset in an analysis window. Feeds Step 5 causal scoring directly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["asset_id", "window", "checks", "summary"],
+
+  "properties": {
+
+    "asset_id": { "type": "string", "description": "Asset identifier — must resolve to a KG Asset node." },
+
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "string", "format": "date-time" },
+        "end":   { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "check_type", "status"],
+        "properties": {
+          "check_id": { "type": "string", "description": "PM task ID from CMMS or surveillance requirement ID." },
+          "check_type": {
+            "type": "string",
+            "enum": ["scheduled_pm", "surveillance_test", "calibration", "inspection", "lubrication", "functional_test", "other"],
+            "description": "Type of PM task — disambiguates check_id semantics."
+          },
+          "source_ref": {
+            "type": "string",
+            "description": "Resolving reference: PM task ID in CMMS, or SOP section (e.g., 'SOP-4321 §3.2'). Must trace to a document.json or KG node."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pass", "fail", "unknown"],
+            "description": "Execution status of this check."
+          },
+          "scheduled_date":   { "type": "string", "format": "date-time" },
+          "completed_date":   { "type": "string", "format": "date-time" },
+          "overdue_by_days": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Days past scheduled date at time of event. Populated only if status != pass."
+          },
+          "details": { "type": "string", "description": "Free-text notes on check result." },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "doc_id references (type WO) that confirm execution. Must resolve to document.json records."
+          }
+        }
+      }
+    },
+
+    "overdue_items": {
+      "type": "array",
+      "description": "Explicit overdue PM index — aggregated from checks[] for direct consumption by Step 5 causal scoring without re-parsing checks array.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "scheduled_date", "overdue_by_days"],
+        "properties": {
+          "check_id":        { "type": "string" },
+          "check_type":      { "type": "string" },
+          "scheduled_date":  { "type": "string", "format": "date-time" },
+          "overdue_by_days": { "type": "number", "minimum": 0 },
+          "source_ref":      { "type": "string" }
+        }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_checks", "passed", "failed", "unknown", "overdue_count"],
+      "description": "Structured aggregate — directly consumable by orchestrator and Step 5 scoring without parsing checks[].",
+      "properties": {
+        "total_checks":  { "type": "integer" },
+        "passed":        { "type": "integer" },
+        "failed":        { "type": "integer" },
+        "unknown":       { "type": "integer" },
+        "overdue_count": { "type": "integer", "description": "Number of checks not completed by scheduled date." },
+        "last_pm_date":  { "type": "string", "format": "date-time", "description": "Most recent completed PM date." },
+        "next_pm_date":  { "type": "string", "format": "date-time", "description": "Next scheduled PM date." },
+        "compliance_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Fraction of checks passed: passed / total_checks. Used as a normalized compliance signal in Step 5 evidence scoring."
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}
