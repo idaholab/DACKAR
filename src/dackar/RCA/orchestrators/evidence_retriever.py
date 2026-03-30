@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Protocol, Sequence
 
 JsonDict = Dict[str, Any]
 
-
 def utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -100,7 +99,6 @@ class ChromaEvidenceRetriever:
             "filters": {
                 "asset_id": asset_id,
                 "doc_ids": doc_ids,
-                "component_ids": component_ids,
                 "doc_type": included_doc_types,
             },
             "results": merged[: self.config.top_k_total],
@@ -122,17 +120,48 @@ class ChromaEvidenceRetriever:
         asset_id = event.get("asset_id", "")
         component_ids = [c.get("component_id") for c in kg_context.get("components", []) if c.get("component_id")]
         fm_names = [fm.get("name") or fm.get("fm_id") for fm in kg_context.get("failure_modes", []) if fm.get("fm_id")]
-        candidate_labels = [c.get("label") for c in causality_candidates.get("candidates", []) if c.get("label")]
+        top_candidates = [
+            c for c in (causality_candidates.get("candidates", []) or [])
+            if isinstance(c, dict)
+        ][:3]
 
         query_plans: List[JsonDict] = []
 
-        if candidate_labels:
+        for cand in top_candidates:
+            cause_label = cand.get("cause_label")
+            if not cause_label:
+                continue
+
+            candidate_terms = [asset_id, cause_label]
+            if cand.get("cause_node_id"):
+                candidate_terms.append(str(cand.get("cause_node_id")))
+            if cand.get("hypothesis_type"):
+                candidate_terms.append(str(cand.get("hypothesis_type")))
+
             query_plans.append(
                 {
-                    "query_text": f"{asset_id} " + " ; ".join(candidate_labels[:3]),
+                    "query_text": " ".join([t for t in candidate_terms if t]),
                     "query_type": "candidate",
                     "weight": 1.00,
-                    "doc_types": ["CR", "WO", "ECA", "RCA"],
+                    "doc_types": ["CR", "WO", "ECA", "RCA", "FMEA"],
+                    "candidate_id": cand.get("candidate_id"),
+                    "cause_label": cause_label,
+                    "hypothesis_type": cand.get("hypothesis_type"),
+                    "query_intent": "candidate_support_check",
+                }
+            )
+
+            contradiction_terms = [asset_id, cause_label, "inspection", "not", "no", "failed", "normal"]
+            query_plans.append(
+                {
+                    "query_text": " ".join([t for t in contradiction_terms if t]),
+                    "query_type": "candidate_contradiction",
+                    "weight": 0.70,
+                    "doc_types": ["CR", "WO", "RCA", "ECA"],
+                    "candidate_id": cand.get("candidate_id"),
+                    "cause_label": cause_label,
+                    "hypothesis_type": cand.get("hypothesis_type"),
+                    "query_intent": "candidate_contradiction_check",
                 }
             )
 
@@ -143,6 +172,7 @@ class ChromaEvidenceRetriever:
                     "query_type": "failure_mode",
                     "weight": 0.95,
                     "doc_types": ["CR", "WO", "FMEA", "ECA", "SOP"],
+                    "query_intent": "failure_mode_context",
                 }
             )
 
@@ -153,8 +183,13 @@ class ChromaEvidenceRetriever:
                     "query_type": "component",
                     "weight": 0.85,
                     "doc_types": ["CR", "WO", "SOP", "FMEA", "MANUAL"],
+                    "query_intent": "component_context",
                 }
             )
+
+        ops_query = self._build_operational_context_query(asset_id, operational_context)
+        if ops_query is not None:
+            query_plans.append(ops_query)
 
         if not query_plans:
             query_plans.append(
@@ -163,10 +198,50 @@ class ChromaEvidenceRetriever:
                     "query_type": "fallback",
                     "weight": 0.50,
                     "doc_types": ["CR", "WO", "ECA", "SOP"],
+                    "query_intent": "fallback_context",
                 }
             )
 
         return query_plans
+
+    def _build_operational_context_query(
+        self,
+        asset_id: str,
+        operational_context: Optional[JsonDict],
+    ) -> Optional[JsonDict]:
+        if not operational_context or not isinstance(operational_context, dict):
+            return None
+
+        terms: List[str] = [asset_id]
+
+        operating_mode = operational_context.get("operating_mode")
+        if isinstance(operating_mode, str) and operating_mode.strip():
+            terms.append(operating_mode.strip())
+
+        for key in ("recent_alarms", "recent_operations", "nearby_maintenance"):
+            values = operational_context.get(key) or []
+            if isinstance(values, list):
+                for item in values[:3]:
+                    if isinstance(item, dict):
+                        for field in ("alarm_id", "operation", "activity", "component_id", "description", "title"):
+                            value = item.get(field)
+                            if isinstance(value, str) and value.strip():
+                                terms.append(value.strip())
+                                break
+                    elif isinstance(item, str) and item.strip():
+                        terms.append(item.strip())
+
+        terms = [t for t in terms if t]
+        if len(terms) <= 1:
+            return None
+
+        return {
+            "query_text": " ".join(terms[:8]),
+            "query_type": "operational_context",
+            "weight": 0.80,
+            "doc_types": ["CR", "WO", "ECA", "RCA", "SOP"],
+            "query_intent": "operational_context_check",
+        }
 
     def _build_filters(
         self,
@@ -196,7 +271,7 @@ class ChromaEvidenceRetriever:
 
     def _normalize_hits(self, hits: Sequence[JsonDict], query_plan: JsonDict) -> List[JsonDict]:
         normalized: List[JsonDict] = []
-        for h in hits:
+        for idx, h in enumerate(hits, start=1):
             meta = h.get("metadata", {}) or {}
             doc_type = meta.get("doc_type", h.get("doc_type", "UNKNOWN"))
             store_score = float(h.get("score", 0.0))
@@ -207,17 +282,36 @@ class ChromaEvidenceRetriever:
             if final_score < self.config.score_threshold:
                 continue
 
+            if query_plan.get("query_type") == "candidate_contradiction":
+                support_role = "contradicting"
+            else:
+                support_role = "contextual"
+
+            snippet_id = (
+                h.get("snippet_id")
+                or meta.get("chunk_id")
+                or meta.get("record_id")
+                or f"{h.get('doc_id', 'UNKNOWN_DOC')}::chunk_{idx}"
+            )
+            section = h.get("section") or ""
+
             normalized.append(
                 {
-                    "snippet_id": h.get("snippet_id"),
+                    "snippet_id": snippet_id,
                     "doc_id": h.get("doc_id"),
-                    "section": h.get("section"),
+                    "section": section,
                     "score": final_score,
                     "snippet": h.get("snippet", ""),
                     "image_refs": h.get("image_refs", []),
                     "metadata": {
                         **meta,
+                        "support_role": support_role,
+                        "linked_candidate_id": query_plan.get("candidate_id"),
                         "query_type": query_plan.get("query_type"),
+                        "query_intent": query_plan.get("query_intent"),
+                        "candidate_id": query_plan.get("candidate_id"),
+                        "cause_label": query_plan.get("cause_label"),
+                        "hypothesis_type": query_plan.get("hypothesis_type"),
                         "raw_store_score": store_score,
                         "query_weight": query_weight,
                         "doc_type_weight": type_weight,

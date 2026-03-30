@@ -58,7 +58,7 @@ class RuleBasedCausalityEngineV31:
         run_context: JsonDict,
     ) -> JsonDict:
         event_time = self._event_time(event)
-        candidates = []
+        candidates: List[JsonDict] = []
         tskr_index = self._index_tskr_patterns(tskr_patterns)
         candidates.extend(
             self._build_failure_mode_candidates(
@@ -81,7 +81,10 @@ class RuleBasedCausalityEngineV31:
             )
         )
         candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
-        candidates = candidates[: self.config.top_k_candidates]
+        candidates = [
+            c for c in candidates
+            if self._candidate_meets_threshold(c)
+        ][: self.config.top_k_candidates]
 
         subgraph_id = kg_context.get("subgraph_id")
 
@@ -128,6 +131,7 @@ class RuleBasedCausalityEngineV31:
                 "latency_consistency": temporal_parts["latency_consistency"],
             }
             composite = self._combine_scores(scores)
+            meets_evidence_threshold = evidence >= self.config.minimum_evidence_threshold
             out.append({
                 "candidate_id": f"FM::{fm_id}",
                 "hypothesis_type": "failure_mode",
@@ -159,7 +163,7 @@ class RuleBasedCausalityEngineV31:
                     "pattern_id": temporal_parts.get("pattern_id"),
                 },
                 "assumptions": [],
-                "meets_evidence_threshold": evidence >= self.config.minimum_evidence_threshold,
+                "meets_evidence_threshold": meets_evidence_threshold,
                 "notes": f"Failure mode candidate for component {component_id}" if component_id else "",
                 "temporal_relation": temporal_parts.get("relation"),
                 "telemetry_evidence": {
@@ -204,6 +208,8 @@ class RuleBasedCausalityEngineV31:
                 "latency_consistency": temporal_parts["latency_consistency"],
             }
             composite = self._combine_scores(scores)
+            meets_evidence_threshold = evidence >= self.config.minimum_evidence_threshold
+
             out.append({
                 "candidate_id": f"EVENT::{event_id}",
                 "hypothesis_type": "historical_event",
@@ -235,7 +241,7 @@ class RuleBasedCausalityEngineV31:
                     "pattern_id": temporal_parts.get("pattern_id"),
                 },
                 "assumptions": [],
-                "meets_evidence_threshold": evidence >= self.config.minimum_evidence_threshold,
+                "meets_evidence_threshold": meets_evidence_threshold,
                 "notes": "Historical analog candidate derived from kg_context.past_events",
                 "telemetry_evidence": {
                     "signal_count": len(telemetry_summary.get("signals", []) or []),
@@ -472,6 +478,11 @@ class RuleBasedCausalityEngineV31:
         )
         return round(min(max(score, 0.0), 1.0), 6)
 
+    def _candidate_meets_threshold(self, candidate: JsonDict) -> bool:
+        composite_ok = float(candidate.get("composite_score", 0.0)) >= self.config.minimum_composite_threshold
+        evidence_ok = bool(candidate.get("meets_evidence_threshold", False))
+        return composite_ok and evidence_ok
+
     def _confidence_label(self, score):
         if score >= 0.75:
             return "HIGH"
@@ -531,11 +542,26 @@ class RuleBasedCausalityEngineV31:
             return 0.20
         return 0.50 if has_anomalies else 0.30
 
+    def _latency_consistency(self, min_h, max_h, inferred_delay_hours):
+        if inferred_delay_hours is None:
+            return 0.30
+        if min_h is None and max_h is None:
+            return 0.50
+        if min_h is not None and inferred_delay_hours < min_h:
+            return 0.20
+        if max_h is not None and inferred_delay_hours > max_h:
+            return 0.20
+        return 0.95
+
     def _fm_path_nodes(self, component_id, fm_id, event_id, components):
         path = []
         if component_id:
             c = components.get(component_id, {})
-            path.append({"node_id": component_id, "node_type": "mbse_entity", "label": c.get("name")})
+            path.append({
+                "node_id": component_id,
+                "node_type": "mbse_entity",
+                "label": c.get("name") or component_id,
+            })
         path.append({"node_id": fm_id, "node_type": "failure_mode", "label": fm_id})
         path.append({"node_id": event_id, "node_type": "abnormal_event", "label": event_id})
         return path

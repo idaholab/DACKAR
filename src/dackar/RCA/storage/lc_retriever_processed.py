@@ -4,13 +4,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
-from chroma_store import ChromaRecordStore
-from multi_vector_fusion import reciprocal_rank_fusion, weighted_distance_inversion
+from .chroma_store import ChromaRecordStore
+from .multi_vector_fusion import reciprocal_rank_fusion, weighted_distance_inversion
 
 LOGGER = logging.getLogger(__name__)
 
-
-from processed_record_store import ProcessedRecordStore, select_processed_snippet
+from .processed_record_store import ProcessedRecordStore, select_processed_snippet
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -66,6 +65,17 @@ class LCProcessedRetriever:
         per_view: Dict[str, List[Dict[str, Any]]] = {}
 
         for doc_type in doc_types:
+            # Ensure persisted collections are opened even if this process did
+            # not perform the original ingest.
+            try:
+                self.manager.load_collection(doc_type=doc_type)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Failed to load collection for doc_type=%s before query: %s",
+                    doc_type,
+                    exc,
+                )
+
             docs = self.manager.query_doc_type(
                 doc_type=doc_type,
                 query_text=query_text,

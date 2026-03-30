@@ -10,9 +10,11 @@
     "generated_at",
     "llm_model",
     "validation_status",
+    "executive_summary",
     "primary_hypothesis",
     "evidence",
     "recommended_actions",
+    "analyst_review",
     "provenance"
   ],
   "properties": {
@@ -41,6 +43,9 @@
           "type": "string"
         },
         "bundle_id": {
+          "type": "string"
+        },
+        "evidence_bundle_id": {
           "type": "string"
         },
         "candidates_ref": {
@@ -85,6 +90,45 @@
       },
       "additionalProperties": false
     },
+    "executive_summary": {
+      "type": "object",
+      "description": "Analyst-facing summary of the current RCA conclusion and review posture.",
+      "required": [
+        "decision_status",
+        "primary_conclusion",
+        "confidence_label",
+        "analyst_attention_flags"
+      ],
+      "properties": {
+        "decision_status": {
+          "type": "string",
+          "enum": [
+            "review_required",
+            "candidate_ready",
+            "insufficient_evidence"
+          ]
+        },
+        "primary_conclusion": {
+          "type": "string"
+        },
+        "confidence_label": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "speculative"
+          ]
+        },
+        "analyst_attention_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "primary_hypothesis": {
       "type": "object",
       "required": [
@@ -92,6 +136,8 @@
         "cause_label",
         "hypothesis_type",
         "narrative",
+        "why_primary",
+        "uncertainties",
         "composite_score",
         "confidence_label",
         "citations"
@@ -113,6 +159,21 @@
         "narrative": {
           "type": "string",
           "description": "Human-readable explanation of the selected primary hypothesis."
+        },
+        "why_primary": {
+          "type": "array",
+          "description": "Explicit reasons this hypothesis is ranked above alternatives.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "uncertainties": {
+          "type": "array",
+          "description": "Known uncertainties, unresolved contradictions, or missing evidence relevant to the primary hypothesis.",
+          "items": {
+            "type": "string"
+          }
         },
         "composite_score": {
           "type": "number",
@@ -206,6 +267,20 @@
           "reason_not_primary": {
             "type": "string"
           },
+          "supports": {
+            "type": "array",
+            "description": "Short statements describing what supports this alternative.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "weaknesses": {
+            "type": "array",
+            "description": "Short statements describing what weakens this alternative.",
+            "items": {
+              "type": "string"
+            }
+          },
           "citations": {
             "type": "array",
             "items": {
@@ -257,6 +332,20 @@
               "informational",
               "unknown"
             ]
+          },
+          "support_role": {
+            "type": "string",
+            "description": "How this evidence is being used in the RCA card.",
+            "enum": [
+              "supporting",
+              "contextual",
+              "contradicting",
+              "missing"
+            ]
+          },
+          "linked_candidate_id": {
+            "type": "string",
+            "description": "Candidate hypothesis this evidence most directly relates to, if applicable."
           },
           "summary": {
             "type": "string"
@@ -312,12 +401,48 @@
           "linked_candidate_id": {
             "type": "string"
           },
+          "rationale": {
+            "type": "string",
+            "description": "Why this action is recommended."
+          },
+          "expected_observation_if_true": {
+            "type": "string",
+            "description": "What observation or result would strengthen the linked hypothesis if this action is taken."
+          },
           "owner": {
             "type": "string"
           }
         },
         "additionalProperties": false
       }
+    },
+    "analyst_review": {
+      "type": "object",
+      "description": "Explicit analyst review gates and unresolved decision items.",
+      "required": [
+        "decision_required",
+        "questions_to_resolve",
+        "writeback_recommendation"
+      ],
+      "properties": {
+        "decision_required": {
+          "type": "boolean"
+        },
+        "questions_to_resolve": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeback_recommendation": {
+          "type": "string",
+          "enum": [
+            "hold_until_review",
+            "ready_if_accepted"
+          ]
+        }
+      },
+      "additionalProperties": false
     },
     "provenance": {
       "type": "object",

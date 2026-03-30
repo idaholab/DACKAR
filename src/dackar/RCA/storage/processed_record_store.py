@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, Dict, Iterable, List, Optional
 
-from chroma_store import extract_processed_text_record
+from .chroma_store import extract_processed_text_record
 
 LOGGER = logging.getLogger(__name__)
 

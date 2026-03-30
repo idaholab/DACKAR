@@ -101,7 +101,41 @@ def _sanitize_meta_value(value: Any) -> Optional[Any]:
         return json.dumps(value, ensure_ascii=False, sort_keys=True)
     return str(value)
 
+def _normalize_filter_meta(filter_meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Normalize high-level retrieval filters into the scalar metadata keys that
+    are actually stored in Chroma.
 
+    Examples:
+      - doc_ids   -> doc_id
+      - doc_types -> doc_type
+      - component_ids is ignored here unless component_id is explicitly stored
+    """
+    raw = dict(filter_meta or {})
+    norm: Dict[str, Any] = {}
+
+    alias_map = {
+        "doc_ids": "doc_id",
+        "doc_types": "doc_type",
+    }
+
+    for key, value in raw.items():
+        if value is None:
+            continue
+
+        target_key = alias_map.get(key, key)
+
+        # Skip unsupported plural filters that are not indexed as scalar keys.
+        if target_key == "component_ids":
+            continue
+
+        # Drop empty containers
+        if isinstance(value, (list, tuple, set)) and not value:
+            continue
+
+        norm[target_key] = value
+
+    return norm
 
 def _sanitize_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
     clean: Dict[str, Any] = {}
@@ -320,15 +354,27 @@ class ChromaRecordStore:
 
         state = self._states[cname]
         vs = state.vectorstore
-        filter_sane = {k: v for k, v in (filter_meta or {}).items() if v is not None}
+        filter_sane = _normalize_filter_meta(filter_meta)
 
         if not filter_sane:
             chroma_where = None
-        elif len(filter_sane) == 1:
-            k, v = next(iter(filter_sane.items()))
-            chroma_where = {k: {"$eq": v}}
         else:
-            chroma_where = {"$and": [{k: {"$eq": v}} for k, v in filter_sane.items()]}
+            clauses = []
+            for k, v in filter_sane.items():
+                if isinstance(v, (list, tuple, set)):
+                    vals = [x for x in v if x is not None]
+                    if not vals:
+                        continue
+                    clauses.append({k: {"$in": list(vals)}})
+                else:
+                    clauses.append({k: {"$eq": v}})
+
+            if not clauses:
+                chroma_where = None
+            elif len(clauses) == 1:
+                chroma_where = clauses[0]
+            else:
+                chroma_where = {"$and": clauses}
 
         dense_hits: List[Dict[str, Any]] = []
         fetch_k = top_k * 2

@@ -9,12 +9,26 @@ import uuid
 
 from kg.py2neo_workflow import Py2Neo
 
-from orchestrators.causality_engine_v31 import RuleBasedCausalityEngineV31
+from orchestrators.causality_engine_v31 import (
+    CausalityEngineConfig,
+    RuleBasedCausalityEngineV31,
+)
+
+from orchestrators.causality_engine_v32 import (
+    CausalityEngineConfigV32,
+    RuleBasedCausalityEngineV32,
+)
+
 from orchestrators.evidence_retriever import (
     ChromaEvidenceRetriever,
+    EvidenceRetrieverConfig,
     InMemoryEvidenceStore,
 )
-from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
+from synthesis.rca_synthesizer_v31 import (
+    RCASynthesizerConfig,
+    RuleValidatedRCASynthesizerV31,
+)
+
 from validation.schema_validator import RCAArtifactValidator
 from orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
 
@@ -33,6 +47,88 @@ def parse_dt(value: Optional[str]) -> Optional[datetime]:
     except Exception:
         return None
 
+
+class KGContextBuilder(Protocol):
+    def build(
+        self,
+        event: JsonDict,
+        telemetry_summary: JsonDict,
+        operational_context: Optional[JsonDict],
+        pm_compliance: Optional[JsonDict],
+        run_context: JsonDict,
+    ) -> JsonDict:
+        ...
+
+
+class TSKRTemporalScorer(Protocol):
+    def score(
+        self,
+        event: JsonDict,
+        telemetry_summary: JsonDict,
+        kg_context: JsonDict,
+        operational_context: Optional[JsonDict],
+        run_context: JsonDict,
+    ) -> JsonDict:
+        ...
+
+
+class CausalityEngine(Protocol):
+    def generate(
+        self,
+        event: JsonDict,
+        telemetry_summary: JsonDict,
+        kg_context: JsonDict,
+        tskr_patterns: Optional[JsonDict],
+        operational_context: Optional[JsonDict],
+        pm_compliance: Optional[JsonDict],
+        run_context: JsonDict,
+    ) -> JsonDict:
+        ...
+
+
+class EvidenceRetriever(Protocol):
+    def retrieve(
+        self,
+        event: JsonDict,
+        kg_context: JsonDict,
+        causality_candidates: JsonDict,
+        operational_context: Optional[JsonDict],
+        run_context: JsonDict,
+    ) -> JsonDict:
+        ...
+
+
+class RCASynthesizer(Protocol):
+    def synthesize(
+        self,
+        event: JsonDict,
+        telemetry_summary: JsonDict,
+        kg_context: JsonDict,
+        tskr_patterns: Optional[JsonDict],
+        causality_candidates: JsonDict,
+        evidence_bundle: JsonDict,
+        operational_context: Optional[JsonDict],
+        pm_compliance: Optional[JsonDict],
+        ishikawa_matrix: Optional[JsonDict],
+        run_context: JsonDict,
+    ) -> JsonDict:
+        ...
+
+
+class IshikawaEvaluator(Protocol):
+    def evaluate(
+        self,
+        event: JsonDict,
+        telemetry_summary: JsonDict,
+        kg_context: JsonDict,
+        tskr_patterns: Optional[JsonDict],
+        causality_candidates: JsonDict,
+        evidence_bundle: JsonDict,
+        operational_context: Optional[JsonDict],
+        pm_compliance: Optional[JsonDict],
+        run_context: JsonDict,
+    ) -> JsonDict:
+        ...
 
 class SchemaValidator(Protocol):
     """
@@ -318,10 +414,25 @@ class RCAReasoningOrchestrator:
         input_validation: Optional[JsonDict],
         output_validation: Optional[JsonDict],
     ) -> JsonDict:
+        review_hooks = self._compute_review_hooks(
+            rca_card=rca_card,
+            output_validation=output_validation,
+        )
+        summary = rca_card.get("executive_summary") or {}
+        primary = rca_card.get("primary_hypothesis") or {}
+        rca_status = rca_card.get("validation_status") or {}
+        primary_evidence = self._summarize_primary_evidence(
+            rca_card=rca_card,
+            evidence_bundle=evidence_bundle,
+        )
+
         return {
             "run_id": run_context["run_id"],
             "completed_at": utcnow_iso(),
             "input_refs": run_context["input_refs"],
+            "pipeline_config": {
+                "causality_engine_version": (self.config.extra or {}).get("causality_engine_version", "v31"),
+            },
             "artifacts": {
                 "kg_context": {"present": True},
                 "tskr_patterns": {
@@ -337,19 +448,124 @@ class RCAReasoningOrchestrator:
                     "evidence_count": len(evidence_bundle.get("results", [])),
                 },
                 "ishikawa_matrix": {"present": ishikawa_matrix is not None},
-                "rca_card": {"present": True},
+                "rca_card": {
+                    "present": True,
+                    "decision_status": summary.get("decision_status"),
+                    "primary_candidate_id": primary.get("candidate_id"),
+                    "primary_cause_label": primary.get("cause_label"),
+                    "confidence_label": primary.get("confidence_label"),
+                    "all_claims_cited": bool(rca_status.get("all_claims_cited", False)),
+                    "passed_minimum_evidence_gate": bool(rca_status.get("passed_minimum_evidence_gate", False)),
+                    "fallback_used": bool(rca_status.get("fallback_used", False)),
+                    "candidate_count_after_screening": len(causality_candidates.get("candidates", [])),
+                    "primary_supporting_evidence_count": primary_evidence.get("supporting_count", 0),
+                    "primary_contradicting_evidence_count": primary_evidence.get("contradicting_count", 0),
+                    "primary_contextual_evidence_count": primary_evidence.get("contextual_count", 0),
+                    "primary_supporting_evidence_ids": primary_evidence.get("supporting_ids", []),
+
+
+                },
             },
             "validation": {
                 "inputs": input_validation,
                 "outputs": output_validation,
             },
-            "review_hooks": {
-                "requires_human_review": True,
-                "writeback_ready": bool(
-                    (output_validation or {}).get("ok", True)
-                ),
-                "next_step": "analyst_review",
-            },
+            "review_hooks": review_hooks,
+        }
+
+    def _compute_review_hooks(
+        self,
+        rca_card: JsonDict,
+        output_validation: Optional[JsonDict],
+    ) -> JsonDict:
+        rca_status = rca_card.get("validation_status") or {}
+        analyst_review = rca_card.get("analyst_review") or {}
+        executive_summary = rca_card.get("executive_summary") or {}
+
+        outputs_ok = bool((output_validation or {}).get("ok", True))
+        schema_valid = bool(rca_status.get("schema_valid", False))
+        all_claims_cited = bool(rca_status.get("all_claims_cited", False))
+        passed_minimum_evidence_gate = bool(rca_status.get("passed_minimum_evidence_gate", False))
+        fallback_used = bool(rca_status.get("fallback_used", False))
+        decision_required = bool(analyst_review.get("decision_required", True))
+        writeback_recommendation = analyst_review.get("writeback_recommendation")
+        decision_status = executive_summary.get("decision_status")
+
+        writeback_ready = bool(
+            outputs_ok
+            and schema_valid
+            and all_claims_cited
+            and passed_minimum_evidence_gate
+            and not fallback_used
+            and not decision_required
+            and writeback_recommendation == "ready_if_accepted"
+            and decision_status == "candidate_ready"
+        )
+
+        if writeback_ready:
+            next_step = "writeback"
+        elif outputs_ok:
+            next_step = "analyst_review"
+        else:
+            next_step = "validation_remediation"
+
+        return {
+            "requires_human_review": True,
+            "writeback_ready": writeback_ready,
+            "next_step": next_step,
+            "outputs_ok": outputs_ok,
+            "schema_valid": schema_valid,
+            "all_claims_cited": all_claims_cited,
+            "fallback_used": fallback_used,
+            "passed_minimum_evidence_gate": passed_minimum_evidence_gate,
+            "decision_required": decision_required,
+            "decision_status": decision_status,
+            "writeback_recommendation": writeback_recommendation,
+        }
+
+    def _summarize_primary_evidence(
+        self,
+        rca_card: JsonDict,
+        evidence_bundle: JsonDict,
+    ) -> JsonDict:
+        primary = rca_card.get("primary_hypothesis") or {}
+        primary_candidate_id = primary.get("candidate_id")
+
+        if not primary_candidate_id or primary_candidate_id == "NONE":
+            return {
+                "supporting_count": 0,
+                "contradicting_count": 0,
+                "contextual_count": 0,
+                "supporting_ids": [],
+            }
+
+        supporting_count = 0
+        contradicting_count = 0
+        contextual_count = 0
+        supporting_ids: List[str] = []
+
+        for row in (evidence_bundle.get("results") or []):
+            if not isinstance(row, dict):
+                continue
+            if row.get("linked_candidate_id") != primary_candidate_id:
+                continue
+
+            support_role = row.get("support_role")
+            if support_role == "supporting":
+                supporting_count += 1
+                source_id = row.get("snippet_id") or row.get("source_id")
+                if source_id:
+                    supporting_ids.append(str(source_id))
+            elif support_role == "contradicting":
+                contradicting_count += 1
+            else:
+                contextual_count += 1
+
+        return {
+            "supporting_count": supporting_count,
+            "contradicting_count": contradicting_count,
+            "contextual_count": contextual_count,
+            "supporting_ids": supporting_ids[:5],
         }
 
     # ------------------------------------------------------------------
@@ -1408,7 +1624,27 @@ def build_dev_orchestrator(
     schema_dir: str | Path | None = None,
     validator_mode: str = "compat",
     stop_on_validation_error: bool = True,
+    causality_engine_version: str = "v31",
 ) -> RCAReasoningOrchestrator:
+
+    orchestrator_config = OrchestratorConfig(
+        run_label="dev-local",
+        enable_ishikawa=True,
+        persist_intermediate_artifacts=True,
+        stop_on_validation_error=stop_on_validation_error,
+        top_k_candidates=5,
+        top_k_evidence=8,
+        extra={
+            "validator_mode": validator_mode,
+            "schema_dir": str(schema_dir) if schema_dir is not None else None,
+            "causality_engine_version": causality_engine_version,
+        },
+    )
+
+    evidence_top_k_total = orchestrator_config.top_k_evidence
+    evidence_top_k_per_query = max(3, min(evidence_top_k_total, evidence_top_k_total // 2 + 1))
+
+
     if evidence_store is None:
         evidence_store = InMemoryEvidenceStore()
     if llm_client is None:
@@ -1432,20 +1668,28 @@ def build_dev_orchestrator(
     else:
         validator = NoOpSchemaValidator()
 
+
+    if causality_engine_version == "v32":
+        causality_engine = RuleBasedCausalityEngineV32(
+            config=CausalityEngineConfigV32(
+                top_k_candidates=orchestrator_config.top_k_candidates,
+            ),
+        )
+    elif causality_engine_version == "v31":
+        causality_engine = RuleBasedCausalityEngineV31(
+            config=CausalityEngineConfig(
+                top_k_candidates=orchestrator_config.top_k_candidates,
+            ),
+        )
+    else:
+        raise ValueError(
+            f"Unsupported causality_engine_version: {causality_engine_version}. "
+            f"Expected 'v31' or 'v32'."
+        )
+
     return RCAReasoningOrchestrator(
         validator=validator,
-        config=OrchestratorConfig(
-            run_label="dev-local",
-            enable_ishikawa=True,
-            persist_intermediate_artifacts=True,
-            stop_on_validation_error=stop_on_validation_error,
-            top_k_candidates=5,
-            top_k_evidence=8,
-            extra={
-                "validator_mode": validator_mode,
-                "schema_dir": str(schema_dir) if schema_dir is not None else None,
-            },
-        ),
+        config=orchestrator_config,
         artifact_store=FileArtifactStore(output_dir),
         kg_context_builder=Neo4jKGContextBuilder(
             client=client,
@@ -1453,8 +1697,20 @@ def build_dev_orchestrator(
             config=KGContextBuilderConfig(),
         ),
         tskr_temporal_scorer=TSKRTemporalScorerV1(),
-        causality_engine=RuleBasedCausalityEngineV31(),
-        evidence_retriever=ChromaEvidenceRetriever(store=evidence_store),
+        causality_engine=causality_engine,
+        evidence_retriever=ChromaEvidenceRetriever(
+            store=evidence_store,
+            config=EvidenceRetrieverConfig(
+                top_k_total=evidence_top_k_total,
+                top_k_per_query=evidence_top_k_per_query,
+            ),
+        ),
         ishikawa_evaluator=HeuristicIshikawaEvaluatorV1(),
-        rca_synthesizer=RuleValidatedRCASynthesizerV31(llm_client=llm_client),
+        rca_synthesizer=RuleValidatedRCASynthesizerV31(
+            llm_client=llm_client,
+            config=RCASynthesizerConfig(
+                max_candidates_in_prompt=orchestrator_config.top_k_candidates,
+                max_evidence_in_prompt=orchestrator_config.top_k_evidence,
+            ),
+        ),
     )

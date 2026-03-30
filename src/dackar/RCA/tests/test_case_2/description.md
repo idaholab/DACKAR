@@ -1,5 +1,36 @@
 # PWR secondary side test case
 
+## Context (Set the scene)
+“We’re looking at a pressurized water reactor operating at high load, around 96% power. The event occurs on the secondary side, specifically involving the condenser, feedwater system, and some supporting systems like HVAC.”
+
+## Timeline
+13:10 — Early precursor
+    Cabinet temperature in instrumentation cabinet (AC12) begins to rise
+    No immediate impact on plant performance
+
+13:20 — Event starts
+    Unit is stable at high load
+    No alarms yet
+
+13:22 — First anomaly
+    Air removal train differential pressure shows a step change
+    👉 Potential degradation in vacuum support system
+
+13:24 – 13:26 — Core symptom develops
+    Condenser vacuum begins to degrade
+    Turbine backpressure starts rising
+    👉 This is the primary plant-level symptom
+
+13:31 – 13:34 — Secondary effects appear
+    Hotwell level begins oscillating
+    Feedwater flow becomes unstable
+    👉 These are likely effects, not causes
+
+    ~14:00 — Operators respond
+    Performance degradation is clearly visible
+    Investigation begins
+
+## Observations 
 * main symptom: condenser vacuum degradation with unit power reduction
 * primary systems involved: condenser, circulating water / air removal, condensate and feedwater
 * supporting system c*ontext: loss or degradation of an AC/instrumentation support function
@@ -19,6 +50,37 @@ The intended outcome is not completely trivial:
 * condenser fouling should remain a strong alternative
 * feedwater control instability should appear as a secondary or contributing factor
 * the AC/HVAC support issue should appear mainly in Ishikawa and possibly as a contextual contributor, not necessarily the top direct root cause
+
+## What the System Sees (Translate to pipeline stages)
+
+“This is what our RCA pipeline is doing behind the scenes.”
+
+Step A — Structure (KG Context)
+* Identify relevant components:
+* condenser
+* air removal system
+* hotwell
+* feedwater control
+* HVAC support system
+
+👉 This defines where to look
+
+Step B — Temporal Reasoning (TSKR)
+* The system detects patterns like:
+* Air removal anomaly precedes vacuum degradation
+* Vacuum degradation and backpressure rise track together
+* Feedwater oscillations follow the main event
+
+👉 This is critical: it distinguishes cause vs effect
+
+Step C — Candidate Generation
+The system evaluates multiple hypotheses:
+* Air in-leakage / air removal degradation
+* Condenser fouling
+* Feedwater control instability
+* HVAC/support degradation
+
+
 
 ## Expected behavior 
 
