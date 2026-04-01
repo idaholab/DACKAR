@@ -31,6 +31,10 @@ if dackar_root not in sys.path:
 # ---------------------------------------------------------------------
 from orchestrators.rca_reasoning_orchestrator import build_dev_orchestrator
 from kg.py2neo_workflow import Py2Neo
+from storage.chroma_store import ChromaRecordStore
+from storage.processed_record_store import ProcessedRecordStore
+from storage.lc_retriever_processed import LCProcessedRetriever
+from storage.processed_evidence_store_adapter import ProcessedEvidenceStoreAdapter
 
 # ---------------------------------------------------------------------
 # Configuration
@@ -122,6 +126,35 @@ print("Schema dir :", SCHEMA_DIR)
 print("Schemas    :", sorted(p.name for p in SCHEMA_DIR.glob("*.json")))
 assert (SCHEMA_DIR / "causality_candidates.json").exists(), "Missing causality_candidates.json in runtime schema dir"
 
+# %%
+# Chroma adapter for v32
+# ## Build evidence store
+
+# %%
+PROCESSED_JSONL = FIXTURE_DIR / "processed_records.jsonl"  # adjust if needed
+CHROMA_DIR = NOTEBOOK_ROOT / "chroma_case_002"
+
+record_store = ProcessedRecordStore([str(PROCESSED_JSONL)])
+chroma_manager = ChromaRecordStore(
+    persist_directory=str(CHROMA_DIR),
+)
+
+# Ingest once for the local test corpus
+chroma_manager.upsert_jsonl(str(PROCESSED_JSONL))
+
+lc_retriever = LCProcessedRetriever(
+    manager=chroma_manager,
+    doc_store=record_store,
+)
+
+evidence_store = ProcessedEvidenceStoreAdapter(
+    retriever=lc_retriever,
+    k_final=10,
+)
+
+print("evidence_store:", evidence_store)
+print("record count:", len(record_store))
+
 # %% [markdown]
 # ## Build orchestrator
 
@@ -132,6 +165,7 @@ orchestrator_v31 = build_dev_orchestrator(
     output_dir=OUTPUT_DIR / "v31",
     client=client,
     database=NEO4J_DATABASE,
+    evidence_store=evidence_store,
     schema_dir=SCHEMA_DIR,
     validator_mode=VALIDATOR_MODE,
     stop_on_validation_error=STOP_ON_VALIDATION_ERROR,
@@ -142,6 +176,7 @@ orchestrator_v32 = build_dev_orchestrator(
     output_dir=OUTPUT_DIR / "v32",
     client=client,
     database=NEO4J_DATABASE,
+    evidence_store=evidence_store,
     schema_dir=SCHEMA_DIR,
     validator_mode=VALIDATOR_MODE,
     stop_on_validation_error=STOP_ON_VALIDATION_ERROR,
@@ -150,6 +185,16 @@ orchestrator_v32 = build_dev_orchestrator(
 
 print("Orchestrators built.")
 print("Validator schemas:", sorted(getattr(orchestrator_v31.validator, "schemas", {}).keys()))
+
+# %%
+print("\n=== DEBUG: Evidence store wiring ===")
+print("orchestrator_v32.evidence_retriever.store:", orchestrator_v32.evidence_retriever.store)
+print("type:", type(orchestrator_v32.evidence_retriever.store))
+
+# Optional deeper inspection
+store = orchestrator_v32.evidence_retriever.store
+if hasattr(store, "__dict__"):
+    print("store attributes:", list(store.__dict__.keys()))
 
 # %% [markdown]
 # ## Run orchestrator

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "causality_candidates.v3_2.schema.json",
-  "title": "CausalityCandidatesV32",
+  "title": "causality_candidates.v3_2_runtime",
   "description": "Ranked and screened causal hypotheses for a target event with explicit screening summary and filtered-candidate audit trail.",
   "type": "object",
   "required": [
@@ -80,6 +80,10 @@
             "threshold_then_top_k"
           ]
         },
+        "review_alternative_notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "screening_notes": {
           "type": "array",
           "items": { "type": "string" }
@@ -126,6 +130,65 @@
             "top_k_only",
             "threshold_then_top_k"
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "recurrence_summary": {
+      "type": "object",
+      "properties": {
+        "candidate_count_with_recurrence": { "type": "integer", "minimum": 0 },
+        "top_recurrent_candidate_id": { "type": ["string", "null"] },
+        "top_recurrent_recurrence_score": { "type": ["number", "null"] },
+        "top_recurrent_past_event_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "top_recurrent_mechanism_candidate_id": { "type": ["string", "null"] },
+        "top_recurrent_mechanism_recurrence_score": { "type": ["number", "null"] },
+        "top_recurrent_mechanism_past_event_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "top_recurrent_historical_candidate_id": { "type": ["string", "null"] },
+        "top_recurrent_historical_recurrence_score": { "type": ["number", "null"] },
+        "top_recurrent_historical_past_event_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "high_recurrence_candidate_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "common_cause_summary": {
+      "type": "object",
+      "properties": {
+        "suspected_common_cause": { "type": "boolean" },
+        "candidate_count_with_common_cause": { "type": "integer", "minimum": 0 },
+        "top_common_cause_candidate_id": { "type": ["string", "null"] },
+        "top_common_cause_score": { "type": ["number", "null"] },
+        "top_common_cause_confidence": {
+          "type": ["string", "null"],
+          "enum": ["high", "medium", "low", "none", null]
+        },
+        "clustered_candidate_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "shared_dependency_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" }
         }
       },
       "additionalProperties": false
@@ -220,12 +283,64 @@
           },
           "confidence_label": {
             "type": "string",
-            "enum": ["HIGH", "MEDIUM", "LOW", "SPECULATIVE"]
+            "enum": ["high", "medium", "low", "speculative"]
           },
           "supporting_evidence_refs": {
             "type": "array",
             "items": { "type": "string" }
           },
+            "contradicting_evidence_refs": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "contextual_evidence_refs": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "evidence_posture": {
+              "type": "string",
+              "enum": ["supported", "mixed", "contextual_only", "contradicted", "weak"]
+            },
+            "temporal_posture": {
+              "type": "string",
+              "enum": ["supported", "partial", "contradicted", "weak"]
+            },
+            "recurrence": {
+              "type": "object",
+              "properties": {
+                "same_failure_mode_event_count": { "type": "integer", "minimum": 0 },
+                "same_component_event_count": { "type": "integer", "minimum": 0 },
+                "same_asset_event_count": { "type": "integer", "minimum": 0 },
+                "matched_past_event_ids": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "recurrence_score": { "type": "number" },
+                "recurrence_confidence": {
+                  "type": "string",
+                  "enum": ["high", "medium", "low", "none"]
+                }
+              },
+              "additionalProperties": false
+            },
+            "common_cause": {
+              "type": "object",
+              "properties": {
+                "shared_dependency_ids": { "type": "array", "items": { "type": "string" } },
+                "affected_component_ids": { "type": "array", "items": { "type": "string" } },
+                "converging_candidate_ids": { "type": "array", "items": { "type": "string" } },
+                "shared_dependency_signal": { "type": "number" },
+                "shared_upstream_signal": { "type": "number" },
+                "symptom_convergence_signal": { "type": "number" },
+                "governance_commonality_signal": { "type": "number" },
+                "common_cause_score": { "type": "number" },
+                "common_cause_confidence": { "type": "string", "enum": ["high", "medium", "low", "none"] }
+              },
+              "additionalProperties": false
+            },
+            "retained_as_review_alternative": {
+              "type": "boolean"
+            },
           "temporal_evidence": {
             "type": "object",
             "properties": {
@@ -263,7 +378,15 @@
               },
               "pattern_id": {
                 "type": ["string", "null"]
-              }
+              },
+              "expected_latency_min_hours": { "type": ["number", "null"] },
+              "expected_latency_max_hours": { "type": ["number", "null"] },
+              "observed_lag_hours": { "type": ["number", "null"] },
+              "latency_violation_type": {
+                "type": ["string", "null"],
+                "enum": ["none", "too_fast", "too_slow", "unknown", null]
+              },
+              "temporal_contradiction": { "type": ["boolean", "null"] }
             },
             "additionalProperties": true
           },
@@ -345,6 +468,15 @@
               "below_composite_and_evidence_threshold",
               "excluded_by_top_k"
             ]
+            },
+            "recurrence_score": { "type": "number" },
+            "recurrence_confidence": {
+              "type": "string",
+              "enum": ["high", "medium", "low", "none"]
+            },
+            "matched_past_event_ids": {
+              "type": "array",
+              "items": { "type": "string" }
           }
         },
         "additionalProperties": false
@@ -361,7 +493,9 @@
         },
         "code_version": {
           "type": "string"
-        }
+        },
+        "tskr_enabled": { "type": ["boolean", "null"] },
+        "evidence_refinement_applied": { "type": ["boolean", "null"] }
       },
       "additionalProperties": true
     }

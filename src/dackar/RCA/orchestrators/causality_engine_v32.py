@@ -27,6 +27,7 @@ class CausalityEngineConfigV32:
     minimum_evidence_threshold: float = 0.35
     minimum_composite_threshold: float = 0.30
     temporal_window_days_cap: int = 3650
+    review_alternative_gap: float = 0.10
     tskr_enabled: bool = True
     retention_mode: str = "threshold_then_top_k"
 
@@ -224,28 +225,43 @@ class RuleBasedCausalityEngineV32:
                     "governance": "Governance score derived from PM compliance signals.",
                 },
                 "composite_score": composite,
-                "confidence_label": self._confidence_label(composite),
+                "confidence_label": self._normalized_confidence_label(composite),
                 "supporting_evidence_refs": self._supporting_doc_refs(documents, {"CR", "WO", "FMEA", "ECA"}),
                 "temporal_evidence": {
                     "tskr_rule_ids": ["TSKR:ANOMALY_PRESENT"] if temporal_parts["tskr_pattern_match"] > 0 else [],
                     "matching_signal_ids": temporal_parts["matching_signal_ids"],
-                    "window_start": telemetry_summary.get("window", {}).get("start"),
-                    "window_end": telemetry_summary.get("window", {}).get("end"),
+                    "window_start": temporal_parts.get("window_start") or telemetry_summary.get("window", {}).get("start"),
+                    "window_end": temporal_parts.get("window_end") or telemetry_summary.get("window", {}).get("end"),
                     "relation": temporal_parts.get("relation"),
                     "operator_family": temporal_parts.get("operator_family"),
                     "mean_lag_hours": temporal_parts.get("mean_lag_hours"),
                     "support": temporal_parts.get("support"),
                     "pattern_id": temporal_parts.get("pattern_id"),
+                    "expected_latency_min_hours": temporal_parts.get("expected_latency_min_hours"),
+                    "expected_latency_max_hours": temporal_parts.get("expected_latency_max_hours"),
+                    "observed_lag_hours": temporal_parts.get("observed_lag_hours"),
+                    "latency_violation_type": temporal_parts.get("latency_violation_type"),
+                    "temporal_contradiction": temporal_parts.get("temporal_contradiction"),
                 },
                 "assumptions": [],
                 "meets_evidence_threshold": meets_evidence_threshold,
-                "notes": f"Failure mode candidate for component {component_id}" if component_id else "",
+                "notes": (
+                    f"Failure mode candidate for component {component_id}; temporal contradiction present."
+                    if component_id and temporal_parts.get("temporal_contradiction")
+                    else f"Failure mode candidate for component {component_id}" if component_id else ""
+                ),
                 "temporal_relation": temporal_parts.get("relation"),
                 "telemetry_evidence": {
                     "signal_count": len(telemetry_summary.get("signals", []) or []),
                     "matching_signal_ids": temporal_parts["matching_signal_ids"],
                     "anomaly_window": telemetry_summary.get("window", {}),
                 },
+                "temporal_posture": self._temporal_posture(
+                    temporal_score=temporal_parts["temporal"],
+                    temporal_precedence=temporal_parts["temporal_precedence"],
+                    latency_consistency=temporal_parts["latency_consistency"],
+                    temporal_contradiction=temporal_parts.get("temporal_contradiction", False),
+                ),
             }
             recurrence = self._recurrence_features_for_candidate(
                 candidate=candidate,
@@ -317,7 +333,7 @@ class RuleBasedCausalityEngineV32:
                     "governance": "Governance score derived from PM compliance signals.",
                 },
                 "composite_score": composite,
-                "confidence_label": self._confidence_label(composite),
+                "confidence_label": self._normalized_confidence_label(composite),
                 "supporting_evidence_refs": self._supporting_doc_refs(documents, {"CR", "WO", "ECA", "RCA"}),
                 "temporal_evidence": {
                     "tskr_rule_ids": ["TSKR:HISTORICAL_PRECEDENT"] if temporal_parts["tskr_pattern_match"] > 0 else [],
@@ -329,6 +345,12 @@ class RuleBasedCausalityEngineV32:
                     "mean_lag_hours": temporal_parts.get("mean_lag_hours"),
                     "support": temporal_parts.get("support"),
                     "pattern_id": temporal_parts.get("pattern_id"),
+                    "expected_latency_min_hours": temporal_parts.get("expected_latency_min_hours"),
+                    "expected_latency_max_hours": temporal_parts.get("expected_latency_max_hours"),
+                    "observed_lag_hours": temporal_parts.get("observed_lag_hours"),
+                    "latency_violation_type": temporal_parts.get("latency_violation_type"),
+                    "temporal_contradiction": temporal_parts.get("temporal_contradiction"),
+
                 },
                 "assumptions": [],
                 "meets_evidence_threshold": meets_evidence_threshold,
@@ -338,6 +360,12 @@ class RuleBasedCausalityEngineV32:
                     "matching_signal_ids": temporal_parts["matching_signal_ids"],
                     "anomaly_window": telemetry_summary.get("window", {}),
                 },
+                "temporal_posture": self._temporal_posture(
+                    temporal_score=temporal_parts["temporal"],
+                    temporal_precedence=temporal_parts["temporal_precedence"],
+                    latency_consistency=temporal_parts["latency_consistency"],
+                    temporal_contradiction=temporal_parts.get("temporal_contradiction", False),
+                ),
             }
             recurrence = self._recurrence_features_for_candidate(
                 candidate=candidate,
@@ -357,6 +385,31 @@ class RuleBasedCausalityEngineV32:
             )
             out.append(candidate)
         return out
+
+    def _eligible_review_alternative(
+        self,
+        primary_candidate: JsonDict,
+        other_candidate: JsonDict,
+    ) -> bool:
+        if not primary_candidate or not other_candidate:
+            return False
+
+        primary_score = float(primary_candidate.get("composite_score", 0.0) or 0.0)
+        other_score = float(other_candidate.get("composite_score", 0.0) or 0.0)
+        score_gap = primary_score - other_score
+
+        if score_gap > self.config.review_alternative_gap:
+            return False
+
+        temporal_posture = str(other_candidate.get("temporal_posture", "") or "").lower()
+        if temporal_posture == "contradicted":
+            return False
+
+        temporal_evidence = other_candidate.get("temporal_evidence") or {}
+        if bool(temporal_evidence.get("temporal_contradiction", False)):
+            return False
+
+        return True
 
     def _compact_filtered_candidate(self, candidate: JsonDict) -> JsonDict:
         recurrence = candidate.get("recurrence") or {}
@@ -399,6 +452,166 @@ class RuleBasedCausalityEngineV32:
             return "below_evidence_threshold"
         return "excluded_by_top_k"
 
+    def _evidence_posture(
+        self,
+        support_score: float,
+        contradiction_score: float,
+        contextual_score: float,
+    ) -> str:
+        if contradiction_score >= 0.45 and contradiction_score > support_score:
+            return "contradicted"
+        if support_score >= 0.55 and support_score > contradiction_score:
+            return "supported"
+        if support_score >= 0.30 and contradiction_score >= 0.20:
+            return "mixed"
+        if contextual_score >= 0.25 and support_score < 0.30:
+            return "contextual_only"
+        return "weak"
+
+    def _temporal_posture(
+        self,
+        temporal_score: float,
+        temporal_precedence: float,
+        latency_consistency: float,
+        temporal_contradiction: bool,
+    ) -> str:
+        if temporal_contradiction:
+            return "contradicted"
+        if temporal_score >= 0.65 and temporal_precedence >= 0.70 and latency_consistency >= 0.60:
+            return "supported"
+        if temporal_score >= 0.40:
+            return "partial"
+        return "weak"
+
+    def _candidate_summary_lookup(
+        self,
+        evidence_bundle: JsonDict,
+    ) -> Dict[str, JsonDict]:
+        out: Dict[str, JsonDict] = {}
+        for row in (evidence_bundle.get("candidate_evidence_summary") or []):
+            if not isinstance(row, dict):
+                continue
+            candidate_id = row.get("candidate_id")
+            if candidate_id:
+                out[str(candidate_id)] = row
+        return out
+    
+    def refine_with_evidence(
+        self,
+        causality_candidates: JsonDict,
+        evidence_bundle: JsonDict,
+    ) -> JsonDict:
+        payload = dict(causality_candidates)
+        candidates = [dict(c) for c in (payload.get("candidates") or [])]
+        summary_lookup = self._candidate_summary_lookup(evidence_bundle)
+
+        for candidate in candidates:
+            candidate_id = candidate.get("candidate_id")
+            if not candidate_id:
+                continue
+
+            ev = summary_lookup.get(candidate_id, {})
+            support_score = float(ev.get("best_support_score", 0.0) or 0.0)
+            contradiction_score = float(ev.get("best_contradiction_score", 0.0) or 0.0)
+            contextual_score = float(ev.get("best_context_score", 0.0) or 0.0)
+
+            # Treat existing evidence score as prior/doc-availability prior
+            prior_evidence_score = float((candidate.get("scores") or {}).get("evidence", 0.0) or 0.0)
+
+            refined_evidence_score = max(
+                0.0,
+                min(
+                    1.0,
+                    0.30 * prior_evidence_score
+                    + 0.55 * support_score
+                    + 0.15 * contextual_score
+                    - 0.45 * contradiction_score,
+                ),
+            )
+
+            candidate.setdefault("scores", {})
+            candidate["scores"]["evidence_prior"] = round(prior_evidence_score, 6)
+            candidate["scores"]["evidence_support"] = round(support_score, 6)
+            candidate["scores"]["evidence_contradiction"] = round(contradiction_score, 6)
+            candidate["scores"]["evidence_context"] = round(contextual_score, 6)
+            candidate["scores"]["evidence"] = round(refined_evidence_score, 6)
+
+            candidate["supporting_evidence_refs"] = list(ev.get("supporting_snippet_ids", []))[:5]
+            candidate["contradicting_evidence_refs"] = list(ev.get("contradicting_snippet_ids", []))[:5]
+            candidate["contextual_evidence_refs"] = list(ev.get("contextual_snippet_ids", []))[:5]
+            candidate["evidence_posture"] = self._evidence_posture(
+                support_score=support_score,
+                contradiction_score=contradiction_score,
+                contextual_score=contextual_score,
+            )
+
+            self._refresh_candidate_confidence_and_thresholds(candidate)
+            self._update_score_rationale_for_refinement(
+                candidate,
+                support_score=support_score,
+                contradiction_score=contradiction_score,
+                contextual_score=contextual_score,
+                prior_evidence_score=prior_evidence_score,)
+
+        candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
+
+        passed_threshold = []
+        failed_threshold = []
+        for candidate in candidates:
+            if self._candidate_meets_threshold(candidate):
+                passed_threshold.append(candidate)
+            else:
+                failed_threshold.append(candidate)
+
+        if len(passed_threshold) == 1 and failed_threshold:
+            primary_candidate = passed_threshold[0]
+            best_failed = sorted(
+                failed_threshold,
+                key=lambda x: (-float(x.get("composite_score", 0.0) or 0.0), x.get("candidate_id", "")),
+            )[0]
+
+            if self._eligible_review_alternative(primary_candidate, best_failed):
+                passed_threshold.append(best_failed)
+                failed_threshold = [
+                    c for c in failed_threshold
+                    if c.get("candidate_id") != best_failed.get("candidate_id")
+                ]
+                notes = payload.setdefault("summary", {})
+                review_notes = notes.setdefault("review_alternative_notes", [])
+                review_notes.append(
+                    "One near-threshold alternative was retained for analyst review because only one candidate "
+                    "met strict screening thresholds."
+                )
+                best_failed["retained_as_review_alternative"] = True
+
+        retained_candidates = passed_threshold[: self.config.top_k_candidates]
+        filtered_out_candidates = [self._compact_filtered_candidate(c) for c in failed_threshold]
+        for candidate in passed_threshold[self.config.top_k_candidates:]:
+            compact = self._compact_filtered_candidate(candidate)
+            compact["filter_reason"] = "excluded_by_top_k"
+            filtered_out_candidates.append(compact)
+
+        payload["candidates"] = retained_candidates
+        payload["filtered_out_candidates"] = filtered_out_candidates
+
+        if "summary" in payload and isinstance(payload["summary"], dict):
+            payload["summary"]["retained_candidate_count"] = len(retained_candidates)
+            payload["summary"]["filtered_out_candidate_count"] = len(filtered_out_candidates)
+            payload["summary"]["generated_candidate_count"] = len(candidates)
+            payload["summary"]["top_retained_composite_score"] = (
+                max((float(c.get("composite_score", 0.0)) for c in retained_candidates), default=None)
+                if retained_candidates else None
+            )
+            payload["summary"]["top_filtered_composite_score"] = (
+                max((float(c.get("composite_score", 0.0)) for c in filtered_out_candidates), default=None)
+                if filtered_out_candidates else None
+            )
+
+        provenance = payload.setdefault("provenance", {})
+        provenance["evidence_refinement_applied"] = True
+
+        return payload
+
     def _candidate_meets_threshold(self, candidate: JsonDict) -> bool:
         composite_ok = float(candidate.get("composite_score", 0.0)) >= self.config.minimum_composite_threshold
         evidence_ok = bool(candidate.get("meets_evidence_threshold", False))
@@ -417,25 +630,34 @@ class RuleBasedCausalityEngineV32:
     def _temporal_score_for_fm(self, fm, telemetry_summary, event_time, tskr_index):
         anomaly_signals = [sig.get("sensor_id") for sig in telemetry_summary.get("signals", []) if sig.get("anomalies")]
         pattern = self._lookup_tskr_pattern(tskr_index, fm.get("fm_id"))
+
         tskr_pattern_match = self._pattern_confidence(pattern)
         relation = pattern.get("relation") if pattern else "unknown"
         operator_family = pattern.get("operator_family") if pattern else None
         mean_lag_hours = pattern.get("mean_lag_hours") if pattern else None
         support = self._pattern_support(pattern)
-        if tskr_pattern_match == 0.0 and anomaly_signals:
-            tskr_pattern_match = 0.85
+
         temporal_precedence = self._relation_precedence_score(relation, has_anomalies=bool(anomaly_signals))
-        min_h = fm.get("expected_latency_min_hours")
-        max_h = fm.get("expected_latency_max_hours")
-        latency_consistency = self._latency_consistency(
-            min_h,
-            max_h,
-            inferred_delay_hours=mean_lag_hours if mean_lag_hours is not None else (1.0 if anomaly_signals else None),
-        )
+        latency_consistency = self._pattern_latency_alignment(pattern)
+        temporal_contradiction = self._pattern_temporal_contradiction(pattern)
+
+        if tskr_pattern_match == 0.0 and anomaly_signals:
+            tskr_pattern_match = 0.55
+
+        if latency_consistency == 0.0 and anomaly_signals:
+            latency_consistency = 0.30
+
         temporal = min(
             1.0,
-            0.35 * tskr_pattern_match + 0.30 * temporal_precedence + 0.20 * latency_consistency + 0.15 * support,
+            0.35 * tskr_pattern_match
+            + 0.25 * temporal_precedence
+            + 0.25 * latency_consistency
+            + 0.15 * support,
         )
+
+        if temporal_contradiction:
+            temporal = max(0.0, temporal - 0.25)
+
         return {
             "temporal": round(temporal, 6),
             "tskr_pattern_match": round(tskr_pattern_match, 6),
@@ -447,6 +669,13 @@ class RuleBasedCausalityEngineV32:
             "mean_lag_hours": mean_lag_hours,
             "support": support,
             "pattern_id": pattern.get("pattern_id") if pattern else None,
+            "window_start": pattern.get("window_start") if pattern else None,
+            "window_end": pattern.get("window_end") if pattern else None,
+            "expected_latency_min_hours": pattern.get("expected_latency_min_hours") if pattern else None,
+            "expected_latency_max_hours": pattern.get("expected_latency_max_hours") if pattern else None,
+            "observed_lag_hours": pattern.get("observed_lag_hours") if pattern else None,
+            "latency_violation_type": pattern.get("latency_violation_type") if pattern else "unknown",
+            "temporal_contradiction": temporal_contradiction,
         }
 
     def _evidence_score_for_fm(self, documents):
@@ -482,13 +711,20 @@ class RuleBasedCausalityEngineV32:
                 "temporal": 0.40,
                 "tskr_pattern_match": self._pattern_confidence(pattern) if pattern else (0.50 if anomaly_signals else 0.0),
                 "temporal_precedence": 0.40,
-                "latency_consistency": 0.30,
+                "latency_consistency": self._pattern_latency_alignment(pattern) if pattern else 0.30,
                 "matching_signal_ids": anomaly_signals[:5],
                 "relation": pattern.get("relation") if pattern else "unknown",
                 "operator_family": pattern.get("operator_family") if pattern else None,
                 "mean_lag_hours": pattern.get("mean_lag_hours") if pattern else None,
                 "support": self._pattern_support(pattern) if pattern else 0.0,
                 "pattern_id": pattern.get("pattern_id") if pattern else None,
+                "window_start": pattern.get("window_start") if pattern else None,
+                "window_end": pattern.get("window_end") if pattern else None,
+                "latency_violation_type": pattern.get("latency_violation_type") if pattern else "unknown",
+                "expected_latency_min_hours": pattern.get("expected_latency_min_hours") if pattern else None,
+                "expected_latency_max_hours": pattern.get("expected_latency_max_hours") if pattern else None,
+                "observed_lag_hours": pattern.get("observed_lag_hours") if pattern else None,
+                "temporal_contradiction": self._pattern_temporal_contradiction(pattern) if pattern else False,
             }
         delta_h = abs((current_event_time - past_time).total_seconds()) / 3600.0
         if past_time >= current_event_time:
@@ -510,17 +746,22 @@ class RuleBasedCausalityEngineV32:
         operator_family = pattern.get("operator_family") if pattern else None
         mean_lag_hours = pattern.get("mean_lag_hours") if pattern else delta_h
         support = self._pattern_support(pattern)
+
+        latency_consistency = self._pattern_latency_alignment(pattern) if pattern else (0.60 if anomaly_signals else 0.30)
+        temporal_contradiction = self._pattern_temporal_contradiction(pattern) if pattern else False
+
         base_precedence = 0.85 if delta_h <= 72 else 0.60 if delta_h <= 720 else 0.35
         relation_score = self._relation_precedence_score(relation, has_anomalies=bool(anomaly_signals))
         temporal_precedence = max(recency_precedence, base_precedence, relation_score)
         tskr_pattern_match = self._pattern_confidence(pattern)
         if tskr_pattern_match == 0.0 and anomaly_signals:
             tskr_pattern_match = 0.70
-        latency_consistency = 0.60 if anomaly_signals else 0.30
         temporal = min(
             1.0,
             0.35 * tskr_pattern_match + 0.30 * temporal_precedence + 0.20 * latency_consistency + 0.15 * support,
         )
+        if temporal_contradiction:
+            temporal = max(0.0, temporal - 0.20)
         return {
             "temporal": round(temporal, 6),
             "tskr_pattern_match": round(tskr_pattern_match, 6),
@@ -532,6 +773,13 @@ class RuleBasedCausalityEngineV32:
             "mean_lag_hours": round(mean_lag_hours, 6) if isinstance(mean_lag_hours, (int, float)) else mean_lag_hours,
             "support": round(support, 6),
             "pattern_id": pattern.get("pattern_id") if pattern else None,
+            "window_start": pattern.get("window_start") if pattern else None,
+            "window_end": pattern.get("window_end") if pattern else None,
+            "expected_latency_min_hours": pattern.get("expected_latency_min_hours") if pattern else None,
+            "expected_latency_max_hours": pattern.get("expected_latency_max_hours") if pattern else None,
+            "observed_lag_hours": pattern.get("observed_lag_hours") if pattern else None,
+            "latency_violation_type": pattern.get("latency_violation_type") if pattern else "unknown",
+            "temporal_contradiction": temporal_contradiction,
         }
 
     def _evidence_score_for_past_event(self, documents, pe):
@@ -612,15 +860,6 @@ class RuleBasedCausalityEngineV32:
             + w["governance"] * scores["governance"]
         )
         return round(min(max(score, 0.0), 1.0), 6)
-
-    def _confidence_label(self, score):
-        if score >= 0.75:
-            return "HIGH"
-        if score >= 0.45:
-            return "MEDIUM"
-        if score > 0.0:
-            return "LOW"
-        return "SPECULATIVE"
 
     def _supporting_doc_refs(self, documents, preferred):
         return [d["doc_id"] for d in documents if d.get("doc_id") and d.get("doc_type") in preferred][:5]
@@ -722,7 +961,7 @@ class RuleBasedCausalityEngineV32:
         composite = float(candidate.get("composite_score", 0.0))
         candidate["recurrence"] = recurrence
         candidate["composite_score"] = round(min(1.0, composite + 0.03 * recurrence_score), 6)
-        candidate["confidence_label"] = self._confidence_label(candidate["composite_score"])
+        candidate["confidence_label"] = self._normalized_confidence_label(candidate["composite_score"])
         return candidate
 
     def _build_common_cause_index(self, kg_context):
@@ -1126,6 +1365,54 @@ class RuleBasedCausalityEngineV32:
         if not tskr_index or not target_id:
             return None
         return tskr_index.get(target_id)
+
+    def _pattern_latency_alignment(self, pattern: Optional[JsonDict]) -> float:
+        if not pattern:
+            return 0.0
+        value = pattern.get("latency_alignment_score")
+        if isinstance(value, (int, float)):
+            return float(max(0.0, min(1.0, value)))
+        return 0.0
+
+    def _pattern_temporal_contradiction(self, pattern: Optional[JsonDict]) -> bool:
+        if not pattern:
+            return False
+        return bool(pattern.get("temporal_contradiction", False))
+
+    def _normalized_confidence_label(self, score: float) -> str:
+        if score >= 0.75:
+            return "high"
+        if score >= 0.45:
+            return "medium"
+        if score > 0.0:
+            return "low"
+        return "speculative"
+
+    def _refresh_candidate_confidence_and_thresholds(self, candidate: JsonDict) -> None:
+        candidate["composite_score"] = self._combine_scores(candidate.get("scores") or {})
+        candidate["confidence_label"] = self._normalized_confidence_label(
+            float(candidate.get("composite_score", 0.0) or 0.0)
+        )
+        candidate["meets_evidence_threshold"] = (
+            float(((candidate.get("scores") or {}).get("evidence", 0.0) or 0.0))
+            >= self.config.minimum_evidence_threshold
+        )
+
+    def _update_score_rationale_for_refinement(
+        self,
+        candidate: JsonDict,
+        *,
+        support_score: float,
+        contradiction_score: float,
+        contextual_score: float,
+        prior_evidence_score: float,
+    ) -> None:
+        rationale = candidate.setdefault("score_rationale", {})
+        rationale["evidence"] = (
+            f"Evidence refined after retrieval: support={support_score:.3f}, "
+            f"contradiction={contradiction_score:.3f}, context={contextual_score:.3f}, "
+            f"prior={prior_evidence_score:.3f}."
+        )
 
     def _pattern_confidence(self, pattern):
         if not pattern:

@@ -286,6 +286,13 @@ class RCAReasoningOrchestrator:
             )
         self._validate_and_persist(run_id, "evidence_bundle", evidence_bundle)
 
+        if hasattr(self.causality_engine, "refine_with_evidence"):
+            causality_candidates = self.causality_engine.refine_with_evidence(
+                causality_candidates=causality_candidates,
+                evidence_bundle=evidence_bundle,
+            )
+            self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
+
         ishikawa_matrix: Optional[JsonDict] = None
         if self.config.enable_ishikawa:
             if self.ishikawa_evaluator is None:
@@ -394,6 +401,52 @@ class RCAReasoningOrchestrator:
         self.artifact_store.save(run_id, "run_context", run_context)
         return run_context
 
+    def _summarize_primary_candidate_posture(
+        self,
+        rca_card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> JsonDict:
+        primary = rca_card.get("primary_hypothesis") or {}
+        primary_candidate_id = primary.get("candidate_id")
+
+        if not primary_candidate_id or primary_candidate_id == "NONE":
+            return {
+                "candidate_found": False,
+                "evidence_posture": None,
+                "temporal_posture": None,
+                "temporal_contradiction": None,
+                "latency_violation_type": None,
+                "composite_score": primary.get("composite_score"),
+                "confidence_label": primary.get("confidence_label"),
+            }
+
+        for c in (causality_candidates.get("candidates") or []):
+            if not isinstance(c, dict):
+                continue
+            if c.get("candidate_id") != primary_candidate_id:
+                continue
+
+            temporal_evidence = c.get("temporal_evidence") or {}
+            return {
+                "candidate_found": True,
+                "evidence_posture": c.get("evidence_posture"),
+                "temporal_posture": c.get("temporal_posture"),
+                "temporal_contradiction": temporal_evidence.get("temporal_contradiction"),
+                "latency_violation_type": temporal_evidence.get("latency_violation_type"),
+                "composite_score": c.get("composite_score"),
+                "confidence_label": c.get("confidence_label"),
+            }
+
+        return {
+            "candidate_found": False,
+            "evidence_posture": None,
+            "temporal_posture": None,
+            "temporal_contradiction": None,
+            "latency_violation_type": None,
+            "composite_score": primary.get("composite_score"),
+            "confidence_label": primary.get("confidence_label"),
+        }
+
     def _validate_and_persist(self, run_id: str, artifact_name: str, payload: JsonDict) -> None:
         validation = self._validate_artifact(run_id=run_id, artifact_name=artifact_name, payload=payload)
         if self.config.persist_intermediate_artifacts:
@@ -421,6 +474,10 @@ class RCAReasoningOrchestrator:
         summary = rca_card.get("executive_summary") or {}
         primary = rca_card.get("primary_hypothesis") or {}
         rca_status = rca_card.get("validation_status") or {}
+        candidate_posture = self._summarize_primary_candidate_posture(
+            rca_card=rca_card,
+            causality_candidates=causality_candidates,
+        )
         primary_evidence = self._summarize_primary_evidence(
             rca_card=rca_card,
             evidence_bundle=evidence_bundle,
@@ -432,6 +489,12 @@ class RCAReasoningOrchestrator:
             "input_refs": run_context["input_refs"],
             "pipeline_config": {
                 "causality_engine_version": (self.config.extra or {}).get("causality_engine_version", "v31"),
+                "evidence_refinement_applied": bool(
+                    ((causality_candidates.get("provenance") or {}).get("evidence_refinement_applied", False))
+                ),
+                "enable_ishikawa": bool(self.config.enable_ishikawa),
+                "top_k_candidates": self.config.top_k_candidates,
+                "top_k_evidence": self.config.top_k_evidence,
             },
             "artifacts": {
                 "kg_context": {"present": True},
@@ -462,9 +525,18 @@ class RCAReasoningOrchestrator:
                     "primary_contradicting_evidence_count": primary_evidence.get("contradicting_count", 0),
                     "primary_contextual_evidence_count": primary_evidence.get("contextual_count", 0),
                     "primary_supporting_evidence_ids": primary_evidence.get("supporting_ids", []),
-
-
+                    "primary_evidence_posture": candidate_posture.get("evidence_posture"),
+                    "primary_temporal_posture": candidate_posture.get("temporal_posture"),
+                    "primary_temporal_contradiction": candidate_posture.get("temporal_contradiction"),
+                    "primary_latency_violation_type": candidate_posture.get("latency_violation_type"),
+                    "evidence_refinement_applied": bool(
+                        ((causality_candidates.get("provenance") or {}).get("evidence_refinement_applied", False))
+                    ),
                 },
+            },
+            "primary_candidate_summary": {
+                **candidate_posture,
+                **primary_evidence,
             },
             "validation": {
                 "inputs": input_validation,
@@ -547,10 +619,13 @@ class RCAReasoningOrchestrator:
         for row in (evidence_bundle.get("results") or []):
             if not isinstance(row, dict):
                 continue
-            if row.get("linked_candidate_id") != primary_candidate_id:
+
+            row_meta = row.get("metadata") or {}
+            linked_candidate_id = row.get("linked_candidate_id") or row_meta.get("linked_candidate_id")
+            if linked_candidate_id != primary_candidate_id:
                 continue
 
-            support_role = row.get("support_role")
+            support_role = row.get("support_role") or row_meta.get("support_role")
             if support_role == "supporting":
                 supporting_count += 1
                 source_id = row.get("snippet_id") or row.get("source_id")

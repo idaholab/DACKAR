@@ -66,6 +66,8 @@ class TSKRTemporalScorerV1:
         event_end = parse_dt(event.get("timestamp_end")) or event_start
 
         anomaly_points = self._extract_anomaly_points(telemetry_summary)
+        anomaly_windows = self._extract_anomaly_windows(telemetry_summary)
+        anomaly_window_summary = self._summarize_anomaly_windows(anomaly_windows)
         signal_ids = self._extract_signal_ids(telemetry_summary)
         telemetry_support = self._telemetry_support_score(telemetry_summary)
         operator_family = self._infer_operator_family(event_start, event_end, anomaly_points)
@@ -78,6 +80,8 @@ class TSKRTemporalScorerV1:
                 event_start=event_start,
                 event_end=event_end,
                 anomaly_points=anomaly_points,
+                anomaly_windows=anomaly_windows,
+                anomaly_window_summary=anomaly_window_summary,
                 signal_ids=signal_ids,
                 telemetry_support=telemetry_support,
                 operator_family=operator_family,
@@ -133,6 +137,53 @@ class TSKRTemporalScorerV1:
         points.sort()
         return points
 
+    def _extract_anomaly_windows(self, telemetry_summary: JsonDict) -> List[Dict[str, Any]]:
+        windows: List[Dict[str, Any]] = []
+        for sig in telemetry_summary.get("signals", []) or []:
+            sensor_id = sig.get("sensor_id")
+            for a in sig.get("anomalies", []) or []:
+                start = parse_dt(a.get("timestamp_start"))
+                end = parse_dt(a.get("timestamp_end")) or start
+                if start is None:
+                    continue
+                windows.append(
+                    {
+                        "sensor_id": sensor_id,
+                        "start": start,
+                        "end": end,
+                        "pattern": a.get("pattern"),
+                        "severity": a.get("severity"),
+                        "raw_score": a.get("score"),
+                    }
+                )
+        windows.sort(key=lambda x: x["start"])
+        return windows
+
+    def _summarize_anomaly_windows(
+        self,
+        anomaly_windows: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not anomaly_windows:
+            return {
+                "window_start": None,
+                "window_end": None,
+                "earliest_start": None,
+                "latest_end": None,
+                "duration_hours": None,
+            }
+
+        earliest_start = anomaly_windows[0]["start"]
+        latest_end = anomaly_windows[-1]["end"] or anomaly_windows[-1]["start"]
+        duration_hours = (latest_end - earliest_start).total_seconds() / 3600.0
+
+        return {
+            "window_start": earliest_start,
+            "window_end": latest_end,
+            "earliest_start": earliest_start,
+            "latest_end": latest_end,
+            "duration_hours": round(duration_hours, 4),
+        }
+    
     def _extract_signal_ids(self, telemetry_summary: JsonDict) -> List[str]:
         ids: List[str] = []
         for sig in telemetry_summary.get("signals", []) or []:
@@ -211,12 +262,15 @@ class TSKRTemporalScorerV1:
         event_start: Optional[datetime],
         event_end: Optional[datetime],
         anomaly_points: List[datetime],
+        anomaly_windows: List[JsonDict],
+        anomaly_window_summary: JsonDict,
         signal_ids: List[str],
         telemetry_support: float,
         operator_family: Optional[str],
         fm: JsonDict,
         past_events: List[JsonDict],
     ) -> JsonDict:
+        
         fm_id = fm.get("fm_id")
         component_id = fm.get("component_id")
 
@@ -225,14 +279,20 @@ class TSKRTemporalScorerV1:
             event_end=event_end,
             anomaly_points=anomaly_points,
         )
-    
+
         anomaly_count_score = self._anomaly_count_score(anomaly_points)
         lag_consistency_score = self._lag_consistency_score(std_lag)
 
-        latency_score = self._score_expected_latency(
+        latency_details = self._latency_alignment_details(
             mean_lag_hours=mean_lag,
             expected_min=fm.get("expected_latency_min_hours"),
             expected_max=fm.get("expected_latency_max_hours"),
+        )
+        latency_score = latency_details["latency_alignment_score"]
+
+        temporal_contradiction = (
+            relation == "follows"
+            or latency_details["latency_violation_type"] in {"too_fast", "too_slow"}
         )
 
         history_score = self._score_history_support(
@@ -247,6 +307,7 @@ class TSKRTemporalScorerV1:
             + self.config.history_weight * history_score
             + self.config.anomaly_count_weight * anomaly_count_score
             + self.config.lag_consistency_weight * lag_consistency_score
+            - (0.20 if temporal_contradiction else 0.0)
         )
 
         support = clamp01(
@@ -254,6 +315,7 @@ class TSKRTemporalScorerV1:
             + 0.35 * telemetry_support
             + 0.15 * anomaly_count_score
             + 0.15 * lag_consistency_score
+            - (0.15 if temporal_contradiction else 0.0)
         )
 
         return {
@@ -273,6 +335,21 @@ class TSKRTemporalScorerV1:
             "anomaly_count": len(anomaly_points),
             "lag_consistency": round(lag_consistency_score, 4),
             "source": "TSKRTemporalScorerV1",
+            "window_start": (
+                anomaly_window_summary.get("window_start").isoformat()
+                if anomaly_window_summary.get("window_start") else None
+            ),
+            "window_end": (
+                anomaly_window_summary.get("window_end").isoformat()
+                if anomaly_window_summary.get("window_end") else None
+            ),
+            "duration_hours": anomaly_window_summary.get("duration_hours"),
+            "expected_latency_min_hours": latency_details["expected_min_hours"],
+            "expected_latency_max_hours": latency_details["expected_max_hours"],
+            "observed_lag_hours": latency_details["observed_lag_hours"],
+            "latency_alignment_score": latency_details["latency_alignment_score"],
+            "latency_violation_type": latency_details["latency_violation_type"],
+            "temporal_contradiction": temporal_contradiction,
         }
 
     def _score_against_anomalies(
@@ -349,6 +426,55 @@ class TSKRTemporalScorerV1:
             return 1.0 if lag <= mx else clamp01(1.0 - ((lag - mx) / max(mx, 1.0)))
         return 0.5
 
+    def _latency_alignment_details(
+        self,
+        *,
+        mean_lag_hours: Optional[float],
+        expected_min: Any,
+        expected_max: Any,
+    ) -> Dict[str, Any]:
+        if mean_lag_hours is None:
+            return {
+                "expected_min_hours": expected_min,
+                "expected_max_hours": expected_max,
+                "observed_lag_hours": None,
+                "latency_alignment_score": self.config.fallback_confidence,
+                "latency_violation_type": "unknown",
+            }
+
+        try:
+            mn = float(expected_min) if expected_min is not None else None
+            mx = float(expected_max) if expected_max is not None else None
+        except Exception:
+            return {
+                "expected_min_hours": expected_min,
+                "expected_max_hours": expected_max,
+                "observed_lag_hours": round(float(mean_lag_hours), 4),
+                "latency_alignment_score": 0.4,
+                "latency_violation_type": "unknown",
+            }
+
+        lag = abs(float(mean_lag_hours))
+        score = self._score_expected_latency(
+            mean_lag_hours=lag,
+            expected_min=mn,
+            expected_max=mx,
+        )
+
+        violation = "none"
+        if mn is not None and lag < mn:
+            violation = "too_fast"
+        elif mx is not None and lag > mx:
+            violation = "too_slow"
+
+        return {
+            "expected_min_hours": mn,
+            "expected_max_hours": mx,
+            "observed_lag_hours": round(lag, 4),
+            "latency_alignment_score": round(float(score), 4),
+            "latency_violation_type": violation,
+        }
+    
     def _score_history_support(
         self,
         *,

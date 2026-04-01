@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Sequence
 import json
 import uuid
 
@@ -417,12 +417,19 @@ analyst_review = {
             supports.append("Has a structural KG path connecting the hypothesis to the event context.")
 
         if alt.get("supporting_evidence_refs"):
-            supports.append("Has referenced supporting evidence in the current evidence bundle.")
+            supports.append("Has direct supporting evidence references in the current evidence bundle.")
 
-        if alt.get("temporal_support", 0.0) > 0:
-            supports.append(
-                f"Has non-zero temporal support ({float(alt.get('temporal_support', 0.0)):.3f})."
-            )
+        temporal_posture = self._candidate_temporal_posture(alt)
+        if temporal_posture == "supported":
+            supports.append("Has temporally supportive ordering and latency alignment.")
+        elif temporal_posture == "partial":
+            supports.append("Has partial temporal support.")
+
+        evidence_posture = self._candidate_evidence_posture(alt)
+        if evidence_posture == "supported":
+            supports.append("Has evidence posture consistent with direct support.")
+        elif evidence_posture == "mixed":
+            supports.append("Has some support, but evidence posture is mixed.")
 
         if not supports:
             supports.append("Remains plausible based on current candidate ranking.")
@@ -446,11 +453,23 @@ analyst_review = {
         if not alt.get("supporting_evidence_refs"):
             weaknesses.append("No direct supporting evidence references were carried into synthesis.")
 
+        if alt.get("contradicting_evidence_refs"):
+            weaknesses.append("Retrieved contradiction signals remain unresolved for this alternative.")
+
         if not alt.get("kg_path"):
             weaknesses.append("No explicit KG path support was provided in the selected candidate payload.")
 
-        if float(alt.get("temporal_support", 0.0)) <= 0.0:
-            weaknesses.append("No positive temporal support was available in the selected candidate payload.")
+        temporal_posture = self._candidate_temporal_posture(alt)
+        if temporal_posture == "contradicted":
+            weaknesses.append("Temporal evidence contradicts this alternative.")
+        elif temporal_posture == "weak":
+            weaknesses.append("Temporal evidence remains weak for this alternative.")
+
+        evidence_posture = self._candidate_evidence_posture(alt)
+        if evidence_posture == "contradicted":
+            weaknesses.append("Evidence posture is contradictory rather than supportive.")
+        elif evidence_posture == "contextual_only":
+            weaknesses.append("Evidence is contextual rather than directly supportive.")
 
         if not weaknesses:
             weaknesses.append("Still weaker than the selected primary based on the current candidate ranking.")
@@ -476,6 +495,18 @@ analyst_review = {
                 }
             )
 
+        for ref in alt.get("contradicting_evidence_refs", [])[:1]:
+            citations.append(
+                {
+                    "claim_summary": (
+                        f"Alternative hypothesis {alt.get('cause_label')} has contradicting evidence that weakens it."
+                    ),
+                    "source_type": "evidence_snippet",
+                    "source_id": ref,
+                    "excerpt": f"Referenced contradicting evidence id: {ref}",
+                }
+            )
+
         if alt.get("kg_path"):
             citations.append(
                 {
@@ -491,16 +522,19 @@ analyst_review = {
                 }
             )
 
-        if float(alt.get("temporal_support", 0.0)) > 0.0:
+        temporal_evidence = alt.get("temporal_evidence") or {}
+        if temporal_evidence.get("pattern_id"):
             citations.append(
                 {
                     "claim_summary": (
-                        f"Alternative hypothesis {alt.get('cause_label')} has temporal support."
+                        f"Alternative hypothesis {alt.get('cause_label')} has temporal evidence."
                     ),
                     "source_type": "kg_path",
                     "source_id": alt.get("candidate_id"),
                     "excerpt": (
-                        f"temporal_support={float(alt.get('temporal_support', 0.0)):.3f}"
+                        f"pattern_id={temporal_evidence.get('pattern_id')}; "
+                        f"relation={temporal_evidence.get('relation')}; "
+                        f"latency_violation_type={temporal_evidence.get('latency_violation_type')}"
                     ),
                 }
             )
@@ -666,26 +700,87 @@ analyst_review = {
         supporting = 0
         contradicting = 0
         contextual = 0
+        missing = 0
 
         for row in evidence_rows or []:
-            role = row.get("support_role")
-            linked_candidate_id = row.get("linked_candidate_id")
+            if not isinstance(row, dict):
+                continue
 
+            linked_candidate_id = row.get("linked_candidate_id")
             if linked_candidate_id and primary_candidate_id and linked_candidate_id != primary_candidate_id:
                 continue
 
+            role = row.get("support_role")
             if role == "supporting":
                 supporting += 1
             elif role == "contradicting":
                 contradicting += 1
+            elif role == "missing":
+                missing += 1
             else:
                 contextual += 1
+
+        if contradicting > 0 and supporting == 0:
+            posture = "contradicted"
+        elif contradicting > 0 and supporting > 0:
+            posture = "mixed"
+        elif supporting > 0:
+            posture = "supported"
+        elif contextual > 0:
+            posture = "contextual_only"
+        else:
+            posture = "weak"
 
         return {
             "supporting": supporting,
             "contradicting": contradicting,
             "contextual": contextual,
+            "missing": missing,
+            "posture": posture,
         }
+
+    def _fallback_decision_status_from_posture(
+        self,
+        *,
+        evidence_summary: JsonDict,
+        pattern_posture: JsonDict,
+        passed_minimum_evidence_gate: bool,
+    ) -> str:
+        if not passed_minimum_evidence_gate:
+            return "insufficient_evidence"
+
+        contradicting = int(evidence_summary.get("contradicting", 0) or 0)
+        evidence_posture = str(evidence_summary.get("posture", "weak") or "weak")
+        temporal_contradiction = bool(pattern_posture.get("temporal_contradiction", False))
+        temporal_posture = str(pattern_posture.get("temporal_posture", "unknown") or "unknown")
+
+        if contradicting > 0 or evidence_posture == "contradicted":
+            return "review_required"
+        if temporal_contradiction or temporal_posture == "contradicted":
+            return "review_required"
+        return "review_required"
+
+    def _fallback_attention_flags_from_posture(
+        self,
+        *,
+        evidence_summary: JsonDict,
+        pattern_posture: JsonDict,
+        passed_minimum_evidence_gate: bool,
+    ) -> List[str]:
+        if not passed_minimum_evidence_gate:
+            return [
+                "Retrieved evidence did not meet the minimum support threshold for write-back.",
+                "Use the ranked candidates as analyst guidance only.",
+            ]
+
+        flags: List[str] = []
+        if int(evidence_summary.get("contradicting", 0) or 0) > 0:
+            flags.append("Primary hypothesis has contradicting evidence that must be resolved before write-back.")
+        if bool(pattern_posture.get("temporal_contradiction", False)):
+            flags.append("Temporal evidence contains contradiction or latency mismatch and requires analyst review.")
+        if not flags:
+            flags.append("Primary hypothesis remains provisional and requires analyst confirmation before write-back.")
+        return flags
 
     def _fallback_confidence_and_decision(
         self,
@@ -693,57 +788,26 @@ analyst_review = {
         evidence_summary: JsonDict,
         passed_minimum_evidence_gate: bool,
     ) -> JsonDict:
-        supporting = int(evidence_summary.get("supporting", 0) or 0)
-        contradicting = int(evidence_summary.get("contradicting", 0) or 0)
-        contextual = int(evidence_summary.get("contextual", 0) or 0)
-
+        
         if not passed_minimum_evidence_gate:
             return {
                 "confidence_label": "low",
-                "decision_status": "review_required",
+                "decision_status": "insufficient_evidence",
                 "analyst_attention_flags": [
                     "Retrieved evidence did not meet the minimum support threshold for write-back.",
                     "Use the ranked candidates as analyst guidance only.",
                 ],
             }
 
-        if contradicting > 0:
+        supporting = int(evidence_summary.get("supporting", 0) or 0)
+        if supporting >= 2:
             return {
                 "confidence_label": "medium",
                 "decision_status": "review_required",
                 "analyst_attention_flags": [
-                    "Primary hypothesis has mixed evidence and requires analyst adjudication.",
-                    "Resolve contradicting evidence before any write-back or CAP handoff.",
-                ],
-            }
-
-        if supporting >= 3:
-            return {
-                "confidence_label": "medium",
-                "decision_status": "review_required",
-                "analyst_attention_flags": [
-                    "Primary hypothesis has multiple supporting evidence items, but analyst confirmation is still required.",
+                    "Primary hypothesis has direct support, but analyst confirmation is still required.",
                     "Alternative hypotheses should be explicitly checked before write-back.",
-                ],
-            }
 
-        if supporting >= 1:
-            return {
-                "confidence_label": "low",
-                "decision_status": "review_required",
-                "analyst_attention_flags": [
-                    "Primary hypothesis has limited direct support and should be treated as provisional.",
-                    "Seek additional confirming or contradicting evidence before write-back.",
-                ],
-            }
-
-        if contextual > 0:
-            return {
-                "confidence_label": "low",
-                "decision_status": "review_required",
-                "analyst_attention_flags": [
-                    "Evidence is contextual rather than directly supporting the primary hypothesis.",
-                    "Do not treat lack of contradiction as confirmation.",
                 ],
             }
 
@@ -829,6 +893,29 @@ analyst_review = {
         common_cause = candidate.get("common_cause")
         return common_cause if isinstance(common_cause, dict) else {}
 
+    def _candidate_temporal_posture(self, candidate: Optional[JsonDict]) -> str:
+        if not isinstance(candidate, dict):
+            return "unknown"
+        value = candidate.get("temporal_posture")
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+        temporal_evidence = candidate.get("temporal_evidence") or {}
+        if temporal_evidence.get("temporal_contradiction"):
+            return "contradicted"
+        return "unknown"
+
+    def _candidate_evidence_posture(self, candidate: Optional[JsonDict]) -> str:
+        if not isinstance(candidate, dict):
+            return "unknown"
+        value = candidate.get("evidence_posture")
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+        if candidate.get("contradicting_evidence_refs"):
+            return "mixed"
+        if candidate.get("supporting_evidence_refs"):
+            return "supported"
+        return "unknown"
+    
     def _primary_common_cause_why_primary(
         self,
         candidate: Optional[JsonDict],
@@ -958,6 +1045,7 @@ analyst_review = {
         recurrence = self._candidate_recurrence(primary_candidate)
         common_cause = self._candidate_common_cause(primary_candidate)
         common_cause_summary = (causality_candidates or {}).get("common_cause_summary") or {}
+        temporal_evidence = primary_candidate.get("temporal_evidence") or {}
 
         primary_candidate_id = primary_candidate.get("candidate_id")
         clustered_candidate_ids = common_cause_summary.get("clustered_candidate_ids", []) or []
@@ -966,6 +1054,7 @@ analyst_review = {
             "supporting_evidence_count": int(evidence_summary.get("supporting", 0) or 0),
             "contradicting_evidence_count": int(evidence_summary.get("contradicting", 0) or 0),
             "contextual_evidence_count": int(evidence_summary.get("contextual", 0) or 0),
+            "evidence_posture": evidence_summary.get("posture", "weak"),
             "primary_score": float(primary_candidate.get("composite_score", 0.0) or 0.0),
             "runner_up_gap": self._score_gap_to_runner_up(selected_candidates),
             "recurrence_score": float(recurrence.get("recurrence_score", 0.0) or 0.0),
@@ -976,6 +1065,9 @@ analyst_review = {
             "candidate_in_common_cause_cluster": (
                 bool(primary_candidate_id) and primary_candidate_id in clustered_candidate_ids
             ),
+            "temporal_posture": self._candidate_temporal_posture(primary_candidate),
+            "temporal_contradiction": bool(temporal_evidence.get("temporal_contradiction", False)),
+            "latency_violation_type": temporal_evidence.get("latency_violation_type", "unknown"),
             "fallback_used": bool(fallback_used),
             "passed_minimum_evidence_gate": bool(passed_minimum_evidence_gate),
         }
@@ -986,23 +1078,38 @@ analyst_review = {
 
         supporting = int(posture.get("supporting_evidence_count", 0) or 0)
         contradicting = int(posture.get("contradicting_evidence_count", 0) or 0)
+        contextual = int(posture.get("contextual_evidence_count", 0) or 0)
+        evidence_posture = posture.get("evidence_posture", "weak")
+
         primary_score = float(posture.get("primary_score", 0.0) or 0.0)
         runner_up_gap = float(posture.get("runner_up_gap", 0.0) or 0.0)
+
         recurrence_score = float(posture.get("recurrence_score", 0.0) or 0.0)
         recurrence_confidence = posture.get("recurrence_confidence", "none")
+
         common_cause_score = float(posture.get("common_cause_score", 0.0) or 0.0)
         common_cause_confidence = posture.get("common_cause_confidence", "none")
         suspected_common_cause = bool(posture.get("suspected_common_cause"))
         candidate_in_common_cause_cluster = bool(posture.get("candidate_in_common_cause_cluster"))
+
+        temporal_posture = posture.get("temporal_posture", "unknown")
+        temporal_contradiction = bool(posture.get("temporal_contradiction", False))
+        latency_violation_type = posture.get("latency_violation_type", "unknown")
+
         fallback_used = bool(posture.get("fallback_used"))
 
-        if contradicting > 0:
+        if contradicting > 0 or evidence_posture == "contradicted":
+            return "low"
+
+        if temporal_contradiction or temporal_posture == "contradicted":
             return "low"
 
         confidence = "low"
 
         direct_support_strong = (supporting >= 3 and primary_score >= 0.65)
         direct_support_moderate = (supporting >= 2 and primary_score >= 0.55)
+        contextual_only = (supporting == 0 and contextual > 0)
+
         clear_separation = runner_up_gap >= 0.10
         modest_separation = runner_up_gap >= 0.04
 
@@ -1013,17 +1120,25 @@ analyst_review = {
             or recurrence_score >= 0.45
         )
 
-        if direct_support_strong and modest_separation:
+        temporal_reinforced = (
+            temporal_posture == "supported"
+            and latency_violation_type in {"none", "unknown"}
+        ) or temporal_posture == "partial"
+
+        if contextual_only and not temporal_reinforced:
+            confidence = "low"
+        elif direct_support_strong and modest_separation and temporal_reinforced:
             confidence = "medium"
-        elif direct_support_moderate and pattern_reinforced:
+        elif direct_support_moderate and (pattern_reinforced or temporal_reinforced):
             confidence = "medium"
-        elif supporting >= 1 and primary_score >= 0.50 and modest_separation and pattern_reinforced:
+        elif supporting >= 1 and primary_score >= 0.50 and modest_separation and (pattern_reinforced or temporal_reinforced):
             confidence = "medium"
 
         if (
             direct_support_strong
             and clear_separation
             and pattern_reinforced
+            and temporal_posture == "supported"
             and not fallback_used
         ):
             confidence = "high"
@@ -1054,10 +1169,10 @@ analyst_review = {
                 "analyst_attention_flags": [
                     "No candidate met minimum grounded synthesis requirements.",
                     "Manual analyst review is required before any write-back.",
-                    "Current RCA card should be treated as a review placeholder, not a supported conclusion."
-
+                    "Current RCA card should be treated as a review placeholder, not a supported conclusion.",
                 ],
             }
+
             primary = {
                 "candidate_id": "NONE",
                 "cause_label": "No supported hypothesis",
@@ -1067,20 +1182,18 @@ analyst_review = {
                     "No candidate satisfied the minimum grounded synthesis requirements."
                 ],
                 "uncertainties": [
-                    "No grounded primary hypothesis was available from the current evidence bundle."
+                    "No grounded primary hypothesis was available from the current evidence bundle.",
+                    "Current evidence ranking is relevance-based and may not fully distinguish support vs contradiction.",
+                    "Manual analyst review is required before any write-back.",
                 ],
                 "composite_score": 0.0,
                 "confidence_label": "speculative",
-                "citations": [
-                    {
-                        "claim_summary": "No grounded candidate was available from the current evidence bundle.",
-                        "source_type": "operational_context",
-                        "source_id": event.get("event_id") or event["id"],
-                        "excerpt": "Fallback synthesis was used because no candidate met the minimum grounded threshold."
-                    }
-                ],
+                "citations": [],
             }
+
             alternatives: List[JsonDict] = []
+            evidence: List[JsonDict] = []
+
             actions = [
                 {
                     "action_id": "ACT-FALLBACK-001",
@@ -1092,11 +1205,13 @@ analyst_review = {
                     "linked_candidate_id": None,
                 }
             ]
+
             analyst_review = {
                 "decision_required": True,
                 "questions_to_resolve": [
                     "Which candidate can be supported by direct plant evidence?",
-                    "What additional inspection or work history is needed to discriminate the leading mechanisms?"
+                    "What additional inspection or work history is needed to discriminate the leading mechanisms?",
+                    "What additional evidence would most reduce uncertainty in the RCA?"
                 ],
                 "writeback_recommendation": "hold_until_review",
             }
@@ -1168,6 +1283,19 @@ analyst_review = {
                 fallback_used=True,
             )
             calibrated_confidence_label = self._calibrate_primary_confidence(pattern_posture)
+
+            decision_status = self._fallback_decision_status_from_posture(
+                evidence_summary=evidence_summary,
+                pattern_posture=pattern_posture,
+                passed_minimum_evidence_gate=passed_minimum_evidence_gate,
+            )
+            analyst_attention_flags = self._fallback_attention_flags_from_posture(
+                evidence_summary=evidence_summary,
+                pattern_posture=pattern_posture,
+                passed_minimum_evidence_gate=passed_minimum_evidence_gate,
+            )
+            evidence_posture = evidence_summary.get("posture", "weak")
+            temporal_posture = pattern_posture.get("temporal_posture", "unknown")
  
             citations: List[JsonDict] = []
 
@@ -1204,13 +1332,37 @@ analyst_review = {
                 ),
                 "why_primary": [
                     f"Highest ranked candidate by composite score ({top.get('composite_score', 0.0):.3f}).",
-                    "Has direct supporting evidence references or KG-path support.",
+                    (
+                        "Has direct supporting evidence references."
+                        if top.get("supporting_evidence_refs")
+                        else "Retains structural KG-path support, though direct evidence remains limited."
+                    ),
+                    (
+                        "Temporal evidence is supportive."
+                        if temporal_posture == "supported"
+                        else "Temporal evidence is partial and should be reviewed with plant chronology."
+                        if temporal_posture == "partial"
+                        else "Temporal evidence does not strengthen this hypothesis."
+                    ),
                     *self._primary_recurrence_why_primary(top),
                     *self._primary_common_cause_why_primary(top, causality_candidates),
                 ],
                 "uncertainties": [
-                    "Alternative hypotheses remain plausible until contradicted by inspection or additional evidence.",
-                    "Current evidence ranking is relevance-based and may not fully distinguish support vs contradiction.",
+                    (
+                        "Retrieved contradiction signals are present and should be resolved explicitly before write-back."
+                        if int(evidence_summary.get("contradicting", 0) or 0) > 0
+                        else "Alternative hypotheses remain plausible until contradicted by inspection or additional evidence."
+                    ),
+                    (
+                        "Evidence is contextual rather than directly supportive."
+                        if evidence_posture == "contextual_only"
+                        else "Current evidence ranking is relevance-based and may not fully distinguish support vs contradiction."
+                    ),
+                    (
+                        "Temporal evidence contains contradiction or latency mismatch and should be reviewed explicitly."
+                        if bool(pattern_posture.get("temporal_contradiction", False))
+                        else "Temporal evidence should still be checked against plant chronology."
+                    ),
                     *self._primary_recurrence_uncertainties(top),
                     *self._primary_common_cause_uncertainties(top, causality_candidates),
                 ],
@@ -1260,11 +1412,10 @@ analyst_review = {
             ]
 
             executive_summary = {
-                "decision_status": fallback_posture["decision_status"],
+                "decision_status": decision_status,
                 "primary_conclusion": f"{top.get('cause_label')} is the leading hypothesis.",
                 "confidence_label": calibrated_confidence_label,
-                "analyst_attention_flags": fallback_posture["analyst_attention_flags"],
-
+                "analyst_attention_flags": analyst_attention_flags,
             }
 
             analyst_review = {
@@ -1272,6 +1423,8 @@ analyst_review = {
                 "questions_to_resolve": [
                     f"What plant observation would falsify '{top.get('cause_label')}'?",
                     "Which alternative remains most plausible if the leading inspection check is negative?",
+                    "Does the observed chronology support or contradict the selected primary mechanism?",
+                    "Which contradicting evidence items must be resolved before write-back?" if top.get("contradicting_evidence_refs") else "What additional evidence would most strengthen or weaken the primary hypothesis?",
                     *self._recurrence_review_questions(top),
                     *self._common_cause_review_questions(top, causality_candidates),
                 ],
@@ -1473,12 +1626,4 @@ analyst_review = {
         label = label.lower()
         if label in {"high", "medium", "low", "speculative"}:
             return label
-        if label == "HIGH":
-            return "high"
-        if label == "MEDIUM":
-            return "medium"
-        if label == "LOW":
-            return "low"
-        if label == "SPECULATIVE":
-            return "speculative"
         return "speculative"

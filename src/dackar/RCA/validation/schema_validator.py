@@ -317,6 +317,26 @@ class RCAArtifactValidator:
                         path=["patterns", str(idx), "operator_family"],
                     ))
 
+                latency_alignment = p.get("latency_alignment_score")
+                if isinstance(latency_alignment, (int, float)) and not (0.0 <= latency_alignment <= 1.0):
+                    issues.append(self._issue(
+                        artifact="tskr_patterns",
+                        severity=self._sev("error"),
+                        code="latency_alignment_out_of_range",
+                        message=f"Pattern {idx} has latency_alignment_score outside [0,1].",
+                        path=["patterns", str(idx), "latency_alignment_score"],
+                    ))
+
+                violation = p.get("latency_violation_type")
+                if violation is not None and violation not in {"none", "too_fast", "too_slow", "unknown"}:
+                    issues.append(self._issue(
+                        artifact="tskr_patterns",
+                        severity=self._sev("error"),
+                        code="latency_violation_type_invalid",
+                        message=f"Pattern {idx} has invalid latency_violation_type '{violation}'.",
+                        path=["patterns", str(idx), "latency_violation_type"],
+                    ))
+
         elif artifact_type == "evidence_bundle":
             scope = payload.get("retrieval_scope") or {}
             if not scope.get("asset_id"):
@@ -326,6 +346,27 @@ class RCAArtifactValidator:
                     code="retrieval_scope_asset_missing",
                     message="evidence_bundle.retrieval_scope.asset_id is required.",
                 ))
+
+            candidate_summaries = payload.get("candidate_evidence_summary") or []
+            for idx, row in enumerate(candidate_summaries):
+                if not isinstance(row, dict):
+                    issues.append(self._issue(
+                        artifact="evidence_bundle",
+                        severity=self._sev("error"),
+                        code="candidate_evidence_summary_row_wrong_type",
+                        message=f"candidate_evidence_summary[{idx}] must be an object.",
+                        path=["candidate_evidence_summary", str(idx)],
+                    ))
+                    continue
+
+                if not row.get("candidate_id"):
+                    issues.append(self._issue(
+                        artifact="evidence_bundle",
+                        severity=self._sev("error"),
+                        code="candidate_evidence_summary_candidate_id_missing",
+                        message=f"candidate_evidence_summary[{idx}].candidate_id is required.",
+                        path=["candidate_evidence_summary", str(idx), "candidate_id"],
+                    ))
 
         elif artifact_type == "rca_card":
             issues.extend(self._semantic_checks_rca_card(payload))
@@ -483,12 +524,35 @@ class RCAArtifactValidator:
                         path=["candidates", str(idx), "cause_node_id"],
                     ))
 
+        if candidates and evidence:
+            candidate_ids = {
+                c.get("candidate_id")
+                for c in (candidates.get("candidates") or [])
+                if isinstance(c, dict) and c.get("candidate_id")
+            }
+
+            for idx, row in enumerate(evidence.get("candidate_evidence_summary") or []):
+                if not isinstance(row, dict):
+                    continue
+                candidate_id = row.get("candidate_id")
+                if candidate_id and candidate_id not in candidate_ids:
+                    issues.append(self._issue(
+                        artifact="evidence_bundle",
+                        severity=self._sev("warning"),
+                        code="candidate_evidence_summary_unknown_candidate",
+                        message=(
+                            f"candidate_evidence_summary[{idx}].candidate_id '{candidate_id}' "
+                            f"is not present in causality_candidates.candidates."
+                        ),
+                        path=["candidate_evidence_summary", str(idx), "candidate_id"],
+                    ))
+
         if rca_card:
             issues.extend(self._bundle_checks_rca_card_consistency(
                 rca_card=rca_card,
                 evidence=evidence,
                 candidates=candidates,
-            )) 
+            ))
 
         return issues
 
@@ -1039,74 +1103,115 @@ class RCAArtifactValidator:
                     message="causality_candidates.filtered_out_candidates must be an array when present.",
                     path=["filtered_out_candidates"],
                 ))
-            else:
-                retained_ids = {
-                    c.get("candidate_id")
-                    for c in candidates
-                    if isinstance(c, dict) and c.get("candidate_id")
-                }
-                filtered_ids_seen = set()
 
-                for idx, row in enumerate(filtered_out):
-                    if not isinstance(row, dict):
+        for idx, c in enumerate(candidates):
+            if not isinstance(c, dict):
+                continue
+
+            evidence_posture = c.get("evidence_posture")
+            if evidence_posture is not None and evidence_posture not in {
+                "supported", "mixed", "contextual_only", "contradicted", "weak"
+            }:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="evidence_posture_invalid",
+                    message=f"Candidate {idx} has invalid evidence_posture '{evidence_posture}'.",
+                    path=["candidates", str(idx), "evidence_posture"],
+                ))
+
+            temporal_posture = c.get("temporal_posture")
+            if temporal_posture is not None and temporal_posture not in {
+                "supported", "partial", "contradicted", "weak"
+            }:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="temporal_posture_invalid",
+                    message=f"Candidate {idx} has invalid temporal_posture '{temporal_posture}'.",
+                    path=["candidates", str(idx), "temporal_posture"],
+                ))
+
+            temporal_evidence = c.get("temporal_evidence") or {}
+            temporal_contradiction = temporal_evidence.get("temporal_contradiction")
+
+            if temporal_contradiction is True and temporal_posture == "supported":
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("warning"),
+                    code="temporal_posture_inconsistent_with_contradiction",
+                    message=f"Candidate {idx} is temporally contradicted but marked temporal_posture='supported'.",
+                    path=["candidates", str(idx), "temporal_posture"],
+                ))
+
+        if isinstance(filtered_out, list):
+            retained_ids = {
+                c.get("candidate_id")
+                for c in candidates
+                if isinstance(c, dict) and c.get("candidate_id")
+            }
+            filtered_ids_seen = set()
+
+            for idx, row in enumerate(filtered_out):
+                if not isinstance(row, dict):
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="filtered_out_candidate_wrong_type",
+                        message=f"filtered_out_candidates[{idx}] must be an object.",
+                        path=["filtered_out_candidates", str(idx)],
+                    ))
+                    continue
+
+                candidate_id = row.get("candidate_id")
+                if not candidate_id:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="filtered_out_candidate_id_missing",
+                        message=f"filtered_out_candidates[{idx}].candidate_id is required.",
+                        path=["filtered_out_candidates", str(idx), "candidate_id"],
+                    ))
+                else:
+                    if candidate_id in retained_ids:
                         issues.append(self._issue(
                             artifact="causality_candidates",
                             severity=self._sev("error"),
-                            code="filtered_out_candidate_wrong_type",
-                            message=f"filtered_out_candidates[{idx}] must be an object.",
-                            path=["filtered_out_candidates", str(idx)],
-                        ))
-                        continue
-
-                    candidate_id = row.get("candidate_id")
-                    if not candidate_id:
-                        issues.append(self._issue(
-                            artifact="causality_candidates",
-                            severity=self._sev("error"),
-                            code="filtered_out_candidate_id_missing",
-                            message=f"filtered_out_candidates[{idx}].candidate_id is required.",
+                            code="filtered_out_candidate_duplicated_in_retained",
+                            message=(
+                                f"filtered_out_candidates[{idx}].candidate_id '{candidate_id}' "
+                                f"also appears in retained candidates."
+                            ),
                             path=["filtered_out_candidates", str(idx), "candidate_id"],
                         ))
-                    else:
-                        if candidate_id in retained_ids:
-                            issues.append(self._issue(
-                                artifact="causality_candidates",
-                                severity=self._sev("error"),
-                                code="filtered_out_candidate_duplicated_in_retained",
-                                message=(
-                                    f"filtered_out_candidates[{idx}].candidate_id '{candidate_id}' "
-                                    f"also appears in retained candidates."
-                                ),
-                                path=["filtered_out_candidates", str(idx), "candidate_id"],
-                            ))
-                        if candidate_id in filtered_ids_seen:
-                            issues.append(self._issue(
-                                artifact="causality_candidates",
-                                severity=self._sev("warning"),
-                                code="duplicate_filtered_out_candidate_id",
-                                message=f"filtered_out_candidates candidate_id '{candidate_id}' appears more than once.",
-                                path=["filtered_out_candidates", str(idx), "candidate_id"],
-                            ))
-                        filtered_ids_seen.add(candidate_id)
-
-                    filter_reason = row.get("filter_reason")
-                    if filter_reason not in {
-                        "below_composite_threshold",
-                        "below_evidence_threshold",
-                        "below_composite_and_evidence_threshold",
-                        "excluded_by_top_k",
-                    }:
+                    if candidate_id in filtered_ids_seen:
                         issues.append(self._issue(
                             artifact="causality_candidates",
-                            severity=self._sev("error"),
-                            code="filter_reason_invalid",
-                            message=(
-                                f"filtered_out_candidates[{idx}].filter_reason must be one of "
-                                "{below_composite_threshold, below_evidence_threshold, "
-                                "below_composite_and_evidence_threshold, excluded_by_top_k}."
-                            ),
-                            path=["filtered_out_candidates", str(idx), "filter_reason"],
+                            severity=self._sev("warning"),
+                            code="duplicate_filtered_out_candidate_id",
+                            message=f"filtered_out_candidates candidate_id '{candidate_id}' appears more than once.",
+                            path=["filtered_out_candidates", str(idx), "candidate_id"],
                         ))
+                    filtered_ids_seen.add(candidate_id)
+
+                filter_reason = row.get("filter_reason")
+                if filter_reason not in {
+                    "below_composite_threshold",
+                    "below_evidence_threshold",
+                    "below_composite_and_evidence_threshold",
+                    "excluded_by_top_k",
+                }:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="filter_reason_invalid",
+                        message=(
+                            f"filtered_out_candidates[{idx}].filter_reason must be one of "
+                            "{below_composite_threshold, below_evidence_threshold, "
+                            "below_composite_and_evidence_threshold, excluded_by_top_k}."
+                        ),
+                        path=["filtered_out_candidates", str(idx), "filter_reason"],
+                    ))
 
         return issues
 
