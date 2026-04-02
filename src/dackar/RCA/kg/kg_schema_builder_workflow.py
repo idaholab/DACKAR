@@ -18,11 +18,33 @@ LOGGER = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def load_toml_schema(path: Union[str, Path]) -> Dict[str, Any]:
+    """Load a TOML schema file and return its contents as a dict.
+
+    Args:
+        path: Filesystem path to the ``.toml`` schema file.
+
+    Returns:
+        Parsed TOML document as a nested dictionary.
+    """
     with open(path, "rb") as handle:
         return tomllib.load(handle)
 
 
 def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Path]]]) -> Dict[str, Any]:
+    """Load one or more TOML schema files and merge them into a single schema dict.
+
+    The merged dict has top-level keys ``"node"`` and ``"relation"``.  Duplicate
+    keys across files raise an error to prevent silent overwrites.
+
+    Args:
+        schema_paths: A single path or an iterable of paths to ``.toml`` files.
+
+    Returns:
+        A merged schema dict with ``{"node": {...}, "relation": {...}}``.
+
+    Raises:
+        ValueError: If the same node or relation key appears in more than one file.
+    """
     if isinstance(schema_paths, (str, Path)):
         paths = [Path(schema_paths)]
     else:
@@ -40,10 +62,33 @@ def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Pa
 
 
 def _schema_props(spec: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract the property list from a node or relation schema spec.
+
+    Checks both ``"node_properties"`` and ``"properties"`` keys for compatibility
+    with different TOML schema conventions.
+
+    Args:
+        spec: A single node or relation entry from the merged schema.
+
+    Returns:
+        List of property descriptor dicts, or an empty list if none are defined.
+    """
     return spec.get("node_properties") or spec.get("properties") or []
 
 
 def _node_primary_key(spec: Dict[str, Any]) -> str:
+    """Determine the primary key property name for a node spec.
+
+    Selects the first non-optional property; falls back to ``"id"`` if present
+    in the property list, then to the first listed property name, and finally
+    to the hard-coded default ``"id"``.
+
+    Args:
+        spec: A single node entry from the merged schema.
+
+    Returns:
+        The property name to use as the primary key.
+    """
     props = _schema_props(spec)
     for prop in props:
         if not prop.get("optional", True):
@@ -55,6 +100,18 @@ def _node_primary_key(spec: Dict[str, Any]) -> str:
 
 
 def _label_candidates(name: str) -> List[str]:
+    """Generate a list of label name variants to try when resolving a schema label.
+
+    Produces the original name, its lowercase form, and a PascalCase conversion
+    to account for naming conventions used across different TOML schemas.
+
+    Args:
+        name: Base label name.
+
+    Returns:
+        List of candidate strings (original, lowercase, PascalCase), deduplicated
+        while preserving order.
+    """
     out = [name]
     low = name.lower()
     if low != name:
@@ -66,6 +123,20 @@ def _label_candidates(name: str) -> List[str]:
 
 
 def resolve_node_label(schema: Dict[str, Any], *candidates: str) -> str:
+    """Resolve the first candidate name that exists as a node label in the schema.
+
+    For each candidate, tries the original name and common variants (lowercase,
+    PascalCase).  If none match, returns the first candidate unchanged as a
+    safe fallback.
+
+    Args:
+        schema: Merged schema dict (must contain a ``"node"`` key).
+        *candidates: One or more preferred label names, in priority order.
+
+    Returns:
+        The matched label string from the schema, or *candidates[0]* if no
+        match is found.
+    """
     available = schema.get("node") or {}
     for candidate in candidates:
         for variant in _label_candidates(candidate):
@@ -75,6 +146,18 @@ def resolve_node_label(schema: Dict[str, Any], *candidates: str) -> str:
 
 
 def relation_endpoint_map(schema: Dict[str, Any]) -> Dict[str, Tuple[str, str]]:
+    """Build a lookup from relation type name to its (from_entity, to_entity) pair.
+
+    Only relations that declare both ``from_entity`` and ``to_entity`` in the
+    schema are included.
+
+    Args:
+        schema: Merged schema dict (must contain a ``"relation"`` key).
+
+    Returns:
+        Dict mapping each relation name to a ``(source_entity, target_entity)``
+        tuple of entity type strings.
+    """
     out: Dict[str, Tuple[str, str]] = {}
     for name, spec in (schema.get("relation") or {}).items():
         from_entity = spec.get("from_entity")
@@ -89,10 +172,33 @@ def relation_endpoint_map(schema: Dict[str, Any]) -> Dict[str, Tuple[str, str]]:
 # ---------------------------------------------------------------------------
 
 def _is_primitive(value: Any) -> bool:
+    """Return True if *value* is a Neo4j-native scalar type (str, int, float, or bool).
+
+    Args:
+        value: Any Python object.
+
+    Returns:
+        ``True`` if *value* can be stored directly as a Neo4j property scalar.
+    """
     return isinstance(value, (str, int, float, bool))
 
 
 def sanitize_value(value: Any) -> Any:
+    """Convert an arbitrary Python value to a Neo4j-compatible property value.
+
+    Conversion rules:
+    - ``datetime`` / ``date`` → ISO-8601 string.
+    - ``dict`` → JSON string (sorted keys, UTF-8).
+    - ``list`` of primitives → kept as-is; mixed/complex lists → JSON string.
+    - ``None`` and primitive scalars → returned unchanged.
+    - Anything else → ``str(value)``.
+
+    Args:
+        value: Python value to sanitize.
+
+    Returns:
+        A value safe for storage as a Neo4j node or relationship property.
+    """
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, dict):
@@ -105,6 +211,15 @@ def sanitize_value(value: Any) -> Any:
 
 
 def sanitize_props(props: Dict[str, Any]) -> Dict[str, Any]:
+    """Sanitize all values in a property dict, dropping ``None`` entries.
+
+    Args:
+        props: Raw property dict potentially containing non-Neo4j-native types.
+
+    Returns:
+        New dict with all values converted by :func:`sanitize_value` and
+        keys whose value was ``None`` removed.
+    """
     return {k: sanitize_value(v) for k, v in props.items() if v is not None}
 
 
@@ -113,6 +228,18 @@ def sanitize_props(props: Dict[str, Any]) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def generate_ddl_from_schema(schema: Dict[str, Any]) -> List[str]:
+    """Generate Neo4j DDL statements (constraints and indexes) from a merged schema.
+
+    For every node label a ``UNIQUE`` constraint on ``id`` is created.
+    Additionally, a ``CREATE INDEX`` statement is emitted for each property
+    that carries ``"indexed": true`` in its spec.
+
+    Args:
+        schema: Merged schema dict as returned by :func:`load_and_merge_schemas`.
+
+    Returns:
+        List of Cypher DDL strings ready to be executed against Neo4j.
+    """
     ddl: List[str] = []
     for label, spec in (schema.get("node") or {}).items():
         ddl.append(f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE")
@@ -127,6 +254,16 @@ def apply_schema_constraints(
     schema_paths: Union[str, Path, Iterable[Union[str, Path]]],
     database: Optional[str] = None,
 ) -> None:
+    """Load schemas and apply all DDL constraints and indexes to the database.
+
+    Combines :func:`load_and_merge_schemas`, :func:`generate_ddl_from_schema`,
+    and :meth:`Py2Neo.query` into a single convenience call.
+
+    Args:
+        client: Active :class:`Py2Neo` connection.
+        schema_paths: One or more paths to TOML schema files.
+        database: Target database name; uses the driver default when ``None``.
+    """
     schema = load_and_merge_schemas(schema_paths)
     for stmt in generate_ddl_from_schema(schema):
         client.query(stmt, db=database)
@@ -137,13 +274,39 @@ def apply_schema_constraints(
 # ---------------------------------------------------------------------------
 
 class GraphBatch:
+    """In-memory accumulator for nodes and edges before bulk Neo4j ingestion.
+
+    Nodes are keyed by their ``id`` string; duplicate additions are merged.
+    Edges are keyed by ``(source_id, target_id, rel_type)`` and support
+    optional schema-based endpoint validation.
+    """
+
     def __init__(self, schema: Optional[Dict[str, Any]] = None):
+        """Initialise an empty batch, optionally bound to a schema.
+
+        Args:
+            schema: Merged schema dict used for label resolution and endpoint
+                validation.  Defaults to an empty schema when ``None``.
+        """
         self.schema = schema or {"node": {}, "relation": {}}
         self.nodes: Dict[str, Dict[str, Any]] = {}
         self.edges: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self.relation_map = relation_endpoint_map(self.schema)
 
     def add_node(self, node_id: str, label: str, attrs: Optional[Dict[str, Any]] = None) -> str:
+        """Add or merge a node into the batch.
+
+        If a node with *node_id* already exists its attributes are updated with
+        the new values (shallow merge after sanitization).
+
+        Args:
+            node_id: Unique identifier for the node (used as the ``id`` property).
+            label: Neo4j label for the node.
+            attrs: Optional property dict; ``id`` is always set from *node_id*.
+
+        Returns:
+            The *node_id* string, for convenience when chaining calls.
+        """
         attrs = deepcopy(attrs or {})
         attrs["id"] = node_id
         clean = sanitize_props(attrs)
@@ -161,6 +324,26 @@ class GraphBatch:
         attrs: Optional[Dict[str, Any]] = None,
         allow_untyped: bool = True,
     ) -> None:
+        """Add or update a directed edge in the batch.
+
+        Endpoint labels are looked up from already-added nodes.  When *rel_type*
+        is declared in the schema its expected endpoint types are validated.
+
+        Args:
+            src: Node id of the source node (must already be in the batch).
+            dst: Node id of the target node (must already be in the batch).
+            rel_type: Relationship type name.
+            attrs: Optional property dict for the relationship.
+            allow_untyped: When ``True``, relationship types not declared in the
+                schema are accepted.  When ``False``, an undeclared type raises
+                :class:`ValueError`.
+
+        Raises:
+            KeyError: If *src* or *dst* has not been added to the batch yet.
+            ValueError: If the schema declares endpoint types for *rel_type* and
+                the actual node labels do not match, or if *allow_untyped* is
+                ``False`` and *rel_type* is not in the schema.
+        """
         if src not in self.nodes or dst not in self.nodes:
             raise KeyError(f"Cannot create edge {rel_type}: missing node {src!r} or {dst!r}")
 
@@ -186,6 +369,13 @@ class GraphBatch:
         edge["attrs"].update(payload)
 
     def as_lists(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Return the accumulated nodes and edges as plain lists.
+
+        Returns:
+            A two-tuple ``(nodes, edges)`` where each element is a list of
+            dicts suitable for passing to :meth:`Py2Neo.upsert_nodes_batch`
+            and :meth:`Py2Neo.upsert_edges_batch` respectively.
+        """
         return list(self.nodes.values()), list(self.edges.values())
 
 
@@ -194,6 +384,19 @@ class GraphBatch:
 # ---------------------------------------------------------------------------
 
 def _prefix(value: Optional[str], prefix: str) -> Optional[str]:
+    """Build a namespaced node id by prepending *prefix* to *value*.
+
+    Strips whitespace and skips empty values.  Already-namespaced strings
+    (containing ``":"``) are returned unchanged to avoid double-prefixing.
+
+    Args:
+        value: Raw identifier string (e.g. ``"pump-101"``).
+        prefix: Namespace prefix (e.g. ``"ASSET"``).
+
+    Returns:
+        A string like ``"ASSET:pump-101"``, or ``None`` if *value* is falsy
+        or blank after stripping.
+    """
     if not value:
         return None
     value = str(value).strip()
@@ -204,15 +407,49 @@ def _prefix(value: Optional[str], prefix: str) -> Optional[str]:
     return f"{prefix}:{value}"
 
 def _truthy(value: Any) -> bool:
+    """Return True if *value* is non-empty and not a sentinel null-like string.
+
+    Treats ``"unknown"``, ``"none"``, and ``"null"`` as falsy in addition to
+    standard Python falsy values.
+
+    Args:
+        value: Any value to test.
+
+    Returns:
+        ``True`` if the value is considered meaningfully present.
+    """
     return bool(value) and value not in ("unknown", "none", "null")
 
 def _norm_text_key(value: Optional[str]) -> Optional[str]:
+    """Normalise a text string into a stable, lowercase key.
+
+    Collapses internal whitespace, strips leading/trailing whitespace, and
+    lowercases the result.  Used to derive deterministic node ids from free-text
+    labels.
+
+    Args:
+        value: Input string to normalise, or ``None``.
+
+    Returns:
+        Normalised string, or ``None`` if *value* is ``None`` or blank.
+    """
     if value is None:
         return None
     text = " ".join(str(value).split()).strip().lower()
     return text or None
 
 def _safe_rel(g: GraphBatch, src: str, dst: str, preferred: str, fallback: str, attrs: Optional[Dict[str, Any]] = None) -> None:
+    """Add an edge using *preferred* relation type, falling back to *fallback* if not in schema.
+
+    Args:
+        g: The :class:`GraphBatch` to add the edge to.
+        src: Source node id.
+        dst: Target node id.
+        preferred: Preferred relationship type name.
+        fallback: Fallback relationship type name used when *preferred* is not
+            declared in the schema's relation map.
+        attrs: Optional property dict for the relationship.
+    """
     rel = preferred if preferred in g.relation_map else fallback
     g.add_edge(src, dst, rel, attrs or {})
 
@@ -253,6 +490,19 @@ def _safe_ptr_failure_mode_rel(
     dst: str,
     attrs: Optional[Dict[str, Any]] = None,
 ) -> None:
+    """Add a ProcessedTextRecord → failure_mode edge using the best available relation type.
+
+    Tries ``"supports_hypothesis"``, ``"references_failure_mode"``, and
+    ``"caused_by"`` in order, picking the first whose endpoint types match the
+    actual node labels.  Falls back to an untyped ``"references_failure_mode"``
+    edge if none match.
+
+    Args:
+        g: The :class:`GraphBatch` to add the edge to.
+        src: Source node id (a ProcessedTextRecord node).
+        dst: Target node id (a failure_mode node).
+        attrs: Optional property dict for the relationship.
+    """
     src_label = g.nodes[src]["label"]
     dst_label = g.nodes[dst]["label"]
 
@@ -285,6 +535,34 @@ def build_graph_from_workflow_artifacts(
     documents: Optional[Sequence[Dict[str, Any]]] = None,
     processed_text_records: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Translate all RCA workflow artifacts into a graph of nodes and edges.
+
+    Iterates over every supplied artifact, creates typed nodes for each
+    entity (assets, components, failure modes, events, telemetry signals,
+    anomalies, causal candidates, evidence snippets, etc.), and links them
+    with labelled directed edges.  All artifacts are optional; only those
+    provided contribute nodes and edges.
+
+    Args:
+        schema_paths: Optional path(s) to TOML schema file(s) used for label
+            resolution and endpoint validation.  An empty schema is used when
+            ``None``.
+        event: Parsed ``event`` artifact dict.
+        kg_context: Parsed ``kg_context`` artifact dict (components, failure
+            modes, past events).
+        telemetry_summary: Parsed ``telemetry_summary`` artifact dict.
+        evidence_bundle: Parsed ``evidence_bundle`` artifact dict.
+        causality_candidates: Parsed ``causality_candidates`` artifact dict.
+        rca_card: Parsed ``rca_card`` artifact dict.
+        operational_context: Parsed ``operational_context`` artifact dict.
+        pm_compliance: Parsed ``pm_compliance`` artifact dict.
+        documents: List of document descriptor dicts.
+        processed_text_records: List of ``processed_text_record`` dicts.
+
+    Returns:
+        A two-tuple ``(nodes, edges)`` — lists of dicts ready for bulk
+        ingestion via :func:`ingest_graph_toml`.
+    """
     schema = load_and_merge_schemas(schema_paths) if schema_paths else {"node": {}, "relation": {}}
     g = GraphBatch(schema=schema)
 
@@ -704,6 +982,18 @@ def ingest_graph_toml(
     edges: List[Dict[str, Any]],
     database: Optional[str] = None,
 ) -> None:
+    """Bulk-upsert a node list and edge list into Neo4j.
+
+    A thin wrapper that calls :meth:`Py2Neo.upsert_nodes_batch` followed by
+    :meth:`Py2Neo.upsert_edges_batch`, skipping each call when the
+    corresponding list is empty.
+
+    Args:
+        client: Active :class:`Py2Neo` connection.
+        nodes: List of node dicts as returned by :func:`build_graph_from_workflow_artifacts`.
+        edges: List of edge dicts as returned by :func:`build_graph_from_workflow_artifacts`.
+        database: Target database name; uses the driver default when ``None``.
+    """
     if nodes:
         client.upsert_nodes_batch(nodes, db=database)
     if edges:

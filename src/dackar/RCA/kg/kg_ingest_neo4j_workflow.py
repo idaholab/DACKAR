@@ -25,6 +25,14 @@ JsonLike = Optional[Dict[str, Any]]
 
 
 def load_json(path: Optional[Union[str, Path]]) -> JsonLike:
+    """Load a JSON file and return its contents as a dict, or ``None`` if no path given.
+
+    Args:
+        path: Filesystem path to a ``.json`` file, or ``None`` / empty string.
+
+    Returns:
+        Parsed JSON object as a dict, or ``None`` when *path* is falsy.
+    """
     if not path:
         return None
     with open(path, "r", encoding="utf-8") as handle:
@@ -32,6 +40,17 @@ def load_json(path: Optional[Union[str, Path]]) -> JsonLike:
 
 
 def load_json_list(paths: Optional[Sequence[Union[str, Path]]]) -> List[Dict[str, Any]]:
+    """Load a sequence of JSON files, returning only non-empty dict results.
+
+    Silently skips paths whose file parses to something other than a non-empty
+    dict (e.g. a JSON array or an empty object).
+
+    Args:
+        paths: Sequence of filesystem paths, or ``None``.
+
+    Returns:
+        List of parsed JSON dicts, one per successfully loaded file.
+    """
     out: List[Dict[str, Any]] = []
     for path in paths or []:
         obj = load_json(path)
@@ -40,6 +59,18 @@ def load_json_list(paths: Optional[Sequence[Union[str, Path]]]) -> List[Dict[str
     return out
 
 def _looks_like_processed_text_record(obj: Dict[str, Any]) -> bool:
+    """Return True if *obj* has the minimum required fields of a processed_text_record.
+
+    Validates that ``record_id``, ``doc_id``, and ``doc_type`` are strings and
+    that ``metadata`` and ``provenance`` are dicts.  Does not perform full
+    JSON Schema validation.
+
+    Args:
+        obj: Candidate dict to inspect.
+
+    Returns:
+        ``True`` if the dict structurally resembles a valid processed_text_record.
+    """
     return (
         isinstance(obj, dict)
         and isinstance(obj.get("record_id"), str)
@@ -50,6 +81,16 @@ def _looks_like_processed_text_record(obj: Dict[str, Any]) -> bool:
     )
 
 def _partition_processed_text_records(records: Optional[Sequence[Dict[str, Any]]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Split a sequence of records into valid and malformed processed_text_records.
+
+    Args:
+        records: Sequence of candidate record dicts, or ``None``.
+
+    Returns:
+        A two-tuple ``(good, bad)`` where *good* contains records that pass
+        the :func:`_looks_like_processed_text_record` check and *bad* contains
+        those that do not.
+    """
     good: List[Dict[str, Any]] = []
     bad: List[Dict[str, Any]] = []
     for rec in records or []:
@@ -76,6 +117,34 @@ def ingest_workflow_case_to_neo4j(
     database: Optional[str] = None,
     create_constraints: bool = True,
 ) -> Tuple[int, int]:
+    """Build and ingest a full RCA workflow case graph into Neo4j.
+
+    Orchestrates schema constraint application, graph construction from all
+    supplied artifacts, and bulk ingestion.  Malformed processed_text_record
+    entries are filtered out with a warning before the graph is built.
+
+    Args:
+        client: Active :class:`Py2Neo` connection.
+        schema_paths: One or more paths to TOML schema files.
+        event: Parsed ``event`` artifact dict.
+        kg_context: Parsed ``kg_context`` artifact dict.
+        telemetry_summary: Parsed ``telemetry_summary`` artifact dict.
+        evidence_bundle: Parsed ``evidence_bundle`` artifact dict.
+        causality_candidates: Parsed ``causality_candidates`` artifact dict.
+        rca_card: Parsed ``rca_card`` artifact dict.
+        operational_context: Parsed ``operational_context`` artifact dict.
+        pm_compliance: Parsed ``pm_compliance`` artifact dict.
+        documents: List of document descriptor dicts.
+        processed_text_records: List of ``processed_text_record`` dicts;
+            malformed entries are skipped with a warning.
+        database: Target Neo4j database name; uses the driver default when ``None``.
+        create_constraints: When ``True`` (default), DDL constraints and indexes
+            are applied before ingestion.
+
+    Returns:
+        A two-tuple ``(node_count, edge_count)`` reflecting the number of
+        nodes and edges written to the database.
+    """
     good_ptrs, bad_ptrs = _partition_processed_text_records(processed_text_records)
     if bad_ptrs:
         LOGGER.warning("Skipping %d malformed processed_text_record objects before graph build.", len(bad_ptrs))
@@ -112,6 +181,12 @@ def ingest_workflow_case_to_neo4j(
 # ---------------------------------------------------------------------------
 
 def _parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for the Neo4j ingestion script.
+
+    Returns:
+        Populated :class:`argparse.Namespace` with connection settings and
+        optional paths to each artifact type.
+    """
     parser = argparse.ArgumentParser(description="Ingest RCA workflow artifacts into Neo4j")
     parser.add_argument("--schema", action="append", required=True, dest="schemas", help="Path to TOML schema file")
     parser.add_argument("--neo4j-uri", required=True)
@@ -133,6 +208,12 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Entry point for the CLI ingestion script.
+
+    Parses command-line arguments, opens a Neo4j connection, runs
+    :func:`ingest_workflow_case_to_neo4j` with the provided artifact paths,
+    and logs a completion summary.  The Neo4j driver is always closed on exit.
+    """
     args = _parse_args()
     client = Py2Neo(args.neo4j_uri, args.neo4j_user, args.neo4j_pass)
     try:
