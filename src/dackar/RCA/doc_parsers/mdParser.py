@@ -71,6 +71,13 @@ FIELD_LABEL_MAP: dict[str, dict[str, str]] = {
         r"rationale|analysis|finding": "rationale",
         r"recommendation|corrective\s+action|follow.?up": "recommended_followups",
     },
+    "OE": {
+        r"event\s+description|background|event\s+summary|description\s+of\s+event": "event_description",
+        r"cause|cause\s+determination|root\s+cause|causal\s+factor": "cause_determination",
+        r"lesson|lessons\s+learned|key\s+finding|takeaway": "lessons_learned",
+        r"applicability|plant\s+applicability|generic\s+implications?|applicability\s+review": "applicability",
+        r"recommendation|recommended\s+action|corrective\s+action|follow.?up\s+action": "recommended_actions",
+    },
     "OTHER": {},
 }
 
@@ -78,6 +85,8 @@ FIELD_LABEL_MAP: dict[str, dict[str, str]] = {
 HIGH_SIGNAL_ROLES = {
     "cause_statement", "as_found", "as_left", "causal_factors",
     "rationale", "corrective_actions", "immediate_actions",
+    # OE-specific high-signal roles
+    "cause_determination", "lessons_learned",
 }
 
 def canonicalize_section_role(title: str, doc_type: str) -> str:
@@ -674,7 +683,7 @@ def build_chunks_for_doc_type(
                 s, idx, doc_id, doc_type, doc_name,
                 source_path, ingest_id, classification, content_hash, mbse_entities))
 
-    elif doc_type in ("CR", "WO", "ECA"):
+    elif doc_type in ("CR", "WO", "ECA", "OE"):
         # Field-boundary chunking: one chunk per canonical role.
         # Sections that map to the same role are merged before chunking.
         role_buckets: dict[str, list[dict]] = {}

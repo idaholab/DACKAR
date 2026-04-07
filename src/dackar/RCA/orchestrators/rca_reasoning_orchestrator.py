@@ -5,7 +5,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
 import json
+import logging
 import uuid
+
+LOGGER = logging.getLogger(__name__)
 
 from kg.py2neo_workflow import Py2Neo
 
@@ -178,6 +181,9 @@ class KGContextBuilderConfig:
     max_documents: int = 20
     include_documents: bool = True
     include_past_events: bool = True
+    include_safety_functions: bool = True
+    include_oe_documents: bool = True
+    max_oe_documents: int = 10
     doc_window_days_before: int = 90
     doc_window_days_after: int = 7
     past_event_window_days: int = 3650
@@ -207,6 +213,9 @@ class RCAReasoningOrchestrator:
         evidence_bundle: Optional[JsonDict] = None,
     ) -> JsonDict:
         run_id = str(uuid.uuid4())
+        # Accumulates validation failures for optional artifacts.  Required
+        # artifact failures still raise immediately (via _raise_if_invalid).
+        optional_artifact_failures: List[JsonDict] = []
 
         input_validation = self._validate_bundle(
             run_id=run_id,
@@ -308,7 +317,10 @@ class RCAReasoningOrchestrator:
                  pm_compliance=pm_compliance,
                  run_context=run_context,
             )
-            self._validate_and_persist(run_id, "ishikawa_matrix", ishikawa_matrix)
+            self._validate_and_persist(
+                run_id, "ishikawa_matrix", ishikawa_matrix,
+                optional=True, optional_failures=optional_artifact_failures,
+            )
 
         rca_card = self.rca_synthesizer.synthesize(
             event=event,
@@ -349,6 +361,7 @@ class RCAReasoningOrchestrator:
             rca_card=rca_card,
             input_validation=input_validation,
             output_validation=output_validation,
+            optional_artifact_failures=optional_artifact_failures,
         )
         self.artifact_store.save(run_id, "run_manifest", run_manifest)
 
@@ -447,8 +460,51 @@ class RCAReasoningOrchestrator:
             "confidence_label": primary.get("confidence_label"),
         }
 
-    def _validate_and_persist(self, run_id: str, artifact_name: str, payload: JsonDict) -> None:
-        validation = self._validate_artifact(run_id=run_id, artifact_name=artifact_name, payload=payload)
+    def _validate_and_persist(
+        self,
+        run_id: str,
+        artifact_name: str,
+        payload: JsonDict,
+        *,
+        optional: bool = False,
+        optional_failures: Optional[List[JsonDict]] = None,
+    ) -> None:
+        """Validate and persist a pipeline artifact.
+
+        If *optional* is True, a validation failure is logged as a warning and
+        appended to *optional_failures* (if provided) rather than aborting the
+        run.  Required artifacts (optional=False) still raise on failure.
+        """
+        if optional:
+            # Validate without raising — capture any failure into the accumulator.
+            try:
+                validation = self._validate_artifact(
+                    run_id=run_id, artifact_name=artifact_name, payload=payload
+                )
+            except Exception as exc:
+                LOGGER.warning(
+                    "Optional artifact '%s' failed validation (run=%s): %s",
+                    artifact_name, run_id, exc,
+                )
+                failure_record = {
+                    "artifact": artifact_name,
+                    "error": str(exc),
+                    "optional": True,
+                }
+                if optional_failures is not None:
+                    optional_failures.append(failure_record)
+                if self.config.persist_intermediate_artifacts:
+                    self.artifact_store.save(run_id, artifact_name, payload)
+                    self.artifact_store.save(
+                        run_id, f"{artifact_name}__validation",
+                        {"ok": False, "artifact": artifact_name, "issues": [str(exc)]},
+                    )
+                return
+        else:
+            validation = self._validate_artifact(
+                run_id=run_id, artifact_name=artifact_name, payload=payload
+            )
+
         if self.config.persist_intermediate_artifacts:
             self.artifact_store.save(run_id, artifact_name, payload)
             if validation is not None:
@@ -466,6 +522,7 @@ class RCAReasoningOrchestrator:
         rca_card: JsonDict,
         input_validation: Optional[JsonDict],
         output_validation: Optional[JsonDict],
+        optional_artifact_failures: Optional[List[JsonDict]] = None,
     ) -> JsonDict:
         review_hooks = self._compute_review_hooks(
             rca_card=rca_card,
@@ -541,6 +598,8 @@ class RCAReasoningOrchestrator:
             "validation": {
                 "inputs": input_validation,
                 "outputs": output_validation,
+                "optional_artifact_failures": optional_artifact_failures or [],
+                "optional_artifacts_degraded": bool(optional_artifact_failures),
             },
             "review_hooks": review_hooks,
         }
@@ -554,7 +613,7 @@ class RCAReasoningOrchestrator:
         analyst_review = rca_card.get("analyst_review") or {}
         executive_summary = rca_card.get("executive_summary") or {}
 
-        outputs_ok = bool((output_validation or {}).get("ok", True))
+        outputs_ok = bool((output_validation or {}).get("ok", False))
         schema_valid = bool(rca_status.get("schema_valid", False))
         all_claims_cited = bool(rca_status.get("all_claims_cited", False))
         passed_minimum_evidence_gate = bool(rca_status.get("passed_minimum_evidence_gate", False))
@@ -919,16 +978,42 @@ class Neo4jKGContextBuilder:
                 event=event,
             )
 
+        safety_functions: List[JsonDict] = []
+        if self.config.include_safety_functions:
+            safety_functions = self._fetch_safety_functions(all_component_ids)
+
+        if self.config.include_oe_documents:
+            fm_ids = [fm["fm_id"] for fm in failure_modes]
+            component_types = list({
+                c.get("component_type")
+                for c in neighborhood["components"]
+                if c.get("component_type")
+            })
+            oe_docs = self._fetch_oe_documents(
+                failure_mode_ids=fm_ids,
+                component_types=component_types,
+            )
+            # Merge OE docs into the documents list (dedup by doc_id)
+            existing_ids = {d["doc_id"] for d in documents}
+            for oe in oe_docs:
+                if oe["doc_id"] not in existing_ids:
+                    documents.append(oe)
+                    existing_ids.add(oe["doc_id"])
+
+        kg_snapshot_version = self._fetch_kg_snapshot_version()
+
         return {
             "event_id": event_id,
             "components": neighborhood["components"],
             "asset_id": asset_id,
             "subgraph_id": f"KGCTX::{event_id}::{asset_id}",
             "generated_at": utcnow_iso(),
+            "kg_snapshot_version": kg_snapshot_version,
             "hop_limit": self.config.max_hops,
             "upstream_paths": neighborhood["paths"],
             "failure_modes": failure_modes,
             "past_events": past_events,
+            "safety_functions": safety_functions,
             "documents": documents,
             "seed_context": {
                 "asset_ids": sorted(seed_assets),
@@ -1197,10 +1282,179 @@ class Neo4jKGContextBuilder:
                c.name AS component_name,
                fm.superclass AS superclass,
                fm.expected_latency_min_hours AS expected_latency_min_hours,
-               fm.expected_latency_max_hours AS expected_latency_max_hours
+               fm.expected_latency_max_hours AS expected_latency_max_hours,
+               fm.failure_mechanism AS failure_mechanism,
+               fm.expected_symptoms AS expected_symptoms,
+               fm.expected_anomaly_pattern AS expected_anomaly_pattern,
+               fm.rpn AS rpn
         ORDER BY c.id, fm.fm_id
         """
         return [dict(r) for r in self.client.query(query, {"component_ids": component_ids}, db=self.database)]
+
+    def _fetch_safety_functions(self, component_ids: List[str]) -> List[JsonDict]:
+        """Fetch safety function nodes in the KG that are linked to any component in
+        *component_ids* via standard nuclear-plant relation types.
+
+        The query is intentionally permissive on relation direction: different
+        KG schemas place the directed arrow in either direction between a component
+        and its associated safety function.  Both directions are matched.
+
+        Returns a list of dicts conforming to ``kg_context.json#/safety_functions``.
+        """
+        if not component_ids:
+            return []
+
+        query = """
+        MATCH (sf:safety_function)-[r]-(c:mbse_entity)
+        WHERE c.id IN $component_ids
+          AND type(r) IN [
+            'PERFORMS', 'PERFORMED_BY',
+            'SUPPORTS', 'SUPPORTED_BY',
+            'PROVIDES', 'PROVIDED_BY',
+            'ENABLES', 'ENABLED_BY',
+            'ASSOCIATED_WITH'
+          ]
+        RETURN sf.sf_id AS sf_id,
+               sf.name   AS sf_name,
+               sf.category AS sf_category,
+               collect(DISTINCT c.id) AS component_ids
+        ORDER BY sf.sf_id
+        """
+        rows = [dict(r) for r in self.client.query(
+            query, {"component_ids": component_ids}, db=self.database
+        )]
+
+        result: List[JsonDict] = []
+        for row in rows:
+            sf_id = row.get("sf_id")
+            if not sf_id:
+                continue
+            result.append({
+                "sf_id": sf_id,
+                "sf_name": row.get("sf_name") or sf_id,
+                "sf_category": row.get("sf_category") or None,
+                "component_ids": [c for c in (row.get("component_ids") or []) if c],
+            })
+        return result
+
+    def _fetch_kg_snapshot_version(self) -> str:
+        """Return a stable version string that identifies the current state of the Neo4j KG.
+
+        Strategy (in priority order):
+        1. ``CALL dbms.components()`` — returns the Neo4j server version.  Combined
+           with the highest ``last_modified`` timestamp across all nodes this gives a
+           reproducible snapshot key tied to both the software and data state.
+        2. Highest node ``last_modified`` timestamp alone (if dbms.components fails).
+        3. Synthetic ISO timestamp fallback — used when the graph has no
+           ``last_modified`` properties and the procedure call is unavailable.
+
+        The returned string is recorded in ``kg_context.kg_snapshot_version`` so
+        that every RCA run can be replayed against the exact KG state that existed
+        at query time (§6 Model Governance).
+        """
+        neo4j_version: Optional[str] = None
+        try:
+            rows = [dict(r) for r in self.client.query(
+                "CALL dbms.components() YIELD name, versions RETURN name, versions",
+                db=self.database,
+            )]
+            for row in rows:
+                versions = row.get("versions") or []
+                if versions:
+                    neo4j_version = str(versions[0])
+                    break
+        except Exception:
+            # dbms.components() may be restricted in some Neo4j deployments or
+            # APOC-gated — treat as non-fatal.
+            pass
+
+        last_modified: Optional[str] = None
+        try:
+            rows = [dict(r) for r in self.client.query(
+                "MATCH (n) WHERE n.last_modified IS NOT NULL "
+                "RETURN max(n.last_modified) AS latest",
+                db=self.database,
+            )]
+            if rows and rows[0].get("latest"):
+                last_modified = str(rows[0]["latest"])
+        except Exception:
+            pass
+
+        if neo4j_version and last_modified:
+            return f"neo4j:{neo4j_version}|modified:{last_modified}"
+        if neo4j_version:
+            return f"neo4j:{neo4j_version}|modified:unknown"
+        if last_modified:
+            return f"modified:{last_modified}"
+        # Synthetic fallback — at minimum captures the exact query time so runs
+        # are distinguishable even without server metadata.
+        return f"snapshot:{utcnow_iso()}"
+
+    def _fetch_oe_documents(
+        self,
+        failure_mode_ids: List[str],
+        component_types: List[str],
+    ) -> List[JsonDict]:
+        """Return OE report nodes from the KG relevant to this event's failure modes
+        and component types.
+
+        OE documents are fleet-wide and timeless — no date window is applied.
+        Retrieval is via two soft-match paths (ordered by specificity):
+          1. Direct FM linkage: (oe_document)-[:APPLICABLE_TO]->(failure_mode)
+          2. Component-type soft match: oe_document.applicable_component_types overlaps
+             with the subgraph component types.
+
+        ``plant_scope`` (pwr_only / bwr_only) is surfaced as metadata but is NOT used
+        as a hard filter — many components are shared across reactor types.
+        """
+        query = """
+        MATCH (oe:oe_document)
+        OPTIONAL MATCH (oe)-[:APPLICABLE_TO]->(fm:failure_mode)
+        WITH oe, collect(DISTINCT fm.fm_id) AS linked_fm_ids
+        WHERE
+          any(fm_id IN linked_fm_ids WHERE fm_id IN $failure_mode_ids)
+          OR any(ct IN $component_types WHERE ct IN oe.applicable_component_types)
+        RETURN
+          oe.doc_id            AS doc_id,
+          oe.title             AS title,
+          oe.issuing_body      AS issuing_body,
+          oe.oe_number         AS oe_number,
+          oe.plant_scope       AS plant_scope,
+          oe.applicable_system_types      AS applicable_system_types,
+          oe.applicable_component_types   AS applicable_component_types,
+          linked_fm_ids
+        LIMIT $limit
+        """
+        try:
+            rows = [dict(r) for r in self.client.query(
+                query,
+                {
+                    "failure_mode_ids": failure_mode_ids,
+                    "component_types": component_types,
+                    "limit": self.config.max_oe_documents,
+                },
+                db=self.database,
+            )]
+        except Exception as exc:
+            LOGGER.warning("_fetch_oe_documents failed: %s", exc)
+            return []
+
+        result: List[JsonDict] = []
+        for row in rows:
+            result.append({
+                "doc_id": row.get("doc_id"),
+                "doc_type": "OE",
+                "title": row.get("title"),
+                "issuing_body": row.get("issuing_body"),
+                "oe_number": row.get("oe_number"),
+                "plant_scope": row.get("plant_scope"),
+                "applicable_system_types": row.get("applicable_system_types") or [],
+                "applicable_component_types": row.get("applicable_component_types") or [],
+                "linked_fm_ids": row.get("linked_fm_ids") or [],
+                "priority_score": 65.0,  # below ECA/CR/WO but above generic MANUAL
+                "time_distance_days": None,  # OE reports are timeless — no recency penalty
+            })
+        return result
 
     def _fetch_documents(
         self,
@@ -1330,12 +1584,14 @@ class Neo4jKGContextBuilder:
         WHERE e.id <> $target_event_id
         OPTIONAL MATCH (e)-[:RELATED_TO]->(a:asset)
         OPTIONAL MATCH (e)-[:RELATED_TO]->(c:mbse_entity)
-        OPTIONAL MATCH (e)-[:CONFIRMED_CAUSE|MAY_CAUSE]->(fm:failure_mode)
+        OPTIONAL MATCH (e)-[:CONFIRMED_CAUSE]->(fmc:failure_mode)
+        OPTIONAL MATCH (e)-[:MAY_CAUSE]->(fmm:failure_mode)
         WHERE
           (
             (a.asset_id IN $asset_ids)
             OR (c.id IN $component_ids)
-            OR (fm.fm_id IN $failure_mode_ids)
+            OR (fmc.fm_id IN $failure_mode_ids)
+            OR (fmm.fm_id IN $failure_mode_ids)
           )
           AND
           (
@@ -1353,9 +1609,11 @@ class Neo4jKGContextBuilder:
           e.timestamp_end AS timestamp_end,
           e.severity AS severity,
           e.event_type AS event_type,
+          e.resolved AS event_resolved,
           collect(DISTINCT a.asset_id) AS matched_asset_ids,
           collect(DISTINCT c.id) AS matched_component_ids,
-          collect(DISTINCT fm.fm_id) AS matched_failure_mode_ids
+          collect(DISTINCT fmc.fm_id) AS confirmed_failure_mode_ids,
+          collect(DISTINCT fmm.fm_id) AS candidate_failure_mode_ids
         """
         rows = [dict(r) for r in self.client.query(
             query,
@@ -1373,14 +1631,16 @@ class Neo4jKGContextBuilder:
         for row in rows:
             matched_assets = [x for x in row.get("matched_asset_ids", []) if x]
             matched_components = [x for x in row.get("matched_component_ids", []) if x]
-            matched_fms = [x for x in row.get("matched_failure_mode_ids", []) if x]
+            confirmed_fms = [x for x in row.get("confirmed_failure_mode_ids", []) if x]
+            candidate_fms = [x for x in row.get("candidate_failure_mode_ids", []) if x]
+            all_matched_fms = confirmed_fms + [f for f in candidate_fms if f not in confirmed_fms]
 
             score = 0.0
             if matched_assets:
                 score += 10.0
             if matched_components:
                 score += 8.0
-            if matched_fms:
+            if all_matched_fms:
                 score += 9.0
 
             time_distance_days = self._compute_time_distance_days(row.get("timestamp_start"), event_time)
@@ -1392,6 +1652,22 @@ class Neo4jKGContextBuilder:
             if target_event_type and row.get("event_type") == target_event_type:
                 score += 2.0
 
+            # resolved: use explicit graph property first; fall back to timestamp_end heuristic
+            event_resolved_raw = row.get("event_resolved")
+            if isinstance(event_resolved_raw, bool):
+                resolved = event_resolved_raw
+            elif event_resolved_raw is not None:
+                # Neo4j may return the value as a string in some drivers
+                resolved = str(event_resolved_raw).lower() in ("true", "1", "yes")
+            elif row.get("timestamp_end"):
+                # A past event with a recorded end time was closed — treat as resolved
+                resolved = True
+            else:
+                resolved = None
+
+            # fm_id: prefer CONFIRMED_CAUSE link; fall back to MAY_CAUSE
+            fm_id = confirmed_fms[0] if confirmed_fms else (candidate_fms[0] if candidate_fms else None)
+
             enriched.append(
                 {
                     "event_id": row.get("event_id"),
@@ -1401,9 +1677,12 @@ class Neo4jKGContextBuilder:
                     "timestamp_end": row.get("timestamp_end"),
                     "severity": row.get("severity"),
                     "event_type": row.get("event_type"),
+                    "resolved": resolved,
+                    "fm_id": fm_id,
+                    "days_before_current_event": time_distance_days,
                     "matched_asset_ids": matched_assets,
                     "matched_component_ids": matched_components,
-                    "matched_failure_mode_ids": matched_fms,
+                    "matched_failure_mode_ids": all_matched_fms,
                     "priority_score": round(float(score), 3),
                     "time_distance_days": time_distance_days,
                 }

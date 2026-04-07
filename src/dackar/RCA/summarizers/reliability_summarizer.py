@@ -104,8 +104,15 @@ class NERSeed:
     maintenance_actions: List[str]
     properties: List[str]
     tools: List[str]
-    fm_ids: List[str] = field(default_factory=list)        # NEW
-    measurements: List[Dict[str, Any]] = field(default_factory=list)  # NEW
+    fm_ids: List[str] = field(default_factory=list)
+    measurements: List[Dict[str, Any]] = field(default_factory=list)
+    doc_refs: List[str] = field(default_factory=list)
+    alarm_ids: List[str] = field(default_factory=list)
+    temporal_refs: List[str] = field(default_factory=list)
+    temporal_relations: List[Dict[str, str]] = field(default_factory=list)
+    temporal_qualifiers: List[str] = field(default_factory=list)
+    locations: List[Dict[str, str]] = field(default_factory=list)
+    conjectures: List[str] = field(default_factory=list)
 
     def to_json(self) -> Dict[str, Any]:
         return {
@@ -118,6 +125,14 @@ class NERSeed:
             "maintenance_actions": self.maintenance_actions or [],
             "properties": self.properties or [],
             "tools": self.tools or [],
+            "doc_refs": self.doc_refs or [],
+            "alarm_ids": self.alarm_ids or [],
+            "measurements": self.measurements or [],
+            "temporal_refs": self.temporal_refs or [],
+            "temporal_relations": self.temporal_relations or [],
+            "temporal_qualifiers": self.temporal_qualifiers or [],
+            "locations": self.locations or [],
+            "conjectures": self.conjectures or [],
         }
 
 

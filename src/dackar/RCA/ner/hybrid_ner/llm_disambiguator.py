@@ -27,6 +27,12 @@ class LLMConfig:
     min_confidence: float = 0.15            # attach hypotheses with at least this soft score (if LLM emits a score)
     cache_ttl_seconds: int = 3600
     dry_run: bool = False                   # if true, do not call the model; return NO_LABEL
+    # Confidence-band trigger for disambiguation.
+    # Spans with a best hypothesis score in [uncertain_score_floor, uncertain_score_ceiling]
+    # are sent to the LLM; outside this range they are accepted or dropped without LLM involvement.
+    uncertain_score_floor: float = 0.40     # below this the span is too weak even for LLM
+    uncertain_score_ceiling: float = 0.65   # above this the embed result is confident enough
+    high_conf_bypass_score: float = 0.85    # gazetteer/high-conf hit at or above this bypasses LLM
 
 class LLMDisambiguator:
     def __init__(self, schema: SchemaIndex, config: LLMConfig = LLMConfig()):
@@ -37,18 +43,47 @@ class LLMDisambiguator:
         if not self.llm_ok:
             return
 
-    # Decide if we should call the LLM for candidate `c` (you can adjust heuristics)
     def should_call(self, c: CandidateSpan) -> bool:
-        # call if no proposed labels or all hypotheses lack a known group
-        if not getattr(c, "proposed_labels", None):
+        """Decide whether to invoke the LLM for this candidate span.
+
+        Decision logic (in priority order):
+        1. High-confidence gazetteer hit exists → bypass LLM entirely (trust deterministic match).
+        2. No proposed labels at all → ask LLM (span has no evidence).
+        3. All hypotheses lack a known schema group → ask LLM (labels are unrecognised).
+        4. Multiple competing schema groups → ask LLM (genuine ambiguity).
+        5. Best score in the uncertain confidence band → ask LLM (embed result is marginal).
+        6. Best score below the floor → do NOT ask LLM (span is too weak; LLM would speculate).
+        7. Best score above the ceiling → do NOT ask LLM (embed is confident enough).
+        """
+        proposed = list(getattr(c, "proposed_labels", None) or [])
+
+        # 1. High-confidence bypass: at least one deterministic (gazetteer) hit above threshold.
+        high_conf = self.config.high_conf_bypass_score
+        if any(
+            getattr(h, "score", 0.0) >= high_conf
+            and "gazetteer" in str(getattr(h, "rationale", ""))
+            for h in proposed
+        ):
+            return False
+
+        # 2. No labels at all.
+        if not proposed:
             return True
-        if all(getattr(h, "group", None) is None for h in c.proposed_labels):
+
+        # 3. All hypotheses lack a known schema group.
+        if all(getattr(h, "group", None) is None for h in proposed):
             return True
-        # or ambiguity: multiple groups and no clear winner (simple heuristic)
-        groups = {getattr(h, "group", None) for h in c.proposed_labels if getattr(h, "group", None)}
+
+        # 4. Ambiguity across multiple schema groups.
+        groups = {getattr(h, "group", None) for h in proposed if getattr(h, "group", None)}
         if len(groups) > 1:
             return True
-        return False
+
+        # 5 & 6 & 7. Confidence-band gate on the best available score.
+        best_score = max((getattr(h, "score", 0.0) for h in proposed), default=0.0)
+        floor = self.config.uncertain_score_floor
+        ceiling = self.config.uncertain_score_ceiling
+        return floor <= best_score <= ceiling
 
     # Build a concise prompt. Keep it short and constrained.
     def _build_prompt(self, doc_text: str, c: CandidateSpan, candidate_labels: List[str]) -> str:

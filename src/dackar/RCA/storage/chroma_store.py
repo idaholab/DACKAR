@@ -84,6 +84,8 @@ LIST_FIELDS = {
     "surveillance_actions",
     "tools_methods",
     "properties_or_limits",
+    "doc_refs",
+    "alarm_ids",
 }
 
 
@@ -109,7 +111,7 @@ def _normalize_filter_meta(filter_meta: Optional[Dict[str, Any]]) -> Dict[str, A
     Examples:
       - doc_ids   -> doc_id
       - doc_types -> doc_type
-      - component_ids is ignored here unless component_id is explicitly stored
+      - component_ids is handled via post-filtering (not passable to Chroma where clause)
     """
     raw = dict(filter_meta or {})
     norm: Dict[str, Any] = {}
@@ -125,7 +127,9 @@ def _normalize_filter_meta(filter_meta: Optional[Dict[str, Any]]) -> Dict[str, A
 
         target_key = alias_map.get(key, key)
 
-        # Skip unsupported plural filters that are not indexed as scalar keys.
+        # component_ids is a list field stored as a JSON string in Chroma metadata.
+        # Chroma's where clause cannot query inside a JSON-encoded list, so we skip
+        # it here and apply it as a Python post-filter in query_doc_type instead.
         if target_key == "component_ids":
             continue
 
@@ -136,6 +140,32 @@ def _normalize_filter_meta(filter_meta: Optional[Dict[str, Any]]) -> Dict[str, A
         norm[target_key] = value
 
     return norm
+
+
+def _doc_matches_component_ids(doc: Document, wanted: set) -> bool:
+    """Return True if *doc* is associated with at least one of the *wanted* component IDs.
+
+    Checks:
+      1. The scalar ``component_id`` metadata field (populated for single-component records).
+      2. The ``component_ids`` field, which may be a JSON-encoded list (how Chroma stores
+         list-valued metadata) or a plain Python list (BM25 in-memory path).
+    """
+    meta = doc.metadata or {}
+    scalar = meta.get("component_id")
+    if scalar and scalar in wanted:
+        return True
+    raw = meta.get("component_ids")
+    if isinstance(raw, str):
+        try:
+            ids = json.loads(raw)
+            if isinstance(ids, list) and any(c in wanted for c in ids):
+                return True
+        except (json.JSONDecodeError, TypeError):
+            pass
+    elif isinstance(raw, (list, tuple)):
+        if any(c in wanted for c in raw):
+            return True
+    return False
 
 def _sanitize_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
     clean: Dict[str, Any] = {}
@@ -161,6 +191,154 @@ def build_chroma_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
     metadata.setdefault("page_end", provenance.get("page_end", metadata.get("page_end")))
     metadata.setdefault("authority_level", provenance.get("authority_level", metadata.get("authority_level")))
     metadata.setdefault("section_role", provenance.get("section_role", metadata.get("section_role")))
+
+    # Flatten condition_assessment nested object into scalar keys so Chroma can
+    # store and return them.  Source priority: record-level > metadata-level.
+    # These are most meaningful on WO records but are preserved for all doc types.
+    ca = record.get("condition_assessment") or metadata.get("condition_assessment")
+    if isinstance(ca, dict):
+        for field in ("as_found_condition", "as_left_condition", "as_found_text", "as_left_text"):
+            val = ca.get(field)
+            if val is not None:
+                metadata.setdefault(f"ca_{field}", val)
+        # Flatten measurements as a compact summary string (first out-of-spec item wins).
+        measurements = ca.get("measurements")
+        if isinstance(measurements, list) and measurements:
+            oos = [m for m in measurements if isinstance(m, dict) and m.get("in_spec") is False]
+            summary = oos[0] if oos else measurements[0]
+            if isinstance(summary, dict):
+                metadata.setdefault(
+                    "ca_measurement_summary",
+                    f"{summary.get('parameter','?')}={summary.get('value','?')}{summary.get('unit','')} "
+                    f"({'OOS' if not summary.get('in_spec', True) else 'in-spec'})",
+                )
+
+    # Flatten ECA structured fields into scalar keys.
+    # `finding_status` encodes the epistemic status of the document's causal claims:
+    #   "confirmed"    — ECA with a formally validated root cause conclusion
+    #   "preliminary"  — CR with an initial engineer assessment (not validated)
+    #   "observational"— WO, SOP, MANUAL, SPEC, BULLETIN, or unknown — neither
+    doc_type_upper = str(metadata.get("doc_type") or record.get("doc_type") or "").strip().upper()
+    if doc_type_upper == "ECA":
+        metadata.setdefault("finding_status", "confirmed")
+    elif doc_type_upper == "CR":
+        metadata.setdefault("finding_status", "preliminary")
+    elif doc_type_upper == "OE":
+        metadata.setdefault("finding_status", "fleet_experience")
+    else:
+        metadata.setdefault("finding_status", "observational")
+
+    eca_block = record.get("eca") or {}
+    if isinstance(eca_block, dict) and eca_block:
+        eca_conf = eca_block.get("confidence")
+        if isinstance(eca_conf, (int, float)):
+            metadata.setdefault("eca_confidence", float(eca_conf))
+        causal_factors = eca_block.get("causal_factors")
+        if isinstance(causal_factors, list) and causal_factors:
+            metadata.setdefault(
+                "eca_causal_factors_text",
+                " | ".join(str(f) for f in causal_factors if f),
+            )
+        rationale = eca_block.get("rationale")
+        if rationale:
+            metadata.setdefault("eca_rationale_excerpt", str(rationale)[:300])
+
+    # Flatten OE metadata into scalar oe_* prefixed keys for Chroma pre-filtering.
+    # Soft filter fields (plant_scope, applicable_system_types, applicable_component_types)
+    # are stored as strings so evidence_retriever can use them as advisory hints.
+    oe_block = record.get("oe_metadata") or {}
+    if isinstance(oe_block, dict) and oe_block:
+        for scalar_field in ("issuing_body", "oe_number", "plant_scope", "similarity_basis"):
+            val = oe_block.get(scalar_field)
+            if val is not None:
+                metadata.setdefault(f"oe_{scalar_field}", str(val))
+        for list_field in ("applicable_system_types", "applicable_component_types"):
+            val = oe_block.get(list_field)
+            if isinstance(val, list) and val:
+                metadata.setdefault(f"oe_{list_field}", val)
+                metadata.setdefault(f"oe_{list_field}_text", " | ".join(str(x) for x in val))
+
+    # Flatten NER-enriched entities from the enrichment block.
+    # These are populated by augment_chunks.build_processed_text_record via NERSeed.
+    ner = (record.get("enrichment") or {}).get("extracted_entities") or {}
+    if isinstance(ner, dict) and ner:
+        # List fields — kept as lists; LIST_FIELDS loop will also add *_text companions.
+        for list_key in ("doc_refs", "alarm_ids"):
+            val = ner.get(list_key)
+            if isinstance(val, list) and val:
+                metadata.setdefault(list_key, val)
+
+        # Temporal refs — raw strings, join for text search.
+        temporal_refs = ner.get("temporal_refs")
+        if isinstance(temporal_refs, list) and temporal_refs:
+            metadata.setdefault("temporal_refs_text", " | ".join(str(r) for r in temporal_refs))
+
+        # Measurements — compact "value unit" pairs.
+        measurements = ner.get("measurements")
+        if isinstance(measurements, list) and measurements:
+            parts = []
+            for m in measurements:
+                if not isinstance(m, dict):
+                    continue
+                v = m.get("value", m.get("parameter", ""))
+                u = m.get("unit", "")
+                if v or u:
+                    parts.append(f"{v}{u}".strip())
+            if parts:
+                metadata.setdefault("ner_measurements_text", " | ".join(parts))
+
+        # Conjectures — hedge strings.
+        conjectures = ner.get("conjectures")
+        if isinstance(conjectures, list) and conjectures:
+            metadata.setdefault("conjectures_text", " | ".join(str(c) for c in conjectures))
+
+        # Locations — dict with text + sub_label.
+        locations = ner.get("locations")
+        if isinstance(locations, list) and locations:
+            loc_parts = []
+            for loc in locations:
+                if isinstance(loc, dict):
+                    loc_parts.append(str(loc.get("text") or loc.get("sub_label") or ""))
+                elif isinstance(loc, str):
+                    loc_parts.append(loc)
+            if loc_parts:
+                metadata.setdefault("locations_text", " | ".join(p for p in loc_parts if p))
+
+        # Dominant temporal relation for pre-filter hints.
+        temporal_relations = ner.get("temporal_relations")
+        if isinstance(temporal_relations, list) and temporal_relations:
+            from collections import Counter
+            votes = Counter(
+                r.get("sub_label") for r in temporal_relations
+                if isinstance(r, dict) and r.get("sub_label")
+            )
+            if votes:
+                metadata.setdefault("dominant_temporal_relation", votes.most_common(1)[0][0])
+
+    # Flatten Stage 5 causal statements for BM25 / text search and confidence filtering.
+    # Boolean flags (has_explicit_causal_statement etc.) are already in record["metadata"]
+    # from build_processed_text_record; here we add the actual span text and max confidence.
+    stage5 = (record.get("enrichment") or {}).get("stage5_causal_condition") or {}
+    if isinstance(stage5, dict) and stage5:
+        statements = stage5.get("extracted_causal_statements") or []
+        if isinstance(statements, list) and statements:
+            causal_parts = []
+            max_conf = 0.0
+            for stmt in statements[:8]:
+                if not isinstance(stmt, dict):
+                    continue
+                c = str(stmt.get("cause_text") or "").strip()
+                e = str(stmt.get("effect_text") or "").strip()
+                k = str(stmt.get("connector") or "").strip()
+                conf = float(stmt.get("confidence", 0.0))
+                max_conf = max(max_conf, conf)
+                line = " ".join(p for p in [c, k, e] if p)
+                if line:
+                    causal_parts.append(line)
+            if causal_parts:
+                metadata.setdefault("causal_statements_text", " | ".join(causal_parts))
+            if max_conf > 0.0:
+                metadata.setdefault("causal_confidence_max", round(max_conf, 3))
 
     # Add string versions of list metadata for display / debugging. The raw list-valued
     # keys remain too, but are stringified by _sanitize_meta because Chroma metadata
@@ -356,6 +534,10 @@ class ChromaRecordStore:
         vs = state.vectorstore
         filter_sane = _normalize_filter_meta(filter_meta)
 
+        # component_ids cannot be passed to the Chroma where clause (list stored as JSON
+        # string); extract it here for Python post-filtering after retrieval.
+        wanted_component_ids: set = set((filter_meta or {}).get("component_ids") or [])
+
         if not filter_sane:
             chroma_where = None
         else:
@@ -377,15 +559,23 @@ class ChromaRecordStore:
                 chroma_where = {"$and": clauses}
 
         dense_hits: List[Dict[str, Any]] = []
-        fetch_k = top_k * 2
+        # Fetch extra candidates when component post-filtering is active so that
+        # attrition from the filter does not starve downstream consumers.
+        fetch_k = top_k * (4 if wanted_component_ids else 2)
         try:
             scored = vs.similarity_search_with_score(query_text, k=fetch_k, filter=chroma_where)
             for doc, score in scored:
                 doc.metadata = dict(doc.metadata or {})
                 doc.metadata["_score"] = float(score)
+                # Preserve raw vector similarity before RRF fusion overwrites _score.
+                # Downstream consumers (e.g. evidence assessment) use _vector_score
+                # as a semantic relevance signal that survives RRF re-ranking.
+                doc.metadata["_vector_score"] = float(score)
                 rid = _stable_record_id_from_doc(doc)
                 if not rid:
                     LOGGER.warning("Dense retrieval returned hit with no stable record_id; skipping.")
+                    continue
+                if wanted_component_ids and not _doc_matches_component_ids(doc, wanted_component_ids):
                     continue
                 dense_hits.append({
                     "record_id": rid,
@@ -398,12 +588,17 @@ class ChromaRecordStore:
 
         bm25_hits: List[Dict[str, Any]] = []
         bm25 = self._get_or_build_bm25(state)
-        if bm25 is not None:
+        bm25_available = bm25 is not None
+        if bm25_available:
             try:
                 bm25.k = fetch_k
                 docs = bm25.invoke(query_text)
-                if filter_sane:
-                    docs = [d for d in docs if all(d.metadata.get(k) == v for k, v in filter_sane.items())]
+                if filter_sane or wanted_component_ids:
+                    docs = [
+                        d for d in docs
+                        if all(d.metadata.get(k) == v for k, v in filter_sane.items())
+                        and (not wanted_component_ids or _doc_matches_component_ids(d, wanted_component_ids))
+                    ]
                 for doc in docs:
                     rid = _stable_record_id_from_doc(doc)
                     if not rid:
@@ -416,7 +611,15 @@ class ChromaRecordStore:
                         "metadata": doc.metadata,
                     })
             except Exception as exc:
+                bm25_available = False
                 LOGGER.warning("BM25 retrieval failed for doc_type '%s': %s", doc_type, exc)
+        else:
+            LOGGER.warning(
+                "BM25 unavailable for collection '%s' (loaded from disk without in-process ingest); "
+                "falling back to dense-only retrieval.  hybrid_weight=%.2f has no effect.",
+                cname,
+                hybrid_weight,
+            )
 
         fused = _reciprocal_rank_fusion(
             {"dense": dense_hits, "bm25": bm25_hits},
@@ -432,6 +635,7 @@ class ChromaRecordStore:
                 continue
             doc.metadata = dict(doc.metadata or {})
             doc.metadata["_score"] = entry["score"]
+            doc.metadata["_bm25_available"] = bm25_available
             out.append(doc)
         return out
 

@@ -191,6 +191,7 @@ def augment_chunks_with_structured_summaries(
     authority_override: Optional[str] = None,
     ner_seed_provider: Optional[Callable[[Dict[str, Any]], NERSeed]] = None,
     stage5_nlp: Any = None,
+    stage5_llm_cfg: Optional[Dict[str, Any]] = None,
 ) -> AugmentStats:
     """
     Enrich an mdParser chunks.jsonl file with structured summaries (JSON) using Ollama.
@@ -356,6 +357,7 @@ def augment_chunks_with_structured_summaries(
                 doc_type=doc_type,
                 section_role=ctx.section_role,
                 nlp=stage5_nlp,
+                llm_cfg=stage5_llm_cfg,
             )
 
             metadata = build_chunk_metadata(
@@ -411,6 +413,8 @@ def augment_chunks_with_structured_summaries(
                 "doc_type": doc_type,
                 "authority_level": authority,
                 "stage5_nlp_provided": bool(stage5_nlp is not None),
+                "stage5_llm_provided": bool(stage5_llm_cfg is not None),
+                "stage5_extractor_used": stage5_payload.get("extractor", {}).get("used", ""),
             }
             summarized += 1
 
@@ -458,6 +462,34 @@ def _validate_stage5_alias_consistency(record: Dict[str, Any]) -> List[str]:
 
     return errors
 
+def _extract_causal_spans(
+    stage5_payload: Optional[Dict[str, Any]],
+    min_confidence: float = 0.35,
+) -> Tuple[List[str], List[str]]:
+    """Return (cause_texts, effect_texts) from Stage 5 statements at or above min_confidence.
+
+    cause_texts  — causal precursor spans; routed to mechanisms in NERSeed backfill.
+    effect_texts — failure/outcome spans; routed to outcomes in NERSeed backfill.
+
+    min_confidence=0.35 corresponds to at least one filled field (connector OR a cause/effect
+    span) in _score_causal_statement, filtering out the emptiest extractions.
+    """
+    cause_texts: List[str] = []
+    effect_texts: List[str] = []
+    for stmt in ((stage5_payload or {}).get("extracted_causal_statements") or []):
+        if not isinstance(stmt, dict):
+            continue
+        if float(stmt.get("confidence", 0.0)) < min_confidence:
+            continue
+        c = str(stmt.get("cause_text") or "").strip()
+        e = str(stmt.get("effect_text") or "").strip()
+        if c:
+            cause_texts.append(c)
+        if e:
+            effect_texts.append(e)
+    return cause_texts, effect_texts
+
+
 def build_embedding_text(
     chunk_text: str,
     ner_seed: NERSeed,
@@ -472,7 +504,15 @@ def build_embedding_text(
     causals = ((stage5_payload or {}).get("extracted_causal_statements") or [])
     measurements = (retrieval_summary.get("numbers_limits") or [])
 
-    fm_labels = _uniq(list(ner_seed.mechanisms or []) + list(ner_seed.outcomes or []))
+    # Backfill causal spans into FM_LABELS so the embedding picks up event spans
+    # that the gazetteer may have missed (Fix B: causal-slot backfill).
+    causal_cause_spans, causal_effect_spans = _extract_causal_spans(stage5_payload)
+    fm_labels = _uniq(
+        list(ner_seed.mechanisms or [])
+        + list(ner_seed.outcomes or [])
+        + causal_cause_spans
+        + causal_effect_spans
+    )
     if fm_labels:
         parts.append("FM_LABELS: " + ", ".join(fm_labels))
 
@@ -489,6 +529,25 @@ def build_embedding_text(
 
     if measurements:
         parts.append("MEASUREMENTS: " + ", ".join(str(x).strip() for x in measurements[:15] if str(x).strip()))
+
+    # spaCy-extracted signals: structured measurements, temporal refs, doc cross-refs
+    spacy_measurements = getattr(ner_seed, "measurements", None) or []
+    if spacy_measurements:
+        meas_parts = [
+            f"{m.get('value', '')} {m.get('unit', '')}".strip()
+            for m in spacy_measurements[:10]
+            if isinstance(m, dict) and m.get("value") is not None
+        ]
+        if meas_parts:
+            parts.append("UNIT_MEASUREMENTS: " + ", ".join(meas_parts))
+
+    temporal_refs = getattr(ner_seed, "temporal_refs", None) or []
+    if temporal_refs:
+        parts.append("TEMPORAL_REFS: " + ", ".join(temporal_refs[:10]))
+
+    doc_refs = getattr(ner_seed, "doc_refs", None) or []
+    if doc_refs:
+        parts.append("DOC_REFS: " + ", ".join(doc_refs[:15]))
 
     # Seed-derived normalization
     if ner_seed.systems:
@@ -550,12 +609,17 @@ def build_chunk_metadata(
     candidate_actions = rca_frame.get("candidate_actions") or []
     constraints = rca_frame.get("constraints") or []
 
-    # NER / deterministic extraction is authoritative; summaries are additive only.
+    # Causal-slot backfill: cause_texts → mechanisms, effect_texts → outcomes.
+    # Runs after stage5 so the dep-tree causal spans enrich metadata even when
+    # the gazetteer didn't produce a match for those surface forms (Fix B).
+    causal_cause_spans, causal_effect_spans = _extract_causal_spans(stage5_payload)
+
+    # NER / deterministic extraction is authoritative; summaries and causal slots are additive.
     systems = _uniq((ner_seed.systems or []) + (entities.get("systems") or []))
     equipment_ids = _uniq(ner_seed.equipment_ids or [])
     components = _uniq((ner_seed.components or []) + (entities.get("components") or []))
-    mechanisms_all = _uniq((ner_seed.mechanisms or []) + mechanisms)
-    outcomes_all = _uniq((ner_seed.outcomes or []) + symptoms)
+    mechanisms_all = _uniq((ner_seed.mechanisms or []) + mechanisms + causal_cause_spans)
+    outcomes_all = _uniq((ner_seed.outcomes or []) + symptoms + causal_effect_spans)
     maintenance_actions = _uniq((ner_seed.maintenance_actions or []) + corrective_actions + candidate_actions)
     surveillance_actions = _uniq((ner_seed.surveillance_actions or []) + diagnostics + tests_to_confirm)
     properties = _uniq((ner_seed.properties or []) + numbers_limits)
@@ -583,6 +647,10 @@ def build_chunk_metadata(
         # keep properties only if compact
         "properties_or_limits": properties[:25],
 
+        # document and alarm cross-references from NER
+        "doc_refs": _uniq(list(getattr(ner_seed, "doc_refs", None) or [])),
+        "alarm_ids": _uniq(list(getattr(ner_seed, "alarm_ids", None) or [])),
+
         # boolean retrieval flags
         "has_causal_language": bool(
             hypotheses
@@ -593,6 +661,12 @@ def build_chunk_metadata(
         "has_maintenance_action": bool(maintenance_actions),
         "has_surveillance_action": bool(surveillance_actions),
         "has_failure_signal": bool(outcomes_all or mechanisms_all),
+        "has_temporal_signal": bool(
+            getattr(ner_seed, "temporal_refs", None)
+            or getattr(ner_seed, "temporal_relations", None)
+        ),
+        "has_conjecture": bool(getattr(ner_seed, "conjectures", None)),
+        "has_location_signal": bool(getattr(ner_seed, "locations", None)),
     }
 
 def _uniq(items: List[str]) -> List[str]:
@@ -627,6 +701,11 @@ def build_processed_text_record(
         or chunk.get("doc_hash")
         or chunk.get("hash")
     )
+
+    # Causal-slot backfill (Fix B): pull cause/effect spans from Stage 5 dep-tree
+    # extraction so syntactic failure events reach extracted_entities even when the
+    # gazetteer has no exact-phrase match for those surface forms.
+    _causal_cause_spans, _causal_effect_spans = _extract_causal_spans(stage5_payload)
 
     return {
         "record_id": f"{doc_id}::{chunk_index}",
@@ -668,15 +747,30 @@ def build_processed_text_record(
 
         "enrichment": {
             "extracted_entities": {
+                # Core entity buckets (hybrid NER pipeline + causal-slot backfill).
+                # cause_texts from Stage 5 dep-tree extraction are merged into mechanisms;
+                # effect_texts are merged into outcomes.  This ensures that failure events
+                # described syntactically (e.g. "pump failed to start") are captured even
+                # when the gazetteer has no exact-phrase match for the surface form (Fix B).
                 "systems": _uniq(list(ner_seed.systems or [])),
                 "equipment_ids": _uniq(list(ner_seed.equipment_ids or [])),
-                "components": _uniq(list(ner_seed.components or [])),
-                "mechanisms": _uniq(list(ner_seed.mechanisms or [])),
-                "outcomes": _uniq(list(ner_seed.outcomes or [])),
+                "components":  _uniq(list(ner_seed.components or [])),
+                "mechanisms":  _uniq(list(ner_seed.mechanisms or []) + _causal_cause_spans),
+                "outcomes":    _uniq(list(ner_seed.outcomes or []) + _causal_effect_spans),
                 "surveillance_actions": _uniq(list(ner_seed.surveillance_actions or [])),
                 "maintenance_actions": _uniq(list(ner_seed.maintenance_actions or [])),
                 "properties": _uniq(list(ner_seed.properties or [])),
                 "tools": _uniq(list(ner_seed.tools or [])),
+                # Document and alarm cross-references (regex extractors)
+                "doc_refs": _uniq(list(getattr(ner_seed, "doc_refs", None) or [])),
+                "alarm_ids": _uniq(list(getattr(ner_seed, "alarm_ids", None) or [])),
+                # spaCy-extracted signals (Tier 1 SpacyAnnotator)
+                "measurements": list(getattr(ner_seed, "measurements", None) or []),
+                "temporal_refs": list(getattr(ner_seed, "temporal_refs", None) or []),
+                "temporal_relations": list(getattr(ner_seed, "temporal_relations", None) or []),
+                "temporal_qualifiers": list(getattr(ner_seed, "temporal_qualifiers", None) or []),
+                "locations": list(getattr(ner_seed, "locations", None) or []),
+                "conjectures": list(getattr(ner_seed, "conjectures", None) or []),
             },
 
             "semantic_signals": {

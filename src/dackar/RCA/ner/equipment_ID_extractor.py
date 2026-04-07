@@ -105,7 +105,7 @@ def extract_equipment_ids(
         for _, fp in false_positive_patterns:
             if fp.match(t):
                 return True
-        _DOC_REF_PREFIXES = {"CR", "WO", "SOP", "ECA", "MR", "PM", "AR", "CAP", "PER"}
+        _DOC_REF_PREFIXES = {"CR", "WO", "SOP", "ECA", "MR", "PM", "AR", "CAP", "PER", "ALM", "ANN"}
         prefix = t.split("-")[0]
         if prefix in _DOC_REF_PREFIXES:
             return True
@@ -143,6 +143,17 @@ def extract_equipment_ids(
             results.append(tag)
             count += 1
             if count >= max_ids:
-                return results
+                break
 
-    return results
+    # Containment filter: drop shorter tags that are trailing segments of a longer tag.
+    # E.g. if "AFW-P-101" is found, drop "P-101" since it's a suffix component of it.
+    filtered: List[str] = []
+    result_set = set(results)
+    for tag in results:
+        absorbed = any(
+            longer != tag and longer.endswith("-" + tag)
+            for longer in result_set
+        )
+        if not absorbed:
+            filtered.append(tag)
+    return filtered

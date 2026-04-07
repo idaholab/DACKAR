@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import tomllib
 from copy import deepcopy
 from datetime import date, datetime
@@ -102,23 +103,28 @@ def _node_primary_key(spec: Dict[str, Any]) -> str:
 def _label_candidates(name: str) -> List[str]:
     """Generate a list of label name variants to try when resolving a schema label.
 
-    Produces the original name, its lowercase form, and a PascalCase conversion
-    to account for naming conventions used across different TOML schemas.
+    Produces the original name, its lowercase form, a PascalCase conversion,
+    and a snake_case conversion (from PascalCase input) to account for naming
+    conventions used across different TOML schemas.
 
     Args:
         name: Base label name.
 
     Returns:
-        List of candidate strings (original, lowercase, PascalCase), deduplicated
-        while preserving order.
+        List of candidate strings (original, lowercase, PascalCase, snake_case),
+        deduplicated while preserving order.
     """
     out = [name]
     low = name.lower()
-    if low != name:
+    if low not in out:
         out.append(low)
     pascal = "".join(part.capitalize() for part in low.split("_"))
     if pascal not in out:
         out.append(pascal)
+    # Reverse direction: PascalCase → snake_case (e.g. "ProcessedTextRecord" → "processed_text_record")
+    snake = re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+    if snake not in out:
+        out.append(snake)
     return out
 
 
@@ -126,8 +132,8 @@ def resolve_node_label(schema: Dict[str, Any], *candidates: str) -> str:
     """Resolve the first candidate name that exists as a node label in the schema.
 
     For each candidate, tries the original name and common variants (lowercase,
-    PascalCase).  If none match, returns the first candidate unchanged as a
-    safe fallback.
+    PascalCase, snake_case).  If none match, returns the first candidate
+    unchanged as a safe fallback.
 
     Args:
         schema: Merged schema dict (must contain a ``"node"`` key).
@@ -143,6 +149,38 @@ def resolve_node_label(schema: Dict[str, Any], *candidates: str) -> str:
             if variant in available:
                 return variant
     return candidates[0]
+
+
+def resolve_node_label_strict(schema: Dict[str, Any], *candidates: str) -> str:
+    """Resolve the first candidate name that exists as a node label in the schema.
+
+    Identical to :func:`resolve_node_label` but raises :class:`KeyError` instead
+    of silently falling back when no candidate matches.  Use this wherever a
+    miss should be a hard error (e.g. building the ``labels`` registry at graph
+    construction time).
+
+    Args:
+        schema: Merged schema dict (must contain a ``"node"`` key).
+        *candidates: One or more preferred label names, in priority order.
+
+    Returns:
+        The matched label string from the schema.
+
+    Raises:
+        KeyError: If no variant of any candidate is found in the schema's node
+            registry.  The error message lists the available node labels so the
+            caller can diagnose schema/TOML mismatches immediately.
+    """
+    available = schema.get("node") or {}
+    for candidate in candidates:
+        for variant in _label_candidates(candidate):
+            if variant in available:
+                return variant
+    available_keys = sorted(available.keys())
+    raise KeyError(
+        f"No schema node label found for candidates {list(candidates)}. "
+        f"Available node labels: {available_keys}"
+    )
 
 
 def relation_endpoint_map(schema: Dict[str, Any]) -> Dict[str, Tuple[str, str]]:
@@ -351,8 +389,9 @@ class GraphBatch:
         dst_label = self.nodes[dst]["label"]
         spec = self.relation_map.get(rel_type)
         if spec:
-            exp_src = resolve_node_label(self.schema, spec[0])
-            exp_dst = resolve_node_label(self.schema, spec[1])
+            _rel_resolve = resolve_node_label_strict if self.schema.get("node") else resolve_node_label
+            exp_src = _rel_resolve(self.schema, spec[0])
+            exp_dst = _rel_resolve(self.schema, spec[1])
             if src_label != exp_src or dst_label != exp_dst:
                 raise ValueError(
                     f"Relation {rel_type} expects ({exp_src} -> {exp_dst}), got ({src_label} -> {dst_label})"
@@ -386,11 +425,17 @@ class GraphBatch:
 def _prefix(value: Optional[str], prefix: str) -> Optional[str]:
     """Build a namespaced node id by prepending *prefix* to *value*.
 
-    Strips whitespace and skips empty values.  Already-namespaced strings
-    (containing ``":"``) are returned unchanged to avoid double-prefixing.
+    Strips whitespace, collapses internal spaces to underscores, and skips
+    empty values.  Normalising spaces ensures the resulting ID is safe to use
+    unquoted in Cypher — ``FM:loss_of_lubrication`` rather than
+    ``FM:loss of lubrication``.  Casing is preserved so that structured IDs
+    (e.g. ``CMP-001``) are not altered.
+
+    Already-namespaced strings (containing ``":"``) are returned unchanged to
+    avoid double-prefixing.
 
     Args:
-        value: Raw identifier string (e.g. ``"pump-101"``).
+        value: Raw identifier string (e.g. ``"pump-101"`` or ``"loss of lubrication"``).
         prefix: Namespace prefix (e.g. ``"ASSET"``).
 
     Returns:
@@ -404,6 +449,8 @@ def _prefix(value: Optional[str], prefix: str) -> Optional[str]:
         return None
     if ":" in value:
         return value
+    # Collapse internal whitespace to underscores (Cypher-safe, casing preserved).
+    value = "_".join(value.split())
     return f"{prefix}:{value}"
 
 def _truthy(value: Any) -> bool:
@@ -471,8 +518,9 @@ def _safe_ptr_entity_rel(
         spec = g.relation_map.get(rel_name)
         if not spec:
             return False
-        exp_src = resolve_node_label(g.schema, spec[0])
-        exp_dst = resolve_node_label(g.schema, spec[1])
+        _r = resolve_node_label_strict if g.schema.get("node") else resolve_node_label
+        exp_src = _r(g.schema, spec[0])
+        exp_dst = _r(g.schema, spec[1])
         return src_label == exp_src and dst_label == exp_dst
 
     # Only use typed relations if they truly match PTR -> entity endpoints.
@@ -510,8 +558,9 @@ def _safe_ptr_failure_mode_rel(
         spec = g.relation_map.get(rel_name)
         if not spec:
             return False
-        exp_src = resolve_node_label(g.schema, spec[0])
-        exp_dst = resolve_node_label(g.schema, spec[1])
+        _r = resolve_node_label_strict if g.schema.get("node") else resolve_node_label
+        exp_src = _r(g.schema, spec[0])
+        exp_dst = _r(g.schema, spec[1])
         return src_label == exp_src and dst_label == exp_dst
 
     for rel_name in ("supports_hypothesis", "references_failure_mode", "caused_by"):
@@ -566,17 +615,24 @@ def build_graph_from_workflow_artifacts(
     schema = load_and_merge_schemas(schema_paths) if schema_paths else {"node": {}, "relation": {}}
     g = GraphBatch(schema=schema)
 
+    if schema.get("node"):
+        _resolve = resolve_node_label_strict
+    else:
+        # No schema loaded — fall back to lenient resolver so callers that
+        # intentionally pass no schema_paths still work.
+        _resolve = resolve_node_label
+
     labels = {
-        "asset": resolve_node_label(schema, "mbse_entity", "asset"),
-        "component": resolve_node_label(schema, "mbse_entity", "component"),
-        "failure_mode": resolve_node_label(schema, "failure_mode"),
-        "document": resolve_node_label(schema, "Document", "document"),
-        "processed_text_record": resolve_node_label(schema, "ProcessedTextRecord", "processed_text_record"),
-        "condition_report": resolve_node_label(schema, "condition_report"),
-        "work_order": resolve_node_label(schema, "work_order"),
-        "event": resolve_node_label(schema, "abnormal_event", "event"),
-        "rca_case": resolve_node_label(schema, "rca_case"),
-        "causal_factor": resolve_node_label(schema, "causal_factor", "candidate_hypothesis"),
+        "asset": _resolve(schema, "mbse_entity", "asset"),
+        "component": _resolve(schema, "mbse_entity", "component"),
+        "failure_mode": _resolve(schema, "failure_mode"),
+        "document": _resolve(schema, "Document", "document"),
+        "processed_text_record": _resolve(schema, "ProcessedTextRecord", "processed_text_record"),
+        "condition_report": _resolve(schema, "condition_report"),
+        "work_order": _resolve(schema, "work_order"),
+        "event": _resolve(schema, "abnormal_event", "event"),
+        "rca_case": _resolve(schema, "rca_case"),
+        "causal_factor": _resolve(schema, "causal_factor", "candidate_hypothesis"),
     }
 
     event_id: Optional[str] = None
@@ -724,8 +780,7 @@ def build_graph_from_workflow_artifacts(
             g.add_node(cause_id, labels["failure_mode"], {"source_key": cause_text})
             g.add_node(effect_id, labels["failure_mode"], {"source_key": effect_text})
 
-            rel = "textual_cause_of" if "textual_cause_of" in g.relation_map else "causes"
-            g.add_edge(cause_id, effect_id, rel, {
+            g.add_edge(cause_id, effect_id, "textual_cause_of", {
                 "source": "processed_text_record.stage5",
                 "record_id": rec.get("record_id"),
                 "confidence": confidence,
@@ -775,7 +830,7 @@ def build_graph_from_workflow_artifacts(
                 continue
             g.add_node(pe_id, labels["event"], {**past, "event_key": past.get("event_id")})
             if event_id:
-                g.add_edge(pe_id, event_id, "causes", {"evidence_type": "historical_precedent"})
+                g.add_edge(pe_id, event_id, "preceded_event", {"evidence_type": "historical_precedent"})
             fm_id = _prefix(past.get("fm_id"), "FM")
             if fm_id:
                 g.add_node(fm_id, labels["failure_mode"], {"source_key": past.get("fm_id")})
@@ -817,7 +872,7 @@ def build_graph_from_workflow_artifacts(
                 g.add_node(an_id, "anomaly", {**anomaly, "sensor_id": signal.get("sensor_id"), "parameter": signal.get("parameter")})
                 g.add_edge(sig_id, an_id, "detects", {"source": "telemetry_summary"})
                 if event_id:
-                    g.add_edge(an_id, event_id, "causes", {"evidence_type": "telemetry_symptom"})
+                    g.add_edge(an_id, event_id, "indicates_event", {"evidence_type": "telemetry_symptom"})
 
             for idx, cp in enumerate(signal.get("changepoints") or []):
                 cp_id = _prefix(f"{signal.get('sensor_id')}:{idx}:{cp.get('timestamp')}", "CP")
@@ -838,7 +893,7 @@ def build_graph_from_workflow_artifacts(
             g.add_node(alarm_id, "Alarm", alarm)
             g.add_edge(ctx_id, alarm_id, "includes_alarm", {})
             if event_id:
-                g.add_edge(alarm_id, event_id, "causes", {"evidence_type": "alarm_context"})
+                g.add_edge(alarm_id, event_id, "co_occurred_with_event", {"evidence_type": "alarm_context"})
         for wo in operational_context.get("nearby_maintenance") or []:
             wo_id = _prefix(wo.get("wo_id"), "WO")
             g.add_node(wo_id, labels["work_order"], {**wo, "ID": wo.get("wo_id")})
@@ -856,7 +911,7 @@ def build_graph_from_workflow_artifacts(
             g.add_node(check_id, "PMCheck", check)
             g.add_edge(pm_id, check_id, "includes_check", {})
             if check.get("status") in {"failed", "overdue"} and event_id:
-                g.add_edge(check_id, event_id, "causes", {"evidence_type": "pm_noncompliance"})
+                g.add_edge(check_id, event_id, "contributed_to", {"evidence_type": "pm_noncompliance"})
 
     if evidence_bundle:
         bundle_id = _prefix(evidence_bundle.get("bundle_id"), "BUNDLE")

@@ -19,6 +19,7 @@ if project_root not in sys.path:
 PROJECT_ROOT = Path(project_root)
 
 from ner.ner_adapter import build_ner_pipeline, ner_seed_provider_from_pipeline
+from ner.spacy_annotator import build_spacy_annotator
 
 from doc_parsers.pdfParser import pdfParser
 from doc_parsers.mdParser import md_parser
@@ -1190,23 +1191,31 @@ def run_stage3_syntactic_nlp(chunk_text: str) -> Dict[str, Any]:
 @lru_cache(maxsize=1)
 def get_hybrid_ner_seed_provider():
     """
-    Build and cache the hybrid NER-backed seed provider.
-    Falls back to the current regex-only seed builder if initialization fails.
+    Build and cache the hybrid NER-backed seed provider (pipeline + SpacyAnnotator).
+    Falls back to the regex-only seed builder if initialization fails.
+
+    Paths resolve to the canonical NER data files under ner/data/.
+    PROJECT_ROOT is set to DACKAR/src/dackar/RCA when run from demos/.
     """
     try:
-        # Adjust these paths to where your runtime copies actually live
-        schema_json_path = str(PROJECT_ROOT / "ner" / "group-schema.json")
-        gazetteer_xl_path = str(PROJECT_ROOT / "ner" / "tag_keywords_lists.xlsx")
-        label_json_path = str(PROJECT_ROOT / "ner" / "group-schema.json")
+        ner_data = PROJECT_ROOT / "ner" / "data"
+        schema_json_path = str(ner_data / "group-schema.json")
+        gazetteer_xl_path = str(ner_data / "tag_keywords_lists.xlsx")
+        # label_json uses the same group-schema file as the schema
+        label_json_path = schema_json_path
 
         pipeline = build_ner_pipeline(
             schema_json_path=schema_json_path,
             gazetteer_xl=gazetteer_xl_path,
             label_json=label_json_path,
             llm_cfg=None,
+            generator_mode="anchored_np",
         )
-        return ner_seed_provider_from_pipeline(pipeline, NERSeed)
-    except Exception:
+        annotator = build_spacy_annotator()
+        return ner_seed_provider_from_pipeline(pipeline, NERSeed, annotator=annotator)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Hybrid NER provider init failed: %s", e)
         return None
     
 def _regex_stage5_fallback(

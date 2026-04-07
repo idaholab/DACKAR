@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+import json
+import logging
 import re
 
+import requests
+
 # Adjust these imports to your actual package layout
-from causal.CausalSentence import CausalSentence
-from causal.CausalSimple import CausalSimple
+from dackar.causal.CausalSentence import CausalSentence
+from dackar.causal.CausalSimple import CausalSimple
+
+logger = logging.getLogger(__name__)
 
 
 _ALLOWED_CONDITION_STATES = {"acceptable", "degraded", "failed", "unknown"}
@@ -103,6 +109,151 @@ def empty_stage5_output() -> Dict[str, Any]:
     }
 
 
+def _call_llm_json(
+    prompt: str,
+    llm_cfg: Dict[str, Any],
+) -> Optional[Any]:
+    """Make a single LLM call and return the parsed JSON response body.
+
+    Uses the OpenAI-compatible chat/completions endpoint by default.
+    Returns None on any error so callers can degrade gracefully.
+    """
+    url = str(llm_cfg.get("http_url", "http://localhost:11434/v1/chat/completions")).strip()
+    model = str(llm_cfg.get("model", "")).strip()
+    timeout = int(llm_cfg.get("timeout", 15))
+    temperature = float(llm_cfg.get("temperature", 0.0))
+    max_tokens = int(llm_cfg.get("max_tokens", 256))
+
+    payload: Dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "Return ONLY valid JSON. No extra text, no markdown."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    try:
+        r = requests.post(url, json=payload, timeout=timeout)
+        r.raise_for_status()
+        content = (
+            r.json()
+            .get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+        content = content.strip()
+        # strip optional markdown fence
+        if content.startswith("```"):
+            content = re.sub(r"^```[a-z]*\n?", "", content)
+            content = re.sub(r"\n?```$", "", content)
+        return json.loads(content)
+    except Exception as exc:
+        logger.warning("LLM call failed: %s", exc)
+        return None
+
+
+def _llm_causal_fallback(
+    *,
+    doc_id: str,
+    chunk_index: int,
+    chunk_text: str,
+    doc_type: str,
+    section_role: str,
+    llm_cfg: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Ask the LLM to extract implicit causal relationships that rule-based methods missed.
+
+    Fires only when both CausalSentence and CausalSimple return no statements.
+    Returns a list of normalised causal-statement dicts ready for
+    ``extracted_causal_statements``, or [] on failure.
+    """
+    prompt = f"""You are a nuclear plant maintenance document analyst.
+
+Identify implicit causal relationships in the text below — meaning cause-and-effect links \
+where no explicit causal connector word (e.g. "caused by", "due to", "resulted in") appears, \
+but a causal intent is clearly conveyed by context.
+
+Document type: {doc_type}
+Section: {section_role}
+Text:
+\"\"\"{chunk_text[:1500]}\"\"\"
+
+Return a JSON array. Each element must have exactly these keys:
+  "cause_text"  — the causal precursor phrase (string, or "" if not identifiable)
+  "connector"   — an implicit bridge phrase if present, otherwise ""
+  "effect_text" — the failure or outcome phrase (string, or "" if not identifiable)
+  "confidence"  — float 0.0–1.0
+
+Return [] if no implicit causal relationships exist.
+Return ONLY the JSON array."""
+
+    raw = _call_llm_json(prompt, llm_cfg)
+    if not isinstance(raw, list):
+        return []
+
+    statements = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            continue
+        cause = str(item.get("cause_text") or "").strip()
+        effect = str(item.get("effect_text") or "").strip()
+        if not cause and not effect:
+            continue
+        conf = float(item.get("confidence", 0.5))
+        statements.append({
+            "statement_id": f"{doc_id}::{chunk_index}::llm_implicit::{i}",
+            "sentence_text": chunk_text[:300],
+            "connector": str(item.get("connector") or "").strip(),
+            "cause_text": cause,
+            "effect_text": effect,
+            "cause_entity": None,
+            "effect_entity": None,
+            "negated": False,
+            "conjectural": False,
+            "confidence": round(min(1.0, max(0.0, conf)), 3),
+            "source": "LLM_implicit",
+        })
+    return statements
+
+
+def _llm_condition_state_fallback(
+    *,
+    chunk_text: str,
+    doc_type: str,
+    section_role: str,
+    llm_cfg: Dict[str, Any],
+) -> Optional[str]:
+    """Classify equipment condition when keyword heuristics return None.
+
+    Returns one of ``"acceptable"``, ``"degraded"``, ``"failed"``, ``"unknown"``,
+    or None if the LLM call fails.
+    """
+    prompt = f"""You are a nuclear plant maintenance document analyst.
+
+Classify the equipment condition described in the text below as exactly one of:
+  "acceptable" — within normal operating parameters
+  "degraded"   — functional but impaired; requires monitoring or near-term action
+  "failed"     — inoperable, unavailable, or requires immediate corrective action
+  "unknown"    — insufficient information to determine condition
+
+Document type: {doc_type}
+Section: {section_role}
+Text:
+\"\"\"{chunk_text[:1000]}\"\"\"
+
+Return a JSON object only:
+{{"state": "<acceptable|degraded|failed|unknown>", "confidence": <0.0-1.0>, "evidence": "<key phrase from text>"}}"""
+
+    raw = _call_llm_json(prompt, llm_cfg)
+    if not isinstance(raw, dict):
+        return None
+    state = str(raw.get("state") or "").strip().lower()
+    if state in {"acceptable", "degraded", "failed", "unknown"}:
+        return state
+    return None
+
+
 def extract_stage5_causal_condition(
     *,
     doc_id: str,
@@ -113,10 +264,13 @@ def extract_stage5_causal_condition(
     nlp: Any = None,
     causal_sentence_factory: Any = None,
     causal_simple_factory: Any = None,
+    llm_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Primary: CausalSentence
-    Fallback: CausalSimple
+    Primary:  CausalSentence (dep-tree, explicit connectors)
+    Fallback: CausalSimple   (simpler dep-tree, fewer constraints)
+    LLM tier: implicit causal detection when both rule-based extractors return nothing
+              and llm_cfg is provided.
     Returns normalized Stage 5 payload.
     """
     out = empty_stage5_output()
@@ -138,6 +292,7 @@ def extract_stage5_causal_condition(
             doc_type=doc_type,
             section_role=section_role,
             extractor_obj=cs,
+            llm_cfg=llm_cfg,
         )
         if _has_useful_stage5_signal(cs_result):
             cs_result["status"] = "ok"
@@ -160,12 +315,37 @@ def extract_stage5_causal_condition(
             doc_type=doc_type,
             section_role=section_role,
             extractor_obj=csimple,
+            llm_cfg=llm_cfg,
         )
-        fb_result["status"] = "fallback" if _has_useful_stage5_signal(fb_result) else "empty"
         fb_result["extractor"]["used"] = "CausalSimple"
         if out["errors"]:
             fb_result["errors"].extend(out["errors"])
+
+        if _has_useful_stage5_signal(fb_result):
+            fb_result["status"] = "fallback"
+            return fb_result
+
+        # Both rule-based extractors produced nothing.  If an LLM is configured,
+        # attempt implicit causal detection before returning empty.
+        if llm_cfg:
+            llm_statements = _llm_causal_fallback(
+                doc_id=doc_id,
+                chunk_index=chunk_index,
+                chunk_text=text,
+                doc_type=doc_type,
+                section_role=section_role,
+                llm_cfg=llm_cfg,
+            )
+            if llm_statements:
+                fb_result["extracted_causal_statements"] = llm_statements
+                fb_result["extractor"]["used"] = "LLM_implicit"
+                fb_result["status"] = "llm_fallback"
+                _fill_summary_flags(fb_result)
+                return fb_result
+
+        fb_result["status"] = "empty"
         return fb_result
+
     except Exception as e:
         out["status"] = "error"
         out["errors"].append(f"CausalSimple_failed: {e}")
@@ -247,6 +427,7 @@ def _normalize_from_causal_sentence(
     doc_type: str,
     section_role: str,
     extractor_obj: Any,
+    llm_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     out = empty_stage5_output()
     out["extractor"]["used"] = "CausalSentence"
@@ -259,6 +440,7 @@ def _normalize_from_causal_sentence(
         doc_type=doc_type,
         section_role=section_role,
         status_mentions=status_mentions,
+        llm_cfg=llm_cfg,
     )
     procedural_deviation = _detect_procedural_deviation(
         chunk_text=chunk_text,
@@ -297,6 +479,7 @@ def _normalize_from_causal_simple(
     doc_type: str,
     section_role: str,
     extractor_obj: Any,
+    llm_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     out = empty_stage5_output()
     out["extractor"]["used"] = "CausalSimple"
@@ -309,6 +492,7 @@ def _normalize_from_causal_simple(
         doc_type=doc_type,
         section_role=section_role,
         status_mentions=status_mentions,
+        llm_cfg=llm_cfg,
     )
     procedural_deviation = _detect_procedural_deviation(
         chunk_text=chunk_text,
@@ -556,6 +740,7 @@ def _derive_condition_state(
     doc_type: str,
     section_role: str,
     status_mentions: List[Dict[str, Any]],
+    llm_cfg: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     text = chunk_text.lower()
     evidence: List[str] = []
@@ -591,6 +776,24 @@ def _derive_condition_state(
         as_left = _infer_condition_from_text(text)
         if as_left:
             evidence.append("inferred_from_text_as_left")
+
+    # LLM fallback: both states still unknown and an LLM is configured.
+    # A single LLM call classifies the overall condition; the result is applied
+    # to whichever state(s) are still None so at most one LLM call is made.
+    if llm_cfg and (as_found is None or as_left is None):
+        llm_state = _llm_condition_state_fallback(
+            chunk_text=chunk_text,
+            doc_type=doc_type,
+            section_role=section_role,
+            llm_cfg=llm_cfg,
+        )
+        if llm_state:
+            if as_found is None:
+                as_found = llm_state
+                evidence.append("llm_condition_fallback")
+            if as_left is None and section_role in {"as_left", "work_performed"}:
+                as_left = llm_state
+                evidence.append("llm_condition_fallback")
 
     return {
         "as_found": as_found,

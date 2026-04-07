@@ -7,6 +7,21 @@ from typing import Any, Dict, List, Optional, Sequence
 
 JsonDict = Dict[str, Any]
 
+# Maps pm_compliance check_type → keyword fragments matched against a failure
+# mode's name, superclass, and component_name (all lowercased).  A check is
+# considered relevant to a candidate only when at least one keyword hits.
+# "scheduled_pm" covers generic maintenance-induced degradation broadly;
+# "other" / unmapped types produce no match and contribute nothing.
+_PM_CHECK_KEYWORDS = {
+    "calibration":       {"calibrat", "instrument", "sensor", "drift", "measurement", "transmitter", "indication"},
+    "lubrication":       {"lubricat", "bearing", "friction", "wear", "grease", "oil", "shaft", "rotating"},
+    "inspection":        {"inspect", "fouling", "corrosion", "degradat", "erosion", "leakage", "scaling", "deposit"},
+    "surveillance_test": {"surveillance", "functional", "operabilit", "performance"},
+    "functional_test":   {"functional", "control", "valve", "actuator", "relay", "trip"},
+    "scheduled_pm":      {"wear", "degradat", "aging", "maintenance", "overhaul"},
+    "other":             set(),
+}
+
 
 def utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -58,33 +73,39 @@ class RuleBasedCausalityEngineV31:
         run_context: JsonDict,
     ) -> JsonDict:
         event_time = self._event_time(event)
-        candidates: List[JsonDict] = []
         tskr_index = self._index_tskr_patterns(tskr_patterns)
-        candidates.extend(
-            self._build_failure_mode_candidates(
-                event,
-                event_time,
-                telemetry_summary,
-                kg_context,
-                tskr_index,
-                pm_compliance,
-            )
+
+        # Failure mode candidates and historical event analogs are kept in separate
+        # pools.  top_k_candidates applies only to the FM pool so that event analogs
+        # never displace failure mode hypotheses.
+        fm_candidates: List[JsonDict] = self._build_failure_mode_candidates(
+            event,
+            event_time,
+            telemetry_summary,
+            kg_context,
+            tskr_index,
+            pm_compliance,
         )
-        candidates.extend(
-            self._build_past_event_candidates(
-                event,
-                event_time,
-                telemetry_summary,
-                kg_context,
-                tskr_index,
-                pm_compliance,
-            )
+        event_analogs_raw: List[JsonDict] = self._build_past_event_candidates(
+            event,
+            event_time,
+            telemetry_summary,
+            kg_context,
+            tskr_index,
+            pm_compliance,
         )
-        candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
+
+        fm_candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
         candidates = [
-            c for c in candidates
+            c for c in fm_candidates
             if self._candidate_meets_threshold(c)
         ][: self.config.top_k_candidates]
+
+        event_analogs_raw.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
+        event_analogs = [
+            c for c in event_analogs_raw
+            if self._candidate_meets_threshold(c)
+        ]
 
         subgraph_id = kg_context.get("subgraph_id")
 
@@ -99,6 +120,7 @@ class RuleBasedCausalityEngineV31:
                 "minimum_composite_threshold": self.config.minimum_composite_threshold,
             },
             "candidates": candidates,
+            "event_analogs": event_analogs,
             "provenance": {
                 "generated_by": "RuleBasedCausalityEngineV31",
                 "run_id": run_context.get("run_id"),
@@ -115,11 +137,19 @@ class RuleBasedCausalityEngineV31:
             if not fm_id:
                 continue
             component_id = fm.get("component_id")
-            structural = self._structural_score_for_fm(component_id, components)
+            topology     = self._structural_score_for_fm(component_id, components)
+            symptom_score = self._symptom_match_score(event, fm, telemetry_summary)
+            symptom_delta = 0.40 * (symptom_score - 0.5)   # [-0.20, +0.20]
+            structural   = max(0.0, min(1.0, topology + symptom_delta))
             temporal_parts = self._temporal_score_for_fm(fm, telemetry_summary, event_time, tskr_index)
             telemetry = self._telemetry_score_for_fm(telemetry_summary, fm, component_id, components)
             evidence = self._evidence_score_for_fm(documents)
-            governance = self._governance_score(pm_compliance)
+            governance = self._governance_score(
+                pm_compliance,
+                fm_name=fm.get("name"),
+                fm_superclass=fm.get("superclass"),
+                component_name=fm.get("component_name"),
+            )
             scores = {
                 "structural": structural,
                 "temporal": temporal_parts["temporal"],
@@ -129,6 +159,7 @@ class RuleBasedCausalityEngineV31:
                 "tskr_pattern_match": temporal_parts["tskr_pattern_match"],
                 "temporal_precedence": temporal_parts["temporal_precedence"],
                 "latency_consistency": temporal_parts["latency_consistency"],
+                "symptom_match": round(symptom_score, 4),
             }
             composite = self._combine_scores(scores)
             meets_evidence_threshold = evidence >= self.config.minimum_evidence_threshold
@@ -142,11 +173,15 @@ class RuleBasedCausalityEngineV31:
                 "kg_edges": ["APPLIES_TO", "EXPLAINS_EVENT"],
                 "scores": scores,
                 "score_rationale": {
-                    "structural": f"Failure mode applies to component {component_id}.",
+                    "structural": (
+                        f"Topology score for component {component_id} (base: {round(topology, 2)}); "
+                        f"symptom match: {round(symptom_score, 2)} "
+                        f"({'consistent' if symptom_score > 0.6 else 'inconsistent' if symptom_score < 0.4 else 'neutral/no data'})."
+                    ),
                     "temporal": "Temporal score derived from anomalies plus TSKR-style signal/latency checks.",
                     "telemetry": "Telemetry score derived from anomaly count, severity, and telemetry-linked component alignment.",
                     "evidence": "Evidence score derived from presence of operational and engineering documents.",
-                    "governance": "Governance score derived from PM compliance signals.",
+                    "governance": "Governance: PM relevance-matched to this failure mode.",
                 },
                 "composite_score": composite,
                 "confidence_label": self._confidence_label(composite),
@@ -183,6 +218,7 @@ class RuleBasedCausalityEngineV31:
         current_components = {c.get("component_id") for c in kg_context.get("components", []) if c.get("component_id")}
         current_fm_ids = {fm.get("fm_id") for fm in kg_context.get("failure_modes", []) if fm.get("fm_id")}
         documents = kg_context.get("documents", [])
+        fm_lookup = {fm.get("fm_id"): fm for fm in kg_context.get("failure_modes", []) if fm.get("fm_id")}
 
         for pe in kg_context.get("past_events", []):
             event_id = pe.get("event_id")
@@ -192,7 +228,16 @@ class RuleBasedCausalityEngineV31:
             temporal_parts = self._temporal_score_for_past_event(event_time, pe, telemetry_summary, tskr_index)
             telemetry = self._telemetry_score_for_past_event(telemetry_summary, pe)
             evidence = self._evidence_score_for_past_event(documents, pe)
-            governance = self._governance_score(pm_compliance)
+            matched_fm = next(
+                (fm_lookup[mid] for mid in (pe.get("matched_failure_mode_ids") or []) if mid in fm_lookup),
+                None,
+            )
+            governance = self._governance_score(
+                pm_compliance,
+                fm_name=matched_fm.get("name") if matched_fm else None,
+                fm_superclass=matched_fm.get("superclass") if matched_fm else None,
+                component_name=matched_fm.get("component_name") if matched_fm else None,
+            )
             if target_event_type and pe.get("event_type") == target_event_type:
                 temporal_parts["temporal"] = min(1.0, temporal_parts["temporal"] + 0.05)
             if target_severity and pe.get("severity") == target_severity:
@@ -261,6 +306,69 @@ class RuleBasedCausalityEngineV31:
             return 0.75
         return 0.40
 
+    def _symptom_match_score(self, event, fm, telemetry_summary):
+        """Score [0, 1] for how well the event's observed symptoms match what
+        this failure mode is expected to produce.
+
+        0.5  = neutral (no symptom data available in either direction)
+        >0.5 = symptoms consistent with this failure mode
+        <0.5 = symptoms inconsistent with this failure mode
+
+        Two sub-signals combined by available weight:
+          - Anomaly pattern match (weight 0.6): dominant observed pattern vs.
+            fm.expected_anomaly_pattern.  Observed pattern is taken from the
+            most frequently occurring anomaly pattern in telemetry (more
+            objective), falling back to event.symptom_signature.anomaly_pattern.
+          - Symptom type overlap (weight 0.4): F1-score between event's
+            symptom_types and fm.expected_symptom_types.
+
+        When a sub-signal has no data, its weight is excluded and the remaining
+        signal is used alone.  When neither sub-signal has data, returns 0.5.
+        """
+        pattern_score = 0.5
+        pattern_weight = 0.0
+        type_score = 0.5
+        type_weight = 0.0
+
+        # --- Anomaly pattern sub-signal ---
+        fm_pattern = fm.get("expected_anomaly_pattern")
+        observed_pattern = self._dominant_telemetry_pattern(telemetry_summary)
+        if not observed_pattern or observed_pattern == "unknown":
+            observed_pattern = (event.get("symptom_signature") or {}).get("anomaly_pattern")
+        if fm_pattern and observed_pattern and observed_pattern != "unknown":
+            pattern_score  = 1.0 if fm_pattern == observed_pattern else 0.0
+            pattern_weight = 0.6
+
+        # --- Symptom type sub-signal ---
+        fm_types    = set(fm.get("expected_symptom_types") or [])
+        event_types = set((event.get("symptom_signature") or {}).get("symptom_types") or [])
+        if fm_types and event_types:
+            intersection = len(fm_types & event_types)
+            recall    = intersection / len(fm_types)
+            precision = intersection / len(event_types)
+            type_score  = (2 * recall * precision / (recall + precision)) if (recall + precision) > 0 else 0.0
+            type_weight = 0.4
+
+        total_weight = pattern_weight + type_weight
+        if total_weight == 0.0:
+            return 0.5  # no symptom data — return neutral
+
+        return (pattern_score * pattern_weight + type_score * type_weight) / total_weight
+
+    @staticmethod
+    def _dominant_telemetry_pattern(telemetry_summary):
+        """Return the most frequently occurring anomaly pattern across all signals,
+        or None if no anomalies are present."""
+        counts: Dict[str, int] = {}
+        for sig in telemetry_summary.get("signals", []) or []:
+            for a in sig.get("anomalies", []) or []:
+                p = a.get("pattern")
+                if p and p != "unknown":
+                    counts[p] = counts.get(p, 0) + 1
+        if not counts:
+            return None
+        return max(counts, key=counts.__getitem__)
+
     def _temporal_score_for_fm(self, fm, telemetry_summary, event_time, tskr_index):
         anomaly_signals = [sig.get("sensor_id") for sig in telemetry_summary.get("signals", []) if sig.get("anomalies")]
         pattern = self._lookup_tskr_pattern(tskr_index, fm.get("fm_id"))
@@ -301,15 +409,45 @@ class RuleBasedCausalityEngineV31:
             "pattern_id": pattern.get("pattern_id") if pattern else None,
         }
 
+    @staticmethod
+    def _recency_factor(time_distance_days) -> float:
+        """Map *time_distance_days* to a [0.55, 1.0] recency multiplier.
+
+        None (unknown age) receives a conservative 0.75 — neither penalised
+        nor given full credit.  Values are intentionally coarse so that small
+        differences in document age do not create artificial score cliffs.
+        """
+        if time_distance_days is None:
+            return 0.75
+        d = int(time_distance_days)
+        if d <= 90:
+            return 1.00
+        if d <= 365:
+            return 0.85
+        if d <= 730:
+            return 0.70
+        return 0.55
+
     def _evidence_score_for_fm(self, documents):
-        doc_types = {d.get("doc_type") for d in documents if d.get("doc_type")}
+        # Build doc_type → best recency factor (most recent doc of that type).
+        type_recency: Dict[str, float] = {}
+        for d in documents:
+            dt = d.get("doc_type")
+            if not dt:
+                continue
+            rf = self._recency_factor(d.get("time_distance_days"))
+            if dt not in type_recency or rf > type_recency[dt]:
+                type_recency[dt] = rf
+
         score = 0.30
-        if "FMEA" in doc_types:
-            score += 0.25
-        if "CR" in doc_types or "WO" in doc_types:
-            score += 0.20
-        if "ECA" in doc_types or "RCA" in doc_types:
-            score += 0.15
+        if "FMEA" in type_recency:
+            score += 0.25 * type_recency["FMEA"]
+        if "CR" in type_recency or "WO" in type_recency:
+            rf = max(type_recency.get("CR", 0.0), type_recency.get("WO", 0.0))
+            score += 0.20 * rf
+        if "ECA" in type_recency or "RCA" in type_recency:
+            rf = max(type_recency.get("ECA", 0.0), type_recency.get("RCA", 0.0))
+            score += 0.15 * rf
         return min(score, 1.0)
 
     def _structural_score_for_past_event(self, target_asset_id, target_components, target_fm_ids, pe):
@@ -392,13 +530,17 @@ class RuleBasedCausalityEngineV31:
         }
 
     def _evidence_score_for_past_event(self, documents, pe):
+        # Scale context-match bonuses by the recency of the past event itself.
+        # Document-type bonuses are kept flat — those docs are pre-filtered for
+        # relevance by the KG retriever and their age is less discriminating here.
+        recency = self._recency_factor(pe.get("time_distance_days"))
         score = 0.25
         if pe.get("matched_asset_ids"):
-            score += 0.15
+            score += 0.15 * recency
         if pe.get("matched_component_ids"):
-            score += 0.15
+            score += 0.15 * recency
         if pe.get("matched_failure_mode_ids"):
-            score += 0.20
+            score += 0.20 * recency
         doc_types = {d.get("doc_type") for d in documents if d.get("doc_type")}
         if "CR" in doc_types or "WO" in doc_types:
             score += 0.10
@@ -406,15 +548,60 @@ class RuleBasedCausalityEngineV31:
             score += 0.10
         return min(score, 1.0)
 
-    def _governance_score(self, pm_compliance):
+    def _governance_score(
+        self,
+        pm_compliance,
+        fm_name=None,
+        fm_superclass=None,
+        component_name=None,
+    ):
+        """Candidate-specific governance score from PM compliance data.
+
+        Returns 0.5 (neutral) when:
+          - no PM data is available,
+          - all checks passed (no maintenance contribution signal), or
+          - PM checks failed elsewhere on the asset but none are relevant
+            to this specific failure mode / component.
+
+        Returns > 0.5 when at least one failed check is relevant to this
+        candidate, scaled by the number of relevant failures and how overdue
+        they are.  Maximum value is 0.95 (never certain from PM alone).
+        """
         if not pm_compliance:
-            return 0.40
-        checks = pm_compliance.get("checks", [])
+            return 0.5
+        checks = pm_compliance.get("checks", []) or []
         if not checks:
-            return 0.40
-        failed = sum(1 for c in checks if c.get("status") == "fail")
-        total = max(1, len(checks))
-        return min(1.0, (failed / total) * 0.8 + (0.2 if failed > 0 else 0.0))
+            return 0.5
+
+        failed_checks = [c for c in checks if c.get("status") == "fail"]
+        if not failed_checks:
+            return 0.5  # all PM compliant — no maintenance contribution signal
+
+        # Without any candidate identity, no candidate-specific match is possible
+        if not any([fm_name, fm_superclass, component_name]):
+            return 0.5
+
+        candidate_text = " ".join(
+            s.lower() for s in [fm_name or "", fm_superclass or "", component_name or ""] if s
+        )
+        relevant_failed = [c for c in failed_checks if self._pm_check_relevant(c, candidate_text)]
+
+        if not relevant_failed:
+            return 0.5  # PM failed elsewhere on asset — not relevant to this candidate
+
+        count_boost   = min(0.30, 0.15 * len(relevant_failed))
+        max_overdue   = max((c.get("overdue_by_days") or 0.0) for c in relevant_failed)
+        overdue_boost = 0.05 if max_overdue > 30 else 0.0
+        return min(0.95, 0.55 + count_boost + overdue_boost)
+
+    @staticmethod
+    def _pm_check_relevant(check, candidate_text):
+        """Return True if a PM check type matches keywords in the candidate's text."""
+        check_type = check.get("check_type", "other")
+        keywords   = _PM_CHECK_KEYWORDS.get(check_type, set())
+        if not keywords:
+            return False
+        return any(kw in candidate_text for kw in keywords)
 
     def _telemetry_score_for_fm(self, telemetry_summary, fm, component_id, components):
         signals = telemetry_summary.get("signals", []) or []
@@ -499,21 +686,25 @@ class RuleBasedCausalityEngineV31:
         return parse_dt(event.get("timestamp_start")) or parse_dt(event.get("timestamp_end"))
 
     def _index_tskr_patterns(self, tskr_patterns):
-        index = {}
+        index: Dict[str, List[JsonDict]] = {}
         if not tskr_patterns:
             return index
         for p in tskr_patterns.get("patterns", []) or []:
             if not isinstance(p, dict):
                 continue
             target_id = p.get("target_id")
-            if target_id and target_id not in index:
-                index[target_id] = p
+            if target_id:
+                index.setdefault(target_id, []).append(p)
         return index
 
     def _lookup_tskr_pattern(self, tskr_index, target_id):
+        """Return the highest-confidence pattern for *target_id*, or None."""
         if not tskr_index or not target_id:
             return None
-        return tskr_index.get(target_id)
+        patterns = tskr_index.get(target_id)
+        if not patterns:
+            return None
+        return max(patterns, key=lambda p: p.get("confidence") or 0.0)
 
     def _pattern_confidence(self, pattern):
         if not pattern:
@@ -534,10 +725,16 @@ class RuleBasedCausalityEngineV31:
     def _relation_precedence_score(self, relation, has_anomalies=False):
         if relation == "precedes":
             return 1.0
+        if relation == "overlaps":    # anomaly active at event onset — very strong
+            return 0.95
+        if relation == "contains":    # long-running latent condition
+            return 0.90
         if relation == "simultaneous":
             return 0.85
         if relation == "unordered":
             return 0.45
+        if relation == "during":      # anomaly appeared after event onset — likely consequential
+            return 0.25
         if relation == "follows":
             return 0.20
         return 0.50 if has_anomalies else 0.30

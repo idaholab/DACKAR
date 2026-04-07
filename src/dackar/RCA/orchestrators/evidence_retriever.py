@@ -56,7 +56,7 @@ class EvidenceRetrieverConfig:
     include_component_filter: bool = True
     include_doc_type_filter: bool = True
     score_threshold: float = 0.0
-    score_metric: str = "kg_guided_weighted_keyword_overlap"
+    score_metric: str = "kg_guided_semantic_relevance"
     contradiction_cues: Optional[List[str]] = None
     support_cues: Optional[List[str]] = None
     contextual_cues: Optional[List[str]] = None
@@ -72,6 +72,7 @@ class EvidenceRetrieverConfig:
                 "ECR": 0.85,
                 "FMEA": 0.80,
                 "SOP": 0.75,
+                "OE": 0.70,
                 "MANUAL": 0.60,
                 "BULLETIN": 0.55,
             }
@@ -114,9 +115,17 @@ class EvidenceRetrieverConfig:
 class ChromaEvidenceRetriever:
     """Deterministic KG-guided evidence retriever."""
 
-    def __init__(self, store: EvidenceStore, config: Optional[EvidenceRetrieverConfig] = None):
+    def __init__(
+        self,
+        store: EvidenceStore,
+        config: Optional[EvidenceRetrieverConfig] = None,
+        annotator=None,
+    ):
         self.store = store
         self.config = config or EvidenceRetrieverConfig()
+        # Optional SpacyAnnotator for Tier 2 snippet annotation.
+        # Kept as a plain type hint to avoid circular imports.
+        self.annotator = annotator
 
     def retrieve(
         self,
@@ -187,7 +196,7 @@ class ChromaEvidenceRetriever:
         top_candidates = [
             c for c in (causality_candidates.get("candidates", []) or [])
             if isinstance(c, dict)
-        ][:3]
+        ]
 
         query_plans: List[JsonDict] = []
 
@@ -255,6 +264,27 @@ class ChromaEvidenceRetriever:
         if ops_query is not None:
             query_plans.append(ops_query)
 
+        # OE (Operating Experience) retrieval pass.
+        # OE reports are fleet-wide and timeless — retrieved by failure-mode / component
+        # type similarity, not by asset or date. One broad query covers all top FM names.
+        oe_doc_ids = [
+            d["doc_id"]
+            for d in kg_context.get("documents", [])
+            if d.get("doc_type") == "OE" and d.get("doc_id")
+        ]
+        if oe_doc_ids and fm_names:
+            oe_query_text = " ".join(fm_names[:4])
+            query_plans.append(
+                {
+                    "query_text": oe_query_text,
+                    "query_type": "oe",
+                    "weight": 0.80,
+                    "doc_types": ["OE"],
+                    "doc_ids": oe_doc_ids,  # scoped to KG-retrieved OE docs only
+                    "query_intent": "fleet_oe_plausibility",
+                }
+            )
+
         if not query_plans:
             query_plans.append(
                 {
@@ -314,19 +344,29 @@ class ChromaEvidenceRetriever:
         kg_context: JsonDict,
     ) -> Dict[str, Any]:
         filters: Dict[str, Any] = {}
+        is_oe_query = query_plan.get("query_type") == "oe"
 
-        if self.config.include_asset_filter and asset_id:
-            filters["asset_id"] = asset_id
+        # OE reports are fleet-wide — scoping by asset_id or site component_ids would
+        # wrongly exclude applicable reports. Use the KG-pre-selected oe_doc_ids instead.
+        if not is_oe_query:
+            if self.config.include_asset_filter and asset_id:
+                filters["asset_id"] = asset_id
 
         if self.config.include_doc_type_filter:
             filters["doc_type"] = query_plan.get("doc_types", [])
 
         if self.config.include_doc_id_filter:
-            doc_ids = [d["doc_id"] for d in kg_context.get("documents", []) if d.get("doc_id")]
-            if doc_ids:
-                filters["doc_ids"] = doc_ids
+            if is_oe_query:
+                # For OE queries, the query_plan already carries the pre-selected OE doc IDs.
+                oe_ids = query_plan.get("doc_ids") or []
+                if oe_ids:
+                    filters["doc_ids"] = oe_ids
+            else:
+                doc_ids = [d["doc_id"] for d in kg_context.get("documents", []) if d.get("doc_id")]
+                if doc_ids:
+                    filters["doc_ids"] = doc_ids
 
-        if self.config.include_component_filter:
+        if not is_oe_query and self.config.include_component_filter:
             component_ids = [c["component_id"] for c in kg_context.get("components", []) if c.get("component_id")]
             if component_ids:
                 filters["component_ids"] = component_ids
@@ -347,7 +387,17 @@ class ChromaEvidenceRetriever:
 
         snippet_terms = _tokenize(snippet)
 
+        # Lexical overlap — kept for traceability and as BM25-hit fallback.
         candidate_term_overlap = _overlap_score(candidate_terms, snippet_terms)
+
+        # Semantic relevance: prefer the raw Chroma vector similarity score
+        # (_vector_score, preserved before RRF fusion) because it captures
+        # terminology variation that exact token matching misses — e.g. a
+        # snippet about "lube oil degradation" is semantically similar to a
+        # candidate labelled "loss of lubrication" even though no tokens overlap.
+        # Fall back to candidate_term_overlap for BM25-only hits (no vector score).
+        vector_score = float(meta.get("_vector_score") or 0.0)
+        semantic_relevance = vector_score if vector_score > 0.0 else candidate_term_overlap
 
         doc_type = meta.get("doc_type", hit.get("doc_type", "UNKNOWN"))
         authority_level = _norm_text(meta.get("authority_level", "unknown"))
@@ -362,23 +412,61 @@ class ChromaEvidenceRetriever:
             "unknown": 0.70,
         }.get(authority_level, 0.70)
 
+        # Epistemic weight encodes the document's standing as causal evidence.
+        # ECA confirmed findings carry more weight than CR preliminary assessments.
+        # `eca_confidence` (0-1) from the ECA block further modulates ECA weight.
+        finding_status = (meta.get("finding_status") or "").lower()
+        eca_confidence = meta.get("eca_confidence")
+        if finding_status == "confirmed" or doc_type == "ECA":
+            # Confirmed ECA: base multiplier 1.25, scaled by eca_confidence if present.
+            eca_conf_scale = float(eca_confidence) if isinstance(eca_confidence, (int, float)) else 0.85
+            epistemic_weight = 1.0 + 0.25 * eca_conf_scale
+        elif finding_status == "preliminary" or doc_type == "CR":
+            # CR preliminary assessment: discounted — initial hypothesis, not validated.
+            epistemic_weight = 0.80
+        elif finding_status == "fleet_experience" or doc_type == "OE":
+            # OE reports provide fleet-wide plausibility, not site-specific confirmation.
+            # Epistemic weight is moderate (0.70): informative but inferential.
+            epistemic_weight = 0.70
+        else:
+            epistemic_weight = 1.0
+
         support_cue_hit = _contains_any(snippet, self.config.support_cues or [])
         contradiction_cue_hit = _contains_any(snippet, self.config.contradiction_cues or [])
         contextual_cue_hit = _contains_any(snippet, self.config.contextual_cues or [])
+
+        # Unambiguous causal connectors: the snippet explicitly attributes the
+        # event to this candidate's failure mode, not just mentions a related topic.
+        # These phrases are much more specific than generic support cues like
+        # "fouling" or "degraded" which often appear in multi-hypothesis documents
+        # that are ultimately ABOUT the candidate, not confirming it.
+        _CAUSAL_ATTRIBUTION_PHRASES = (
+            "caused by", "resulted in", "due to", "root cause is",
+            "confirmed as", "determined to be",
+        )
+        causal_attribution_hit = _contains_any(snippet, _CAUSAL_ATTRIBUTION_PHRASES)
 
         support_score = 0.0
         contradiction_score = 0.0
         context_score = 0.0
 
-        if candidate_term_overlap > 0:
-            support_score += 0.45 * candidate_term_overlap
-            context_score += 0.20 * candidate_term_overlap
+        if semantic_relevance > 0:
+            support_score += 0.45 * semantic_relevance
+            context_score += 0.20 * semantic_relevance
 
         if support_cue_hit:
             support_score += 0.25
 
         if contradiction_cue_hit:
-            contradiction_score += 0.45
+            # Only apply the full contradiction-cue boost when the snippet has semantic
+            # relevance to the candidate's hypothesis (semantic_relevance > 0 means the
+            # snippet's terms overlap with the candidate's cause_label / hypothesis_type).
+            # A snippet with zero relevance contains contradiction cues about a *different*
+            # failure mode; boosting contradiction for the wrong candidate is a false signal.
+            if semantic_relevance > 0.0:
+                contradiction_score += 0.45
+            else:
+                contradiction_score += 0.05
 
         if contextual_cue_hit:
             context_score += 0.15
@@ -390,13 +478,75 @@ class ChromaEvidenceRetriever:
         else:
             context_score += 0.10
 
-        support_score *= authority_weight * float(extraction_quality)
-        contradiction_score *= authority_weight * float(extraction_quality)
-        context_score *= authority_weight * float(extraction_quality)
+        support_score *= authority_weight * float(extraction_quality) * epistemic_weight
+        contradiction_score *= authority_weight * float(extraction_quality) * epistemic_weight
+        context_score *= authority_weight * float(extraction_quality) * epistemic_weight
+
+        # ── Structured condition_assessment fields (WO and ECA primarily) ──────
+        # These are physical inspection results — more reliable than keyword
+        # detection in free text.  Applied AFTER the authority/quality scaling
+        # so they are not double-penalised; they override keyword ambiguity.
+        as_found = (meta.get("ca_as_found_condition") or "").lower().strip()
+        as_left = (meta.get("ca_as_left_condition") or "").lower().strip()
+        ca_delta = 0.0  # net structured-data adjustment (for traceability)
+
+        if as_found in ("degraded", "failed"):
+            # Physical inspection found the component in a degraded/failed state —
+            # strong support for any degradation/maintenance-related hypothesis.
+            support_score = min(1.0, support_score + 0.35)
+            ca_delta += 0.35
+        elif as_found == "acceptable":
+            # Inspection found the component healthy — contradicts a degradation
+            # hypothesis for this component.
+            contradiction_score = min(1.0, contradiction_score + 0.35)
+            ca_delta -= 0.35
+
+        if as_left in ("degraded", "failed"):
+            # Equipment left in degraded state after work — persistent failure mode,
+            # adds further support.
+            support_score = min(1.0, support_score + 0.15)
+            ca_delta += 0.15
+        elif as_left == "acceptable":
+            # Equipment returned to healthy state — contextual confirmation that
+            # maintenance was performed; mild support (action implies problem existed).
+            context_score = min(1.0, context_score + 0.10)
+            ca_delta += 0.10
+
+        # ── Tier 2 spaCy annotation ─────────────────────────────────────────
+        # Run the annotator on the raw snippet text (before normalisation so
+        # that entity spans align correctly).  If no annotator is configured,
+        # all annotation fields are empty / zero.
+        spacy_annotation = None
+        conjecture_fraction = 0.0
+        if self.annotator is not None:
+            raw_snippet = hit.get("snippet", "")
+            if raw_snippet:
+                spacy_annotation = self.annotator.annotate(raw_snippet)
+                conjecture_fraction = spacy_annotation.conjecture_fraction()
+
+        # Conjecture markers in the evidence text indicate the source author
+        # was speculating rather than reporting a confirmed finding.  Apply a
+        # graduated discount to support_score so that hedged claims propagate
+        # lower confidence through to evidence_posture.
+        # conjecture_fraction=0.0 → no change; 0.5+ → up to 35% discount.
+        if conjecture_fraction > 0.0:
+            hedge_discount = min(0.35, 0.70 * conjecture_fraction)
+            support_score = support_score * (1.0 - hedge_discount)
 
         support_score = round(min(1.0, support_score), 6)
         contradiction_score = round(min(1.0, contradiction_score), 6)
         context_score = round(min(1.0, context_score), 6)
+
+        # Multi-hypothesis disambiguation: a document that explicitly attributes
+        # the failure to this candidate ("caused by", "resulted in") while ALSO
+        # containing exception language ("no evidence of", "within normal limits")
+        # about OTHER hypotheses should be classified as supporting, not contradicting.
+        # Apply a modest support boost when unambiguous causal attribution AND
+        # contradiction cues co-occur with non-trivial semantic relevance.
+        # This prevents e.g. "X caused by A; B is contradicted by evidence" from
+        # being mis-labelled as contradicting for candidate A.
+        if causal_attribution_hit and contradiction_cue_hit and semantic_relevance > 0.3:
+            support_score = min(1.0, support_score + 0.15)
 
         if contradiction_score >= max(support_score, context_score) and contradiction_score >= 0.35:
             support_role = "contradicting"
@@ -412,11 +562,34 @@ class ChromaEvidenceRetriever:
             "support_score": support_score,
             "contradiction_score": contradiction_score,
             "context_score": context_score,
+            "semantic_relevance_score": round(semantic_relevance, 6),
             "candidate_term_overlap": round(candidate_term_overlap, 6),
             "authority_weight": round(authority_weight, 6),
             "extraction_quality_weight": round(float(extraction_quality), 6),
+            "ca_as_found_condition": as_found or None,
+            "ca_as_left_condition": as_left or None,
+            "ca_structured_delta": round(ca_delta, 6),
+            "finding_status": finding_status or None,
+            "epistemic_weight": round(epistemic_weight, 6),
             "evidence_score": evidence_score,
             "evidence_role_confidence": evidence_score,
+            # spaCy annotation signals — None when annotator not configured
+            "spacy_conjecture_fraction": round(conjecture_fraction, 4),
+            "spacy_temporal_relation": (
+                spacy_annotation.dominant_temporal_relation() if spacy_annotation else None
+            ),
+            "spacy_lag_hours": (
+                spacy_annotation.lag_hours if spacy_annotation else None
+            ),
+            "spacy_lag_is_approximate": (
+                spacy_annotation.lag_is_approximate if spacy_annotation else False
+            ),
+            "spacy_measurements": (
+                spacy_annotation.measurements if spacy_annotation else []
+            ),
+            "spacy_locations": (
+                spacy_annotation.locations if spacy_annotation else []
+            ),
         }
 
     def _normalize_hits(self, hits: Sequence[JsonDict], query_plan: JsonDict) -> List[JsonDict]:
@@ -457,10 +630,15 @@ class ChromaEvidenceRetriever:
                 "raw_store_score": store_score,
                 "query_weight": query_weight,
                 "doc_type_weight": type_weight,
+                "semantic_relevance_score": assessment["semantic_relevance_score"],
                 "candidate_term_overlap": assessment["candidate_term_overlap"],
                 "authority_weight": assessment["authority_weight"],
                 "extraction_quality_weight": assessment["extraction_quality_weight"],
                 "evidence_role_confidence": assessment["evidence_role_confidence"],
+                "spacy_conjecture_fraction": assessment["spacy_conjecture_fraction"],
+                "spacy_temporal_relation": assessment["spacy_temporal_relation"],
+                "spacy_lag_hours": assessment["spacy_lag_hours"],
+                "spacy_lag_is_approximate": assessment["spacy_lag_is_approximate"],
             }
 
             if candidate_id:
@@ -502,6 +680,7 @@ class ChromaEvidenceRetriever:
                 candidate_id,
                 {
                     "candidate_id": candidate_id,
+                    "hit_count": 0,
                     "supporting_count": 0,
                     "contradicting_count": 0,
                     "contextual_count": 0,
@@ -511,9 +690,18 @@ class ChromaEvidenceRetriever:
                     "supporting_snippet_ids": [],
                     "contradicting_snippet_ids": [],
                     "contextual_snippet_ids": [],
+                    # spaCy aggregation accumulators
+                    "_conjecture_fractions": [],
+                    "_temporal_relation_votes": {},
+                    "_lag_candidates": [],   # (lag_hours, support_score, is_approximate)
+                    "_measurements": [],
+                    # NER entity accumulators for normalization
+                    "_entity_mechanisms": [],
+                    "_entity_outcomes": [],
                 },
             )
 
+            group["hit_count"] += 1
             role = meta.get("support_role")
             snippet_id = h.get("snippet_id")
 
@@ -533,6 +721,72 @@ class ChromaEvidenceRetriever:
                 if snippet_id:
                     group["contextual_snippet_ids"].append(snippet_id)
 
+            # Accumulate spaCy annotation signals from all hits for this candidate
+            cf = meta.get("spacy_conjecture_fraction")
+            if cf is not None:
+                group["_conjecture_fractions"].append(float(cf))
+
+            tr = meta.get("spacy_temporal_relation")
+            if tr:
+                group["_temporal_relation_votes"][tr] = group["_temporal_relation_votes"].get(tr, 0) + 1
+
+            lag = meta.get("spacy_lag_hours")
+            if lag is not None:
+                group["_lag_candidates"].append((
+                    float(lag),
+                    float(h.get("support_score", 0.0)),
+                    bool(meta.get("spacy_lag_is_approximate", False)),
+                ))
+
+            # Accumulate NER entity strings for entity normalization
+            mechs = meta.get("mechanisms") or []
+            if isinstance(mechs, str):
+                mechs = [m.strip() for m in mechs.split("|") if m.strip()]
+            group["_entity_mechanisms"].extend(mechs)
+
+            outs = meta.get("outcomes") or []
+            if isinstance(outs, str):
+                outs = [o.strip() for o in outs.split("|") if o.strip()]
+            group["_entity_outcomes"].extend(outs)
+
+        # Materialise aggregated spaCy signals and remove accumulator keys
+        for group in grouped.values():
+            cf_list = group.pop("_conjecture_fractions", [])
+            group["mean_conjecture_fraction"] = round(
+                sum(cf_list) / len(cf_list), 4
+            ) if cf_list else 0.0
+
+            tr_votes = group.pop("_temporal_relation_votes", {})
+            group["dominant_temporal_relation"] = (
+                max(tr_votes, key=tr_votes.__getitem__) if tr_votes else None
+            )
+
+            lag_candidates = group.pop("_lag_candidates", [])
+            if lag_candidates:
+                # Pick lag from the highest-support snippet that has a lag value
+                best = max(lag_candidates, key=lambda t: t[1])
+                group["best_lag_hours"] = best[0]
+                group["lag_is_approximate"] = best[2]
+            else:
+                group["best_lag_hours"] = None
+                group["lag_is_approximate"] = False
+
+            group.pop("_measurements", None)
+
+            # Deduplicate and materialise NER entity lists
+            def _dedup(lst):
+                seen = set()
+                out = []
+                for item in lst:
+                    key = item.lower().strip()
+                    if key and key not in seen:
+                        seen.add(key)
+                        out.append(item)
+                return out
+
+            group["aggregated_mechanisms"] = _dedup(group.pop("_entity_mechanisms", []))
+            group["aggregated_outcomes"] = _dedup(group.pop("_entity_outcomes", []))
+
         out = list(grouped.values())
         out.sort(
             key=lambda x: (
@@ -543,13 +797,37 @@ class ChromaEvidenceRetriever:
         return out
     
     def _dedupe_and_rank(self, hits: Sequence[JsonDict]) -> List[JsonDict]:
-        dedup: Dict[str, JsonDict] = {}
-        for h in hits:
-            key = h.get("snippet_id") or ((h.get("doc_id") or "") + "::" + (h.get("section") or ""))
-            if key not in dedup or h["score"] > dedup[key]["score"]:
-                dedup[key] = h
+        # Candidate-specific hits (linked_candidate_id set) are deduplicated per
+        # snippet+candidate pair so each candidate can independently count the same
+        # snippet as evidence.  Non-candidate hits (context/component/oe queries)
+        # are deduplicated globally by snippet_id and never override a
+        # candidate-linked hit.
+        candidate_hits: Dict[str, JsonDict] = {}   # key: snippet_id::candidate_id
+        context_seen: set = set()                  # snippet_ids already claimed by candidate hits
 
-        out = list(dedup.values())
+        for h in hits:
+            snippet_id = h.get("snippet_id") or ((h.get("doc_id") or "") + "::" + (h.get("section") or ""))
+            meta = h.get("metadata") or {}
+            cand_id = meta.get("linked_candidate_id") or ""
+            if cand_id:
+                key = f"{snippet_id}::{cand_id}"
+                if key not in candidate_hits or h["score"] > candidate_hits[key]["score"]:
+                    candidate_hits[key] = h
+                context_seen.add(snippet_id)
+
+        # Add non-candidate context hits only for snippets not already claimed
+        context_hits: Dict[str, JsonDict] = {}
+        for h in hits:
+            snippet_id = h.get("snippet_id") or ((h.get("doc_id") or "") + "::" + (h.get("section") or ""))
+            meta = h.get("metadata") or {}
+            if meta.get("linked_candidate_id"):
+                continue  # already handled above
+            if snippet_id in context_seen:
+                continue  # snippet is already owned by a candidate-specific hit
+            if snippet_id not in context_hits or h["score"] > context_hits[snippet_id]["score"]:
+                context_hits[snippet_id] = h
+
+        out = list(candidate_hits.values()) + list(context_hits.values())
         out.sort(key=lambda x: (-x["score"], x.get("doc_id") or "", x.get("section") or ""))
         return out
 

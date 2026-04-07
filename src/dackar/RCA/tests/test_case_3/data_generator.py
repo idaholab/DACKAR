@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-RCA Pipeline Test Case
-======================
+RCA Pipeline Test Case 3 — Fixture Generator
+=============================================
 Scenario : PWR Unit 2 — Condenser Vacuum Loss / Turbine Load Runback
 Event    : EVT-U2-2024-0847  (2024-07-14 03:22 UTC)
 Asset    : U2-CONDENSER-MAIN (main condenser, secondary side)
@@ -39,60 +39,18 @@ Usage
     # 1. Add your repo src/ to PYTHONPATH
     export PYTHONPATH=/path/to/repo/src:$PYTHONPATH
 
-    # 2. Run
-    python test_case_condenser_vacuum_loss.py
+    # 2. Run to generate fixture files into ./fixtures/
+    python data_generator.py
 
-    # 3. Fixtures are written to ./test_fixtures/
-    #    Pipeline output is written to ./test_output/<run_id>/
-
-Requirements (pip install ...)
-    neo4j          (imported by rca_reasoning_orchestrator even if not called)
-    jsonschema
-    langchain-core langchain-community langchain-chroma
-    rank-bm25
-
-    The test uses InMemoryEvidenceStore and FixtureKGContextBuilder so
-    no live Neo4j or Chroma instance is required.
-
-Notes
------
-  stop_on_validation_error is set to False for this test because the pre-built
-  KG context fixture includes extra fields (asset_id, subgraph_id, generated_at,
-  hop_limit) beyond the strict v2 schema that are required by the causality
-  engine.  Switch to the original kg_context.json schema (not v2) and set
-  stop_on_validation_error=True for full schema-compliant runs.
+    # 3. Open run_test_case_3.ipynb to execute the RCA workflow.
 """
 
 from __future__ import annotations
 
-import copy
 import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from orchestrators.causality_engine_v32 import (
-    CausalityEngineConfigV32,
-    RuleBasedCausalityEngineV32,
-)
-from orchestrators.evidence_retriever import (
-    ChromaEvidenceRetriever,
-    EvidenceRetrieverConfig,
-    InMemoryEvidenceStore,
-)
-from orchestrators.rca_reasoning_orchestrator import (
-    FileArtifactStore,
-    HeuristicIshikawaEvaluatorV1,
-    NoOpSchemaValidator,
-    OrchestratorConfig,
-    RCAReasoningOrchestrator,
-)
-from orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
-from synthesis.rca_synthesizer_v31 import (
-    DummyLLMClient,
-    RCASynthesizerConfig,
-    RuleValidatedRCASynthesizerV31,
-)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FIXTURE: EVENT
@@ -114,7 +72,7 @@ EVENT: Dict[str, Any] = {
             "97 percent to 85 percent on automatic actuation. Hotwell dissolved oxygen elevated "
             "to 142 ppb (normal < 10 ppb) — indicative of air in-leakage."
         ),
-        "symptom_types": ["pressure", "temperature"],
+        "symptom_types": ["pressure", "chemistry"],
         "anomaly_pattern": "gradual_drift",
         "affected_parameters": [
             {
@@ -681,6 +639,8 @@ KG_CONTEXT: Dict[str, Any] = {
             "superclass": "pressure_boundary_failure",
             "expected_latency_min_hours": 48.0,
             "expected_latency_max_hours": 336.0,
+            "expected_symptom_types": ["pressure", "chemistry"],
+            "expected_anomaly_pattern": "gradual_drift",
         },
         # FM-2: RED HERRING — tube inspection passed; DO not elevated in fouling
         {
@@ -691,6 +651,8 @@ KG_CONTEXT: Dict[str, Any] = {
             "superclass": "heat_transfer_degradation",
             "expected_latency_min_hours": 168.0,
             "expected_latency_max_hours": 720.0,
+            "expected_symptom_types": ["pressure", "temperature"],
+            "expected_anomaly_pattern": "gradual_drift",
         },
         # FM-3: SHOULD BE FILTERED — expected latency 2-48 h vs 336-h drift
         #        temporal_contradiction expected: latency_violation_type=too_slow
@@ -702,6 +664,8 @@ KG_CONTEXT: Dict[str, Any] = {
             "superclass": "pressure_boundary_failure",
             "expected_latency_min_hours": 2.0,
             "expected_latency_max_hours": 48.0,
+            "expected_symptom_types": ["chemistry", "pressure"],
+            "expected_anomaly_pattern": "step_change",
         },
         # FM-4: CONTRIBUTING FACTOR ONLY — seasonal rise insufficient alone;
         #        operator increased CW flow with minimal effect (0.04 inHg)
@@ -713,6 +677,8 @@ KG_CONTEXT: Dict[str, Any] = {
             "superclass": "thermal_performance_degradation",
             "expected_latency_min_hours": 0.0,
             "expected_latency_max_hours": 720.0,
+            "expected_symptom_types": ["pressure", "temperature"],
+            "expected_anomaly_pattern": "gradual_drift",
         },
         # FM-5: CONTRIBUTING CAUSE — HVAC PM overdue 60 days; fan trip Day 4
         {
@@ -723,6 +689,8 @@ KG_CONTEXT: Dict[str, Any] = {
             "superclass": "auxiliary_system_degradation",
             "expected_latency_min_hours": 24.0,
             "expected_latency_max_hours": 120.0,
+            "expected_symptom_types": ["vibration", "temperature"],
+            "expected_anomaly_pattern": "step_change",
         },
     ],
 
@@ -866,6 +834,20 @@ KG_CONTEXT: Dict[str, Any] = {
             "matched_component_ids": ["U2-CND-EXPANSION-JOINT-EXHAUST"],
             "priority_score": 55.0,
             "time_distance_days": 394,
+        },
+        {
+            "doc_id": "FMEA-U2-CND-001",
+            "doc_type": "FMEA",
+            "title": "Failure Mode and Effects Analysis — U2 Main Condenser",
+            "created_at": "2022-01-15T00:00:00Z",
+            "matched_asset_ids": ["U2-CONDENSER-MAIN"],
+            "matched_component_ids": [
+                "U2-CND-EXPANSION-JOINT-EXHAUST",
+                "U2-CND-TUBE-BUNDLE-A",
+                "U2-CND-HOTWELL",
+            ],
+            "priority_score": 80.0,
+            "time_distance_days": None,
         },
     ],
 
@@ -1516,111 +1498,100 @@ EVIDENCE_STORE_ROWS: List[Dict[str, Any]] = [
             "extraction_quality": 0.90,
         },
     },
+    # ── FMEA-U2-CND-001: Failure Mode and Effects Analysis ───────────────────
+    {
+        "snippet_id": "FMEA-U2-CND-001::air_inleak",
+        "doc_id": "FMEA-U2-CND-001",
+        "section": "failure_mode_air_inleak",
+        "snippet": (
+            "Failure Mode: Air in-leakage through condenser pressure boundary. "
+            "Affected components: expansion joints, flange connections, valve packing, tube sheet seals. "
+            "Failure mechanism: thermal fatigue of seal material, gasket failure, weld cracking "
+            "caused by thermal cycling, vibration, or inadequate PM. "
+            "Expected symptoms: condenser backpressure rise (gradual drift pattern), hotwell dissolved "
+            "oxygen elevation above 20 ppb, turbine exhaust temperature increase, air ejector "
+            "differential pressure increase. "
+            "Key discriminator: dissolved oxygen elevation above 20 ppb is diagnostic for air "
+            "in-leakage — this symptom is not produced by tube fouling or thermal performance "
+            "degradation and should be used as the primary mechanism discriminator. "
+            "Detection: hotwell DO monitoring (U2-AIT-0341), helium leak test per SOP-U2-CND-001, "
+            "air ejector performance surveillance TECH-SPEC-3.7.2. "
+            "Risk: HIGH — sustained air in-leakage degrades condenser vacuum, reduces turbine "
+            "efficiency, and can trigger automatic load runback at 3.0 inHg backpressure."
+        ),
+        "metadata": {
+            "asset_id": "U2-CONDENSER-MAIN",
+            "doc_type": "FMEA",
+            "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
+            "authority_level": "mandatory",
+            "extraction_quality": 0.98,
+        },
+    },
+    {
+        "snippet_id": "FMEA-U2-CND-001::tube_fouling",
+        "doc_id": "FMEA-U2-CND-001",
+        "section": "failure_mode_tube_fouling",
+        "snippet": (
+            "Failure Mode: Condenser tube fouling — biological, chemical, or debris-induced. "
+            "Affected components: condenser tube bundles A and B, waterboxes. "
+            "Failure mechanism: biological growth in circulating water, chemical scaling, "
+            "debris accumulation reducing heat transfer surface area. "
+            "Expected symptoms: condenser backpressure rise (gradual drift), condenser tube "
+            "outlet temperature elevation above baseline, reduced heat transfer coefficient, "
+            "increased log mean temperature difference. "
+            "Key discriminator: hotwell dissolved oxygen remains within normal limits during "
+            "tube fouling events — DO elevation is NOT expected with tube fouling and is "
+            "diagnostic for a different mechanism (air in-leakage). Tube outlet temperatures "
+            "rising above baseline is the primary confirming indicator of fouling. "
+            "Detection: tube outlet temperature monitoring, tube inspection per PM schedule, "
+            "condenser performance trending, eddy current testing. "
+            "Risk: MEDIUM — reduces heat transfer efficiency, increases backpressure; "
+            "recoverable by tube cleaning and biocide treatment."
+        ),
+        "metadata": {
+            "asset_id": "U2-CONDENSER-MAIN",
+            "doc_type": "FMEA",
+            "component_id": "U2-CND-TUBE-BUNDLE-A",
+            "authority_level": "mandatory",
+            "extraction_quality": 0.98,
+        },
+    },
 ]
 
 
 
-class FixtureKGContextBuilder:
-    """Protocol-compatible KG builder that returns the static fixture."""
+# ─────────────────────────────────────────────────────────────────────────────
+# PROCESSED RECORDS
+# Raw text chunks derived from EVIDENCE_STORE_ROWS, formatted for the
+# ProcessedRecordStore / NER pipeline.  ner_seed is intentionally null here;
+# the notebook populates it by running build_ner_provider() on each record
+# to demonstrate the NER extraction step.
+# ─────────────────────────────────────────────────────────────────────────────
 
-    def build(
-        self,
-        event: Dict[str, Any],
-        telemetry_summary: Dict[str, Any],
-        operational_context: Optional[Dict[str, Any]],
-        pm_compliance: Optional[Dict[str, Any]],
-        run_context: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        out = copy.deepcopy(KG_CONTEXT)
-        out["event_id"] = event["event_id"]
-        out["asset_id"] = event["asset_id"]
-        out["subgraph_id"] = f"KGCTX::{event['event_id']}::{event['asset_id']}"
-        out["provenance"] = {
-            "builder": "FixtureKGContextBuilder",
-            "run_id": run_context.get("run_id"),
-        }
-        return out
-
-
-def build_evidence_store() -> InMemoryEvidenceStore:
-    store = InMemoryEvidenceStore()
-    for row in EVIDENCE_STORE_ROWS:
-        store.add(copy.deepcopy(row))
-    return store
+PROCESSED_RECORDS: List[Dict[str, Any]] = [
+    {
+        "doc_id": row["doc_id"],
+        "chunk_id": row["snippet_id"],
+        "doc_type": row["metadata"]["doc_type"],
+        "asset_id": row["metadata"].get("asset_id", "U2-CONDENSER-MAIN"),
+        "component_id": row["metadata"].get("component_id"),
+        "section": row.get("section", ""),
+        "raw_text": row["snippet"],
+        "ner_seed": None,
+    }
+    for row in EVIDENCE_STORE_ROWS
+]
 
 
-def build_orchestrator(output_dir: Path) -> RCAReasoningOrchestrator:
-    return RCAReasoningOrchestrator(
-        validator=NoOpSchemaValidator(),
-        artifact_store=FileArtifactStore(output_dir),
-        kg_context_builder=FixtureKGContextBuilder(),
-        tskr_temporal_scorer=TSKRTemporalScorerV1(),
-        causality_engine=RuleBasedCausalityEngineV32(
-            config=CausalityEngineConfigV32(top_k_candidates=5)
-        ),
-        evidence_retriever=ChromaEvidenceRetriever(
-            store=build_evidence_store(),
-            config=EvidenceRetrieverConfig(
-                top_k_total=12,
-                top_k_per_query=6,
-                score_threshold=0.0,
-            ),
-        ),
-        rca_synthesizer=RuleValidatedRCASynthesizerV31(
-            llm_client=DummyLLMClient(),
-            config=RCASynthesizerConfig(
-                max_candidates_in_prompt=5,
-                max_evidence_in_prompt=12,
-                minimum_primary_score=0.35,
-            ),
-        ),
-        ishikawa_evaluator=HeuristicIshikawaEvaluatorV1(),
-        config=OrchestratorConfig(
-            enable_ishikawa=True,
-            persist_intermediate_artifacts=True,
-            stop_on_validation_error=False,
-            run_label="fixture-condenser-vacuum-loss",
-            top_k_candidates=5,
-            top_k_evidence=12,
-            extra={"causality_engine_version": "v32"},
-        ),
-    )
-
-
-def score_gap(candidates: Dict[str, Any]) -> float:
-    rows = candidates.get("candidates", []) or []
-    if len(rows) < 2:
-        return float(rows[0].get("composite_score", 0.0)) if rows else 0.0
-    return float(rows[0].get("composite_score", 0.0)) - float(rows[1].get("composite_score", 0.0))
-
-
-def find_candidate(candidates: Dict[str, Any], candidate_id: str) -> Optional[Dict[str, Any]]:
-    for row in candidates.get("candidates", []) or []:
-        if row.get("candidate_id") == candidate_id:
-            return row
-    for row in candidates.get("filtered_out_candidates", []) or []:
-        if row.get("candidate_id") == candidate_id:
-            return row
-    return None
-
-
-def find_evidence_summary(evidence_bundle: Dict[str, Any], candidate_id: str) -> Optional[Dict[str, Any]]:
-    for row in evidence_bundle.get("candidate_evidence_summary", []) or []:
-        if row.get("candidate_id") == candidate_id:
-            return row
-    return None
-
-
-def flatten_ishikawa_rows(ishikawa_matrix: Dict[str, Any]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for cat in ishikawa_matrix.get("categories", []) or []:
-        rows.extend(cat.get("rows", []) or [])
-    return rows
-
+# ─────────────────────────────────────────────────────────────────────────────
+# FIXTURE I/O
+# ─────────────────────────────────────────────────────────────────────────────
 
 def dump_fixture_files(fixture_dir: Path) -> None:
+    """Write all fixture files to *fixture_dir*."""
     fixture_dir.mkdir(parents=True, exist_ok=True)
-    fixtures = {
+
+    json_fixtures: Dict[str, Any] = {
         "event.json": EVENT,
         "telemetry_summary.json": TELEMETRY_SUMMARY,
         "kg_context.json": KG_CONTEXT,
@@ -1628,122 +1599,23 @@ def dump_fixture_files(fixture_dir: Path) -> None:
         "pm_compliance.json": PM_COMPLIANCE,
         "evidence_store_rows.json": EVIDENCE_STORE_ROWS,
     }
-    for name, payload in fixtures.items():
+    for name, payload in json_fixtures.items():
         (fixture_dir / name).write_text(json.dumps(payload, indent=2))
+        print(f"  wrote {name}")
 
-
-def run_assertions(
-    pre_candidates: Dict[str, Any],
-    final_bundle: Dict[str, Any],
-) -> None:
-    post_candidates = final_bundle["causality_candidates"]
-    evidence_bundle = final_bundle["evidence_bundle"]
-    ishikawa_matrix = final_bundle["ishikawa_matrix"] or {}
-    rca_card = final_bundle["rca_card"]
-
-    primary = rca_card["primary_hypothesis"]
-    alternatives = rca_card.get("alternatives", []) or []
-    review_questions = " ".join(rca_card.get("analyst_review", {}).get("questions_to_resolve", [])).lower()
-
-    assert primary.get("candidate_id") == "FM::FM-CND-AIR-INLEAK", primary
-    assert any(a.get("candidate_id") == "FM::FM-CND-TUBE-FOUL" for a in alternatives), alternatives
-
-    tube_leak = find_candidate(post_candidates, "FM::FM-CND-TUBE-LEAK")
-    assert tube_leak is not None, "FM-CND-TUBE-LEAK missing"
-    leak_temporal = (tube_leak.get("temporal_evidence") or {})
-    assert (
-        bool(leak_temporal.get("temporal_contradiction"))
-        or tube_leak.get("filter_reason") is not None
-    ), tube_leak
-
-    foul_summary = find_evidence_summary(evidence_bundle, "FM::FM-CND-TUBE-FOUL")
-    assert foul_summary is not None, "fouling evidence summary missing"
-    assert foul_summary.get("contradicting_count", 0) >= 1, foul_summary
-
-    assert score_gap(post_candidates) >= 0.05, post_candidates.get("candidates", [])
-
-    air = find_candidate(post_candidates, "FM::FM-CND-AIR-INLEAK")
-    foul = find_candidate(post_candidates, "FM::FM-CND-TUBE-FOUL")
-    assert air is not None and foul is not None
-    air_rec = float((air.get("recurrence") or {}).get("recurrence_score", 0.0))
-    foul_rec = float((foul.get("recurrence") or {}).get("recurrence_score", 0.0))
-    assert air_rec >= foul_rec, {"air": air_rec, "foul": foul_rec}
-
-    cw_temp = find_candidate(post_candidates, "FM::FM-CW-TEMP-RISE")
-    assert cw_temp is not None
-    ranked_ids = [c.get("candidate_id") for c in post_candidates.get("candidates", []) or []]
-    assert primary.get("candidate_id") != "FM::FM-CW-TEMP-RISE"
-    if "FM::FM-CW-TEMP-RISE" in ranked_ids:
-        assert ranked_ids.index("FM::FM-CW-TEMP-RISE") >= 1, ranked_ids
-
-    ish_rows = flatten_ishikawa_rows(ishikawa_matrix)
-    assert any("FM::FM-HVAC-DEGRAD" in (row.get("linked_candidate_ids") or []) for row in ish_rows), ish_rows
-
-    assert any(tok in review_questions for tok in ["expansion joint", "inspection", "pm deferral"]), review_questions
-
-    validation = rca_card.get("validation_status", {})
-    assert validation.get("schema_valid") is True, validation
-    assert validation.get("all_claims_cited") is True, validation
-
-    pre_gap = score_gap(pre_candidates)
-    post_gap = score_gap(post_candidates)
-    print(f"[ok] score gap pre={pre_gap:.4f} post={post_gap:.4f}")
+    # JSONL — one record per line
+    jsonl_path = fixture_dir / "processed_records.jsonl"
+    with open(jsonl_path, "w") as fh:
+        for rec in PROCESSED_RECORDS:
+            fh.write(json.dumps(rec) + "\n")
+    print(f"  wrote processed_records.jsonl  ({len(PROCESSED_RECORDS)} records)")
 
 
 def main() -> int:
-    root = Path.cwd()
-    fixture_dir = root / "test_fixtures"
-    output_dir = root / "test_output"
+    fixture_dir = Path(__file__).parent / "fixtures"
     dump_fixture_files(fixture_dir)
-
-    orchestrator = build_orchestrator(output_dir)
-
-    kg_context = copy.deepcopy(KG_CONTEXT)
-    tskr_patterns = orchestrator.tskr_temporal_scorer.score(
-        event=EVENT,
-        telemetry_summary=TELEMETRY_SUMMARY,
-        kg_context=kg_context,
-        operational_context=OPERATIONAL_CONTEXT,
-        run_context={"run_id": "fixture-precompute"},
-    )
-    pre_candidates = orchestrator.causality_engine.generate(
-        event=EVENT,
-        telemetry_summary=TELEMETRY_SUMMARY,
-        kg_context=kg_context,
-        tskr_patterns=tskr_patterns,
-        operational_context=OPERATIONAL_CONTEXT,
-        pm_compliance=PM_COMPLIANCE,
-        run_context={"run_id": "fixture-precompute"},
-    )
-    evidence_bundle = orchestrator.evidence_retriever.retrieve(
-        event=EVENT,
-        kg_context=kg_context,
-        causality_candidates=pre_candidates,
-        operational_context=OPERATIONAL_CONTEXT,
-        run_context={"run_id": "fixture-precompute"},
-    )
-
-    final_bundle = orchestrator.run(
-        event=copy.deepcopy(EVENT),
-        telemetry_summary=copy.deepcopy(TELEMETRY_SUMMARY),
-        operational_context=copy.deepcopy(OPERATIONAL_CONTEXT),
-        pm_compliance=copy.deepcopy(PM_COMPLIANCE),
-        kg_context=copy.deepcopy(kg_context),
-        tskr_patterns=copy.deepcopy(tskr_patterns),
-        causality_candidates=copy.deepcopy(pre_candidates),
-        evidence_bundle=copy.deepcopy(evidence_bundle),
-    )
-
-    (fixture_dir / "tskr_patterns.json").write_text(json.dumps(tskr_patterns, indent=2))
-    (fixture_dir / "pre_refinement_candidates.json").write_text(json.dumps(pre_candidates, indent=2))
-    (fixture_dir / "evidence_bundle.json").write_text(json.dumps(evidence_bundle, indent=2))
-
-    run_id = final_bundle["run_context"]["run_id"]
-    print(f"[info] run_id={run_id}")
-    print(f"[info] output_dir={output_dir / run_id}")
-
-    run_assertions(pre_candidates=pre_candidates, final_bundle=final_bundle)
-    print("[ok] all scenario assertions passed")
+    print(f"\nFixtures written to: {fixture_dir}")
+    print("Run run_test_case_3.ipynb to execute the RCA workflow.")
     return 0
 
 

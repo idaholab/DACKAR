@@ -197,7 +197,7 @@
           },
           "evidence_posture": {
             "type": "string",
-            "enum": ["supported", "mixed", "contextual_only", "contradicted", "weak"]
+            "enum": ["supported", "mixed", "contextual_only", "contradicted", "weak", "no_data"]
           },
           "temporal_posture": {
             "type": "string",
@@ -217,7 +217,10 @@
               "evidence_prior": { "type": "number" },
               "evidence_support": { "type": "number" },
               "evidence_contradiction": { "type": "number" },
-              "evidence_context": { "type": "number" }
+              "evidence_context": { "type": "number" },
+              "symptom_match": { "type": "number", "minimum": 0, "maximum": 1 },
+              "alarm_signal": { "type": "number", "minimum": 0, "maximum": 1 },
+              "rpn_prior": { "type": "number", "minimum": 0, "maximum": 1 }
             },
             "required": ["structural", "temporal", "telemetry", "evidence", "governance"],
             "additionalProperties": true
@@ -256,6 +259,7 @@
               "expected_latency_min_hours": { "type": ["number", "null"] },
               "expected_latency_max_hours": { "type": ["number", "null"] },
               "observed_lag_hours": { "type": ["number", "null"] },
+              "lag_is_approximate": { "type": ["boolean", "null"], "description": "True when observed_lag_hours was inferred from hedged language (e.g., 'about 3 hours') rather than a precise measurement." },
               "latency_violation_type": {
                 "type": "string",
                 "enum": ["none", "too_fast", "too_slow", "unknown"]
@@ -321,6 +325,24 @@
               }
             },
             "additionalProperties": true
+          },
+          "affected_safety_functions": {
+            "type": "array",
+            "description": "Safety functions potentially affected by this causal candidate, derived from kg_context.safety_functions via component linkage.",
+            "items": {
+              "type": "object",
+              "required": ["sf_id", "sf_name"],
+              "properties": {
+                "sf_id":       { "type": "string" },
+                "sf_name":     { "type": "string" },
+                "sf_category": { "type": ["string", "null"] },
+                "impact_type": {
+                  "type": "string",
+                  "enum": ["direct", "indirect", "unknown"]
+                }
+              },
+              "additionalProperties": false
+            }
           }
         },
         "additionalProperties": false

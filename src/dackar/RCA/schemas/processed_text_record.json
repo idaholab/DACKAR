@@ -17,7 +17,7 @@
     },
 
     "doc_id":     { "type": "string", "description": "Parent document identifier." },
-    "doc_type":   { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OTHER"] },
+    "doc_type":   { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OE", "OTHER"] },
     "chunk_index":{ "type": "integer", "description": "Zero-based chunk position within the document." },
 
     "embedding_text": {
@@ -63,7 +63,7 @@
         },
         "system": { "type": "string" },
         "location": { "type": "string" },
-        "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OTHER"] },
+        "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OE", "OTHER"] },
         "authority_level": {
           "type": "string",
           "enum": ["mandatory", "guidance", "informational", "unknown"],
@@ -157,16 +157,17 @@
 
         "measurements": {
           "type": "array",
-          "description": "Numeric values with units extracted from text (e.g., '92.3 degC', 'ISO VG 68').",
+          "description": "Numeric values with units extracted from text (e.g., '92.3 degC', 'ISO VG 68'). Accepts both the structured CA form {parameter, value, unit, in_spec, context} and the UnitEntity spaCy form {value, unit, entity_type, text}.",
           "items": {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
-              "parameter":  { "type": "string" },
-              "value":      { "type": "number" },
-              "unit":       { "type": "string" },
-              "in_spec":    { "type": "boolean", "description": "Compared against engineering limits if resolvable." },
-              "context":    { "type": "string",  "description": "Brief sentence context for grounding." }
+              "parameter":    { "type": "string",  "description": "Physical quantity name when available (CA form)." },
+              "value":        {},
+              "unit":         { "type": "string" },
+              "in_spec":      { "type": "boolean", "description": "Compared against engineering limits if resolvable (CA form)." },
+              "context":      { "type": "string",  "description": "Brief sentence context for grounding (CA form)." },
+              "entity_type":  { "type": "string",  "description": "UnitEntity classification (e.g., 'Measurement', 'Percentage') (spaCy form)." },
+              "text":         { "type": "string",  "description": "Raw surface form as matched by UnitEntity (spaCy form)." }
             }
           }
         },
@@ -186,7 +187,7 @@
 
         "temporal_markers": {
           "type": "array",
-          "description": "Temporal expressions extracted from text that characterize event timing.",
+          "description": "Structured temporal expressions with optional timestamp resolution. Supersedes raw temporal_refs for documents where timestamp resolution is available.",
           "items": {
             "type": "object",
             "properties": {
@@ -195,6 +196,60 @@
               "relative_reference": { "type": "string", "description": "Anchor event if relative (e.g., 'before:event_id')." }
             }
           }
+        },
+
+        "temporal_refs": {
+          "type": "array",
+          "description": "Raw temporal surface forms extracted by the spaCy TemporalEntity component (e.g., '3 hours', 'next morning'). Unresolved; use temporal_markers for resolved timestamps.",
+          "items": { "type": "string" }
+        },
+
+        "temporal_relations": {
+          "type": "array",
+          "description": "Directional temporal relations extracted by spaCy TemporalRelationEntity (e.g., 'before', 'after', 'during').",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text":      { "type": "string", "description": "Surface form of the relation phrase." },
+              "sub_label": { "type": "string", "description": "Canonical relation type (e.g., 'BEFORE', 'AFTER', 'DURING')." }
+            }
+          }
+        },
+
+        "temporal_qualifiers": {
+          "type": "array",
+          "description": "Temporal qualifier adverbials extracted by spaCy TemporalAttributeEntity (e.g., 'intermittently', 'periodically', 'suddenly').",
+          "items": { "type": "string" }
+        },
+
+        "locations": {
+          "type": "array",
+          "description": "Plant location entities extracted by spaCy LocationEntity.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text":      { "type": "string", "description": "Surface form of the location phrase." },
+              "sub_label": { "type": "string", "description": "Location category (e.g., 'ROOM', 'ELEVATION', 'TRAIN')." }
+            }
+          }
+        },
+
+        "conjectures": {
+          "type": "array",
+          "description": "Hedge / uncertainty phrases extracted by spaCy ConjectureEntity (e.g., 'possibly', 'suspected', 'likely due to'). High density indicates low-confidence evidence.",
+          "items": { "type": "string" }
+        },
+
+        "doc_refs": {
+          "type": "array",
+          "description": "Cross-document reference IDs extracted from text (e.g., 'CR-2024-001', 'WO-45123'). Populated by doc_ref_extractor.",
+          "items": { "type": "string" }
+        },
+
+        "alarm_ids": {
+          "type": "array",
+          "description": "Plant alarm identifiers extracted from text (e.g., 'ALM-1234', 'LOLO-FW-103'). Populated by alarm_id_extractor.",
+          "items": { "type": "string" }
         }
       }
     },

@@ -18,7 +18,7 @@
   "properties": {
 
     "doc_id":   { "type": "string", "description": "Stable canonical document identifier." },
-    "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OTHER"] },
+    "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OE", "OTHER"] },
     "title":    { "type": "string" },
     "description": { "type": "string", "description": "Short abstract or summary." },
 
@@ -216,6 +216,42 @@
         "confidence":           { "type": "number", "minimum": 0.0, "maximum": 1.0 },
         "recommended_followups":{ "type": "array", "items": { "type": "string" } },
         "recurrence_notes":     { "type": "string" }
+      }
+    },
+
+    "oe_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Present only when doc_type = 'OE'. Fleet-wide operating experience report metadata. Populates KG oe_document node and drives soft-similarity retrieval.",
+      "properties": {
+        "issuing_body": {
+          "type": "string",
+          "description": "Organization that issued the OE report (e.g., 'NRC', 'INPO', 'EPRI', 'WANO')."
+        },
+        "oe_number": {
+          "type": "string",
+          "description": "Unique OE report number assigned by the issuing body (e.g., 'GL-2008-01', 'SER-2023-05')."
+        },
+        "plant_scope": {
+          "type": "string",
+          "enum": ["fleet_wide", "pwr_only", "bwr_only", "specific_plant", "unknown"],
+          "description": "Scope of the OE report. Used for soft reactor-type filtering — pwr_only/bwr_only are advisory, not hard excludes."
+        },
+        "applicable_system_types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "System-type labels this OE report applies to (e.g., 'RCS', 'ECCS', 'AFW'). Used for similarity-based retrieval, not hard filtering."
+        },
+        "applicable_component_types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Component-type labels this OE applies to (e.g., 'centrifugal_pump', 'motor_operated_valve'). Soft filter key for retrieval."
+        },
+        "similarity_basis": {
+          "type": "string",
+          "enum": ["component_type", "failure_mode", "system_type", "degradation_mechanism", "unknown"],
+          "description": "Primary basis on which this OE should be matched to new events during retrieval."
+        }
       }
     },
 

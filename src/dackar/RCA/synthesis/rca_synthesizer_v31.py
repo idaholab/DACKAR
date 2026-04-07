@@ -758,7 +758,7 @@ analyst_review = {
             return "review_required"
         if temporal_contradiction or temporal_posture == "contradicted":
             return "review_required"
-        return "review_required"
+        return "candidate_ready"
 
     def _fallback_attention_flags_from_posture(
         self,
@@ -1217,10 +1217,25 @@ analyst_review = {
             }
         else:
             primary_candidate_id = top.get("candidate_id") if top else None
+            # Pre-compute card-visible candidate IDs (primary + top-2 alternatives).
+            # Evidence linked to retained-but-not-alternative candidates would fail
+            # _validate_card_semantics because valid_candidate_ids only covers card
+            # members. Compute this set before the evidence loop so we can strip
+            # out-of-scope linked_candidate_id values before they reach validation.
+            _card_candidate_ids: set = set()
+            if primary_candidate_id:
+                _card_candidate_ids.add(primary_candidate_id)
+            for _alt_cand in selected_candidates[1:3]:
+                if isinstance(_alt_cand, dict) and _alt_cand.get("candidate_id"):
+                    _card_candidate_ids.add(_alt_cand["candidate_id"])
+
             evidence: List[JsonDict] = []
             for i, e in enumerate(selected_evidence[:10], start=1):
                 support_role = self._infer_evidence_support_role(e, top)
                 linked_candidate_id = self._infer_linked_candidate_id(e, top)
+                # Strip candidate links for IDs not visible in this card.
+                if linked_candidate_id and linked_candidate_id not in _card_candidate_ids:
+                    linked_candidate_id = None
                 if support_role == "supporting":
                     summary_text = (
                         f"Supporting evidence for candidate "
