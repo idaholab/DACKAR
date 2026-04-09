@@ -23,8 +23,18 @@ node_properties = [
 node_description = """Represents a specific manner in which an item or function can fail to perform its intended purpose."""
 node_properties = [
     { name = "ID", type = "string", optional = false, description = "Unique identifier for the failure mode" },
+    { name = "fm_id", type = "string", optional = true, description = "Canonical RCA-pipeline failure mode ID (e.g. FM:centrifugal_pump:seal_degradation)" },
     { name = "name", type = "string", optional = false, description = "Name/short label of the failure mode" },
-    { name = "description", type = "string", optional = true, description = "Detailed description of the failure mode" }
+    { name = "description", type = "string", optional = true, description = "Detailed description of the failure mode" },
+    { name = "failure_mechanism", type = "string", optional = true, description = "Physical degradation mechanism (e.g. fatigue, corrosion, wear, overload)" },
+    { name = "component_type", type = "string", optional = true, description = "Equipment class this failure mode applies to (e.g. centrifugal_pump, motor_operated_valve)" },
+    { name = "superclass", type = "string", optional = true, description = "Failure mode superclass for grouping (e.g. mechanical_degradation, seal_failure, lubrication_failure)" },
+    { name = "expected_symptoms", type = "string", optional = true, description = "Semicolon-delimited expected symptom types matched against event symptom_signature" },
+    { name = "expected_anomaly_pattern", type = "string", optional = true, description = "Expected telemetry pattern: step_change | gradual_drift | spike | oscillation | dropout | sustained_exceedance | unknown" },
+    { name = "expected_latency_min_days", type = "float", optional = true, description = "Minimum expected failure progression time in days (from FMEA latency data)" },
+    { name = "expected_latency_max_days", type = "float", optional = true, description = "Maximum expected failure progression time in days (from FMEA latency data)" },
+    { name = "fmea_source_ref", type = "string", optional = true, description = "Source FMEA document or node reference (filename + sheet)" },
+    { name = "rpn", type = "int", optional = true, description = "Denormalized Risk Priority Number (S × O × D) copied from risk_assessment for direct retrieval without graph traversal" }
 ]
 
 [node.cause]
@@ -140,3 +150,8 @@ to_entity = "work_order"
 relation_description = """Indicates that the FMEA case references an external artifact (condition report, anomaly, diagnostic/prognostic assessment, or work order)."""
 from_entity = "fmea_case"
 to_entity = "reference_artifact"
+
+[relation.applies_to]
+relation_description = """Indicates that a failure mode is applicable to a specific MBSE entity (component instance). Used at FMEA ingestion time after resolving component_type to individual mbse_entity IDs in the KG."""
+from_entity = "failure_mode"
+to_entity = "mbse_entity"
