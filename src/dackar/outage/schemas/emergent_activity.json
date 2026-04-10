@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EmergentActivity",
+  "description": "Raw intake record for an unexpected activity identified during outage execution. This is the entry point for the outage activity workflow. Captures what is known at detection time, before NER or classification. Fields map to the P6 canonical model and CMMS records where available.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activity_id",
+    "outage_id",
+    "plant_id",
+    "raw_description",
+    "detection_timestamp",
+    "source_system"
+  ],
+
+  "properties": {
+
+    "activity_id": {
+      "type": "string",
+      "description": "Stable unique identifier for this activity. Format: {outage_id}:{source_record_id}. Referenced by all downstream artifacts."
+    },
+
+    "outage_id": {
+      "type": "string",
+      "description": "Canonical outage identifier. Must match the outages table in OutageDataset."
+    },
+
+    "plant_id": {
+      "type": "string",
+      "description": "Plant identifier."
+    },
+
+    "unit_id": {
+      "type": ["string", "null"],
+      "description": "Reactor unit identifier, if applicable."
+    },
+
+    "raw_description": {
+      "type": "string",
+      "description": "Unmodified activity description as extracted from source system. May contain abbreviations, shorthand, and embedded references."
+    },
+
+    "detection_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the emergent activity was identified or logged."
+    },
+
+    "reported_by": {
+      "type": ["string", "null"],
+      "description": "Identifier of the person or system that reported the activity."
+    },
+
+    "source_system": {
+      "type": "string",
+      "enum": ["P6", "CMMS", "CAP", "manual", "other"],
+      "description": "System from which this record originated."
+    },
+
+    "source_record_id": {
+      "type": ["string", "null"],
+      "description": "Original record identifier in the source system (e.g., WO number, P6 activity ID)."
+    },
+
+    "outage_phase": {
+      "type": ["string", "null"],
+      "enum": ["cooldown", "defueling", "refueling", "maintenance", "startup", "power_ascension", "other", null],
+      "description": "Outage phase during which the activity was identified."
+    },
+
+    "planned_start": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Planned start from baseline schedule, if this was originally a planned activity that escalated."
+    },
+
+    "planned_finish": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+
+    "actual_start": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Actual start if work has already begun."
+    },
+
+    "planned_duration_hours": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Planned duration if known at intake (e.g., from a baseline estimate)."
+    },
+
+    "known_component_id": {
+      "type": ["string", "null"],
+      "description": "Component identifier if already known at intake. Must resolve to a KG Component node."
+    },
+
+    "known_system_id": {
+      "type": ["string", "null"],
+      "description": "System identifier if already known at intake."
+    },
+
+    "work_order_id": {
+      "type": ["string", "null"],
+      "description": "Associated work order identifier, if one has been raised."
+    },
+
+    "condition_report_id": {
+      "type": ["string", "null"],
+      "description": "Associated condition report (CR/CAP) identifier, if one exists."
+    },
+
+    "discipline": {
+      "type": ["string", "null"],
+      "enum": ["mechanical", "electrical", "I&C", "civil", "nuclear", "operations", "other", null],
+      "description": "Work discipline, if known at intake."
+    },
+
+    "work_order_type": {
+      "type": ["string", "null"],
+      "enum": ["corrective", "preventive", "inspection", "modification", "other", null],
+      "description": "Type of work order associated with this activity."
+    },
+
+    "has_rp_hold": {
+      "type": "boolean",
+      "default": false,
+      "description": "Radiation protection hold point required."
+    },
+
+    "requires_scaffold": {
+      "type": "boolean",
+      "default": false,
+      "description": "Scaffolding erection or removal is in scope."
+    },
+
+    "has_clearance": {
+      "type": "boolean",
+      "default": false,
+      "description": "Electrical or mechanical clearance required."
+    },
+
+    "is_vendor_supported": {
+      "type": "boolean",
+      "default": false,
+      "description": "OEM or specialty vendor is performing or supporting the work."
+    },
+
+    "crew_size": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Estimated or assigned crew size."
+    },
+
+    "contractor_flag": {
+      "type": ["boolean", "null"],
+      "description": "True if contractor (not station staff) is performing the work."
+    },
+
+    "data_source_confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Confidence in the quality of this intake record. High = structured source with complete fields; medium = partial; low = free-text only or manually entered."
+    },
+
+    "provenance": {
+      "type": "object",
+      "description": "Traceability back to the originating system and record.",
+      "additionalProperties": true,
+      "properties": {
+        "ingested_at": { "type": "string", "format": "date-time" },
+        "ingested_by": { "type": "string" },
+        "source_file": { "type": ["string", "null"] },
+        "schedule_version_id": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

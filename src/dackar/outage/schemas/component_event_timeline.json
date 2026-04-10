@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ComponentEventTimeline",
+  "description": "Stage B output. The ordered history of CR, WO, maintenance, inspection, and prior emergent activity records for the component(s) associated with the emergent activity. Built from KG context queries. This is the raw material for temporal event chain construction in Stage C.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activity_id",
+    "run_id",
+    "generated_at",
+    "component_id",
+    "events",
+    "recurrence_indicators",
+    "data_coverage",
+    "provenance"
+  ],
+
+  "properties": {
+
+    "activity_id": {
+      "type": "string",
+      "description": "References the EmergentActivity.activity_id for this run."
+    },
+
+    "run_id": { "type": "string" },
+
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "component_id": {
+      "type": "string",
+      "description": "Primary component for which this timeline was constructed. Must resolve to a KG Component node."
+    },
+
+    "component_name": {
+      "type": ["string", "null"]
+    },
+
+    "system_id": {
+      "type": ["string", "null"],
+      "description": "Parent system identifier."
+    },
+
+    "system_name": {
+      "type": ["string", "null"]
+    },
+
+    "asset_id": {
+      "type": ["string", "null"],
+      "description": "Top-level asset (plant/unit) identifier."
+    },
+
+    "events": {
+      "type": "array",
+      "description": "Time-ordered list of historical events for this component. Ascending by timestamp.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "event_type", "timestamp", "source_system", "data_quality_score"],
+        "properties": {
+          "event_id": { "type": "string" },
+
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "condition_report",
+              "work_order",
+              "preventive_maintenance",
+              "corrective_maintenance",
+              "inspection",
+              "delay",
+              "prior_emergent_activity",
+              "failure",
+              "other"
+            ]
+          },
+
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Event occurrence timestamp. For WOs and CRs, use the initiation date."
+          },
+
+          "description": {
+            "type": ["string", "null"],
+            "description": "Event description as recorded in source system."
+          },
+
+          "source_doc_id": {
+            "type": ["string", "null"],
+            "description": "Identifier of the source document (CR number, WO number, etc.)."
+          },
+
+          "source_system": {
+            "type": "string",
+            "enum": ["CAP", "CMMS", "P6", "manual", "other"]
+          },
+
+          "issue_class": {
+            "type": ["string", "null"],
+            "description": "Normalized issue classification (e.g., leakage, vibration, wear, electrical_fault, corrosion)."
+          },
+
+          "failure_mode_candidate": {
+            "type": ["string", "null"],
+            "description": "Candidate failure mode identifier from the KG, if resolved."
+          },
+
+          "work_order_type": {
+            "type": ["string", "null"],
+            "enum": ["corrective", "preventive", "inspection", "modification", "other", null]
+          },
+
+          "outcome": {
+            "type": ["string", "null"],
+            "description": "Outcome of the event (e.g., component replaced, adjusted, deferred, NFF)."
+          },
+
+          "outage_id": {
+            "type": ["string", "null"],
+            "description": "Outage during which this event occurred, if applicable."
+          },
+
+          "data_quality_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+
+    "recurrence_indicators": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repeat_failure_count", "trend", "pm_compliance_status"],
+      "description": "Summary statistics indicating whether this component has a history of repeated issues.",
+      "properties": {
+        "repeat_failure_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of prior corrective events for this component in the timeline window."
+        },
+        "mean_inter_event_days": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Mean time between corrective events in days. Null if fewer than two events."
+        },
+        "trend": {
+          "type": "string",
+          "enum": ["increasing", "stable", "decreasing", "insufficient_data"],
+          "description": "Direction of failure frequency trend across the timeline window."
+        },
+        "last_cm_date": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Date of most recent corrective maintenance for this component."
+        },
+        "last_pm_date": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Date of most recent preventive maintenance for this component."
+        },
+        "pm_compliance_status": {
+          "type": "string",
+          "enum": ["compliant", "overdue", "no_pm_defined", "unknown"],
+          "description": "Whether preventive maintenance is current for this component."
+        }
+      }
+    },
+
+    "data_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_events"],
+      "description": "Summary of how much historical data backs this timeline.",
+      "properties": {
+        "total_events": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outages_represented": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of distinct outage cycles represented in the event history."
+        },
+        "earliest_event": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "latest_event": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "data_quality_summary": {
+          "type": ["string", "null"],
+          "description": "Free-text note on data coverage limitations (e.g., missing WO closeout notes, CR text unavailable)."
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_by", "run_id"],
+      "properties": {
+        "generated_by": { "type": "string" },
+        "run_id": { "type": "string" },
+        "kg_query_timestamp": { "type": ["string", "null"], "format": "date-time" },
+        "timeline_window_days": {
+          "type": ["integer", "null"],
+          "description": "How far back the KG query looked (in days) to build the timeline."
+        }
+      }
+    }
+  }
+}
