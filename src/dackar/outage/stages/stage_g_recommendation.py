@@ -12,7 +12,8 @@ Responsibilities:
     5. Surface all regulatory flags from Stage A.
     6. Build schedule and history summaries for the executive view.
     7. Set analyst_review=True when required (regulatory constraints present,
-       low confidence, INCONCLUSIVE status, or upstream fallback used).
+       low confidence, INCONCLUSIVE status, upstream fallback used, or
+       unknown abbreviation rate > threshold).
     8. Compute the validation_status block.
 
 Output schema: outage/schemas/outage_activity_recommendation.json
@@ -422,7 +423,7 @@ class RecommendationSynthesizer:
             "primary_conclusion": conclusion,
             "decision_status": decision_status,
             "confidence_tier": confidence_tier,
-            "attention_flags": attention_flags,
+            "analyst_attention_flags": attention_flags,
             "analog_support_count": analog_count,
             "duration_p50_hours": p50,
         }
@@ -673,6 +674,9 @@ class RecommendationSynthesizer:
             - decision_status is INCONCLUSIVE
             - duration distribution confidence_tier is low_confidence
             - _FLAG_FALLBACK is in attention_flags
+            - _FLAG_HIGH_ABBR_RATE is in attention_flags (§6 exit criterion:
+              NER entity extraction unreliable when unknown_abbreviation_rate
+              exceeds RecommendationConfig.unknown_abbreviation_rate_warning)
             - no feasible + regulatory-cleared option exists
 
         reason: brief string summarising why review is required.

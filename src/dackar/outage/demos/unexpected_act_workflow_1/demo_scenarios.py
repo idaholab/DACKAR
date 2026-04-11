@@ -15,7 +15,7 @@ Two pre-built scenarios are provided:
 
 Usage (plain Python or Jupyter)::
 
-    from demos.demo_scenarios import run_pipeline, SCENARIO_RCP_SEAL, SCENARIO_SNUBBER_EXT
+    from demo_scenarios import run_pipeline, SCENARIO_RCP_SEAL, SCENARIO_SNUBBER_EXT
 
     result_rcp     = run_pipeline(SCENARIO_RCP_SEAL)
     result_snubber = run_pipeline(SCENARIO_SNUBBER_EXT)
@@ -25,7 +25,10 @@ Usage (plain Python or Jupyter)::
     intake, timeline, temporal, analogs, schedule, options, recommendation
 
 Five of the seven stages execute their real production logic.
-Stage B and Stage E use pre-built stub data (KG driver / LOGOS CPM not required).
+Stage B uses a pre-built stub KG driver.
+Stage E uses the real ScheduleImpactAssessor with the LOGOS CPM adapter when
+``schedule_data_root`` is passed to ``run_pipeline`` and the schedule JSON
+file exists; otherwise it falls back to the pre-built stub artifact.
 """
 from __future__ import annotations
 
@@ -35,9 +38,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
-# Path setup — add outage/ root so ``stages`` package is importable
+# Path setup — add outage/ root so ``stages`` package is importable.
+# File lives two levels below outage/ (demos/unexpected_act_workflow_1/),
+# so we need parents[2]: file → unexpected_act_workflow_1/ → demos/ → outage/
 # ---------------------------------------------------------------------------
-_OUTAGE_DIR = Path(__file__).parent.parent
+_OUTAGE_DIR = Path(__file__).resolve().parents[2]
 if str(_OUTAGE_DIR) not in sys.path:
     sys.path.insert(0, str(_OUTAGE_DIR))
 
@@ -49,6 +54,17 @@ from stages.stage_f_options import InsertionOptionGenerator
 from stages.stage_g_recommendation import RecommendationSynthesizer
 
 JsonDict = Dict[str, Any]
+
+# Optional LOGOS CPM integration — graceful fallback when not available.
+try:
+    from stages.stage_e_schedule import ScheduleImpactAssessor, ScheduleImpactConfig
+    from outage_uncertainty.adapters.logos_cpm_adapter import (
+        LogosCPMScheduleLoader,
+        LogosCPMScheduleGraphBuilder,
+    )
+    _LOGOS_AVAILABLE = True
+except Exception:
+    _LOGOS_AVAILABLE = False
 
 # ============================================================================
 # Stub backends
@@ -495,16 +511,84 @@ SCENARIO_SNUBBER_EXT: JsonDict = {
 
 
 # ============================================================================
+# Stage E helper — LOGOS CPM with pre-built stub fallback
+# ============================================================================
+
+def _run_stage_e(
+    activity: JsonDict,
+    intake: JsonDict,
+    analogs: JsonDict,
+    run_ctx: JsonDict,
+    pre_built_artifact: JsonDict,
+    schedule_data_root: Optional[str],
+) -> JsonDict:
+    """Run Stage E, falling back to *pre_built_artifact* when LOGOS is absent.
+
+    When *schedule_data_root* is provided and LOGOS is importable, this
+    constructs a :class:`~stages.stage_e_schedule.ScheduleImpactAssessor`
+    with the :class:`~outage_uncertainty.adapters.logos_cpm_adapter.LogosCPMScheduleLoader`
+    and :class:`~outage_uncertainty.adapters.logos_cpm_adapter.LogosCPMScheduleGraphBuilder`
+    and calls ``assess()``.  Any ``FileNotFoundError`` (schedule JSON missing)
+    or ``RuntimeError`` (LOGOS not available) is caught and the pre-built stub
+    is returned instead.
+    """
+    if _LOGOS_AVAILABLE and schedule_data_root is not None:
+        try:
+            loader = LogosCPMScheduleLoader(data_root=schedule_data_root)
+            builder = LogosCPMScheduleGraphBuilder()
+            assessor = ScheduleImpactAssessor(
+                config=ScheduleImpactConfig(),
+                schedule_loader=loader,
+                schedule_graph_builder=builder,
+            )
+            return assessor.assess(
+                emergent_activity=activity,
+                intake_result=intake,
+                historical_analogs=analogs,
+                run_context=run_ctx,
+            )
+        except FileNotFoundError as exc:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "Stage E: schedule JSON not found (%s); using pre-built stub.", exc
+            )
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "Stage E: LOGOS CPM error (%s); using pre-built stub.", exc
+            )
+
+    return pre_built_artifact.copy()
+
+
+# ============================================================================
 # Pipeline runner
 # ============================================================================
 
-def run_pipeline(scenario: JsonDict, run_id: Optional[str] = None) -> JsonDict:
-    """Run the full A → B → C → D → E(stub) → F → G pipeline for one scenario.
+def run_pipeline(
+    scenario: JsonDict,
+    run_id: Optional[str] = None,
+    schedule_data_root: Optional[str] = None,
+) -> JsonDict:
+    """Run the full A → B → C → D → E → F → G pipeline for one scenario.
 
     Stages A, C, F, G execute their real production logic.
     Stage B runs the real KGTimelineBuilder with a stub KG driver.
     Stage D runs the real HistoricalAnalogRetriever with a stub index.
-    Stage E uses the pre-built schedule impact artifact (LOGOS not required).
+    Stage E uses the real ScheduleImpactAssessor with the LOGOS CPM adapter
+    when *schedule_data_root* is provided and the schedule JSON file exists;
+    otherwise falls back to the pre-built stub artifact stored in the scenario.
+
+    Parameters
+    ----------
+    scenario:
+        One of the pre-defined scenario dicts (``SCENARIO_RCP_SEAL``, etc.).
+    run_id:
+        Optional run identifier.  Auto-generated if omitted.
+    schedule_data_root:
+        Root directory containing LOGOS schedule JSON files following the
+        ``<root>/<outage_id>/<version>.json`` layout.  Pass ``None`` (default)
+        to always use the pre-built stub.
 
     Returns a dict with one key per stage::
 
@@ -513,7 +597,7 @@ def run_pipeline(scenario: JsonDict, run_id: Optional[str] = None) -> JsonDict:
             "timeline":       Stage B artifact,
             "temporal":       Stage C artifact,
             "analogs":        Stage D artifact,
-            "schedule":       Stage E artifact (pre-built),
+            "schedule":       Stage E artifact,
             "options":        Stage F artifact,
             "recommendation": Stage G artifact,
         }
@@ -543,8 +627,18 @@ def run_pipeline(scenario: JsonDict, run_id: Optional[str] = None) -> JsonDict:
     )
     analogs = stage_d.retrieve(activity, intake, run_ctx)
 
-    # ── Stage E: Schedule Impact (pre-built stub — LOGOS CPM not required) ────
-    schedule = scenario["schedule_impact"].copy()
+    # ── Stage E: Schedule Impact ──────────────────────────────────────────────
+    # Attempt real LOGOS CPM integration when a schedule data root is provided.
+    # Fall back to the pre-built stub when LOGOS is unavailable or the schedule
+    # file does not exist for this scenario's outage.
+    schedule: JsonDict = _run_stage_e(
+        activity=activity,
+        intake=intake,
+        analogs=analogs,
+        run_ctx=run_ctx,
+        pre_built_artifact=scenario["schedule_impact"],
+        schedule_data_root=schedule_data_root,
+    )
     schedule["run_id"] = run_id
 
     # ── Stage F: Insertion Options ────────────────────────────────────────────

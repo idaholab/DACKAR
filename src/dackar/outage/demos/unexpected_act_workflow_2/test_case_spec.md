@@ -215,7 +215,7 @@ After abbreviation expansion and NER, the following must be measured and reporte
 - Surface the specific source records behind each causal link
 
 ### Schedule Integration
-Impact score = P(emergent event) × criticality multiplier
+Risk index = P(emergent event) × criticality multiplier
 
 Where criticality multiplier is derived from the historical distribution of float consumption across activity types and schedule positions in the training outages, and calibrated per dataset. Fixed reference values (e.g., non-critical = 1.0, critical path = 5.0) are used only as initialization priors before calibration and should not be presented as validated thresholds.
 

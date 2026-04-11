@@ -654,17 +654,15 @@ class ScheduleImpactAssessor:
         insertion_point: JsonDict,
         schedule_network: _ScheduleNetwork,
     ) -> List[JsonDict]:
-        """Check for crew, vendor, and craft conflicts at the insertion point.
+        """Check for crew, equipment, location, and vendor conflicts at the insertion point.
 
-        Queries the LOGOS ResourcePool at the proposed insertion window and
-        compares against the emergent activity's required_resources.
+        Queries the LOGOS ResourcePool, EquipmentPool, and LocationPool at the
+        proposed insertion window and compares against the emergent activity's
+        required_resources, required_equipment, and location_id.
 
         Returns a list of conflict dicts (empty if no conflicts).
         """
         pert = schedule_network.pert
-        resource_pool = getattr(pert, "resource_pool", None)
-        if resource_pool is None:
-            return []
 
         proposed_start_iso = insertion_point.get("proposed_start")
         proposed_finish_iso = insertion_point.get("proposed_finish")
@@ -676,45 +674,123 @@ class ScheduleImpactAssessor:
         if start_dt is None or end_dt is None:
             return []
 
-        required_resources = emergent_activity.get("required_resources") or []
-        # Infer from crew_size / discipline if structured list not available
-        if not required_resources:
-            crew_size = emergent_activity.get("crew_size")
-            discipline = emergent_activity.get("discipline")
-            if crew_size and discipline:
-                required_resources = [
-                    {"skill_type": discipline.upper(), "crew_count": crew_size}
-                ]
-
         conflicts: List[JsonDict] = []
-        for req in required_resources:
-            skill = req.get("skill_type") or req.get("discipline")
-            needed = req.get("crew_count") or req.get("crew_size") or 1
-            if not skill:
-                continue
 
+        # ── Crew conflicts ────────────────────────────────────────────────────
+        resource_pool = getattr(pert, "resource_pool", None)
+        if resource_pool is not None:
+            required_resources = emergent_activity.get("required_resources") or []
+            # Infer from crew_size / discipline if structured list not available
+            if not required_resources:
+                crew_size = emergent_activity.get("crew_size")
+                discipline = emergent_activity.get("discipline")
+                if crew_size and discipline:
+                    required_resources = [
+                        {"skill_type": discipline.upper(), "crew_count": crew_size}
+                    ]
+
+            for req in required_resources:
+                skill = req.get("skill_type") or req.get("discipline")
+                needed = req.get("crew_count") or req.get("crew_size") or 1
+                if not skill:
+                    continue
+
+                try:
+                    available = resource_pool.get_availability_in_range(
+                        skill, start_dt, end_dt
+                    )
+                except Exception:
+                    LOGGER.debug(
+                        "ResourcePool query failed for skill=%s; skipping.", skill
+                    )
+                    continue
+
+                if available < needed:
+                    conflicts.append({
+                        "resource_type": "crew",
+                        "skill_type": skill,
+                        "required": needed,
+                        "available": available,
+                        "shortfall": needed - available,
+                        "window_start": proposed_start_iso,
+                        "window_end": proposed_finish_iso,
+                    })
+
+        # ── Equipment conflicts ───────────────────────────────────────────────
+        equipment_pool = getattr(pert, "equipment_pool", None)
+        if equipment_pool is not None:
+            for eq_req in emergent_activity.get("required_equipment") or []:
+                eq_id = eq_req.get("equipment_id")
+                qty_needed = eq_req.get("quantity_needed") or 1
+                if not eq_id:
+                    continue
+
+                try:
+                    available = equipment_pool.get_availability_in_range(
+                        eq_id, start_dt, end_dt
+                    )
+                except Exception:
+                    LOGGER.debug(
+                        "EquipmentPool query failed for equipment_id=%s; skipping.", eq_id
+                    )
+                    continue
+
+                if available < qty_needed:
+                    conflicts.append({
+                        "resource_type": "equipment",
+                        "equipment_id": eq_id,
+                        "required": qty_needed,
+                        "available": available,
+                        "shortfall": qty_needed - available,
+                        "window_start": proposed_start_iso,
+                        "window_end": proposed_finish_iso,
+                    })
+
+        # ── Location conflicts ────────────────────────────────────────────────
+        location_pool = getattr(pert, "location_pool", None)
+        location_id = emergent_activity.get("location_id")
+        if location_pool is not None and location_id:
             try:
-                available = resource_pool.get_availability_in_range(
-                    skill, start_dt, end_dt
+                capacity = location_pool.get_capacity_in_range(
+                    location_id, start_dt, end_dt
                 )
+                max_tasks = capacity.get("max_tasks", 0) if capacity else 0
+                if max_tasks == 0:
+                    conflicts.append({
+                        "resource_type": "location",
+                        "location_id": location_id,
+                        "required": 1,
+                        "available": 0,
+                        "shortfall": 1,
+                        "note": "Location inaccessible or at capacity during insertion window.",
+                        "window_start": proposed_start_iso,
+                        "window_end": proposed_finish_iso,
+                    })
             except Exception:
                 LOGGER.debug(
-                    "ResourcePool query failed for skill=%s; skipping.", skill
+                    "LocationPool capacity query failed for location_id=%s; skipping.", location_id
                 )
-                continue
 
-            if available < needed:
-                conflicts.append({
-                    "resource_type": "crew",
-                    "skill_type": skill,
-                    "required": needed,
-                    "available": available,
-                    "shortfall": needed - available,
-                    "window_start": proposed_start_iso,
-                    "window_end": proposed_finish_iso,
-                })
+            try:
+                if location_pool.is_confined_space(location_id):
+                    conflicts.append({
+                        "resource_type": "location",
+                        "location_id": location_id,
+                        "required": 1,
+                        "available": 1,
+                        "shortfall": 0,
+                        "note": "Confined space — confined space entry permit required.",
+                        "window_start": proposed_start_iso,
+                        "window_end": proposed_finish_iso,
+                        "confined_space": True,
+                    })
+            except Exception:
+                LOGGER.debug(
+                    "LocationPool confined-space query failed for location_id=%s; skipping.",
+                    location_id,
+                )
 
-        # Vendor conflict: is_vendor_supported flag
+        # ── Vendor conflict: is_vendor_supported flag ─────────────────────────
         if emergent_activity.get("is_vendor_supported"):
             # Conservative: flag as potential conflict if any crew conflict exists
             if conflicts:

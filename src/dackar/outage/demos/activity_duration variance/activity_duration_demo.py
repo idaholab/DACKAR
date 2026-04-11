@@ -17,7 +17,7 @@ What this script demonstrates
    CP sensitivity.
 
 Run from the outage/ directory:
-    python demos/activity_duration_demo.py
+    python "demos/activity_duration variance/activity_duration_demo.py"
 
 No external dependencies beyond the outage_uncertainty package itself.
 """
@@ -27,9 +27,11 @@ import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Path setup — works regardless of whether the package is pip-installed
+# Path setup — works regardless of whether the package is pip-installed.
+# File lives two levels below outage/ (demos/activity_duration variance/),
+# so we need parents[2]: file → activity_duration variance/ → demos/ → outage/
 # ---------------------------------------------------------------------------
-_OUTAGE_ROOT = Path(__file__).parent.parent
+_OUTAGE_ROOT = Path(__file__).resolve().parents[2]
 if str(_OUTAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(_OUTAGE_ROOT))
 

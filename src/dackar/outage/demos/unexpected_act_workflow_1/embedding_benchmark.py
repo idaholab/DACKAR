@@ -92,12 +92,12 @@ def cosine(a: list[float], b: list[float]) -> float:
 # Data loading
 # ---------------------------------------------------------------------------
 
-DEMO_DIR = Path(__file__).parent
+_BENCHMARK_DATA_DIR = Path(__file__).parent
 
 
 def load_benchmark1() -> list[dict]:
     rows = []
-    with open(DEMO_DIR / "outage_cleaning_benchmark.csv", newline="") as f:
+    with open(_BENCHMARK_DATA_DIR / "outage_cleaning_benchmark.csv", newline="") as f:
         for row in csv.DictReader(f):
             rows.append(row)
     return rows
@@ -105,7 +105,7 @@ def load_benchmark1() -> list[dict]:
 
 def load_benchmark2() -> list[dict]:
     rows = []
-    with open(DEMO_DIR / "outage_cleaning_benchmark_severity.csv", newline="") as f:
+    with open(_BENCHMARK_DATA_DIR / "outage_cleaning_benchmark_severity.csv", newline="") as f:
         for row in csv.DictReader(f):
             rows.append(row)
     return rows

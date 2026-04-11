@@ -32,7 +32,7 @@ class NormResult:
     method: str                   # "token_overlap" | "llm" | "none"
 
 
-def _tokenize(text: str) -> set:
+def tokenize(text: str) -> set:
     """Lowercase word tokens from a string."""
     return set(re.findall(r"\b[a-z]{2,}\b", text.lower()))
 
@@ -90,7 +90,7 @@ class EntityNormalizer:
                 "fm_id": fm_id,
                 "name": name,
                 "component_id": component_id,
-                "tokens": _tokenize(name),
+                "tokens": tokenize(name),
             })
 
     # ------------------------------------------------------------------
@@ -157,7 +157,7 @@ class EntityNormalizer:
     def _top_k_by_token_overlap(
         self, surface_form: str
     ) -> List[Tuple[float, Dict[str, Any]]]:
-        sf_tokens = _tokenize(surface_form)
+        sf_tokens = tokenize(surface_form)
         scored = [
             (_jaccard(sf_tokens, entry["tokens"]), entry)
             for entry in self._index

@@ -117,7 +117,7 @@ WO-2022-35102,1CSP-P-001B,2022-08-25,RF-22,"1CSP-P-001B BEARING REPL RF-22 — P
 
 ## Step 4 — Generate Outage Activity Records
 
-Generate 22 activities across RF-20 and RF-21 (training) plus 8 planned activities for RF-22 (pre-outage state). Include 2 emergent activities in each training outage to provide ground truth pattern data.
+Generate 15 activities across RF-20 and RF-21 (7 in RF-20, 8 in RF-21) plus 5 planned activities for RF-22 pre-outage state, giving 20 total. Include 2 emergent activities in each training outage to provide ground truth pattern data. RF-22 ground truth emergent records are kept in a separate subsection below and must not be loaded into the pipeline until after the prediction step has been captured — see "RF-22 Ground Truth Records" below.
 
 **Activity ID format:** `[OUTAGE]-[ROLE]-[4-digit sequence]`
 **Emergent flag:** `TRUE` for activities not in the original plan
@@ -145,6 +145,26 @@ RF22-MECH-0063,RF-22,1CSP-P-001B,WO-2022-35102,"1CSP-P-001B BEARING REPL & PMT",
 RF22-MECH-0072,RF-22,1CCW-P-002A,,"1CCW-P-002A BEARING INSP & LUBE",MECH,2024-03-06 08:00,2024-03-06 12:00,,,4.0,,FALSE,,FALSE,30.0
 RF22-OPS-0009,RF-22,1RHS-V-001A,,"1RHS-V-001A VALVE STROKE TEST & INSP",OPS,2024-03-07 06:00,2024-03-07 10:00,,,4.0,,FALSE,,FALSE,38.0
 ```
+
+### RF-22 Ground Truth Records *(holdout reveal — load only after prediction outputs are captured)*
+
+> ⚠️ These records represent what actually happened during RF-22. They must not be loaded into the graph or visible to the pipeline during the prediction step. In the demo, they are revealed only on the final showcase slide ("what actually happened"). Loading them prematurely invalidates the blind evaluation structure.
+
+```csv
+activity_id,outage_id,component_id,linked_wo_id,activity_name,role_id,planned_start,planned_end,actual_start,actual_end,planned_duration_hrs,actual_duration_hrs,emergent_flag,emergence_category,on_critical_path,float_hrs
+RF22-MECH-0089,RF-22,1RHS-P-001A,,"1RHS-P-001A BEARING & IMPELLER REPL — EMERGENT — ENHANCED INSP FOUND BEARING WEAR BEYOND LIMITS & IMPELLER EROSION. REPL BOTH. REF WO-2022-31102 CR-2022-03387",MECH,,,2024-03-02 06:00,2024-03-03 02:00,,20.0,TRUE,DISCOVERY,TRUE,0.0
+RF22-MECH-0094,RF-22,1RHS-E-001A,,"1RHS-E-001A ADDL TUBE PLUGGING — EMERGENT — 4 TUBES FOUND ABOVE PLUGGING LIMIT DURING INSP — PLUGGED PER ENG-HX-042",MECH,,,2024-03-04 06:00,2024-03-04 14:00,,8.0,TRUE,DISCOVERY,TRUE,0.0
+```
+
+**RF-22 ground truth schedule impact for showcase Slide 4:**
+
+| Component | Emergent activity | Critical path | Actual duration | Float consumed |
+|---|---|---|---|---|
+| `1RHS-P-001A` | RF22-MECH-0089 — Bearing & impeller replacement | Yes | 20 hrs | 20 hrs |
+| `1RHS-E-001A` | RF22-MECH-0094 — Additional tube plugging | Yes | 8 hrs | 8 hrs |
+
+**Slide 4 narrative (anchor scenario punchline):**
+> *"The system flagged 1RHS-P-001A as DATA-SUPPORTED risk before RF-22. During the outage, enhanced inspection confirmed bearing wear and impeller erosion beyond acceptable limits. Emergent replacement consumed 20 hours of critical path float. This is consistent with the 16- and 12-hour critical path impacts observed in RF-20 and RF-21 respectively. The heat exchanger also generated emergent tube plugging as predicted — 8 additional hours on critical path."*
 
 **Key design decisions:**
 - RF-22 activities have no actual times — this is the pre-outage prediction state
@@ -310,8 +330,8 @@ Where `criticality_weight = 2.0` if emergent activities were on critical path in
 | Component | Degradation CRs | Outages with emergent work | Causal score | Confidence tier |
 |---|---|---|---|---|
 | `1RHS-P-001A` | RF-20, RF-21 (2/2) | RF-20, RF-21 (2/2) | 1.0 × 1.0 × 2.0 = **2.0** | DATA-SUPPORTED |
-| `1RHS-E-001A` | RF-20, RF-21 (2/2) | RF-20, RF-21 (2/2) | 1.0 × 1.0 × 2.0 = **2.0** | DATA-SUPPORTED — see note |
-| `1CSP-P-001B` | RF-21 only (1/2) | 0/2 (planned WO only) | 0.5 × 0.0 × 1.0 = **0.0** → flag on escalating CR trend | SME-INFORMED |
+| `1RHS-E-001A` | RF-20, RF-21 (2/2) | RF-20, RF-21 (2/2) | 1.0 × 1.0 × 2.0 = **2.0** → downgraded — see note | SME-INFORMED — see note |
+| `1CSP-P-001B` | 0/2 (all CRs are observation) | 0/2 (planned WO only) | 0.0 (n_with_deg_cr = 0, formula guard) → flag on escalating CR trend | SME-INFORMED |
 | `1CCW-P-002A` | 0/2 | 0/2 | **0.0** | Not flagged |
 | `1RHS-V-001A` | 0/2 | 0/2 | **0.0** | Not flagged |
 
@@ -366,7 +386,7 @@ Reject / feedback:      [ Accept ] [ Reject — reason: __________________ ]
 
 ```
 Component:        1RHS-E-001A — RHR Heat Exchanger 1A
-Confidence tier:  DATA-SUPPORTED
+Confidence tier:  SME-INFORMED
 Category:         Preventive
 
 Finding:
@@ -374,6 +394,19 @@ Progressive tube degradation across RF-20 and RF-21 with additional emergent
 tube plugging in both outages. Thermal performance trending below design
 basis each cycle. Planned full tube inspection (WO-2022-33891) is appropriate;
 recommend pre-authorizing extended plugging scope.
+
+Note on confidence tier: The raw causal score formula produces the same
+value as 1RHS-P-001A, but the tier has been set to SME-INFORMED rather than
+DATA-SUPPORTED. The degradation mechanism — progressive cumulative tube wall
+loss — is different in character from an escalating single-component failure
+mode. The work scope is more bounded and predictable, but no SME has reviewed
+and confirmed the DATA-SUPPORTED classification for this component. Per the
+build guide rule, tier assignments require SME sign-off before being elevated.
+SME-INFORMED is the conservative and defensible position until that review
+occurs. This distinction also provides a cleaner demo narrative: two
+DATA-SUPPORTED components with identical scores would require explanation,
+whereas DATA-SUPPORTED (pump) vs. SME-INFORMED (heat exchanger) naturally
+illustrates the tiering system in action.
 
 Evidence chain:
   CR-2020-01203 → WO-2020-10042 → RF20-MECH-0094 (emergent, 7 hrs, critical path)
@@ -414,6 +447,8 @@ Reject / feedback:      [ Accept ] [ Reject — reason: __________________ ]
 ---
 
 ## Step 10 — User-Facing Output Mockups
+
+> ⚠️ **Before building or presenting any mockup, review the Demo Constraints section in the test case spec (§7).** Key rules: do not show raw graph visualizations, do not discuss model internals unless directly asked, do not present unvalidated causal claims, do not improvise on data provenance questions. Anyone running the demo without having read the spec should be briefed on these constraints explicitly before the meeting.
 
 Build three mockup views for the PPT. These can be HTML wireframes, styled slide layouts, or screen recordings of the live system.
 

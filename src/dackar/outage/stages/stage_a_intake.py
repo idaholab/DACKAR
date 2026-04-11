@@ -39,6 +39,28 @@ LOGGER = logging.getLogger(__name__)
 JsonDict = Dict[str, Any]
 
 # ---------------------------------------------------------------------------
+# Module-level imports for preprocessing — tried once at import time so that
+# _clean_description() and _expand_abbreviations() don't re-try on every call.
+# ---------------------------------------------------------------------------
+try:
+    from outage_uncertainty.preprocessing.cleaners import (
+        ComponentIdRemover as _ComponentIdRemover,
+        TextacyPreprocessor as _TextacyPreprocessor,
+        IdentityTransform as _IdentityTransform,
+    )
+    _CLEANERS_AVAILABLE = True
+except ImportError:
+    _CLEANERS_AVAILABLE = False
+
+try:
+    from outage_uncertainty.preprocessing.abbreviations import (
+        AbbreviationResolver as _AbbreviationResolver,
+    )
+    _ABBR_RESOLVER_AVAILABLE = True
+except ImportError:
+    _ABBR_RESOLVER_AVAILABLE = False
+
+# ---------------------------------------------------------------------------
 # Module-level keyword sets for rule-based classifiers
 # ---------------------------------------------------------------------------
 
@@ -223,11 +245,26 @@ class ActivityIntakeProcessor:
         self.entity_normalizer = entity_normalizer
         self.label_mapper = label_mapper
 
-        # Lazy-initialised fallback components — created on first use if the
-        # corresponding injected dependency is None.
-        self._fallback_id_remover = None
-        self._fallback_preprocessor = None
-        self._fallback_abbr_resolver = None
+        # Fallback cleaning chain — used when text_cleaner is not injected.
+        # Built once at init time from the preprocessing module so that
+        # _clean_description() has no conditional import logic.
+        if _CLEANERS_AVAILABLE:
+            self._fallback_id_remover = _ComponentIdRemover()
+            self._fallback_preprocessor = _TextacyPreprocessor()
+        else:
+            self._fallback_id_remover = None  # plain whitespace collapse below
+            self._fallback_preprocessor = None
+
+        # Fallback abbreviation resolver — used when abbreviation_expander is not injected.
+        if _ABBR_RESOLVER_AVAILABLE:
+            abbr_file = (
+                str(self.config.abbreviation_dict_path)
+                if self.config.abbreviation_dict_path
+                else None
+            )
+            self._fallback_abbr_resolver = _AbbreviationResolver(abbreviations_file=abbr_file)
+        else:
+            self._fallback_abbr_resolver = None  # passthrough below
 
     # ── Protocol method ───────────────────────────────────────────────────────
 
@@ -304,9 +341,10 @@ class ActivityIntakeProcessor:
         """Normalize whitespace, punctuation, and case.
 
         Uses the injected text_cleaner if available.  Falls back to
-        ComponentIdRemover → TextacyPreprocessor applied directly to the raw
-        string (does NOT run abbreviation expansion here — that is a separate
-        step so the abbreviation rate can be computed independently).
+        ComponentIdRemover → TextacyPreprocessor from the preprocessing module
+        (initialised once in __init__).  Does NOT run abbreviation expansion —
+        that is a separate step so the abbreviation rate can be computed
+        independently.
         """
         if not raw:
             return raw
@@ -318,28 +356,18 @@ class ActivityIntakeProcessor:
                 result = self.text_cleaner.clean(raw)
                 if isinstance(result, str):
                     return result
-                # If it returned an ActivityCase-like object
                 return getattr(result, "cleaned_description", raw) or raw
             except TypeError:
                 pass
 
-        # Fallback: instantiate lightweight cleaning components on demand
-        if self._fallback_id_remover is None:
-            try:
-                from dackar.outage.outage_uncertainty.preprocessing.cleaners import (
-                    ComponentIdRemover,
-                    TextacyPreprocessor,
-                )
-                self._fallback_id_remover = ComponentIdRemover()
-                self._fallback_preprocessor = TextacyPreprocessor()
-            except ImportError:
-                # Minimal fallback: whitespace normalisation only
-                self._fallback_id_remover = _RegexWhitespaceCleaner()
-                self._fallback_preprocessor = _RegexWhitespaceCleaner()
+        # Use preprocessing module components (initialised at __init__ time).
+        if self._fallback_id_remover is not None:
+            text = self._fallback_id_remover.transform(raw)
+            text = self._fallback_preprocessor.transform(text)
+            return text
 
-        text = self._fallback_id_remover.transform(raw)
-        text = self._fallback_preprocessor.transform(text)
-        return text
+        # Last-resort: collapse whitespace only (preprocessing module absent).
+        return re.sub(r"\s+", " ", raw).strip()
 
     def _expand_abbreviations(self, text: str) -> Tuple[str, float]:
         """Expand nuclear abbreviations and return (expanded_text, unknown_rate).
@@ -363,23 +391,10 @@ class ActivityIntakeProcessor:
         # Expand
         if self.abbreviation_expander is not None:
             expanded = self.abbreviation_expander.transform(text)
-        else:
-            if self._fallback_abbr_resolver is None:
-                try:
-                    from dackar.outage.outage_uncertainty.preprocessing.abbreviations import (
-                        AbbreviationResolver,
-                    )
-                    abbr_file = (
-                        str(self.config.abbreviation_dict_path)
-                        if self.config.abbreviation_dict_path
-                        else None
-                    )
-                    self._fallback_abbr_resolver = AbbreviationResolver(
-                        abbreviations_file=abbr_file
-                    )
-                except ImportError:
-                    self._fallback_abbr_resolver = _PassthroughTransform()
+        elif self._fallback_abbr_resolver is not None:
             expanded = self._fallback_abbr_resolver.transform(text)
+        else:
+            expanded = text  # preprocessing module absent — passthrough
 
         # Compute unknown rate: candidates still ALL-CAPS after expansion
         if not pre_caps:
@@ -858,15 +873,3 @@ def _make_entity(
     }
 
 
-class _RegexWhitespaceCleaner:
-    """Minimal whitespace-collapse fallback when dackar.text_processing is absent."""
-
-    def transform(self, text: str) -> str:
-        return re.sub(r"\s+", " ", text).strip()
-
-
-class _PassthroughTransform:
-    """No-op transform used when AbbreviationResolver cannot be imported."""
-
-    def transform(self, text: str) -> str:
-        return text

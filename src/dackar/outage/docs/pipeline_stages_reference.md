@@ -20,23 +20,24 @@ activity per outage.
   │   Intake        │  → cleans text, runs NER, classifies emergence type,
   └────────┬────────┘    detects regulatory constraints
            │  ActivityIntakeResult
-           │
-    ┌──────┴──────┐
-    ▼             ▼
-┌───────┐   ┌───────┐
-│Stage B│   │Stage D│  (parallel — B and D share only Stage A output)
-│KG     │   │Analog │
-│Timeline│  │Retriever│
-└───┬───┘   └───┬───┘
-    │            │
-    │  ComponentEventTimeline
-    │            │  HistoricalAnalogs
-    ▼            ▼
+           ▼
+  ┌─────────────────┐
+  │   Stage B       │  KGTimelineBuilder
+  │   KG Timeline   │  → queries KG for component event history
+  └────────┬────────┘
+           │  ComponentEventTimeline
+           ▼
   ┌─────────────────┐
   │   Stage C       │  TemporalChainScorer
   │   Temporal      │  → Allen interval algebra over KG events
   └────────┬────────┘
            │  TemporalEventChain
+           ▼
+  ┌─────────────────┐
+  │   Stage D       │  HistoricalAnalogRetriever
+  │   Analogs       │  → retrieves similar past activities, fits duration dist.
+  └────────┬────────┘
+           │  HistoricalAnalogs
            ▼
   ┌─────────────────┐
   │   Stage E       │  ScheduleImpactAssessor
@@ -61,10 +62,12 @@ activity per outage.
 
 ### Stage ordering note
 
-Stage B (KG timeline) and Stage D (historical analogs) both depend only on
-Stage A output and can be executed in parallel.  Stage C (temporal chain)
-requires Stage B.  Stage E requires Stage D.  Stages F and G are strictly
-sequential at the end.
+Stages execute strictly in sequence: A → B → C → D → E → F → G.  Each stage
+receives the outputs of all preceding stages.  The data dependencies are:
+Stage B requires Stage A (intake_result).  Stage C requires Stage B
+(component_event_timeline).  Stage D requires Stage A (intake_result).
+Stage E requires Stage D (historical_analogs).  Stages F and G consume all
+prior artifacts.
 
 ---
 
@@ -138,6 +141,7 @@ directly.  All downstream stages consume the cleaned and classified output.
 |-------|------|-------------|
 | `activity_id` | `str` | Echoed from input |
 | `run_id` | `str` | From run_context |
+| `generated_at` | `str` (ISO-8601) | Timestamp when this artifact was produced |
 | `emergence_type` | `str` | One of: `truly_unplanned`, `scope_expansion`, `regulatory_driven`, `schedule_optimization` |
 | `emergence_type_confidence` | `float` | [0, 1] confidence in the classification |
 | `emergence_type_rationale` | `str` | Human-readable reason for the classification |
@@ -263,9 +267,14 @@ Requires Stage A output (`intake_result`) to resolve the primary component ID.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `activity_id` | `str` | Echoed from input |
+| `run_id` | `str` | From run_context |
+| `generated_at` | `str` (ISO-8601) | Timestamp when this artifact was produced |
 | `component_id` | `str` | The component queried |
 | `component_name` | `str\|null` | From KG node |
 | `system_id` | `str\|null` | Parent system from PART_OF hierarchy |
+| `system_name` | `str\|null` | Human-readable system name from KG node |
+| `asset_id` | `str\|null` | Top-level asset (plant/unit) identifier |
 | `events` | `list[dict]` | Chronological list of events (see below) |
 | `recurrence_indicators` | `dict` | Repeat failure count, trend, PM compliance |
 | `data_coverage` | `dict` | Total events, date range, outages represented |
@@ -387,6 +396,9 @@ the emergent activity (a symptom)?*
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `activity_id` | `str` | Echoed from input |
+| `run_id` | `str` | From run_context |
+| `generated_at` | `str` (ISO-8601) | Timestamp when this artifact was produced |
 | `emergent_activity_interval` | `dict` | `start`, `end` (ISO-8601), `is_point_event` |
 | `chain_links` | `list[dict]` | One entry per scored prior event |
 | `summary` | `dict` | Aggregated chain result |
@@ -525,6 +537,9 @@ impact sizing) and propagates to Stages F and G.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `activity_id` | `str` | Echoed from input |
+| `run_id` | `str` | From run_context |
+| `generated_at` | `str` (ISO-8601) | Timestamp when this artifact was produced |
 | `query_summary` | `dict` | The retrieval query: description, component/system/discipline filters |
 | `analogs` | `list[dict]` | Filtered, scored analog records |
 | `duration_distribution` | `dict` | Fitted distribution (see below) |
@@ -660,7 +675,7 @@ PERT graph).
 
 | Source | Fields used |
 |--------|-------------|
-| `emergent_activity` | `outage_id`, `actual_start`, `planned_duration_hours`, `required_resources`, `crew_size`, `discipline`, `is_vendor_supported` |
+| `emergent_activity` | `outage_id`, `actual_start`, `planned_duration_hours`, `required_resources`, `crew_size`, `discipline`, `is_vendor_supported`, `required_equipment`, `location_id` |
 | `intake_result` (Stage A) | `outage_phase` |
 | `historical_analogs` (Stage D) | `duration_distribution.p50_hours`, `p80_hours`, `p90_hours`, `confidence_tier` |
 
@@ -668,14 +683,18 @@ PERT graph).
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `activity_id` | `str` | Echoed from input |
+| `run_id` | `str` | From run_context |
+| `generated_at` | `str` (ISO-8601) | Timestamp when this artifact was produced |
 | `schedule_version_id` | `str` | Identifies the schedule snapshot used |
 | `insertion_point` | `dict` | Where in the network the activity is inserted |
 | `duration_estimate` | `dict` | Echo of Stage D distribution (p50/p80/p90/mean/std) |
 | `float_analysis` | `dict` | Float consumed, available float, criticality label |
 | `cp_impact` | `dict` | CP drag, baseline vs new CP hours, sensitivity score |
 | `displaced_tasks` | `list[dict]` | Tasks delayed by the insertion |
-| `resource_conflicts` | `list[dict]` | Crew/vendor conflicts at the insertion window |
+| `resource_conflicts` | `list[dict]` | Crew, equipment, location, and vendor conflicts at the insertion window |
 | `confidence` | `float` | Overall assessment confidence [0, 1] |
+| `notes` | `list[str]` | Analyst-visible notes on assumptions or limitations (e.g., 3-scenario proxy caveat) |
 
 **`insertion_point`:**
 
@@ -760,9 +779,25 @@ function assess(emergent_activity, intake_result, historical_analogs, run_contex
         if new_ES > old_ES + 0.01h: record as displaced with es_shift_hours
 
     # Step 7 — resource conflicts (if config.check_resource_conflicts)
+    # 7a — crew (ResourcePool)
     for req in emergent_activity.required_resources:
         available = resource_pool.get_availability_in_range(skill, start, end)
-        if available < needed: record conflict
+        if available < needed: record conflict {resource_type="crew", skill_type, ...}
+
+    # 7b — equipment (EquipmentPool)
+    for eq_req in emergent_activity.required_equipment:
+        available = equipment_pool.get_availability_in_range(equipment_id, start, end)
+        if available < quantity_needed: record conflict {resource_type="equipment", equipment_id, ...}
+
+    # 7c — location (LocationPool)
+    if emergent_activity.location_id:
+        capacity = location_pool.get_capacity_in_range(location_id, start, end)
+        if capacity.max_tasks == 0: record conflict {resource_type="location", note="inaccessible"}
+        if location_pool.is_confined_space(location_id):
+            record {resource_type="location", confined_space=True, note="permit required"}
+
+    # 7d — vendor (conservative: flag if any crew conflict already raised)
+    if emergent_activity.is_vendor_supported and any crew conflicts: record vendor conflict
 
     # Step 8 — confidence
     confidence = 0.60 × tier_score(duration_dist.confidence_tier)
@@ -809,6 +844,9 @@ primary recommendation.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `activity_id` | `str` | Echoed from input |
+| `run_id` | `str` | From run_context |
+| `generated_at` | `str` (ISO-8601) | Timestamp when this artifact was produced |
 | `options` | `list[dict]` | Up to `config.max_options` option objects (see below) |
 | `recommended_option_id` | `str\|null` | ID of the top feasible + cleared option; null → INCONCLUSIVE |
 | `recommendation_confidence` | `str` | Confidence tier from Stage D |
@@ -953,6 +991,9 @@ Stage G is the only stage that consumes **all** upstream artifacts:
 | Field | Type | Description |
 |-------|------|-------------|
 | `recommendation_id` | `str` | Unique ID for this recommendation |
+| `activity_id` | `str` | Echoed from input |
+| `run_id` | `str` | From run_context |
+| `generated_at` | `str` (ISO-8601) | Timestamp when this artifact was produced |
 | `decision_status` | `str` | One of 5 statuses (see below) |
 | `executive_summary` | `dict` | Primary conclusion, confidence tier, attention flags |
 | `primary_recommendation` | `dict\|null` | The recommended option from Stage F |
@@ -1130,7 +1171,10 @@ chain = scorer.score(emergent_activity, component_event_timeline, run_context)
 
 ## 12. Unit test locations
 
-| File | Stages covered |
-|------|----------------|
+| File | Stages / coverage |
+|------|-------------------|
 | `tests/test_stages_a_c.py` | Stage A (intake, emergence classification, regulatory detection, DQ, abbr rate, NER regex layer), Stage C (all 7 Allen relations, causal strength, confidence, chain summary, end-to-end `score()`) |
-| `tests/test_stages_f_g.py` | Stage F (scoring, regulatory clearance, ranking, option generators), Stage G (analyst review, history summary, executive summary, decision status, attention flags, confidence tier), Stage D (Tukey filter, confidence tier, outlier reconstruction, tier merge fix) |
+| `tests/test_stage_b.py` | Stage B (`_score_event_dq`, `_window_start_iso`, `_select_primary_component`, `build()` no-driver, deduplication, recurrence indicators, data coverage, stub KG driver) |
+| `tests/test_stage_e.py` | Stage E (`assess()` guard, `_compute_cp_metrics`, `_compute_confidence`, `_compute_float_analysis`, `_identify_displaced_tasks`, `_build_modified_pert`, `_determine_insertion_point`, `_default_phase_windows`, `_parse_dt`/`_ensure_tz`, `_check_resource_conflicts` — crew / equipment / location / missing-window) |
+| `tests/test_stages_f_g.py` | Stage F (scoring, regulatory clearance, ranking, option generators), Stage G (analyst review including high-abbr-rate trigger, history summary, executive summary, decision status, attention flags, confidence tier), Stage D (Tukey filter, confidence tier, outlier reconstruction, tier merge fix) |
+| `tests/test_orchestrator_e2e.py` | End-to-end `run_pipeline()` with both demo scenarios (RCP seal → ESCALATE, Snubber → PROCEED); artifact schema keys; run_id propagation; Stage E fallback paths (no schedule root, nonexistent path) |

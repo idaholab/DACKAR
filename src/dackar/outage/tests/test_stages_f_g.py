@@ -590,7 +590,8 @@ class TestBuildExecutiveSummary:
     def test_attention_flags_in_output(self):
         from stages.stage_g_recommendation import _FLAG_CP_IMPACT
         result = self._call(flags=[_FLAG_CP_IMPACT])
-        assert _FLAG_CP_IMPACT in result["attention_flags"]
+        # Schema key is analyst_attention_flags (matches outage_activity_recommendation.json)
+        assert _FLAG_CP_IMPACT in result["analyst_attention_flags"]
 
 
 # ===========================================================================
