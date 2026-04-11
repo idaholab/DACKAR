@@ -422,6 +422,23 @@ def _stage_c(
     """
     Build an in-memory knowledge graph as nested Python dicts.
 
+    Production note
+    ---------------
+    In a real deployment this function is replaced by a Neo4j adapter.
+    The adapter runs Cypher queries and returns the same ``component_histories``
+    and ``schedule_by_id`` contract that ``PreOutageRiskWorkflow`` expects.
+    Nothing downstream (stages D–G) changes — the library is data-source agnostic.
+
+    Replacement call site in ``run_pipeline()``::
+
+        c = Neo4jAdapter(uri, auth).get_component_histories(
+            plant_id=plant_id,
+            training_outages=training_outages,
+            holdout_outage=holdout_outage,
+        )
+        # returns: {"nodes": ..., "edges": ...,
+        #           "component_histories": ..., "schedule_by_id": ...}
+
     Graph structure
     ---------------
     nodes: {node_id: {type, ...attributes}}
