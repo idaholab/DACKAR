@@ -1,5 +1,5 @@
 - Draft of the Miletone report
-- Report title: TBD
+- Report title: tbd
 
 # 1. Introduction [Diego]
 ...
