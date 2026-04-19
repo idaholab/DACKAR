@@ -94,7 +94,7 @@ class _StubKGDriver:
         cypher_l = cypher.lower()
 
         # Component metadata lookup (SELECT c.name, s.id … OPTIONAL MATCH)
-        if "optional match" in cypher_l and "mbse_entity" in cypher_l:
+        if "optional match" in cypher_l and "element_usage" in cypher_l:
             return [self._meta]
 
         # PM query  (work_type = $pm_code)
@@ -463,7 +463,10 @@ _SNUBBER_ANALOG_ACTIVITIES = [
     }),
 ]
 
-# Stage E pre-built: non-critical path, good float, no conflicts → PROCEED
+# Stage E pre-built: non-critical path, good float, no conflicts.
+# Decision: DEFER (after M2 fix, deferred_labor_cost excluded from cost scoring;
+# with partial causal posture (urgency=0.50) the cost tiebreaker favours defer
+# over insert_now.  PROCEED and DEFER are both acceptable for this scenario).
 _SNUBBER_SCHEDULE_IMPACT: JsonDict = {
     "activity_id": "ACT-SNB-002",
     "run_id": "run-snb-002",
@@ -507,6 +510,104 @@ SCENARIO_SNUBBER_EXT: JsonDict = {
     "kg_driver": _SNUBBER_KG_DRIVER,
     "analog_activities": _SNUBBER_ANALOG_ACTIVITIES,
     "schedule_impact": _SNUBBER_SCHEDULE_IMPACT,
+}
+
+
+# ============================================================================
+# Scenario 3 — Unknown Component, No Prior History (MONITOR path)
+# ============================================================================
+# Design intent:
+#   - Zero analogs: empty analog_activities → Stage D returns 0 candidates,
+#     confidence_tier = "low_confidence", retrieval_summary.analog_count = 0.
+#   - Non-critical schedule: criticality_label = "non_critical", 0 CP drag
+#     → escalate option never generated (below 24h threshold).
+#   - safety_related=True: defer_to_post_outage is infeasible, so the primary
+#     option is insert_now (or add_contingency_buffer) — neither escalate nor
+#     defer — allowing the MONITOR condition to fire.
+#   - No regulatory keywords in description: no defer_prohibited drivers.
+#   Result: MONITOR (low_confidence + zero analogs + non_critical path).
+
+_UNKNOWN_COMPONENT_ACTIVITY: JsonDict = {
+    "activity_id": "ACT-UNK-003",
+    "outage_id": "RF-24",
+    "plant_id": "PLANT-ALPHA",
+    "source_system": "maximo",
+    "raw_description": (
+        "During routine equipment walkdown, drain valve on auxiliary feedwater "
+        "system header (AFWS-DRN-033) found with active packing leak. "
+        "No prior condition reports or work orders found for this valve assembly. "
+        "Estimated 4 hours for packing replacement. "
+        "Component not previously catalogued in maintenance history."
+    ),
+    "known_component_id": "VLV-AFWS-033",
+    "known_system_id": "AFWS",
+    "work_order_id": "WO-45101",
+    "detection_timestamp": "2026-04-10T11:00:00",
+    "planned_duration_hours": 4.0,
+    "safety_related": True,   # blocks defer_to_post_outage → insert_now is primary
+    "discipline": "mechanical",
+}
+
+# Empty KG driver — no prior CRs, PMs, or CMs for this component.
+# Stage B produces an empty timeline → Stage C: causal_posture = "insufficient_data".
+_UNKNOWN_COMPONENT_KG_DRIVER = _StubKGDriver(
+    cr_events=[],
+    pm_events=[],
+    cm_events=[],
+    component_meta={
+        "name": "Drain Valve AFWS-033",
+        "system_id": "AFWS",
+        "system_name": "Auxiliary Feedwater System",
+        "asset_id": "RX-UNIT1",
+    },
+)
+
+# Zero analog activities — Stage D: analog_count = 0, confidence_tier = "low_confidence".
+_UNKNOWN_COMPONENT_ANALOG_ACTIVITIES: list = []
+
+# Non-critical schedule impact — 0 CP drag, ample float.
+# criticality_label = "non_critical" satisfies the MONITOR condition in Stage G.
+_UNKNOWN_COMPONENT_SCHEDULE_IMPACT: JsonDict = {
+    "activity_id": "ACT-UNK-003",
+    "run_id": "run-unk-003",
+    "generated_at": "2026-04-10T11:05:00",
+    "schedule_version_id": "RF-24-WRK-003",
+    "insertion_point": {
+        "task_id": "T-AFWS-CHECK",
+        "task_name": "Auxiliary Feedwater System Walkdown",
+        "phase": "maintenance_window",
+        "after_task_id": "T-DRAIN-COMPLETE",
+    },
+    "duration_estimate": {
+        "p50_hours": 4.0,
+        "p80_hours": 6.0,
+        "p90_hours": 8.0,
+        "confidence_tier": "low_confidence",
+    },
+    "float_analysis": {
+        "available_float_before_hours": 48.0,
+        "float_consumed_hours": 4.0,
+        "remaining_float_after_hours": 44.0,
+        "criticality_label": "non_critical",
+        "is_critical_path_impact": False,
+    },
+    "cp_impact": {
+        "cp_drag_hours": 0.0,
+        "baseline_cp_hours": 480.0,
+        "estimated_new_cp_hours": 480.0,
+    },
+    "displaced_tasks": [],
+    "resource_conflicts": [],
+    "confidence": 0.30,
+    "notes": ["No prior history; estimate based on generic valve packing procedures."],
+}
+
+SCENARIO_UNKNOWN_COMPONENT: JsonDict = {
+    "label": "Scenario 3 — Unknown Component, No Prior History",
+    "activity": _UNKNOWN_COMPONENT_ACTIVITY,
+    "kg_driver": _UNKNOWN_COMPONENT_KG_DRIVER,
+    "analog_activities": _UNKNOWN_COMPONENT_ANALOG_ACTIVITIES,
+    "schedule_impact": _UNKNOWN_COMPONENT_SCHEDULE_IMPACT,
 }
 
 

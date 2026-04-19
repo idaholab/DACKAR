@@ -57,6 +57,12 @@ _FLAG_CP_IMPACT = "critical_path_impact"
 _FLAG_HIGH_ABBR_RATE = "high_unknown_abbreviation_rate"
 _FLAG_FALLBACK = "fallback_distribution_used"
 _FLAG_DISPLACED_REGULATORY = "displaced_regulatory_tasks"
+# M1: LCO action-level clock flags
+_FLAG_LCO_EXPIRED = "lco_action_level_expired"
+_FLAG_LCO_CLOCK_CRITICAL = "lco_action_level_critical"
+
+# LCO clock statuses that require immediate attention
+_LCO_URGENT_STATUSES = {"expired", "critical", "urgent"}
 
 # Option types that map to PROCEED
 _PROCEED_OPTION_TYPES = {
@@ -80,6 +86,13 @@ class RecommendationConfig:
 
     max_evidence_items: int = 10
     """Maximum evidence chain entries to include in the artifact."""
+
+    pipeline_version: Optional[str] = None
+    """Human-readable pipeline version string written into every produced
+    artifact (e.g. ``"outage-pipeline-1.4.2"``).  Can also be supplied at
+    call time via ``run_context["pipeline_version"]``, which takes precedence.
+    Leave ``None`` to omit version tagging (acceptable during development, but
+    artifacts become indistinguishable across pipeline generations in storage)."""
 
 
 class RecommendationSynthesizer:
@@ -120,7 +133,8 @@ class RecommendationSynthesizer:
 
         primary_option = self._select_primary_option(insertion_options)
         decision_status = self._determine_decision_status(
-            primary_option, intake_result, historical_analogs, insertion_options
+            primary_option, intake_result, historical_analogs, insertion_options,
+            schedule_impact_assessment=schedule_impact_assessment,
         )
         attention_flags = self._compute_attention_flags(
             intake_result, historical_analogs, schedule_impact_assessment,
@@ -131,11 +145,13 @@ class RecommendationSynthesizer:
         )
         executive_summary = self._build_executive_summary(
             decision_status, primary_option, confidence_tier, attention_flags,
-            historical_analogs, schedule_impact_assessment
+            historical_analogs, schedule_impact_assessment,
+            intake_result=intake_result,
         )
         evidence_chain = self._assemble_evidence_chain(
             temporal_event_chain, historical_analogs,
-            schedule_impact_assessment, component_event_timeline
+            schedule_impact_assessment, component_event_timeline,
+            intake_result=intake_result,
         )
         regulatory_flags: List[JsonDict] = intake_result.get("regulatory_drivers", [])
         history_summary = self._build_history_summary(
@@ -157,7 +173,9 @@ class RecommendationSynthesizer:
             "activity_id": activity_id,
             "run_id": run_id,
             "generated_at": run_context.get("started_at", ""),
-            "pipeline_version": None,
+            "pipeline_version": (
+                run_context.get("pipeline_version") or self.config.pipeline_version
+            ),
             "decision_status": decision_status,
             "executive_summary": executive_summary,
             "primary_recommendation": self._build_primary_recommendation(primary_option),
@@ -170,7 +188,9 @@ class RecommendationSynthesizer:
             "provenance": {
                 "run_id": run_id,
                 "generated_by": self.__class__.__name__,
-                "pipeline_version": None,
+                "pipeline_version": (
+                    run_context.get("pipeline_version") or self.config.pipeline_version
+                ),
                 "input_artifacts": {
                     "emergent_activity_id": activity_id,
                     "schedule_version_id": schedule_impact_assessment.get("schedule_version_id"),
@@ -206,6 +226,7 @@ class RecommendationSynthesizer:
         intake_result: JsonDict,
         historical_analogs: JsonDict,
         insertion_options: JsonDict,
+        schedule_impact_assessment: Optional[JsonDict] = None,
     ) -> str:
         """Map the primary option and context to a decision_status enum value.
 
@@ -213,12 +234,17 @@ class RecommendationSynthesizer:
             INCONCLUSIVE — no feasible, regulatory-cleared option exists
             ESCALATE     — primary option type is escalate_to_management
             DEFER        — primary option type is defer_to_post_outage
-            MONITOR      — primary option has zero CP impact AND the analog set
-                           is empty AND duration confidence_tier is low_confidence
-                           (all three conditions required; in practice analog_count==0
-                           always implies low_confidence, so they are jointly sufficient)
+            MONITOR      — low confidence + no historical analogues + activity
+                           is non-critical path (watch, but no action yet warranted)
             PROCEED      — primary option type is insert_now / contingency /
                            parallel / scope_reduction / pre_outage_staging
+
+        ``schedule_impact_assessment`` (N5 fix): criticality_label is now read
+        from ``schedule_impact_assessment["float_analysis"]["criticality_label"]``
+        rather than the non-existent ``insertion_options["schedule_summary"]``
+        field that Stage F never produces.  The parameter is optional and defaults
+        to None so existing call sites that have not yet been updated continue to
+        work; absence is treated as non_critical (permissive MONITOR condition).
         """
         if primary_option is None:
             return _INCONCLUSIVE
@@ -231,8 +257,13 @@ class RecommendationSynthesizer:
         if option_type == "defer_to_post_outage":
             return _DEFER
 
-        # MONITOR: zero CP impact + no analog support → watch but defer decision
-        cp_impact: float = float(primary_option.get("cp_impact_hours") or 0.0)
+        # MONITOR: no historical support + non-critical → watch, no immediate action
+        # Previous condition required cp_impact==0 AND analog_count==0 AND low_confidence
+        # simultaneously.  In practice cp_impact is almost never exactly 0.0 even for
+        # non-critical activities (any float consumption produces a nonzero value), so
+        # MONITOR was never reachable.  The intent is: when we have no analog data and
+        # the activity doesn't clearly threaten the critical path, flag it for monitoring
+        # rather than committing to a PROCEED recommendation built on no evidence.
         analog_count: int = int(
             (historical_analogs.get("retrieval_summary") or {}).get("analog_count", 0)
         )
@@ -240,8 +271,15 @@ class RecommendationSynthesizer:
             (historical_analogs.get("duration_distribution") or {})
             .get("confidence_tier", "low_confidence")
         ) or "low_confidence"
-        if cp_impact == 0.0 and analog_count == 0 and dist_tier == "low_confidence":
-            return _MONITOR
+        # N5 fix: read criticality_label from schedule_impact_assessment["float_analysis"]
+        # instead of the non-existent insertion_options["schedule_summary"] field.
+        criticality_label: str = (
+            ((schedule_impact_assessment or {}).get("float_analysis") or {})
+            .get("criticality_label", "non_critical")
+        ) or "non_critical"
+        if dist_tier == "low_confidence" and analog_count == 0:
+            if criticality_label == "non_critical":
+                return _MONITOR
 
         if option_type in _PROCEED_OPTION_TYPES:
             return _PROCEED
@@ -265,10 +303,13 @@ class RecommendationSynthesizer:
             _FLAG_LOW_CONFIDENCE    — confidence_tier == 'low_confidence'
             _FLAG_LOW_ANALOGS       — analog_count < config.min_analog_count_for_no_flag
             _FLAG_TEMPORAL_CONTRADICTION — temporal_chain.summary.has_temporal_contradiction
-            _FLAG_CP_IMPACT         — schedule_impact.float_analysis.is_critical_path_impact
+            _FLAG_CP_IMPACT         — schedule_impact.float_analysis.criticality_label == "critical"
             _FLAG_HIGH_ABBR_RATE    — intake_result.unknown_abbreviation_rate > threshold
             _FLAG_FALLBACK          — historical_analogs.retrieval_summary.fallback_used
             _FLAG_DISPLACED_REGULATORY — any displaced task has has_regulatory_constraint=True
+            _FLAG_LCO_EXPIRED       — intake_result.lco_clock_status == "expired"
+            _FLAG_LCO_CLOCK_CRITICAL — lco_clock_status in {"critical", "urgent", "unknown"}
+                                       and active LCO is present
         """
         flags: List[str] = []
 
@@ -298,7 +339,7 @@ class RecommendationSynthesizer:
 
         # Critical path impact
         float_analysis = schedule_impact.get("float_analysis") or {}
-        if float_analysis.get("is_critical_path_impact"):
+        if float_analysis.get("criticality_label") == "critical":
             flags.append(_FLAG_CP_IMPACT)
 
         # High unknown abbreviation rate
@@ -315,6 +356,17 @@ class RecommendationSynthesizer:
         displaced_tasks = schedule_impact.get("displaced_tasks") or []
         if any(t.get("has_regulatory_constraint") for t in displaced_tasks):
             flags.append(_FLAG_DISPLACED_REGULATORY)
+
+        # M1: LCO action-level clock flags
+        lco_clock_status: str = intake_result.get("lco_clock_status") or "not_applicable"
+        if lco_clock_status == "expired":
+            flags.append(_FLAG_LCO_EXPIRED)
+            flags.append(_FLAG_LCO_CLOCK_CRITICAL)
+        elif lco_clock_status in ("critical", "urgent"):
+            flags.append(_FLAG_LCO_CLOCK_CRITICAL)
+        elif lco_clock_status == "unknown":
+            # Active LCO with no known deadline — treat as critical until proven otherwise
+            flags.append(_FLAG_LCO_CLOCK_CRITICAL)
 
         return flags
 
@@ -348,12 +400,17 @@ class RecommendationSynthesizer:
         attention_flags: List[str],
         historical_analogs: JsonDict,
         schedule_impact: JsonDict,
+        intake_result: Optional[JsonDict] = None,
     ) -> JsonDict:
         """Build the plain-language executive summary for the outage manager.
 
         primary_conclusion: one sentence stating the decision and key evidence.
         Example: 'Insert now — non-critical path impact (4 h float consumed);
         3 similar valve seal events in historical record, median 6.5 h.'
+
+        M1: when lco_clock_status indicates an active or expired action-level
+        deadline, the conclusion is prefixed with the clock warning so the most
+        time-critical information appears first — before any schedule or analog text.
 
         States low_confidence explicitly when applicable.
         """
@@ -419,6 +476,12 @@ class RecommendationSynthesizer:
         if confidence_tier == "low_confidence":
             conclusion += " [LOW CONFIDENCE — verify with SME before acting]"
 
+        # M1: prepend LCO action-level clock warning so it leads the briefing.
+        # This is the most time-critical information; it must appear first.
+        lco_prefix = self._build_lco_clock_prefix(intake_result)
+        if lco_prefix:
+            conclusion = lco_prefix + " " + conclusion
+
         return {
             "primary_conclusion": conclusion,
             "decision_status": decision_status,
@@ -427,6 +490,49 @@ class RecommendationSynthesizer:
             "analog_support_count": analog_count,
             "duration_p50_hours": p50,
         }
+
+    def _build_lco_clock_prefix(
+        self, intake_result: Optional[JsonDict]
+    ) -> str:
+        """Build an LCO action-level clock warning prefix for the primary conclusion.
+
+        M1: Returns a non-empty string when the LCO clock demands immediate
+        attention (expired/critical/urgent/unknown-active-lco), empty string
+        otherwise.  The prefix is prepended to the conclusion by
+        _build_executive_summary() so it always leads the manager briefing.
+        """
+        if not intake_result:
+            return ""
+
+        lco_status: str = intake_result.get("lco_clock_status") or "not_applicable"
+        hours: Optional[float] = intake_result.get("hours_to_action_level")
+        lco_number: Optional[str] = intake_result.get("lco_number")
+        lco_clause = f" (LCO {lco_number})" if lco_number else ""
+
+        if lco_status == "expired":
+            hours_str = f"{abs(hours):.1f} h ago" if hours is not None else "unknown time ago"
+            return (
+                f"\U0001f6a8 LCO ACTION LEVEL EXPIRED{lco_clause} — deadline passed "
+                f"{hours_str}. Immediate management notification required."
+            )
+        if lco_status == "critical":
+            hours_str = f"{hours:.1f} h" if hours is not None else "< 4 h"
+            return (
+                f"\U0001f6a8 LCO ACTION LEVEL CRITICAL{lco_clause} — "
+                f"{hours_str} remaining. Immediate action required."
+            )
+        if lco_status == "urgent":
+            hours_str = f"{hours:.1f} h" if hours is not None else "< 24 h"
+            return (
+                f"\u26a0 LCO ACTION LEVEL URGENT{lco_clause} — "
+                f"{hours_str} remaining. Action required this shift."
+            )
+        if lco_status == "unknown":
+            return (
+                f"\u26a0 ACTIVE LCO{lco_clause} — action-level deadline not provided. "
+                "Confirm hours-to-deadline with licensing immediately."
+            )
+        return ""
 
     def _build_primary_recommendation(
         self, primary_option: Optional[JsonDict]
@@ -451,11 +557,16 @@ class RecommendationSynthesizer:
         historical_analogs: JsonDict,
         schedule_impact: JsonDict,
         component_event_timeline: JsonDict,
+        intake_result: Optional[JsonDict] = None,
     ) -> List[JsonDict]:
         """Build the evidence chain for the recommendation.
 
         Each entry cites one specific piece of supporting evidence.
         Sources in priority order:
+            0. regulatory_constraint — inserted at position 0 when
+               intake_result.has_regulatory_constraint is True (N6 fix:
+               the max_evidence_items cap must never displace a regulatory
+               entry; anchoring it first guarantees it survives truncation)
             1. temporal_chain_link   — strongest Allen relation link(s)
             2. historical_analog     — top-similarity analogs with duration data
             3. schedule_analysis     — CP drag / float analysis result
@@ -468,6 +579,26 @@ class RecommendationSynthesizer:
         operates on outage artifact types (read-only reuse pattern).
         """
         evidence: List[JsonDict] = []
+
+        # ── 0. Regulatory constraint pinned to position 0 ─────────────────────
+        # N6: When a regulatory constraint is present the chain cap
+        # (max_evidence_items) must never push it out — anchor it first.
+        if intake_result and intake_result.get("has_regulatory_constraint"):
+            regulatory_drivers = intake_result.get("regulatory_drivers") or []
+            driver_types = ", ".join(
+                d.get("driver_type", "regulatory")
+                for d in regulatory_drivers[:3]
+            ) or "regulatory_constraint"
+            evidence.append(_make_evidence(
+                source_type="regulatory_constraint",
+                source_id=intake_result.get("activity_id", "intake"),
+                snippet=(
+                    f"Regulatory constraint present — deferral or scope reduction "
+                    f"requires licensing review. Drivers: {driver_types}."
+                ),
+                relevance_score=1.0,
+                supports=False,  # constrains the decision; not causal support
+            ))
 
         # ── 1. Strongest temporal chain link(s) ───────────────────────────────
         chain_summary = temporal_event_chain.get("summary") or {}

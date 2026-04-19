@@ -1,40 +1,49 @@
 title = "MBSE Graph Schema"
 version = "1.1"
 
-# ====================
-# Node Entities
-# ====================
+# NOTE: This schema is NO LONGER VALID!!!!! This schema is superseded by 
+# mbseSchema.toml (v3.1), which provides
+# the canonical element_definition, element_usage, port, connector, and
+# function_definition node definitions. Connectivity semantics previously
+# expressed as custom relation verbs (electrically_feeds, supplies_fluid_to,
+# provides_signal_to, controlled_by) should be expressed via connectors and
+# flow_definitions in mbseSchema.toml.
+
+# ============================================================
+# NODE ENTITIES
+# ============================================================
 
 [node.mbse_entity]
-node_description = "Represents a specific MBSE component, equipment, or system"
+node_description = "Represents a specific MBSE component, equipment, or system. In mbseSchema.toml this is split into element_definition (type-level) and element_usage (plant-specific occurrence)."
 node_properties = [
-    { name = "label", type = "string", optional = false, description = "Name of the MBSE component, equipment, or system" },
-    { name = "ID", type = "string", optional = false, description = "Unique alphanumeric code associated with the MBSE component, equipment, or system" },
-    { name = "type", type = "enum", optional = true, description = "Type of MBSE entity", enum_values = ["system", "subsystem", "component", "equipment", "interface"] },
-    { name = "status", type = "enum", optional = true, description = "Operational status of the entity", enum_values = ["active", "inactive", "under_maintenance", "decommissioned"] },
-    { name = "location", type = "string", optional = true, description = "Physical or logical location of the entity within the plant or system" }
+  { name = "id", type = "string", optional = false, description = "Unique alphanumeric code associated with the MBSE component, equipment, or system." },
+  { name = "name", type = "string", optional = false, description = "Name of the MBSE component, equipment, or system." },
+  { name = "entity_type", type = "enum", optional = true, description = "Type of MBSE entity.", enum_values = ["system", "subsystem", "component", "equipment", "interface"] },
+  { name = "status", type = "enum", optional = true, description = "Operational status of the entity.", enum_values = ["active", "inactive", "under_maintenance", "decommissioned"] },
+  { name = "location", type = "string", optional = true, description = "Physical or logical location of the entity within the plant or system." }
 ]
 
 [node.function]
-node_description = "Represents a function within the component, equipment, or system describing its operational behavior or purpose"
+node_description = "Represents a function within the component, equipment, or system describing its operational behavior or purpose. In mbseSchema.toml this is represented as function_definition."
 node_properties = [
-    { name = "name", type = "string", optional = false, description = "Name of the function" },
-    { name = "description", type = "string", optional = true, description = "Description of the function's purpose" },
-    { name = "criticality", type = "enum", optional = true, description = "Importance of the function to system operation", enum_values = ["low", "medium", "high", "mission_critical"] },
-    { name = "mode", type = "enum", optional = true, description = "Mode of function execution", enum_values = ["automatic", "manual", "hybrid"] }
+  { name = "id", type = "string", optional = false, description = "Unique identifier for the function." },
+  { name = "name", type = "string", optional = false, description = "Name of the function." },
+  { name = "description", type = "string", optional = true, description = "Description of the function's purpose." },
+  { name = "criticality", type = "enum", optional = true, description = "Importance of the function to system operation.", enum_values = ["low", "medium", "high", "mission_critical"] },
+  { name = "mode", type = "enum", optional = true, description = "Mode of function execution.", enum_values = ["automatic", "manual", "hybrid"] }
 ]
 
 [node.interface_entity]
-node_description = "Represents a defined interface used for communication or integration between MBSE entities."
+node_description = "Represents a defined interface used for communication or integration between MBSE entities. In mbseSchema.toml this is represented via port and flow_definition nodes."
 node_properties = [
-    { name = "ID", type = "string", optional = false, description = "Unique identifier for the interface" },
-    { name = "protocol", type = "string", optional = true, description = "Communication protocol or standard used" },
-    { name = "direction", type = "enum", optional = true, description = "Direction of data or control flow", enum_values = ["input", "output", "bidirectional"] }
+  { name = "id", type = "string", optional = false, description = "Unique identifier for the interface." },
+  { name = "protocol", type = "string", optional = true, description = "Communication protocol or standard used." },
+  { name = "direction", type = "enum", optional = true, description = "Direction of data or control flow.", enum_values = ["in", "out", "bidirectional"] }
 ]
 
-# ====================
-# Relationships
-# ====================
+# ============================================================
+# RELATIONS
+# ============================================================
 
 [relation.functional_dependency]
 relation_description = "Represents a functional relationship between two MBSE entities where one influences or enables the other."
@@ -42,7 +51,7 @@ from_entity = "mbse_entity"
 to_entity = "mbse_entity"
 
 [relation.composition]
-relation_description = "Denotes a hierarchical or structural relationship where one MBSE entity is a constituent part of another."
+relation_description = "Denotes a hierarchical or structural relationship where one MBSE entity is a constituent part of another. In mbseSchema.toml use has_part or has_part_usage."
 from_entity = "mbse_entity"
 to_entity = "mbse_entity"
 
@@ -52,49 +61,16 @@ from_entity = "mbse_entity"
 to_entity = "mbse_entity"
 
 [relation.implements]
-relation_description = "Represents the relationship where an MBSE entity implements a specific function."
-from_entity = "mbse_entity"
-to_entity = "function"
-
-[relation.performs_function]
-relation_description = "Indicates that an MBSE entity dynamically performs a function."
+relation_description = "Represents the relationship where an MBSE entity implements a specific function. In mbseSchema.toml use allocated_to."
 from_entity = "mbse_entity"
 to_entity = "function"
 
 [relation.decomposes]
-relation_description = "Indicates that a function is decomposed into sub-functions."
+relation_description = "Indicates that a function is decomposed into sub-functions. In mbseSchema.toml use decomposes between function_definition nodes."
 from_entity = "function"
 to_entity = "function"
 
 [relation.has_interface]
-relation_description = "Indicates that an MBSE entity uses or exposes a defined interface."
+relation_description = "Indicates that an MBSE entity uses or exposes a defined interface. In mbseSchema.toml use owns_port."
 from_entity = "mbse_entity"
 to_entity = "interface_entity"
-
-[relation.electrically_feeds]
-relation_description = " [] "
-from_entity = "mbse_entity"
-to_entity = "mbse_entity"
-
-[relation.provides_signal_to]
-relation_description = " [] "
-from_entity = "mbse_entity"
-to_entity = "mbse_entity"
-
-[relation.supplies_fluid_to]
-relation_description = " [] "
-from_entity = "mbse_entity"
-to_entity = "mbse_entity"
-
-[relation.controlled_by]
-relation_description = " [] "
-from_entity = "mbse_entity"
-to_entity = "mbse_entity"
-
-
-
-
-
-
-
-

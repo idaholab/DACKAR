@@ -70,6 +70,33 @@ _DEFAULT_PARTIAL_CREDIT: dict[tuple, float] = {
 }
 
 
+def _normalise_pc(
+    pc: dict[tuple, float],
+) -> dict[tuple, float]:
+    """Return a copy of *pc* with string value components lowercased.
+
+    ``_compare`` looks up keys as ``(field, norm_a, norm_b)`` where
+    ``norm_a``/``norm_b`` are already ``str.lower()``-ed.  If a caller
+    passes keys with mixed-case values (e.g.
+    ``("task_family", "Replacement", "Refurbishment")``), the lookup
+    would silently miss and return 0.0.  Normalising at ingestion time
+    makes the constraint transparent rather than a footgun.
+    """
+    out: dict[tuple, float] = {}
+    for key, score in pc.items():
+        if len(key) == 3:
+            field, va, vb = key
+            norm_key = (
+                field,
+                va.strip().lower() if isinstance(va, str) else va,
+                vb.strip().lower() if isinstance(vb, str) else vb,
+            )
+        else:
+            norm_key = key
+        out[norm_key] = score
+    return out
+
+
 class ContextSimilarityScorer:
     """Score contextual (metadata-level) similarity between two activities.
 
@@ -79,7 +106,9 @@ class ContextSimilarityScorer:
             sum.  Defaults to :data:`_DEFAULT_WEIGHTS`.
         partial_credit: ``{(field, val_a, val_b): score}`` dict for related
             but non-identical values.  Merged on top of the built-in starter
-            set unless ``replace_defaults=True``.
+            set unless ``replace_defaults=True``.  String value components
+            are lowercased automatically on ingestion so callers do not need
+            to match the exact case used in ``_compare``'s normalisation.
         replace_defaults: When ``True``, the supplied ``partial_credit`` dict
             completely replaces the built-in one instead of extending it.
     """
@@ -93,11 +122,11 @@ class ContextSimilarityScorer:
         self.weights: dict[str, float] = weights or dict(_DEFAULT_WEIGHTS)
 
         if replace_defaults:
-            self._partial: dict[tuple, float] = dict(partial_credit or {})
+            self._partial: dict[tuple, float] = _normalise_pc(partial_credit or {})
         else:
             self._partial = dict(_DEFAULT_PARTIAL_CREDIT)
             if partial_credit:
-                self._partial.update(partial_credit)
+                self._partial.update(_normalise_pc(partial_credit))
 
     # ------------------------------------------------------------------
     # Public interface expected by SimilarityEngine
@@ -129,6 +158,10 @@ class ContextSimilarityScorer:
             return 0.0
 
         total_weight = sum(applicable.values())
+        if total_weight <= 0.0:
+            # All applicable weights are zero (e.g. caller passed a fully-zero
+            # weight dict).  Avoid division by zero; return 0 — no evidence.
+            return 0.0
         return sum(applicable[f] / total_weight * raw[f] for f in applicable)
 
     # ------------------------------------------------------------------

@@ -52,6 +52,114 @@ from .protocols import (
 LOGGER = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _stub_component_event_timeline(
+    run_id: str,
+    activity_id: str,
+    reason: str,
+) -> JsonDict:
+    """Return an empty ComponentEventTimeline used when Stage B cannot determine
+    a component_id (e.g. no resolved_component_ids and no known_component_id).
+
+    All history fields are empty/zero so downstream stages degrade gracefully:
+    Stage C produces ``causal_posture = "insufficient_data"`` with zero chain links.
+    Stage D runs independently and is unaffected.
+    Stage G cannot raise KG-derived attention flags (correct — no KG data available).
+
+    The ``kg_driver_available`` flag is ``False`` so the orchestrator surfaces
+    this in ``review_hooks`` as ``kg_unavailable``.
+    """
+    return {
+        "activity_id": activity_id,
+        "run_id": run_id,
+        "generated_at": utcnow_iso(),
+        "component_id": "",
+        "component_name": None,
+        "system_id": None,
+        "asset_id": None,
+        "kg_driver_available": False,
+        "events": [],
+        "recurrence_indicators": {
+            "repeat_failure_count": 0,
+            "mean_inter_event_days": None,
+            "trend": "insufficient_data",
+            "last_cm_date": None,
+            "last_pm_date": None,
+            "pm_compliance_status": "unknown",
+        },
+        "data_coverage": {
+            "total_events": 0,
+            "outages_represented": 0,
+            "earliest_event": None,
+            "latest_event": None,
+            "data_quality_summary": None,
+        },
+        "provenance": {
+            "generated_by": "stub",
+            "run_id": run_id,
+            "kg_driver_version": None,
+            "query_window_days": 0,
+            "notes": [reason],
+        },
+    }
+
+
+def _stub_schedule_impact_artifact(
+    run_id: str,
+    activity_id: str,
+    reason: str,
+) -> JsonDict:
+    """Return a null ScheduleImpactAssessment used when Stage E cannot load
+    the schedule network (e.g. ``schedule_loader`` not injected).
+
+    All CP-derived fields are ``None`` so downstream stages degrade gracefully:
+    Stage F defaults to permissive float estimates and Stage G cannot raise
+    ``_FLAG_CP_IMPACT`` (correct — no schedule information is available).
+
+    The stub is identified by ``schedule_version_id == "STUB::no_schedule"`` and
+    the reason string in ``notes``.  The run manifest ``review_hooks`` surfaces
+    ``kg_unavailable`` so analysts know the recommendation was made without
+    schedule data.
+    """
+    return {
+        "activity_id": activity_id,
+        "run_id": run_id,
+        "generated_at": utcnow_iso(),
+        "schedule_version_id": "STUB::no_schedule",
+        "duration_estimate": {
+            "p50_hours": 0.0,
+            "p80_hours": 0.0,
+            "p90_hours": 0.0,
+            "confidence_tier": "low_confidence",
+        },
+        "float_analysis": {
+            "criticality_label": "non_critical",
+            "float_consumed_hours": 0.0,
+            "available_float_before_hours": None,
+            "remaining_float_after_hours": None,
+            "is_critical_path_impact": False,
+        },
+        "cp_impact": {
+            "cp_drag_hours": 0.0,
+            "baseline_cp_hours": 0.0,
+            "estimated_new_cp_hours": 0.0,
+        },
+        "displaced_tasks": [],
+        "resource_conflicts": [],
+        "confidence": 0.0,
+        "notes": [reason],
+        "provenance": {
+            "generated_by": "stub",
+            "run_id": run_id,
+            "schedule_graph_version": None,
+            "monte_carlo_runs": 0,
+        },
+    }
+
+
 @dataclass
 class OutageActivityOrchestrator:
     """Pipeline orchestrator for unexpected outage activity analysis.
@@ -101,6 +209,63 @@ class OutageActivityOrchestrator:
     schedule_impact_assessor: ScheduleImpactAssessor
     option_generator: InsertionOptionGenerator
     recommendation_synthesizer: RecommendationSynthesizer
+
+    # ── Optional: completion feedback loop ────────────────────────────────────
+    feedback_writer: Optional[Any] = None
+    """Optional :class:`~stages.completion_feedback.CompletionFeedbackWriter`
+    that closes the learning loop by writing actual execution data back into
+    the historical analog index after an activity completes in the field.
+
+    Typical wiring::
+
+        from stages.completion_feedback import CompletionFeedbackWriter, CsvAnalogPersister
+
+        orchestrator = OutageActivityOrchestrator(
+            ...
+            feedback_writer=CompletionFeedbackWriter(
+                index=analog_retriever.index,           # shared HistoricalActivityIndex
+                persister=CsvAnalogPersister("/data/analogs/activities.csv"),
+            ),
+        )
+
+        # After the field activity completes, call record_completion():
+        result = orchestrator.record_completion(
+            activity_id="ACT-20260412-001",
+            run_id="OUTAGE::abc123",
+            actual_duration_hours=16.2,
+            actual_start="2026-04-12T08:00:00Z",
+            actual_finish="2026-04-13T00:12:00Z",
+            outcome_notes="Packing replaced; no scope expansion.",
+        )
+        # result.index_updated → True    (Stage D retrieval benefits immediately)
+        # result.persisted     → True    (next outage cycle sees this activity)
+
+    When ``None`` (default) calls to ``record_completion()`` log a WARNING and
+    return a no-op result; the pipeline continues unaffected.
+    """
+
+    # ── Optional: two-pass insertion point pre-computation (Gap 4) ────────────
+    insertion_point_determiner: Optional[Any] = None
+    """Optional :class:`~stages.insertion_point_determiner.InsertionPointDeterminer`
+    injected to enable the two-pass analog retrieval design.
+
+    When provided the orchestrator runs a lightweight insertion-point
+    determination between Stage C and Stage D.  The resulting
+    ``ScheduleContext`` is threaded into both Stage D (structural affinity
+    re-ranking) and Stage E (insertion point reuse).
+
+    What the two-pass design saves: Stage E skips its own insertion-point
+    search because the answer is already in ``ScheduleContext``.
+    What it does NOT save: Stage E still loads the full schedule
+    independently for Monte Carlo simulation.  The schedule is therefore
+    loaded twice — once in the pre-pass and once in Stage E.  To eliminate
+    the second load, cache the loaded ``OutageData`` inside ``ScheduleContext``
+    and have Stage E read it from there instead of re-fetching.
+
+    When ``None`` (default) the pipeline behaves exactly as before: Stage D
+    runs without schedule context and Stage E determines the insertion point
+    independently as it always has.
+    """
 
     # ── Configuration ─────────────────────────────────────────────────────────
     config: OutageOrchestratorConfig = field(
@@ -165,6 +330,7 @@ class OutageActivityOrchestrator:
             intake_result=intake_result,
             run_context=run_context,
             precomputed=component_event_timeline,
+            optional_failures=optional_failures,
         )
 
         # ── Stage C — Temporal Event Chain ────────────────────────────────────
@@ -176,6 +342,19 @@ class OutageActivityOrchestrator:
             precomputed=temporal_event_chain,
         )
 
+        # ── Pre-pass: insertion point determination (Gap 4 two-pass design) ──
+        # Runs after Stage C and before Stage D.  Requires no duration
+        # distribution — only the schedule network + activity metadata.
+        # Results are threaded into Stage D (structural affinity re-ranking)
+        # and Stage E (insertion point reuse).  Note: Stage E still loads the
+        # full schedule independently for Monte Carlo — only the insertion-point
+        # determination step is avoided, not the schedule load itself.
+        # Falls back to None → existing behavior when determiner not injected.
+        schedule_context = self._precompute_schedule_context(
+            emergent_activity=emergent_activity,
+            intake_result=intake_result,
+        )
+
         # ── Stage D — Historical Analogs (before E: provides duration dist.) ──
         historical_analogs = self._stage_d_analogs(
             run_id=run_id,
@@ -183,6 +362,7 @@ class OutageActivityOrchestrator:
             intake_result=intake_result,
             run_context=run_context,
             precomputed=historical_analogs,
+            schedule_context=schedule_context,
         )
 
         # ── Stage E — Schedule Impact Assessment ──────────────────────────────
@@ -193,6 +373,8 @@ class OutageActivityOrchestrator:
             historical_analogs=historical_analogs,
             run_context=run_context,
             precomputed=schedule_impact_assessment,
+            optional_failures=optional_failures,
+            schedule_context=schedule_context,
         )
 
         # ── Stage F — Insertion Option Generation ────────────────────────────
@@ -245,6 +427,94 @@ class OutageActivityOrchestrator:
             "outage_activity_recommendation": outage_activity_recommendation,
             "run_manifest": run_manifest,
         }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Completion feedback — learning loop entry point
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def record_completion(
+        self,
+        *,
+        activity_id: str,
+        run_id: str,
+        actual_duration_hours: float,
+        actual_start: Optional[str] = None,
+        actual_finish: Optional[str] = None,
+        outcome_notes: str = "",
+        outage_id: Optional[str] = None,
+        plant_id: Optional[str] = None,
+    ) -> Any:
+        """Record that an emergent activity has completed in the field.
+
+        Delegates to the injected ``feedback_writer`` to:
+
+        1. Hot-update the in-memory ``HistoricalActivityIndex`` shared with
+           Stage D — subsequent Stage D retrievals in the same session
+           immediately incorporate the real execution time.
+        2. Persist the record to the backing analog store via the injected
+           ``AnalogPersister`` — the *next* outage cycle's ``build()`` call
+           will include this activity with its actual duration.
+
+        Both operations are best-effort: failures are logged and reflected in
+        the returned ``CompletionRecord`` rather than raised.
+
+        Args:
+            activity_id: The emergent activity that completed.
+            run_id: The pipeline run that produced the original recommendation.
+            actual_duration_hours: Observed field duration (must be > 0).
+            actual_start: ISO-8601 field start timestamp (optional).
+            actual_finish: ISO-8601 field finish timestamp (optional).
+            outcome_notes: Free-text operator notes (optional).
+            outage_id: Used when the activity is not in the index (fallback).
+            plant_id: Used when the activity is not in the index (fallback).
+
+        Returns:
+            :class:`~stages.completion_feedback.CompletionRecord` with
+            ``index_updated``, ``persisted``, and ``validation_warnings``.
+            Returns a minimal no-op record if no ``feedback_writer`` is injected.
+        """
+        if self.feedback_writer is None:
+            LOGGER.warning(
+                "record_completion called for activity %s (run=%s) but no "
+                "feedback_writer is injected — write-back skipped. "
+                "Inject a CompletionFeedbackWriter to enable the learning loop.",
+                activity_id, run_id,
+            )
+            # Return a minimal no-op object so callers can check .index_updated
+            # without an isinstance guard.
+            try:
+                from dackar.outage.stages.completion_feedback import (
+                    CompletionRecord,
+                    _utcnow_iso as _fb_utcnow,
+                )
+            except ImportError:
+                from stages.completion_feedback import (  # type: ignore[no-redef]
+                    CompletionRecord,
+                    _utcnow_iso as _fb_utcnow,
+                )
+            return CompletionRecord(
+                activity_id=activity_id,
+                run_id=run_id,
+                actual_duration_hours=actual_duration_hours,
+                actual_start=actual_start,
+                actual_finish=actual_finish,
+                outcome_notes=outcome_notes,
+                written_at=_fb_utcnow(),
+                index_updated=False,
+                persisted=False,
+                validation_warnings=("feedback_writer not injected",),
+            )
+
+        return self.feedback_writer.record_completion(
+            activity_id=activity_id,
+            run_id=run_id,
+            actual_duration_hours=actual_duration_hours,
+            actual_start=actual_start,
+            actual_finish=actual_finish,
+            outcome_notes=outcome_notes,
+            outage_id=outage_id,
+            plant_id=plant_id,
+        )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Run context (not a skippable stage)
@@ -334,12 +604,21 @@ class OutageActivityOrchestrator:
         intake_result: JsonDict,
         run_context: JsonDict,
         precomputed: Optional[JsonDict],
+        optional_failures: List[JsonDict],
     ) -> JsonDict:
         """Stage B — KG Timeline Builder.
 
         Queries the knowledge graph for the resolved component(s) and assembles
         a time-ordered ComponentEventTimeline of CRs, WOs, maintenance events,
         inspections, and prior emergent activities.
+
+        When ``kg_timeline_builder.build()`` raises ``ValueError`` (no resolvable
+        component_id), this method catches the error, logs a WARNING, appends to
+        ``optional_failures``, and returns an empty stub timeline so Stages C, F,
+        and G can still produce a partial recommendation.  The ``kg_driver_available``
+        flag in the stub is ``False``, which is surfaced in ``review_hooks`` as
+        ``kg_unavailable`` so the analyst knows the recommendation was made without
+        KG history.
         """
         if precomputed is not None:
             LOGGER.debug("Stage B skipped — using pre-computed component_event_timeline")
@@ -347,11 +626,32 @@ class OutageActivityOrchestrator:
             return precomputed
 
         LOGGER.info("Stage B — KG timeline query (run=%s)", run_id)
-        component_event_timeline = self.kg_timeline_builder.build(
-            emergent_activity=emergent_activity,
-            intake_result=intake_result,
-            run_context=run_context,
-        )
+        activity_id: str = emergent_activity.get("activity_id", "unknown")
+        try:
+            component_event_timeline = self.kg_timeline_builder.build(
+                emergent_activity=emergent_activity,
+                intake_result=intake_result,
+                run_context=run_context,
+            )
+        except ValueError as exc:
+            reason = str(exc)
+            LOGGER.warning(
+                "Stage B (run=%s): cannot determine component_id — "
+                "producing empty stub timeline. Downstream stages will run "
+                "without KG history. Reason: %s",
+                run_id, reason,
+            )
+            optional_failures.append({
+                "stage": "stage_b_kg_timeline",
+                "artifact": "component_event_timeline",
+                "error": reason,
+                "optional": True,
+            })
+            component_event_timeline = _stub_component_event_timeline(
+                run_id=run_id,
+                activity_id=activity_id,
+                reason=reason,
+            )
 
         self._validate_and_persist(run_id, "component_event_timeline", component_event_timeline)
         return component_event_timeline
@@ -392,12 +692,18 @@ class OutageActivityOrchestrator:
         intake_result: JsonDict,
         run_context: JsonDict,
         precomputed: Optional[JsonDict],
+        schedule_context: Optional[Any] = None,
     ) -> JsonDict:
         """Stage D — Historical Analog Retriever.
 
         Retrieves the most similar past emergent activities from the indexed
         historical record and fits a duration distribution.  The duration
         distribution is consumed by Stage E — this is why D runs before E.
+
+        When ``schedule_context`` is provided (Gap 4 two-pass design) the
+        retriever applies a structural affinity re-ranking pass and stamps
+        the query ActivityCase with predecessor/successor topology for
+        future DependencyPatternScorer activation.
         """
         if precomputed is not None:
             LOGGER.debug("Stage D skipped — using pre-computed historical_analogs")
@@ -409,6 +715,7 @@ class OutageActivityOrchestrator:
             emergent_activity=emergent_activity,
             intake_result=intake_result,
             run_context=run_context,
+            schedule_context=schedule_context,
         )
 
         self._validate_and_persist(run_id, "historical_analogs", historical_analogs)
@@ -422,12 +729,26 @@ class OutageActivityOrchestrator:
         historical_analogs: JsonDict,
         run_context: JsonDict,
         precomputed: Optional[JsonDict],
+        optional_failures: List[JsonDict],
+        schedule_context: Optional[Any] = None,
     ) -> JsonDict:
         """Stage E — Schedule Impact Assessor.
 
         Inserts the emergent activity into the current schedule network and
         computes critical path impact using the duration distribution from
         Stage D for Monte Carlo simulation.
+
+        When ``schedule_context`` is provided (Gap 4 two-pass design) the
+        assessor reuses the pre-computed insertion point rather than
+        re-loading and re-traversing the schedule network.
+
+        When ``schedule_loader`` or ``schedule_graph_builder`` are not injected
+        into the assessor, Stage E raises ``RuntimeError``.  This method catches
+        that error, logs a WARNING, appends to ``optional_failures``, and returns
+        a null stub artifact so Stages F and G can still produce a partial
+        recommendation based on analog data alone.  The ``schedule_loader_unavailable``
+        flag in the stub is surfaced in ``review_hooks`` so the analyst knows the
+        recommendation was made without schedule data.
         """
         if precomputed is not None:
             LOGGER.debug("Stage E skipped — using pre-computed schedule_impact_assessment")
@@ -435,12 +756,34 @@ class OutageActivityOrchestrator:
             return precomputed
 
         LOGGER.info("Stage E — schedule impact assessment (run=%s)", run_id)
-        schedule_impact_assessment = self.schedule_impact_assessor.assess(
-            emergent_activity=emergent_activity,
-            intake_result=intake_result,
-            historical_analogs=historical_analogs,
-            run_context=run_context,
-        )
+        activity_id: str = emergent_activity.get("activity_id", "unknown")
+        try:
+            schedule_impact_assessment = self.schedule_impact_assessor.assess(
+                emergent_activity=emergent_activity,
+                intake_result=intake_result,
+                historical_analogs=historical_analogs,
+                run_context=run_context,
+                schedule_context=schedule_context,
+            )
+        except RuntimeError as exc:
+            reason = str(exc)
+            LOGGER.warning(
+                "Stage E (run=%s): schedule_loader unavailable — "
+                "producing null stub artifact. Downstream stages will run "
+                "without CP metrics. Reason: %s",
+                run_id, reason,
+            )
+            optional_failures.append({
+                "stage": "stage_e_schedule",
+                "artifact": "schedule_impact_assessment",
+                "error": reason,
+                "optional": True,
+            })
+            schedule_impact_assessment = _stub_schedule_impact_artifact(
+                run_id=run_id,
+                activity_id=activity_id,
+                reason=reason,
+            )
 
         self._validate_and_persist(run_id, "schedule_impact_assessment", schedule_impact_assessment)
         return schedule_impact_assessment
@@ -543,6 +886,8 @@ class OutageActivityOrchestrator:
         """
         review_hooks = self._compute_review_hooks(
             intake_result=intake_result,
+            component_event_timeline=component_event_timeline,
+            schedule_impact_assessment=schedule_impact_assessment,
             outage_activity_recommendation=outage_activity_recommendation,
             optional_failures=optional_failures,
         )
@@ -572,6 +917,7 @@ class OutageActivityOrchestrator:
                 },
                 "component_event_timeline": {
                     "present": True,
+                    "kg_driver_available": component_event_timeline.get("kg_driver_available", True),
                     "total_events": (component_event_timeline.get("data_coverage") or {}).get("total_events"),
                     "repeat_failure_count": (component_event_timeline.get("recurrence_indicators") or {}).get("repeat_failure_count"),
                     "pm_compliance_status": (component_event_timeline.get("recurrence_indicators") or {}).get("pm_compliance_status"),
@@ -592,6 +938,7 @@ class OutageActivityOrchestrator:
                 },
                 "schedule_impact_assessment": {
                     "present": True,
+                    "schedule_loader_unavailable": schedule_impact_assessment.get("schedule_loader_unavailable", False),
                     "criticality_label": (schedule_impact_assessment.get("float_analysis") or {}).get("criticality_label"),
                     "cp_drag_hours": (schedule_impact_assessment.get("cp_impact") or {}).get("cp_drag_hours"),
                     "float_consumed_hours": (schedule_impact_assessment.get("float_analysis") or {}).get("float_consumed_hours"),
@@ -603,6 +950,7 @@ class OutageActivityOrchestrator:
                     "options_feasible": options_summary.get("options_feasible"),
                     "options_regulatory_blocked": options_summary.get("options_regulatory_blocked"),
                     "recommended_option_id": insertion_options.get("recommended_option_id"),
+                    "min_cost_option_id": insertion_options.get("min_cost_option_id"),
                 },
                 "outage_activity_recommendation": {
                     "present": True,
@@ -630,6 +978,8 @@ class OutageActivityOrchestrator:
     def _compute_review_hooks(
         self,
         intake_result: JsonDict,
+        component_event_timeline: JsonDict,
+        schedule_impact_assessment: JsonDict,
         outage_activity_recommendation: JsonDict,
         optional_failures: List[JsonDict],
     ) -> JsonDict:
@@ -646,6 +996,16 @@ class OutageActivityOrchestrator:
         has_regulatory_constraint = bool(intake_result.get("has_regulatory_constraint", False))
         abbr_rate = float(intake_result.get("unknown_abbreviation_rate") or 0.0)
         abbr_rate_high = abbr_rate > self.config.unknown_abbreviation_rate_warning
+
+        # When kg_driver_available is absent (pre-computed artifact without the field),
+        # default to True to avoid spurious warnings on replayed runs.
+        kg_unavailable = not component_event_timeline.get("kg_driver_available", True)
+
+        # When schedule_loader_unavailable is True Stage E produced a null stub;
+        # the recommendation was made without schedule/CP data.
+        schedule_loader_unavailable = bool(
+            schedule_impact_assessment.get("schedule_loader_unavailable", False)
+        )
 
         decision_status = rec.get("decision_status")
         confidence_tier = exec_summary.get("confidence_tier")
@@ -674,6 +1034,8 @@ class OutageActivityOrchestrator:
             "minimum_evidence_met": min_evidence_met,
             "fallback_used": fallback_used,
             "has_regulatory_constraint": has_regulatory_constraint,
+            "kg_unavailable": kg_unavailable,
+            "schedule_loader_unavailable": schedule_loader_unavailable,
             "high_unknown_abbreviation_rate": abbr_rate_high,
             "unknown_abbreviation_rate": abbr_rate,
             "confidence_tier": confidence_tier,
@@ -685,6 +1047,46 @@ class OutageActivityOrchestrator:
     # ─────────────────────────────────────────────────────────────────────────
     # Internal helpers
     # ─────────────────────────────────────────────────────────────────────────
+
+    def _precompute_schedule_context(
+        self,
+        emergent_activity: JsonDict,
+        intake_result: JsonDict,
+    ) -> Optional[Any]:
+        """Run the lightweight insertion-point pre-pass (Gap 4 two-pass design).
+
+        Calls ``insertion_point_determiner.determine()`` and returns the
+        resulting ``ScheduleContext``.  Returns ``None`` when:
+
+        - ``insertion_point_determiner`` was not injected (default behavior).
+        - The determiner raises or returns ``None`` itself (graceful degradation).
+
+        Callers pass the result into both Stage D and Stage E; both stages
+        fall back to their existing behavior when ``None`` is received.
+        """
+        if self.insertion_point_determiner is None:
+            return None
+        try:
+            ctx = self.insertion_point_determiner.determine(
+                emergent_activity, intake_result
+            )
+            if ctx is not None:
+                LOGGER.debug(
+                    "Pre-pass: ScheduleContext computed for activity %s "
+                    "(after=%s, on_cp=%s, float=%.2f h)",
+                    emergent_activity.get("activity_id"),
+                    getattr(ctx, "after_task_id", None),
+                    getattr(ctx, "insertion_on_cp", None),
+                    getattr(ctx, "available_float_hours", 0.0),
+                )
+            return ctx
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning(
+                "Pre-pass: InsertionPointDeterminer failed for activity %s: %s — "
+                "continuing without schedule context",
+                emergent_activity.get("activity_id"), exc,
+            )
+            return None
 
     def _validate_and_persist(
         self,

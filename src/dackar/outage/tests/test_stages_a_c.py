@@ -161,45 +161,45 @@ class TestClassifyEmergenceType:
 class TestDetectRegulatoryConstraints:
 
     def test_ts_text_pattern_defer_prohibited(self):
-        """'TS 3.5.2' in text → technical_specification driver, defer_prohibited=True."""
+        """'TS 3.5.2' in text → ts_surveillance driver, defer_prohibited=True."""
         proc = _proc()
         has_reg, drivers = proc._detect_regulatory_constraints(
             {}, [], "required per TS 3.5.2"
         )
         assert has_reg is True
         types = [d["driver_type"] for d in drivers]
-        assert "technical_specification" in types
-        ts_driver = next(d for d in drivers if d["driver_type"] == "technical_specification")
+        assert "ts_surveillance" in types
+        ts_driver = next(d for d in drivers if d["driver_type"] == "ts_surveillance")
         assert ts_driver["defer_prohibited"] is True
 
     def test_alara_not_defer_prohibited(self):
-        """ALARA → alara_requirement, defer_prohibited=False."""
+        """ALARA → alara_constraint, defer_prohibited=False."""
         proc = _proc()
         has_reg, drivers = proc._detect_regulatory_constraints(
             {}, [], "work requires ALARA dose minimisation plan"
         )
-        alara = next((d for d in drivers if d["driver_type"] == "alara_requirement"), None)
+        alara = next((d for d in drivers if d["driver_type"] == "alara_constraint"), None)
         assert alara is not None
         assert alara["defer_prohibited"] is False
 
     def test_surveillance_keyword_defer_prohibited(self):
-        """'surveillance' keyword → surveillance_requirement, defer_prohibited=True."""
+        """'surveillance' keyword → ts_surveillance driver, defer_prohibited=True."""
         proc = _proc()
         has_reg, drivers = proc._detect_regulatory_constraints(
             {}, [], "quarterly valve surveillance test"
         )
-        surv = next((d for d in drivers if d["driver_type"] == "surveillance_requirement"), None)
+        surv = next((d for d in drivers if d["driver_type"] == "ts_surveillance"), None)
         assert surv is not None
         assert surv["defer_prohibited"] is True
 
     def test_structured_field_technical_spec(self):
-        """technical_specification_reference field → driver added from intake record."""
+        """technical_specification_reference field → ts_surveillance driver from intake record."""
         proc = _proc()
         has_reg, drivers = proc._detect_regulatory_constraints(
             {"technical_specification_reference": "TS 3.8.1"}, [], "install battery"
         )
         assert has_reg is True
-        ts = next((d for d in drivers if d["driver_type"] == "technical_specification"), None)
+        ts = next((d for d in drivers if d["driver_type"] == "ts_surveillance"), None)
         assert ts is not None
         assert ts["source"] == "intake_record_field"
 
@@ -211,7 +211,7 @@ class TestDetectRegulatoryConstraints:
             [],
             "per TS 3.5.2 surveillance requirement",
         )
-        ts_drivers = [d for d in drivers if d["driver_type"] == "technical_specification"]
+        ts_drivers = [d for d in drivers if d["driver_type"] == "ts_surveillance"]
         assert len(ts_drivers) == 1
 
     def test_no_constraint_clean_text(self):
@@ -231,6 +231,192 @@ class TestDetectRegulatoryConstraints:
         )
         ids = [d["driver_id"] for d in drivers]
         assert len(ids) == len(set(ids))
+
+    # ── Y2 fix: driver_type values must match schema enum ────────────────────
+
+    _VALID_DRIVER_TYPES = frozenset({
+        "ts_surveillance", "nrc_commitment", "cap_commitment",
+        "hold_point", "alara_constraint", "license_basis_inspection", "other",
+    })
+
+    def test_y2_all_builtin_driver_types_are_schema_valid(self):
+        """Y2 fix: every built-in pattern must produce a schema-valid driver_type."""
+        proc = _proc()
+        # Cover all built-in pattern triggers in a single text
+        text = (
+            "TS 3.5.2 LCO 3.4.6 limiting condition for operation "
+            "NRC 10 CFR 50 ALARA CAP surveillance operability determination "
+            "hold point mode exit"
+        )
+        _, drivers = proc._detect_regulatory_constraints({}, [], text)
+        for d in drivers:
+            assert d["driver_type"] in self._VALID_DRIVER_TYPES, (
+                f"driver_type '{d['driver_type']}' not in schema enum (Y2 fix)"
+            )
+
+    def test_y2_lco_number_field_produces_ts_surveillance(self):
+        """Y2 fix: lco_number structured field → ts_surveillance driver (was limiting_condition_for_operation)."""
+        proc = _proc()
+        _, drivers = proc._detect_regulatory_constraints(
+            {"lco_number": "LCO 3.4.6"}, [], "rcp seal degradation"
+        )
+        types = [d["driver_type"] for d in drivers]
+        assert "limiting_condition_for_operation" not in types, (
+            "limiting_condition_for_operation is not a valid schema enum value (Y2 fix)"
+        )
+        assert any(t in self._VALID_DRIVER_TYPES for t in types)
+
+    def test_y2_technical_spec_reference_field_produces_ts_surveillance(self):
+        """Y2 fix: technical_specification_reference field → ts_surveillance (was technical_specification)."""
+        proc = _proc()
+        _, drivers = proc._detect_regulatory_constraints(
+            {"technical_specification_reference": "TS 3.8.1"}, [], "install battery"
+        )
+        types = [d["driver_type"] for d in drivers]
+        assert "technical_specification" not in types, (
+            "technical_specification is not a valid schema enum value (Y2 fix)"
+        )
+        assert "ts_surveillance" in types
+
+    def test_y2_alara_maps_to_alara_constraint(self):
+        """Y2 fix: ALARA pattern → alara_constraint (was alara_requirement)."""
+        proc = _proc()
+        _, drivers = proc._detect_regulatory_constraints(
+            {}, [], "work requires ALARA dose minimisation"
+        )
+        types = [d["driver_type"] for d in drivers]
+        assert "alara_requirement" not in types, (
+            "alara_requirement is not a valid schema enum value (Y2 fix)"
+        )
+        assert "alara_constraint" in types
+
+
+# ===========================================================================
+# Stage A — _extract_execution_mode_flags
+# ===========================================================================
+
+class TestExtractExecutionModeFlags:
+    """Verify keyword pattern matching for the four execution mode flags.
+
+    These flags are dead code until Stage A extracts them; having explicit tests
+    for each pattern set ensures the extraction is reliable before Stage D
+    starts consuming them for mixture_weight computation.
+    """
+
+    def _proc(self):
+        from stages.stage_a_intake import ActivityIntakeProcessor
+        return ActivityIntakeProcessor()
+
+    # -- has_rp_hold ---------------------------------------------------------
+
+    def test_rp_hold_phrase(self):
+        flags = self._proc()._extract_execution_mode_flags("task requires rp hold before entry")
+        assert flags["has_rp_hold"] is True
+
+    def test_alara_hold_phrase(self):
+        flags = self._proc()._extract_execution_mode_flags("ALARA hold required for this work scope")
+        assert flags["has_rp_hold"] is True
+
+    def test_rad_hold_abbreviation(self):
+        flags = self._proc()._extract_execution_mode_flags("rad hold pending HP survey")
+        assert flags["has_rp_hold"] is True
+
+    def test_radiation_protection_hold_full(self):
+        flags = self._proc()._extract_execution_mode_flags("radiation protection hold in place")
+        assert flags["has_rp_hold"] is True
+
+    # -- requires_scaffold ---------------------------------------------------
+
+    def test_scaffold_noun(self):
+        flags = self._proc()._extract_execution_mode_flags("erect scaffold to access valve body")
+        assert flags["requires_scaffold"] is True
+
+    def test_scaffolding_word(self):
+        flags = self._proc()._extract_execution_mode_flags("scaffolding required for upper nozzle inspection")
+        assert flags["requires_scaffold"] is True
+
+    def test_staging_platform(self):
+        flags = self._proc()._extract_execution_mode_flags("temporary staging platform installation")
+        assert flags["requires_scaffold"] is True
+
+    # -- has_clearance -------------------------------------------------------
+
+    def test_clearance_word(self):
+        flags = self._proc()._extract_execution_mode_flags("obtain clearance before starting work")
+        assert flags["has_clearance"] is True
+
+    def test_lockout_tagout(self):
+        flags = self._proc()._extract_execution_mode_flags("lockout tagout required per procedure")
+        assert flags["has_clearance"] is True
+
+    def test_loto_abbreviation(self):
+        flags = self._proc()._extract_execution_mode_flags("LOTO applied on MCC breaker")
+        assert flags["has_clearance"] is True
+
+    def test_mechanical_clearance(self):
+        flags = self._proc()._extract_execution_mode_flags("mechanical clearance 1A-RHR-PP")
+        assert flags["has_clearance"] is True
+
+    # -- is_vendor_supported -------------------------------------------------
+
+    def test_vendor_word(self):
+        flags = self._proc()._extract_execution_mode_flags("vendor support required for seal replacement")
+        assert flags["is_vendor_supported"] is True
+
+    def test_oem_abbreviation(self):
+        flags = self._proc()._extract_execution_mode_flags("OEM engineer to perform inspection")
+        assert flags["is_vendor_supported"] is True
+
+    def test_tech_rep(self):
+        flags = self._proc()._extract_execution_mode_flags("tech rep from manufacturer on site")
+        assert flags["is_vendor_supported"] is True
+
+    def test_factory_rep(self):
+        flags = self._proc()._extract_execution_mode_flags("factory representative required for alignment")
+        assert flags["is_vendor_supported"] is True
+
+    # -- no match / multiple flags -------------------------------------------
+
+    def test_no_flags_plain_description(self):
+        flags = self._proc()._extract_execution_mode_flags("replace gasket on 1A CCW pump")
+        assert flags == {
+            "has_rp_hold": False,
+            "requires_scaffold": False,
+            "has_clearance": False,
+            "is_vendor_supported": False,
+        }
+
+    def test_empty_string_returns_all_false(self):
+        flags = self._proc()._extract_execution_mode_flags("")
+        assert all(v is False for v in flags.values())
+
+    def test_multiple_flags_detected_simultaneously(self):
+        desc = (
+            "Vendor support needed; obtain clearance and rp hold; "
+            "erect scaffold for upper access"
+        )
+        flags = self._proc()._extract_execution_mode_flags(desc)
+        assert flags["has_rp_hold"] is True
+        assert flags["requires_scaffold"] is True
+        assert flags["has_clearance"] is True
+        assert flags["is_vendor_supported"] is True
+
+    def test_flags_present_in_process_output(self):
+        """Integration: process() result must include execution_mode_flags key."""
+        proc = self._proc()
+        activity = {
+            "activity_id": "ACT-001",
+            "outage_id": "RF-22",
+            "plant_id": "PLANT-1",
+            "detection_timestamp": "2026-01-15T08:00:00Z",
+            "raw_description": "OEM vendor required; obtain clearance before start",
+        }
+        run_ctx = {"run_id": "RUN-001", "started_at": "2026-01-15T08:00:00Z"}
+        result = proc.process(activity, run_ctx)
+        assert "execution_mode_flags" in result
+        flags = result["execution_mode_flags"]
+        assert flags["is_vendor_supported"] is True
+        assert flags["has_clearance"] is True
 
 
 # ===========================================================================
@@ -304,6 +490,40 @@ class TestComputeDataQuality:
         entities = [{"entity_type": "component"}] * 100
         score = proc._compute_data_quality(activity, entities, abbr_rate=0.0)
         assert 0.0 <= score <= 1.0
+
+    def test_n8_cmms_source_system_not_unknown(self):
+        """N8 fix: CMMS records (schema canonical) must not default to 'unknown' confidence."""
+        from stages.stage_a_intake import _SOURCE_CONFIDENCE
+        # Schema sends "CMMS"; Stage A lowercases to "cmms"
+        assert "cmms" in _SOURCE_CONFIDENCE, "'cmms' must be in _SOURCE_CONFIDENCE after N8 fix"
+        assert _SOURCE_CONFIDENCE["cmms"] > _SOURCE_CONFIDENCE["unknown"]
+
+    def test_n8_cap_source_system_not_unknown(self):
+        """N8 fix: CAP records (schema canonical) must not default to 'unknown' confidence."""
+        from stages.stage_a_intake import _SOURCE_CONFIDENCE
+        assert "cap" in _SOURCE_CONFIDENCE, "'cap' must be in _SOURCE_CONFIDENCE after N8 fix"
+        assert _SOURCE_CONFIDENCE["cap"] > _SOURCE_CONFIDENCE["unknown"]
+
+    def test_n8_source_confidence_ordering(self):
+        """maximo ≥ sap ≥ cmms > cap > manual > other ≥ unknown."""
+        from stages.stage_a_intake import _SOURCE_CONFIDENCE
+        assert _SOURCE_CONFIDENCE["maximo"] >= _SOURCE_CONFIDENCE["sap"]
+        assert _SOURCE_CONFIDENCE["sap"] >= _SOURCE_CONFIDENCE["cmms"]
+        assert _SOURCE_CONFIDENCE["cmms"] > _SOURCE_CONFIDENCE["cap"]
+        assert _SOURCE_CONFIDENCE["cap"] > _SOURCE_CONFIDENCE["manual"]
+        assert _SOURCE_CONFIDENCE["manual"] > _SOURCE_CONFIDENCE["other"]
+        assert _SOURCE_CONFIDENCE["other"] >= _SOURCE_CONFIDENCE["unknown"]
+
+    def test_n8_cmms_uppercase_normalised_correctly(self):
+        """'CMMS' from schema input is normalised to 'cmms' by Stage A and gets proper confidence."""
+        proc = _proc()
+        activity_base = {
+            "raw_description": "inspect reactor coolant pump",
+            "detection_timestamp": "2026-04-01T08:00:00Z",
+        }
+        score_cmms    = proc._compute_data_quality({**activity_base, "source_system": "CMMS"},    [], 0.0)
+        score_unknown = proc._compute_data_quality({**activity_base, "source_system": "unknown"}, [], 0.0)
+        assert score_cmms > score_unknown, "CMMS (→ cmms) should yield higher confidence than unknown"
 
 
 # ===========================================================================
@@ -433,13 +653,18 @@ class TestAllenRelation:
         assert sc._allen_relation(prior_s, prior_e, act_s, act_e) == "during"
 
     def test_simultaneous(self):
-        """A starts inside B but extends beyond B → SIMULTANEOUS."""
+        """A starts inside B but extends beyond B → OVERLAPS (H3 fix).
+
+        Prior event that started within the activity window but outlasted it
+        (right-side overlap / Allen 'overlapped-by') is causally equivalent to
+        a forward overlap and scores 0.90, not SIMULTANEOUS (0.50).
+        """
         sc = self._scorer()
         prior_s = _dt("2026-01-01T05:00:00Z")   # inside B
         prior_e = _dt("2026-01-01T12:00:00Z")   # beyond B end
         act_s   = _dt("2026-01-01T04:00:00Z")
         act_e   = _dt("2026-01-01T10:00:00Z")
-        assert sc._allen_relation(prior_s, prior_e, act_s, act_e) == "simultaneous"
+        assert sc._allen_relation(prior_s, prior_e, act_s, act_e) == "overlaps"
 
     def test_unknown_when_prior_start_none(self):
         """Missing prior_start → UNKNOWN."""
@@ -496,8 +721,20 @@ class TestAssignCausalStrength:
     def test_precedes_moderate_confidence_moderate(self):
         """PRECEDES × moderate confidence → moderate."""
         sc = _scorer()
-        # 0.75 × 0.60 = 0.45 ≥ 0.40 → moderate
+        # 0.80 × 0.60 = 0.48 ≥ 0.40 → moderate
         assert sc._assign_causal_strength("precedes", 0.60) == "moderate"
+
+    def test_precedes_high_confidence_strong(self):
+        """PRECEDES × high confidence → strong.
+
+        With _RELATION_SCORES[PRECEDES] = 0.80 the strong threshold (0.75) is
+        reachable: 0.80 × 0.96 = 0.768 ≥ 0.75. Previously the score was 0.75,
+        giving a maximum product of 0.75 × 0.9625 = 0.721 < 0.75 — making
+        "strong" unreachable for PRECEDES regardless of data quality (X1 fix).
+        """
+        sc = _scorer()
+        # 0.80 × 0.96 = 0.768 ≥ 0.75 → strong
+        assert sc._assign_causal_strength("precedes", 0.96) == "strong"
 
     def test_during_always_weak(self):
         """DURING has relation_score=0.30; even at max confidence below moderate."""
@@ -543,7 +780,8 @@ class TestComputeConfidence:
         """None lag → plausibility=0.5 (neutral)."""
         sc = _scorer()
         conf = sc._compute_confidence("precedes", data_quality_score=0.5, onset_lag_hours=None)
-        expected = 0.55 * 0.5 + 0.30 * 0.5 + 0.15 * 0.75
+        # _RELATION_SCORES[PRECEDES] = 0.80 (X1 fix, was 0.75)
+        expected = 0.55 * 0.5 + 0.30 * 0.5 + 0.15 * 0.80
         assert conf == pytest.approx(expected, abs=0.001)
 
     def test_confidence_clamped_ge_zero(self):
@@ -551,6 +789,56 @@ class TestComputeConfidence:
         sc = _scorer()
         conf = sc._compute_confidence("unknown", data_quality_score=0.0, onset_lag_hours=-999.0)
         assert conf >= 0.0
+
+    # N10 tests ---------------------------------------------------------------
+
+    def test_n10_overlaps_long_lag_lag_plausibility_is_one(self):
+        """N10: OVERLAPS relation → lag_plausibility forced to 1.0 regardless of lag.
+
+        A prior event that OVERLAPS the activity window is exactly the causal
+        pattern we want to surface. Applying decay for a 500 h lag would be
+        wrong because the relation already encodes precedence.
+        """
+        sc = _scorer()
+        # Without N10 fix, 500 h lag decays to max(0.1, 1 - (500-24)/720) ≈ 0.34
+        conf_with_long_lag = sc._compute_confidence(
+            "overlaps", data_quality_score=0.8, onset_lag_hours=500.0
+        )
+        # With N10 fix, lag_plausibility=1.0 unconditionally for OVERLAPS
+        expected = 0.55 * 0.8 + 0.30 * 1.0 + 0.15 * 0.90  # dq + lat + rel
+        assert conf_with_long_lag == pytest.approx(expected, abs=0.001), (
+            "OVERLAPS with 500 h lag must use lag_plausibility=1.0, not the decay formula"
+        )
+
+    def test_n10_contains_long_lag_lag_plausibility_is_one(self):
+        """N10: CONTAINS relation → lag_plausibility forced to 1.0 regardless of lag."""
+        sc = _scorer()
+        conf = sc._compute_confidence(
+            "contains", data_quality_score=1.0, onset_lag_hours=720.0
+        )
+        # lag_plausibility=1.0, CONTAINS relation_score=0.85
+        expected = 0.55 * 1.0 + 0.30 * 1.0 + 0.15 * 0.85
+        assert conf == pytest.approx(expected, abs=0.001), (
+            "CONTAINS with 720 h lag must use lag_plausibility=1.0"
+        )
+
+    def test_n10_overlaps_confidence_not_penalised_vs_short_lag(self):
+        """N10: OVERLAPS with a very long lag must not score lower than OVERLAPS with short lag."""
+        sc = _scorer()
+        conf_short = sc._compute_confidence("overlaps", data_quality_score=0.7, onset_lag_hours=1.0)
+        conf_long  = sc._compute_confidence("overlaps", data_quality_score=0.7, onset_lag_hours=720.0)
+        assert conf_long == pytest.approx(conf_short, abs=0.001), (
+            "Lag magnitude must not penalise OVERLAPS confidence (N10 fix)"
+        )
+
+    def test_n10_precedes_long_lag_still_decays(self):
+        """N10 fix is scoped to OVERLAPS/CONTAINS; PRECEDES must still decay on long lag."""
+        sc = _scorer()
+        conf_short = sc._compute_confidence("precedes", data_quality_score=0.8, onset_lag_hours=5.0)
+        conf_long  = sc._compute_confidence("precedes", data_quality_score=0.8, onset_lag_hours=700.0)
+        assert conf_short > conf_long, (
+            "PRECEDES must still apply lag decay for long onset_lag_hours"
+        )
 
 
 # ===========================================================================
@@ -582,7 +870,12 @@ class TestSummarizeChain:
         assert summary["causal_posture"] == "partial"
 
     def test_contradiction_posture_overrides_strong(self):
-        """Any temporal_contradiction link → 'contradicted', even alongside strong."""
+        """Any temporal_contradiction link alongside strong evidence → 'contradicted_with_support'.
+
+        M1 fix: when a FOLLOWS contradiction coexists with a strong OVERLAPS link, the
+        posture is 'contradicted_with_support' (not plain 'contradicted') to signal that
+        there is both a contradiction AND credible supporting evidence.
+        """
         sc = _scorer()
         links = [
             {"link_id": "L1", "causal_strength": "strong",
@@ -591,7 +884,7 @@ class TestSummarizeChain:
              "relation_score": 0.10, "allen_relation": "follows"},
         ]
         summary = sc._summarize_chain(links)
-        assert summary["causal_posture"] == "contradicted"
+        assert summary["causal_posture"] == "contradicted_with_support"
         assert summary["has_temporal_contradiction"] is True
 
     def test_all_weak_posture_weak(self):
@@ -713,6 +1006,57 @@ class TestTemporalChainScorerIntegration:
         timeline = {"component_id": "COMP-001", "events": []}
         result = sc.score(emergent, timeline, self._run_context())
         assert result["emergent_activity_interval"]["is_point_event"] is True
+
+    # ── Y1 fix: chain_link output field names must match schema ──────────────
+
+    def test_y1_chain_link_uses_prior_event_id(self):
+        """Y1 fix: chain_link must output 'prior_event_id', not 'event_id'."""
+        sc = _scorer()
+        emergent = {
+            "activity_id": "ACT-Y1",
+            "detection_timestamp": "2026-04-10T08:00:00Z",
+        }
+        timeline = {
+            "component_id": "COMP-001",
+            "events": [{
+                "event_id": "CR-Y1",
+                "event_type": "condition_report",
+                "timestamp": "2026-04-10T04:00:00Z",
+                "data_quality_score": 0.80,
+            }],
+        }
+        result = sc.score(emergent, timeline, self._run_context())
+        assert len(result["chain_links"]) == 1
+        link = result["chain_links"][0]
+        # schema-required keys must be present
+        assert "prior_event_id" in link, "chain_link must use 'prior_event_id' (Y1 fix)"
+        assert "prior_event_type" in link, "chain_link must use 'prior_event_type' (Y1 fix)"
+        # old keys must NOT be present (would fail additionalProperties: false)
+        assert "event_id" not in link, "chain_link must not expose 'event_id' (Y1 fix)"
+        assert "event_type" not in link, "chain_link must not expose 'event_type' (Y1 fix)"
+        assert "event_timestamp" not in link, "chain_link must not expose 'event_timestamp' (Y1 fix)"
+        assert "data_quality_score" not in link, "chain_link must not expose 'data_quality_score' (Y1 fix)"
+
+    def test_y1_prior_event_id_value_matches_input(self):
+        """Y1 fix: prior_event_id value must equal the source event's event_id."""
+        sc = _scorer()
+        emergent = {
+            "activity_id": "ACT-Y1B",
+            "detection_timestamp": "2026-04-10T08:00:00Z",
+        }
+        timeline = {
+            "component_id": "COMP-001",
+            "events": [{
+                "event_id": "WO-SPECIFIC",
+                "event_type": "work_order",
+                "timestamp": "2026-04-09T20:00:00Z",
+                "data_quality_score": 0.70,
+            }],
+        }
+        result = sc.score(emergent, timeline, self._run_context())
+        link = result["chain_links"][0]
+        assert link["prior_event_id"] == "WO-SPECIFIC"
+        assert link["prior_event_type"] == "work_order"
 
 
 # ===========================================================================
@@ -838,3 +1182,479 @@ class TestNonPointEventInterval:
         }
         result = sc.score(emergent, timeline, {"run_id": "R1", "started_at": ""})
         assert result["chain_links"][0]["allen_relation"] == "during"
+
+
+# ===========================================================================
+# Stage A — M7: regulatory_keywords_path config field is wired and loaded
+# ===========================================================================
+
+class TestRegulatoryKeywordsPath:
+    """Verify the M7 fix: regulatory_keywords_path config field is loaded and
+    the supplementary patterns are used by _detect_regulatory_constraints().
+
+    Before the fix the config field existed but the load path was never called.
+    After the fix _load_regulatory_keywords() reads the file, compiles the regexes,
+    and those patterns participate in the full pattern union.
+    """
+
+    def _proc_with_keywords_file(self, tmp_path, lines: list) -> ActivityIntakeProcessor:
+        """Write a keywords file and return a processor configured to use it."""
+        kw_file = tmp_path / "custom_keywords.txt"
+        kw_file.write_text("\n".join(lines), encoding="utf-8")
+        cfg = ActivityIntakeConfig(regulatory_keywords_path=kw_file)
+        return ActivityIntakeProcessor(config=cfg)
+
+    def test_m7_config_field_exists(self):
+        """ActivityIntakeConfig must have a regulatory_keywords_path field."""
+        assert hasattr(ActivityIntakeConfig(), "regulatory_keywords_path"), (
+            "ActivityIntakeConfig must expose regulatory_keywords_path (M7 fix)"
+        )
+
+    def test_m7_keywords_path_none_returns_empty(self):
+        """When regulatory_keywords_path is None, _load_regulatory_keywords returns []."""
+        proc = _proc()
+        patterns = proc._load_supplementary_regulatory_patterns()
+        assert patterns == []
+
+    def test_m7_custom_pattern_detected(self, tmp_path):
+        """A pattern from regulatory_keywords_path must fire on matching text."""
+        proc = self._proc_with_keywords_file(tmp_path, [
+            "# plant-specific patterns",
+            "PLANT-HOLD-\\d+|plant_hold|true",
+        ])
+        has_reg, drivers = proc._detect_regulatory_constraints(
+            {}, [], "activity blocked by PLANT-HOLD-42 clearance"
+        )
+        assert has_reg is True
+        types = [d["driver_type"] for d in drivers]
+        assert "plant_hold" in types, (
+            "Custom pattern from regulatory_keywords_path must fire in _detect_regulatory_constraints"
+        )
+
+    def test_m7_custom_pattern_defer_prohibited_true(self, tmp_path):
+        """defer_prohibited=true in keywords file must be reflected in the driver."""
+        proc = self._proc_with_keywords_file(tmp_path, [
+            "OUTAGE-FREEZE|outage_freeze|true",
+        ])
+        _, drivers = proc._detect_regulatory_constraints(
+            {}, [], "subject to OUTAGE-FREEZE constraint"
+        )
+        driver = next((d for d in drivers if d["driver_type"] == "outage_freeze"), None)
+        assert driver is not None
+        assert driver["defer_prohibited"] is True
+
+    def test_m7_malformed_line_skipped(self, tmp_path):
+        """Malformed lines (wrong field count) must be skipped without raising."""
+        proc = self._proc_with_keywords_file(tmp_path, [
+            "VALID-PATTERN|valid_driver|false",
+            "this_line_has_no_pipe_separators",   # malformed — must be skipped
+        ])
+        # Must not raise
+        patterns = proc._load_supplementary_regulatory_patterns()
+        assert len(patterns) == 1, "Only the valid line should produce a pattern"
+
+    def test_m7_missing_file_returns_empty(self, tmp_path):
+        """A non-existent regulatory_keywords_path must return [] (no raise)."""
+        cfg = ActivityIntakeConfig(
+            regulatory_keywords_path=tmp_path / "does_not_exist.txt"
+        )
+        proc = ActivityIntakeProcessor(config=cfg)
+        patterns = proc._load_supplementary_regulatory_patterns()
+        assert patterns == []
+
+
+# ===========================================================================
+# Stage A — N1: preprocessing_available field in process() output
+# ===========================================================================
+
+class TestN1PreprocessingAvailableField:
+    """N1 fix: process() must emit preprocessing_available so consumers can detect
+    degraded-mode NLP (when _CLEANERS_AVAILABLE=False, whitespace-only cleaning runs).
+    """
+
+    def _run(self) -> dict:
+        proc = _proc()
+        return proc.process(
+            {
+                "activity_id": "ACT-N1",
+                "raw_description": "valve seal leak discovered during walkdown",
+            },
+            {"run_id": "RUN-N1"},
+        )
+
+    def test_n1_field_present_in_output(self):
+        """preprocessing_available must be a top-level key in the process() result."""
+        result = self._run()
+        assert "preprocessing_available" in result, (
+            "process() must include 'preprocessing_available' to signal NLP mode (N1 fix)"
+        )
+
+    def test_n1_field_is_bool(self):
+        """preprocessing_available must be a boolean."""
+        result = self._run()
+        assert isinstance(result["preprocessing_available"], bool)
+
+    def test_n1_field_reflects_module_flag(self):
+        """preprocessing_available must equal the module-level _CLEANERS_AVAILABLE flag."""
+        import stages.stage_a_intake as _stage_a
+        result = self._run()
+        assert result["preprocessing_available"] == _stage_a._CLEANERS_AVAILABLE
+
+
+# ===========================================================================
+# Stage A — M1: _compute_lco_clock and lco_clock_status in process() output
+# ===========================================================================
+
+class TestM1LcoClockComputation:
+    """M1 fix: Stage A must compute and surface LCO action-level countdown fields.
+
+    Verifies _compute_lco_clock() directly plus the three fields in process() output.
+    Reference time for the tests uses a fixed 'started_at' in run_context.
+    """
+
+    # ─── Reference time used across all tests: 2024-06-01T12:00:00Z ──────────
+    _REF = "2024-06-01T12:00:00+00:00"
+
+    def _ctx(self) -> dict:
+        return {"run_id": "RUN-M1", "started_at": self._REF}
+
+    def _clock(self, emergent_activity: dict) -> tuple:
+        return _proc()._compute_lco_clock(emergent_activity, self._ctx())
+
+    # ── not_applicable ────────────────────────────────────────────────────────
+
+    def test_m1_not_applicable_when_no_lco(self):
+        """No active_lco and no expires_at → not_applicable."""
+        expires, hours, status = self._clock({"activity_id": "A1"})
+        assert status == "not_applicable"
+        assert expires is None
+        assert hours is None
+
+    # ── unknown ───────────────────────────────────────────────────────────────
+
+    def test_m1_unknown_when_active_lco_no_expiry(self):
+        """active_lco=True but no lco_action_level_expires_at → unknown."""
+        expires, hours, status = self._clock({"activity_id": "A1", "active_lco": True})
+        assert status == "unknown"
+        assert expires is None
+        assert hours is None
+
+    def test_m1_unknown_when_expires_at_unparseable(self):
+        """Malformed lco_action_level_expires_at → unknown, raw string passed through."""
+        expires, hours, status = self._clock({
+            "activity_id": "A1",
+            "active_lco": True,
+            "lco_action_level_expires_at": "not-a-datetime",
+        })
+        assert status == "unknown"
+        assert expires == "not-a-datetime"   # raw value passed through
+        assert hours is None
+
+    # ── expired ───────────────────────────────────────────────────────────────
+
+    def test_m1_expired_when_deadline_in_past(self):
+        """Expiry before reference time → expired, hours_to_action_level < 0."""
+        # 2 hours before reference
+        expires, hours, status = self._clock({
+            "activity_id": "A1",
+            "active_lco": True,
+            "lco_action_level_expires_at": "2024-06-01T10:00:00+00:00",
+        })
+        assert status == "expired"
+        assert hours == pytest.approx(-2.0, abs=0.01)
+
+    # ── critical ──────────────────────────────────────────────────────────────
+
+    def test_m1_critical_when_less_than_4h_remaining(self):
+        """1.5 h remaining → critical."""
+        expires, hours, status = self._clock({
+            "activity_id": "A1",
+            "active_lco": True,
+            "lco_action_level_expires_at": "2024-06-01T13:30:00+00:00",
+        })
+        assert status == "critical"
+        assert hours == pytest.approx(1.5, abs=0.01)
+
+    def test_m1_critical_boundary_exactly_4h(self):
+        """Exactly 4.0 h remaining is 'urgent' (boundary: critical is < 4.0)."""
+        expires, hours, status = self._clock({
+            "activity_id": "A1",
+            "active_lco": True,
+            "lco_action_level_expires_at": "2024-06-01T16:00:00+00:00",
+        })
+        assert status == "urgent"
+        assert hours == pytest.approx(4.0, abs=0.01)
+
+    # ── urgent ────────────────────────────────────────────────────────────────
+
+    def test_m1_urgent_when_between_4_and_24h(self):
+        """12 h remaining → urgent."""
+        expires, hours, status = self._clock({
+            "activity_id": "A1",
+            "active_lco": True,
+            "lco_action_level_expires_at": "2024-06-02T00:00:00+00:00",
+        })
+        assert status == "urgent"
+        assert hours == pytest.approx(12.0, abs=0.01)
+
+    # ── normal ────────────────────────────────────────────────────────────────
+
+    def test_m1_normal_when_24h_or_more_remaining(self):
+        """72 h remaining → normal."""
+        expires, hours, status = self._clock({
+            "activity_id": "A1",
+            "active_lco": True,
+            "lco_action_level_expires_at": "2024-06-04T12:00:00+00:00",
+        })
+        assert status == "normal"
+        assert hours == pytest.approx(72.0, abs=0.01)
+
+    # ── process() integration ─────────────────────────────────────────────────
+
+    def test_m1_fields_present_in_process_output(self):
+        """process() must include all three LCO clock fields."""
+        result = _proc().process(
+            {"activity_id": "A1", "raw_description": "valve leak"},
+            {"run_id": "RUN-M1"},
+        )
+        assert "lco_action_level_expires_at" in result
+        assert "hours_to_action_level" in result
+        assert "lco_clock_status" in result
+
+    def test_m1_process_not_applicable_when_no_lco_fields(self):
+        """Without any LCO fields, process() reports not_applicable."""
+        result = _proc().process(
+            {"activity_id": "A1", "raw_description": "routine inspection"},
+            {"run_id": "RUN-M1"},
+        )
+        assert result["lco_clock_status"] == "not_applicable"
+        assert result["lco_action_level_expires_at"] is None
+        assert result["hours_to_action_level"] is None
+
+    def test_m1_process_uses_started_at_as_reference_time(self):
+        """process() uses run_context['started_at'] as the reference time for the clock."""
+        result = _proc().process(
+            {
+                "activity_id": "A1",
+                "raw_description": "surveillance test",
+                "active_lco": True,
+                "lco_action_level_expires_at": "2024-06-01T14:00:00+00:00",
+            },
+            {"run_id": "RUN-M1", "started_at": "2024-06-01T12:00:00+00:00"},
+        )
+        assert result["lco_clock_status"] == "critical"  # 2 h: < 4 h threshold
+        assert result["hours_to_action_level"] == pytest.approx(2.0, abs=0.01)
+
+
+# ===========================================================================
+# Stage A — X2: lco_number forwarded through process() output
+# ===========================================================================
+
+class TestX2LcoNumberForwarding:
+    """X2 fix: Stage A must forward lco_number from the emergent_activity dict
+    into intake_result so Stage G can display it in the LCO clock warning prefix.
+
+    Previously lco_number was read by Stage G (_build_lco_clock_prefix) but
+    never emitted by Stage A, so the identifier was always None in the prefix.
+    """
+
+    @staticmethod
+    def _ctx(run_id: str = "RUN-X2") -> dict:
+        return {"run_id": run_id}
+
+    def test_x2_lco_number_forwarded_when_present(self):
+        """lco_number present in input → forwarded unchanged in process() output."""
+        result = _proc().process(
+            {
+                "activity_id": "A1",
+                "raw_description": "surveillance test required per LCO 3.5.1",
+                "lco_number": "LCO 3.5.1",
+            },
+            self._ctx(),
+        )
+        assert "lco_number" in result, "lco_number key must be present in intake_result"
+        assert result["lco_number"] == "LCO 3.5.1"
+
+    def test_x2_lco_number_is_none_when_absent(self):
+        """No lco_number in input → lco_number is None in process() output (not missing)."""
+        result = _proc().process(
+            {"activity_id": "A1", "raw_description": "valve inspection"},
+            self._ctx(),
+        )
+        assert "lco_number" in result, "lco_number key must always be present"
+        assert result["lco_number"] is None
+
+    def test_x2_lco_number_key_always_present(self):
+        """lco_number must be a first-class key regardless of input — not an
+        optional/missing key that downstream code must guard against."""
+        for activity in [
+            {"activity_id": "A1", "raw_description": "test"},
+            {"activity_id": "A2", "raw_description": "test", "lco_number": "LCO 3.4.6"},
+            {"activity_id": "A3", "raw_description": "test", "active_lco": True},
+        ]:
+            result = _proc().process(activity, self._ctx(activity["activity_id"]))
+            assert "lco_number" in result, (
+                f"lco_number missing for activity {activity['activity_id']}"
+            )
+
+
+# ===========================================================================
+# ADV-01 – ADV-03: Adversarial / edge-case inputs for Stage A
+# ===========================================================================
+
+# ADV-01: The 5 000-character description is a stress test for the full intake
+# pipeline (abbreviation expansion, NER, data-quality scoring).  The sentence
+# is innocuous but long enough to exercise any length-dependent code paths.
+_ADV01_LONG_DESC: str = (
+    "Drain valve on auxiliary feedwater system header found with active packing leak. "
+    "No prior condition reports or work orders found for this valve assembly. "
+    "Estimated four hours for packing replacement. Component not previously catalogued. "
+) * 20   # ≈ 5 040 characters
+
+
+# ADV-02: Dense all-caps acronym string modelled on the example in §7.5 of the
+# review document.  Every token is fabricated / uncommon so none will be
+# resolved by the built-in nuclear abbreviation table, guaranteeing that the
+# unresolved fraction stays above the 0.25 WARNING threshold.
+_ADV02_ALL_CAPS_DESC: str = (
+    "XYZZY QWERT ASDFG ZXCVB PLKJH NMVCX POIUY LKJHG "
+    "FDSAZ MNBVC QAZXS WDSXC EDCRF VTGBY HNUJM IKOLY"
+)
+
+
+# ADV-03: Description mixing UTF-8 non-ASCII characters with standard ASCII
+# nuclear-plant vocabulary.  Tests that pattern-match regexes (_TAG_ID_RE,
+# _WO_REF_RE) and the abbreviation tokeniser do not crash on non-ASCII input.
+_ADV03_UNICODE_DESC: str = (
+    "Maintenance sur la soupape de drain WO-44821 référence échangeur αβ-sensor. "
+    "Тест контроль ЛКПД valve packing leak identified during walkdown CR-2026-001."
+)
+
+
+class TestAdversarialInputStageA:
+    """ADV-01 – ADV-03: Robustness of Stage A against unusual raw_description values."""
+
+    @staticmethod
+    def _ctx() -> dict:
+        return {"run_id": "RUN-ADV"}
+
+    # ── ADV-01: 5 000-character description ───────────────────────────────────
+
+    def test_adv01_long_description_completes_without_crash(self):
+        """Stage A must complete normally for a 5 000-char description (no exception)."""
+        result = _proc().process(
+            {"activity_id": "A-ADV-01", "raw_description": _ADV01_LONG_DESC},
+            self._ctx(),
+        )
+        assert isinstance(result, dict), "process() must return a dict"
+
+    def test_adv01_long_description_data_quality_in_range(self):
+        """data_quality_score must be in [0.0, 1.0] for any description length."""
+        result = _proc().process(
+            {"activity_id": "A-ADV-01", "raw_description": _ADV01_LONG_DESC},
+            self._ctx(),
+        )
+        score = result.get("data_quality_score", -1.0)
+        assert 0.0 <= score <= 1.0, (
+            f"data_quality_score out of range: {score}"
+        )
+
+    def test_adv01_long_description_abbr_rate_is_float(self):
+        """unknown_abbreviation_rate must be a float regardless of description length."""
+        result = _proc().process(
+            {"activity_id": "A-ADV-01", "raw_description": _ADV01_LONG_DESC},
+            self._ctx(),
+        )
+        rate = result.get("unknown_abbreviation_rate")
+        assert isinstance(rate, float), (
+            f"unknown_abbreviation_rate must be float, got {type(rate).__name__}"
+        )
+
+    def test_adv01_long_description_emergence_type_present(self):
+        """emergence_type must be a recognised value for any description length."""
+        _VALID_TYPES = {
+            "truly_unplanned", "scope_expansion", "regulatory_driven",
+            "degradation_escalation", "schedule_optimization",
+        }
+        result = _proc().process(
+            {"activity_id": "A-ADV-01", "raw_description": _ADV01_LONG_DESC},
+            self._ctx(),
+        )
+        et = result.get("emergence_type")
+        assert et in _VALID_TYPES, (
+            f"emergence_type '{et}' not in valid set {_VALID_TYPES}"
+        )
+
+    # ── ADV-02: All-uppercase dense abbreviation string ───────────────────────
+
+    def test_adv02_all_caps_does_not_raise(self):
+        """Stage A must not crash on an all-uppercase, high-abbreviation-density description."""
+        result = _proc().process(
+            {"activity_id": "A-ADV-02", "raw_description": _ADV02_ALL_CAPS_DESC},
+            self._ctx(),
+        )
+        assert isinstance(result, dict)
+
+    def test_adv02_all_caps_abbr_rate_exceeds_warning_threshold(self):
+        """All-uppercase unknown tokens must drive unknown_abbreviation_rate above 0.25.
+
+        The warning threshold is ActivityIntakeConfig.unknown_abbreviation_rate_warning = 0.25.
+        All tokens in _ADV02_ALL_CAPS_DESC are fabricated and cannot be resolved by
+        the built-in nuclear abbreviation table, so the rate must equal 1.0 (no
+        resolver injected) or at least exceed the 0.25 threshold.
+        """
+        result = _proc().process(
+            {"activity_id": "A-ADV-02", "raw_description": _ADV02_ALL_CAPS_DESC},
+            self._ctx(),
+        )
+        rate = result.get("unknown_abbreviation_rate", 0.0)
+        assert rate > 0.25, (
+            f"All-caps unknown tokens must push unknown_abbreviation_rate above 0.25, got {rate}"
+        )
+
+    # ── ADV-03: Non-ASCII characters in description ───────────────────────────
+
+    def test_adv03_non_ascii_does_not_raise(self):
+        """Stage A must not crash on descriptions containing UTF-8 / non-ASCII characters."""
+        result = _proc().process(
+            {"activity_id": "A-ADV-03", "raw_description": _ADV03_UNICODE_DESC},
+            self._ctx(),
+        )
+        assert isinstance(result, dict)
+
+    def test_adv03_non_ascii_abbr_rate_is_float(self):
+        """unknown_abbreviation_rate must be a float even when description has non-ASCII chars."""
+        result = _proc().process(
+            {"activity_id": "A-ADV-03", "raw_description": _ADV03_UNICODE_DESC},
+            self._ctx(),
+        )
+        rate = result.get("unknown_abbreviation_rate")
+        assert isinstance(rate, float), (
+            f"unknown_abbreviation_rate must be float, got {type(rate).__name__}"
+        )
+
+    def test_adv03_non_ascii_emergence_type_present(self):
+        """A valid emergence_type must be produced even with non-ASCII input."""
+        _VALID_TYPES = {
+            "truly_unplanned", "scope_expansion", "regulatory_driven",
+            "degradation_escalation", "schedule_optimization",
+        }
+        result = _proc().process(
+            {"activity_id": "A-ADV-03", "raw_description": _ADV03_UNICODE_DESC},
+            self._ctx(),
+        )
+        et = result.get("emergence_type")
+        assert et in _VALID_TYPES, (
+            f"emergence_type '{et}' not in valid set"
+        )
+
+    def test_adv03_non_ascii_extracted_entities_is_list(self):
+        """extracted_entities must be a list (possibly empty) for non-ASCII descriptions."""
+        result = _proc().process(
+            {"activity_id": "A-ADV-03", "raw_description": _ADV03_UNICODE_DESC},
+            self._ctx(),
+        )
+        entities = result.get("extracted_entities")
+        assert isinstance(entities, list), (
+            f"extracted_entities must be a list, got {type(entities).__name__}"
+        )

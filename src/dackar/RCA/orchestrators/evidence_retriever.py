@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Protocol, Sequence
+
+LOGGER = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
 
@@ -34,6 +37,32 @@ def _contains_any(text: str, phrases: List[str]) -> bool:
     if not text:
         return False
     return any(p in text for p in phrases)
+
+
+def _cosine_sim(a: Any, b: Any) -> float:
+    """Cosine similarity between two pre-normalised numpy vectors.
+
+    Both *a* and *b* must already be unit-norm.  Returns a float in [0, 1]
+    (clipped to exclude numeric noise below zero).
+    """
+    try:
+        import numpy as np  # local import — numpy is an optional dep for this module
+        return float(np.clip(np.dot(np.asarray(a, dtype=float), np.asarray(b, dtype=float)), 0.0, 1.0))
+    except Exception:
+        return 0.0
+
+
+class _EmbeddingEncoder(Protocol):
+    """Duck-typed protocol for anything that can embed a list of strings.
+
+    Compatible with ``SentenceTransformer``, ``langchain`` embedders, and any
+    object whose ``encode`` method accepts ``List[str]`` and returns an
+    array-like of shape ``(N, D)``.
+    """
+
+    def encode(self, texts: List[str]) -> Any:
+        ...
+
 
 class EvidenceStore(Protocol):
     """Abstract retrieval backend, e.g. Chroma via LangChain."""
@@ -120,12 +149,46 @@ class ChromaEvidenceRetriever:
         store: EvidenceStore,
         config: Optional[EvidenceRetrieverConfig] = None,
         annotator=None,
+        encoder: Optional[_EmbeddingEncoder] = None,
     ):
         self.store = store
         self.config = config or EvidenceRetrieverConfig()
         # Optional SpacyAnnotator for Tier 2 snippet annotation.
         # Kept as a plain type hint to avoid circular imports.
         self.annotator = annotator
+        # Optional encoder for semantic fallback when _vector_score is absent
+        # (BM25-only hits from disk-loaded Chroma collections).  When set, the
+        # cause_label is embedded once per query plan and cosine similarity against
+        # the snippet is used instead of lexical candidate_term_overlap.
+        self.encoder = encoder
+        # Per-retrieve() embedding cache: cleared at the start of each call.
+        self._emb_cache: Dict[str, Any] = {}
+
+    # ------------------------------------------------------------------
+    # Embedding helpers
+    # ------------------------------------------------------------------
+
+    def _embed(self, text: str) -> Optional[Any]:
+        """Return a unit-norm embedding vector for *text*, or ``None`` if no encoder.
+
+        Results are cached in ``self._emb_cache`` (reset at the start of each
+        ``retrieve()`` call) so each unique text is encoded at most once per
+        retrieval session.
+        """
+        if self.encoder is None or not text.strip():
+            return None
+        if text in self._emb_cache:
+            return self._emb_cache[text]
+        try:
+            import numpy as np
+            vecs = self.encoder.encode([text])
+            v = np.asarray(vecs[0], dtype=float)
+            norm = float(np.linalg.norm(v))
+            self._emb_cache[text] = v / max(norm, 1e-9)
+        except Exception as exc:
+            LOGGER.debug("EvidenceRetriever._embed failed for text=%r: %s", text[:60], exc)
+            self._emb_cache[text] = None
+        return self._emb_cache[text]
 
     def retrieve(
         self,
@@ -135,6 +198,9 @@ class ChromaEvidenceRetriever:
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        # Reset embedding cache so per-session cached vectors don't bleed across calls.
+        self._emb_cache = {}
+
         asset_id = event.get("asset_id")
         doc_ids = [d["doc_id"] for d in kg_context.get("documents", []) if d.get("doc_id")]
         component_ids = [c["component_id"] for c in kg_context.get("components", []) if c.get("component_id")]
@@ -155,19 +221,43 @@ class ChromaEvidenceRetriever:
         candidate_evidence_summary = self._build_candidate_evidence_summary(merged)
         included_doc_types = sorted({dt for q in planned_queries for dt in q.get("doc_types", [])})
 
+        # Detect whether BM25 was available for this retrieval session by inspecting
+        # the _bm25_available flag stored in each hit's _vector_metadata block by
+        # ChromaRecordStore.query_doc_type.  If any hit reports False, BM25 was
+        # unavailable for at least one collection (disk-loaded collection without
+        # in-process ingest); retrieval was dense-only for that collection.
+        bm25_available: Optional[bool] = None
+        for hit in merged:
+            vec_meta = (hit.get("metadata") or {}).get("_vector_metadata") or {}
+            flag = vec_meta.get("_bm25_available")
+            if isinstance(flag, bool):
+                if bm25_available is None:
+                    bm25_available = flag
+                elif not flag:
+                    bm25_available = False
+
+        retrieval_mode = (
+            "dense_only" if bm25_available is False
+            else "hybrid" if bm25_available is True
+            else "unknown"
+        )
+
         return {
-            "bundle_id": f"EVB::{run_context.get('run_id')}::{event.get('id')}",
+            "bundle_id": f"EVB::{run_context.get('run_id')}::{event.get('event_id') or event.get('id')}",
             "generated_at": utcnow_iso(),
             "query": planned_queries[0]["query_text"] if planned_queries else "",
             "score_metric": self.config.score_metric,
             "score_threshold": self.config.score_threshold,
             "candidate_evidence_summary": candidate_evidence_summary,
             "retrieval_scope": {
-                "asset_id": asset_id,
-                "doc_ids": doc_ids,
+                "event_id":       event.get("event_id") or event.get("id"),
+                "asset_id":       asset_id,
+                "kg_subgraph_id": kg_context.get("subgraph_id"),
+                "hop_limit":      kg_context.get("hop_limit"),
+                "doc_ids":        doc_ids,
                 "doc_types_included": included_doc_types,
-                "component_ids": component_ids,
-                "query_count": len(planned_queries),
+                "component_ids":  component_ids,
+                "query_count":    len(planned_queries),
             },
             "filters": {
                 "asset_id": asset_id,
@@ -180,6 +270,8 @@ class ChromaEvidenceRetriever:
                 "run_id": run_context.get("run_id"),
                 "generated_at": utcnow_iso(),
                 "query_count": len(planned_queries),
+                "retrieval_mode": retrieval_mode,
+                "bm25_available": bm25_available,
             },
         }
 
@@ -377,6 +469,7 @@ class ChromaEvidenceRetriever:
         self,
         hit: JsonDict,
         query_plan: JsonDict,
+        cause_label_emb: Optional[Any] = None,
     ) -> JsonDict:
         meta = hit.get("metadata", {}) or {}
         snippet = _norm_text(hit.get("snippet", ""))
@@ -387,17 +480,27 @@ class ChromaEvidenceRetriever:
 
         snippet_terms = _tokenize(snippet)
 
-        # Lexical overlap — kept for traceability and as BM25-hit fallback.
+        # Lexical overlap — kept for traceability and as last-resort fallback
+        # (used only when both vector_score and encoder-based similarity are absent).
         candidate_term_overlap = _overlap_score(candidate_terms, snippet_terms)
 
-        # Semantic relevance: prefer the raw Chroma vector similarity score
-        # (_vector_score, preserved before RRF fusion) because it captures
-        # terminology variation that exact token matching misses — e.g. a
-        # snippet about "lube oil degradation" is semantically similar to a
-        # candidate labelled "loss of lubrication" even though no tokens overlap.
-        # Fall back to candidate_term_overlap for BM25-only hits (no vector score).
+        # Semantic relevance — three-tier priority:
+        #  1. _vector_score from Chroma: cosine sim between cause_label query and
+        #     snippet embedding, computed during retrieval.  Best signal; covers most hits.
+        #  2. Encoder fallback: when _vector_score is 0 (BM25-only hit from a disk-loaded
+        #     collection), embed the snippet on-the-fly and compute cosine similarity
+        #     against the pre-embedded cause_label.  Captures "lube oil degradation" ≈
+        #     "loss of lubrication" even with zero lexical overlap.
+        #  3. candidate_term_overlap: pure lexical fallback used only when no encoder is
+        #     configured.  Retained for traceability and zero-dependency deployments.
         vector_score = float(meta.get("_vector_score") or 0.0)
-        semantic_relevance = vector_score if vector_score > 0.0 else candidate_term_overlap
+        if vector_score > 0.0:
+            semantic_relevance = vector_score
+        elif cause_label_emb is not None and snippet:
+            snippet_emb = self._embed(snippet)
+            semantic_relevance = _cosine_sim(cause_label_emb, snippet_emb) if snippet_emb is not None else candidate_term_overlap
+        else:
+            semantic_relevance = candidate_term_overlap
 
         doc_type = meta.get("doc_type", hit.get("doc_type", "UNKNOWN"))
         authority_level = _norm_text(meta.get("authority_level", "unknown"))
@@ -555,6 +658,17 @@ class ChromaEvidenceRetriever:
         else:
             support_role = "contextual"
 
+        # Prescriptive / time-independent document types (SOPs, FMEAs, Manuals)
+        # describe expected system behaviour and design-intent failure modes —
+        # they do not report an observed event condition.  Treating their content
+        # as "supporting" evidence conflates engineering knowledge with causal
+        # confirmation.  Cap their role at "contextual" regardless of score.
+        # Contradiction is still possible (e.g. SOP says component should have
+        # been inspected and it was not), so only suppress "supporting".
+        _PRESCRIPTIVE_DOC_TYPES = {"SOP", "FMEA", "MANUAL", "BULLETIN"}
+        if support_role == "supporting" and doc_type in _PRESCRIPTIVE_DOC_TYPES:
+            support_role = "contextual"
+
         evidence_score = round(max(support_score, contradiction_score, context_score), 6)
 
         return {
@@ -594,6 +708,11 @@ class ChromaEvidenceRetriever:
 
     def _normalize_hits(self, hits: Sequence[JsonDict], query_plan: JsonDict) -> List[JsonDict]:
         normalized: List[JsonDict] = []
+        # Pre-embed the cause_label once for this query plan.  Used as a semantic
+        # fallback in _assess_hit_against_candidate when _vector_score is absent
+        # (BM25-only hits from disk-loaded Chroma collections).
+        cause_label_emb = self._embed(_norm_text(query_plan.get("cause_label", "")))
+
         for idx, h in enumerate(hits, start=1):
             meta = h.get("metadata", {}) or {}
             doc_type = meta.get("doc_type", h.get("doc_type", "UNKNOWN"))
@@ -605,7 +724,7 @@ class ChromaEvidenceRetriever:
             if final_score < self.config.score_threshold:
                 continue
 
-            assessment = self._assess_hit_against_candidate(h, query_plan)
+            assessment = self._assess_hit_against_candidate(h, query_plan, cause_label_emb=cause_label_emb)
             support_role = assessment["support_role"]
 
             snippet_id = (

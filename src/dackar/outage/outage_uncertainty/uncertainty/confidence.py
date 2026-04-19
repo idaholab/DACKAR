@@ -39,8 +39,21 @@ count but both are necessary for a high-confidence estimate.
 Tier thresholds (all conditions must hold simultaneously)
 ---------------------------------------------------------
 high   : score ≥ 0.70  AND  n_routine ≥ 10  AND  best_match ≥ 0.70
+         AND  outages_represented ≥ high_outage_threshold  (when provided)
 medium : score ≥ 0.45  AND  n_routine ≥  5  AND  best_match ≥ 0.50
+         AND  outages_represented ≥ medium_outage_threshold  (when provided)
 low    : otherwise
+
+Outage diversity gate
+---------------------
+Patterns learned from a single outage reflect within-outage variance, not
+the genuine between-outage variability that defines execution uncertainty.
+When ``outages_represented`` is passed to :meth:`classify` (value > 0), the
+tier is capped based on how many distinct outages the analogue pool spans:
+
+    outages_represented == 0  →  gate not applied (backward-compatible default)
+    outages_represented  < medium_outage_threshold  →  capped at ``"low"``
+    outages_represented  < high_outage_threshold    →  capped at ``"medium"``
 """
 from __future__ import annotations
 
@@ -95,6 +108,11 @@ _MED_SCORE    = 0.45
 _MED_SUPPORT  = 5
 _MED_BEST     = 0.50
 
+# Outage diversity gate: minimum distinct outages required per tier.
+# Set to 0 to disable the gate entirely.
+_HIGH_OUTAGES = 3
+_MED_OUTAGES  = 2
+
 
 class ConfidenceEstimator:
     """Compute a scalar confidence score and tier for a duration estimate.
@@ -124,11 +142,15 @@ class ConfidenceEstimator:
         medium_score_threshold: float = _MED_SCORE,
         medium_support_threshold: int = _MED_SUPPORT,
         medium_best_match_threshold: float = _MED_BEST,
+        high_outage_threshold: int = _HIGH_OUTAGES,
+        medium_outage_threshold: int = _MED_OUTAGES,
     ) -> None:
         self._sim_w = similarity_weight
         self._sup_sat = support_saturation
         self._high = (high_score_threshold, high_support_threshold, high_best_match_threshold)
         self._med = (medium_score_threshold, medium_support_threshold, medium_best_match_threshold)
+        self._high_outages = high_outage_threshold
+        self._med_outages = medium_outage_threshold
 
     # ------------------------------------------------------------------
     # Public interface
@@ -139,6 +161,7 @@ class ConfidenceEstimator:
         query: ActivityCase,  # noqa: ARG002  (reserved for future query-level features)
         matches: list[SimilarityMatch],
         separation: OutlierSeparation,
+        outages_represented: int = 0,
     ) -> ConfidenceResult:
         """Return a :class:`ConfidenceResult` for the given evidence.
 
@@ -149,6 +172,11 @@ class ConfidenceEstimator:
                 :class:`~outage_uncertainty.retrieval.neighbor_selector.NeighborSelector`.
             separation: Outlier separation result from
                 :class:`~outage_uncertainty.uncertainty.outlier_handler.OutlierHandler`.
+            outages_represented: Number of distinct outages the analogue pool
+                spans.  When ``0`` (default) the outage diversity gate is not
+                applied, preserving backward compatibility.  Pass the value
+                from ``retrieval_summary["outages_represented"]`` in Stage D to
+                enable the gate.
 
         Returns:
             :class:`ConfidenceResult` with scalar score, tier, and rationale.
@@ -169,7 +197,7 @@ class ConfidenceEstimator:
         best = max(m.total_score for m in matches)
         n = separation.n_routine
 
-        tier, rationale = self._classify_tier(score, n, best)
+        tier, rationale = self._classify_tier(score, n, best, outages_represented)
         cv = self._compute_cv(separation.routine)
         uncertainty_type, recommended_action = self._classify_uncertainty(
             tier, cv, separation.extended_fraction
@@ -215,27 +243,57 @@ class ConfidenceEstimator:
         return max(0.0, min(1.0, raw))
 
     def _classify_tier(
-        self, score: float, n_routine: int, best_match: float
+        self, score: float, n_routine: int, best_match: float,
+        outages_represented: int = 0,
     ) -> tuple[str, str]:
         high_sc, high_n, high_best = self._high
         med_sc, med_n, med_best = self._med
 
+        # Outage diversity gate: applied only when outages_represented > 0
+        # (value of 0 means "not provided" — gate disabled for backward compat).
+        outage_gate_active = outages_represented > 0
+        outage_suffix = (
+            f", outages={outages_represented}" if outage_gate_active else ""
+        )
+
         if score >= high_sc and n_routine >= high_n and best_match >= high_best:
+            if outage_gate_active and outages_represented < self._high_outages:
+                # Sufficient analogue count but data spans too few outages;
+                # cap at medium to avoid over-claiming cross-cycle validity.
+                if outages_represented >= self._med_outages:
+                    return (
+                        "medium",
+                        f"Moderate evidence (outage diversity cap): score={score:.2f}, "
+                        f"n={n_routine}, best_match={best_match:.2f}"
+                        f"{outage_suffix}. "
+                        f"Needs ≥{self._high_outages} outages for 'high' tier.",
+                    )
+                return (
+                    "low",
+                    f"Weak evidence (outage diversity cap): score={score:.2f}, "
+                    f"n={n_routine}, best_match={best_match:.2f}"
+                    f"{outage_suffix}. "
+                    f"Needs ≥{self._med_outages} outages for 'medium' tier.",
+                )
             return (
                 "high",
                 f"Strong evidence: score={score:.2f}, n={n_routine}, "
-                f"best_match={best_match:.2f}.",
+                f"best_match={best_match:.2f}{outage_suffix}.",
             )
+
         if score >= med_sc and n_routine >= med_n and best_match >= med_best:
+            # No outage gate at medium tier — it is already a "use with caution"
+            # tier; further penalizing for outage diversity would be too strict.
             return (
                 "medium",
                 f"Moderate evidence: score={score:.2f}, n={n_routine}, "
-                f"best_match={best_match:.2f}.",
+                f"best_match={best_match:.2f}{outage_suffix}.",
             )
+
         return (
             "low",
             f"Weak evidence: score={score:.2f}, n={n_routine}, "
-            f"best_match={best_match:.2f}. Expert review recommended.",
+            f"best_match={best_match:.2f}{outage_suffix}. Expert review recommended.",
         )
 
     @staticmethod

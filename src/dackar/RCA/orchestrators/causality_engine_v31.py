@@ -1,3 +1,32 @@
+"""
+causality_engine_v31 — Rule-based causality engine, baseline variant.
+
+Role in the pipeline
+--------------------
+This engine produces failure-mode candidates scored on five weighted dimensions:
+structural, temporal, telemetry, evidence, and governance.  It operates purely
+from structured KG context and telemetry summary inputs, without consuming
+TSKR temporal-pattern metadata.
+
+Relationship to v32
+-------------------
+``causality_engine_v32`` is the production engine.  It extends v31 with
+TSKR-aware scoring (Allen interval relations, latency alignment) and NER-based
+entity normalisation via ``EntityNormalizer``.
+
+**Both engines are intentionally retained.**  Running v31 alongside v32 on the
+same inputs provides an independent baseline that can be used to:
+
+* validate that TSKR enrichment improves — and does not regress — candidate
+  ranking relative to the simpler structural/evidence model;
+* detect edge cases where temporal patterns over-penalise the correct root
+  cause (e.g. delayed-onset failure modes);
+* support ablation studies during model development and audit.
+
+Intended usage: pass ``RuleBasedCausalityEngineV31`` as the ``causality_engine``
+argument of ``RCAReasoningOrchestrator`` when running a baseline/validation
+pass, and ``RuleBasedCausalityEngineV32`` for the primary production pass.
+"""
 
 from __future__ import annotations
 
@@ -656,14 +685,17 @@ class RuleBasedCausalityEngineV31:
 
     def _combine_scores(self, scores):
         w = self.config.weights
-        score = (
-            w["structural"] * scores["structural"]
-            + w["temporal"] * scores["temporal"]
-            + w["telemetry"] * scores["telemetry"]
-            + w["evidence"] * scores["evidence"]
-            + w["governance"] * scores["governance"]
+        total_weight = sum(w.values())
+        if total_weight == 0.0:
+            return 0.0
+        raw = (
+            w["structural"] * scores.get("structural", 0.0)
+            + w["temporal"] * scores.get("temporal", 0.0)
+            + w["telemetry"] * scores.get("telemetry", 0.0)
+            + w["evidence"] * scores.get("evidence", 0.0)
+            + w["governance"] * scores.get("governance", 0.0)
         )
-        return round(min(max(score, 0.0), 1.0), 6)
+        return round(min(max(raw / total_weight, 0.0), 1.0), 6)
 
     def _candidate_meets_threshold(self, candidate: JsonDict) -> bool:
         composite_ok = float(candidate.get("composite_score", 0.0)) >= self.config.minimum_composite_threshold
@@ -672,12 +704,12 @@ class RuleBasedCausalityEngineV31:
 
     def _confidence_label(self, score):
         if score >= 0.75:
-            return "HIGH"
+            return "high"
         if score >= 0.45:
-            return "MEDIUM"
+            return "medium"
         if score > 0.0:
-            return "LOW"
-        return "SPECULATIVE"
+            return "low"
+        return "speculative"
 
     def _supporting_doc_refs(self, documents, preferred):
         return [d["doc_id"] for d in documents if d.get("doc_id") and d.get("doc_type") in preferred][:5]
@@ -756,7 +788,7 @@ class RuleBasedCausalityEngineV31:
             c = components.get(component_id, {})
             path.append({
                 "node_id": component_id,
-                "node_type": "mbse_entity",
+                "node_type": "element_usage",
                 "label": c.get("name") or component_id,
             })
         path.append({"node_id": fm_id, "node_type": "failure_mode", "label": fm_id})
@@ -766,9 +798,9 @@ class RuleBasedCausalityEngineV31:
     def _event_path_nodes(self, pe, target_event_id):
         path = []
         if pe.get("asset_id"):
-            path.append({"node_id": pe["asset_id"], "node_type": "asset", "label": pe["asset_id"]})
+            path.append({"node_id": pe["asset_id"], "node_type": "element_usage", "label": pe["asset_id"]})
         if pe.get("component_id"):
-            path.append({"node_id": pe["component_id"], "node_type": "mbse_entity", "label": pe["component_id"]})
+            path.append({"node_id": pe["component_id"], "node_type": "element_usage", "label": pe["component_id"]})
         path.append({"node_id": pe["event_id"], "node_type": "abnormal_event", "label": pe["event_id"]})
         path.append({"node_id": target_event_id, "node_type": "abnormal_event", "label": target_event_id})
         return path

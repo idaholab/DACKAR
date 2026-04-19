@@ -192,6 +192,27 @@ class EmbeddingSemanticScorer:
             )
             return SemanticSimilarityScorer._trigram_jaccard(text_a, text_b)
 
+        # Dimension mismatch indicates the query and the historical corpus were
+        # embedded with different models (e.g. after a model upgrade without
+        # re-embedding).  cosine_similarity() returns 0.0 silently on mismatch,
+        # which looks like "completely unrelated activities" and causes the
+        # selector to flag low coverage across the board.  Warn loudly and fall
+        # back to trigram Jaccard so retrieval degrades gracefully rather than
+        # silently producing wrong rankings.
+        if len(emb_a) != len(emb_b):
+            text_a = a.cleaned_description or a.raw_description or ""
+            text_b = b.cleaned_description or b.raw_description or ""
+            logger.warning(
+                "EmbeddingSemanticScorer: embedding dimension mismatch "
+                "(%d vs %d) for activities '%s' and '%s'. "
+                "This typically means the historical corpus was embedded "
+                "with a different model than the query — re-embed the corpus "
+                "with the current model to restore full scoring. "
+                "Falling back to trigram-Jaccard.",
+                len(emb_a), len(emb_b), a.activity_id, b.activity_id,
+            )
+            return SemanticSimilarityScorer._trigram_jaccard(text_a, text_b)
+
         sim = cosine_similarity(emb_a, emb_b)
         return float(max(0.0, min(1.0, sim)))
 
@@ -200,21 +221,41 @@ class EmbeddingSemanticScorer:
     # ------------------------------------------------------------------
 
     def _get_embedding(self, activity: ActivityCase) -> list[float] | None:
-        """Return the stored embedding, computing it on-the-fly if needed."""
+        """Return the stored embedding, computing it on-the-fly if needed.
+
+        **Side-effect**: when the embedding is not already cached and the
+        embedder produces one, the result is written back into
+        ``activity.metadata["features"]["text_embedding"]``.  This mutation
+        is intentional — it makes all subsequent ``score()`` calls for the
+        same activity free (no re-encoding).
+
+        Callers must be aware of this write-back if they:
+
+        * Pass frozen or read-only ``ActivityCase`` objects (mutation will
+          raise ``AttributeError`` on the dict assignment).
+        * Share the same ``ActivityCase`` instance across concurrent threads —
+          the write is not protected by a lock and is subject to a TOCTOU
+          race if two threads encode the same activity simultaneously.
+
+        For the current single-threaded pipeline neither case applies, but
+        both should be revisited before introducing concurrency.
+        """
         features: dict = activity.metadata.get("features", {})
         emb = features.get(_EMBEDDING_KEY)
 
-        # Already stored and non-trivial
+        # Already stored and non-trivial — return immediately, no side-effect.
         if emb is not None and len(emb) > 1:
             return emb
 
-        # Try to compute on-the-fly using the embedder
+        # Try to compute on-the-fly using the embedder.
         if self._embedder is not None:
             text = activity.cleaned_description or activity.raw_description or ""
             if text:
                 emb = self._embedder.encode(text)
                 if len(emb) > 1:
-                    # Cache back so subsequent calls are free
+                    # Write-back cache: store the embedding so future score()
+                    # calls for this activity skip re-encoding entirely.
+                    # NOTE: mutates activity.metadata in-place (see docstring).
                     if "features" not in activity.metadata:
                         activity.metadata["features"] = {}
                     activity.metadata["features"][_EMBEDDING_KEY] = emb

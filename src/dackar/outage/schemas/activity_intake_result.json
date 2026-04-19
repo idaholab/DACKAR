@@ -214,6 +214,45 @@
       "description": "Fraction of tokens that matched no dictionary entry and no known alphanumeric pattern. Values above 0.25 indicate that semantic extraction results may be unreliable — this is an explicit exit criterion for downstream processing."
     },
 
+    "preprocessing_available": {
+      "type": "boolean",
+      "description": "N1: True if outage_uncertainty.preprocessing cleaners are importable. False means Stage A fell back to basic whitespace normalization; downstream stages should apply lower semantic confidence."
+    },
+
+    "execution_mode_flags": {
+      "type": "object",
+      "description": "P2a: Execution-context flags extracted from the activity description. Used by Stage D for similarity scoring and outlier routing, and by Stage E for permit lead-time calculation.",
+      "additionalProperties": false,
+      "properties": {
+        "has_rp_hold":         { "type": "boolean" },
+        "requires_scaffold":   { "type": "boolean" },
+        "has_clearance":       { "type": "boolean" },
+        "is_vendor_supported": { "type": "boolean" }
+      }
+    },
+
+    "lco_number": {
+      "type": ["string", "null"],
+      "description": "X2: LCO number forwarded from the emergent_activity input (e.g. 'LCO 3.5.1'). Used by Stage G to display the specific LCO in the action-level clock warning prefix. Null when no LCO number is present in the input."
+    },
+
+    "lco_action_level_expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "M1: ISO-8601 timestamp at which the TS action level expires. Null when no LCO entry condition applies or expiry cannot be determined."
+    },
+
+    "hours_to_action_level": {
+      "type": ["number", "null"],
+      "description": "M1: Signed hours from the pipeline start time to lco_action_level_expires_at. Negative means the action level has already expired. Null when lco_action_level_expires_at is null."
+    },
+
+    "lco_clock_status": {
+      "type": "string",
+      "enum": ["not_applicable", "unknown", "expired", "critical", "urgent", "normal"],
+      "description": "M1: Bucketed status of the LCO action-level clock. expired: past deadline. critical: ≤4 h remaining. urgent: ≤24 h remaining. normal: >24 h remaining. unknown: LCO present but expiry undetermined. not_applicable: no LCO entry condition."
+    },
+
     "provenance": {
       "type": "object",
       "additionalProperties": true,

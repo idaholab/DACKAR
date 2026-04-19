@@ -1,3 +1,32 @@
+"""
+causality_engine_v32 — Rule-based causality engine, TSKR-aware production variant.
+
+Role in the pipeline
+--------------------
+This engine extends v31 with two additional scoring dimensions:
+
+* **TSKR temporal patterns** — Allen interval algebra classifies each anomaly
+  window relative to the failure event; latency alignment and recurrence
+  profiles are folded into the temporal score.
+* **NER entity normalisation** — ``EntityNormalizer`` reconciles free-text
+  component mentions in FMEA/KG records against the structured plant vocabulary,
+  improving candidate matching precision.
+
+Relationship to v31
+-------------------
+``causality_engine_v31`` is the baseline engine and is intentionally retained
+alongside this module.  Running both engines on the same inputs provides an
+independent validation baseline: v31 results represent the purely
+structural/evidence view, while v32 adds temporal reasoning.  Comparing the
+two candidate rankings helps verify that TSKR enrichment improves rather than
+regresses root-cause identification, and surfaces edge cases such as
+delayed-onset failure modes where temporal penalties may be inappropriate.
+
+Intended usage: pass ``RuleBasedCausalityEngineV32`` as the ``causality_engine``
+argument of ``RCAReasoningOrchestrator`` for production runs, and
+``RuleBasedCausalityEngineV31`` for baseline validation passes.
+"""
+
 from __future__ import annotations
 
 import re
@@ -245,6 +274,8 @@ class RuleBasedCausalityEngineV32:
                 fm_name=fm.get("name"),
                 fm_superclass=fm.get("superclass"),
                 component_name=fm.get("component_name"),
+                component_id=component_id,
+                fm_id=fm_id,
             )
             scores = {
                 "structural": structural,
@@ -391,6 +422,8 @@ class RuleBasedCausalityEngineV32:
                 fm_name=matched_fm.get("name") if matched_fm else None,
                 fm_superclass=matched_fm.get("superclass") if matched_fm else None,
                 component_name=matched_fm.get("component_name") if matched_fm else None,
+                component_id=pe.get("component_id") or (matched_fm.get("component_id") if matched_fm else None),
+                fm_id=_primary_fm_id,
             )
             if target_event_type and pe.get("event_type") == target_event_type:
                 temporal_parts["temporal"] = min(1.0, temporal_parts["temporal"] + 0.05)
@@ -1246,17 +1279,30 @@ class RuleBasedCausalityEngineV32:
         fm_name=None,
         fm_superclass=None,
         component_name=None,
+        component_id=None,
+        fm_id=None,
     ) -> Dict[str, Any]:
         """Candidate-specific governance score from PM compliance data, with full trace.
+
+        Matching priority (per failed check):
+        1. **Structural** — ``check.component_id == component_id``: the check is
+           scoped to this candidate's component in the CMMS; no keyword heuristics needed.
+        2. **FM-level** — ``fm_id in check.applicable_fm_ids``: the PM task explicitly
+           targets this failure mode (e.g., a surveillance test for a specific trip
+           function); this narrows a component-level check to a single FM.
+        3. **Keyword fallback** — ``check_type`` keywords matched against
+           ``fm_name + component_name`` text; used only when neither structural field
+           is available (legacy or synthetic data without ``component_id``).
 
         Returns a dict containing:
         - ``score``: float in [0.5, 0.95]
         - ``pm_data_available``: bool
         - ``total_checks``: int — total PM checks in the compliance record
         - ``failed_check_count``: int — asset-level failed checks
-        - ``relevant_failed_checks``: list of dicts, one per matched failed check, each
-          containing ``check_type``, ``wo_id`` (if present), ``overdue_by_days``,
-          and ``matched_keywords`` (the specific keywords that triggered the match)
+        - ``relevant_failed_checks``: list of dicts, one per matched failed check,
+          each containing ``check_type``, ``check_id``, ``wo_id`` (if present),
+          ``overdue_by_days``, ``matched_keywords``, and ``match_method``
+          ("component_id", "applicable_fm_ids", or "keyword")
         - ``count_boost``: float — score contribution from number of relevant failures
         - ``overdue_boost``: float — score contribution from overdue days
         - ``candidate_text``: str — the lowercased text used for keyword matching
@@ -1293,7 +1339,7 @@ class RuleBasedCausalityEngineV32:
         if not failed_checks:
             return neutral  # all PM compliant — no maintenance contribution signal
 
-        if not any([fm_name, component_name]):
+        if not any([fm_name, component_name, component_id, fm_id]):
             return neutral
 
         # Superclass is a taxonomy label (e.g. "heat_transfer_degradation") that
@@ -1307,14 +1353,32 @@ class RuleBasedCausalityEngineV32:
 
         relevant_failed: List[Dict[str, Any]] = []
         for c in failed_checks:
-            matched_keywords = self._pm_check_matched_keywords(c, candidate_text)
-            if matched_keywords:
-                relevant_failed.append({
-                    "check_type": c.get("check_type", "other"),
-                    "wo_id": c.get("wo_id") or None,
-                    "overdue_by_days": c.get("overdue_by_days") or 0.0,
-                    "matched_keywords": sorted(matched_keywords),
-                })
+            check_component_id = c.get("component_id")
+            check_fm_ids = c.get("applicable_fm_ids") or []
+
+            # 1. Structural match: check is directly scoped to this component in CMMS
+            if component_id and check_component_id and check_component_id == component_id:
+                match_method = "component_id"
+                matched_keywords: set = set()
+            # 2. FM-level match: check explicitly targets this failure mode
+            elif fm_id and check_fm_ids and fm_id in check_fm_ids:
+                match_method = "applicable_fm_ids"
+                matched_keywords = set()
+            # 3. Keyword fallback: infer relevance from check_type keywords
+            else:
+                matched_keywords = self._pm_check_matched_keywords(c, candidate_text)
+                if not matched_keywords:
+                    continue
+                match_method = "keyword"
+
+            relevant_failed.append({
+                "check_type": c.get("check_type", "other"),
+                "check_id": c.get("check_id"),
+                "wo_id": c.get("wo_id") or None,
+                "overdue_by_days": c.get("overdue_by_days") or 0.0,
+                "matched_keywords": sorted(matched_keywords),
+                "match_method": match_method,
+            })
 
         if not relevant_failed:
             return neutral  # PM failed elsewhere on asset — not relevant to this candidate
@@ -1341,6 +1405,8 @@ class RuleBasedCausalityEngineV32:
         fm_name=None,
         fm_superclass=None,
         component_name=None,
+        component_id=None,
+        fm_id=None,
     ) -> float:
         """Thin wrapper — returns only the score float from :meth:`_governance_details`."""
         return self._governance_details(
@@ -1348,6 +1414,8 @@ class RuleBasedCausalityEngineV32:
             fm_name=fm_name,
             fm_superclass=fm_superclass,
             component_name=component_name,
+            component_id=component_id,
+            fm_id=fm_id,
         )["score"]
 
     @staticmethod
@@ -1410,11 +1478,18 @@ class RuleBasedCausalityEngineV32:
 
         check_parts = []
         for r in relevant:
-            kws = ", ".join(r["matched_keywords"])
-            wo  = f"; WO={r['wo_id']}" if r["wo_id"] else ""
-            od  = r["overdue_by_days"]
+            method = r.get("match_method", "keyword")
+            if method == "component_id":
+                match_detail = f"component_id={r.get('check_id', '?')}"
+            elif method == "applicable_fm_ids":
+                match_detail = f"applicable_fm_ids match (check_id={r.get('check_id', '?')})"
+            else:
+                kws = ", ".join(r["matched_keywords"])
+                match_detail = f"keywords: {kws}"
+            wo = f"; WO={r['wo_id']}" if r["wo_id"] else ""
+            od = r["overdue_by_days"]
             check_parts.append(
-                f"{r['check_type']} (keywords: {kws}{wo}; overdue={od:.0f}d)"
+                f"{r['check_type']} ({match_detail}{wo}; overdue={od:.0f}d)"
             )
 
         return (
@@ -1496,14 +1571,17 @@ class RuleBasedCausalityEngineV32:
 
     def _combine_scores(self, scores):
         w = self.config.weights
-        score = (
-            w["structural"] * scores["structural"]
-            + w["temporal"] * scores["temporal"]
-            + w["telemetry"] * scores["telemetry"]
-            + w["evidence"] * scores["evidence"]
-            + w["governance"] * scores["governance"]
+        total_weight = sum(w.values())
+        if total_weight == 0.0:
+            return 0.0
+        raw = (
+            w["structural"] * scores.get("structural", 0.0)
+            + w["temporal"] * scores.get("temporal", 0.0)
+            + w["telemetry"] * scores.get("telemetry", 0.0)
+            + w["evidence"] * scores.get("evidence", 0.0)
+            + w["governance"] * scores.get("governance", 0.0)
         )
-        return round(min(max(score, 0.0), 1.0), 6)
+        return round(min(max(raw / total_weight, 0.0), 1.0), 6)
 
     def _supporting_doc_refs(self, documents, preferred):
         return [d["doc_id"] for d in documents if d.get("doc_id") and d.get("doc_type") in preferred][:5]
@@ -2203,7 +2281,7 @@ class RuleBasedCausalityEngineV32:
             c = components.get(component_id, {})
             path.append({
                 "node_id": component_id,
-                "node_type": "mbse_entity",
+                "node_type": "element_usage",
                 "label": c.get("name") or component_id,
             })
         path.append({"node_id": fm_id, "node_type": "failure_mode", "label": fm_id})
@@ -2213,9 +2291,9 @@ class RuleBasedCausalityEngineV32:
     def _event_path_nodes(self, pe, target_event_id):
         path = []
         if pe.get("asset_id"):
-            path.append({"node_id": pe["asset_id"], "node_type": "asset", "label": pe["asset_id"]})
+            path.append({"node_id": pe["asset_id"], "node_type": "element_usage", "label": pe["asset_id"]})
         if pe.get("component_id"):
-            path.append({"node_id": pe["component_id"], "node_type": "mbse_entity", "label": pe["component_id"]})
+            path.append({"node_id": pe["component_id"], "node_type": "element_usage", "label": pe["component_id"]})
         path.append({"node_id": pe["event_id"], "node_type": "abnormal_event", "label": pe["event_id"]})
         path.append({"node_id": target_event_id, "node_type": "abnormal_event", "label": target_event_id})
         return path

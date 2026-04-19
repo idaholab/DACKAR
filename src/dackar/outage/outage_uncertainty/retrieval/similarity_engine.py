@@ -36,18 +36,25 @@ class SimilarityAggregator:
         *,
         dependency: float = 0.0,
     ) -> float:
-        """Return the weighted combination of per-dimension scores.
+        """Return the weighted combination of per-dimension scores, clamped to [0, 1].
 
         The ``dependency`` parameter is keyword-only so existing call sites
         that pass only the three positional-style keyword arguments continue
         to work without modification.
+
+        The output is clamped to ``[0, 1]`` regardless of weight configuration.
+        Without clamping, unnormalized weight dicts (weights summing to > 1)
+        would produce total scores above 1.0, which would inflate
+        ``NeighborSelector`` power weights quadratically and let any moderate
+        match trivially pass ``ConfidenceEstimator``'s best-match threshold.
         """
-        return (
+        raw = (
             self.weights.get("lexical",    0.0) * lexical
             + self.weights.get("semantic", 0.0) * semantic
             + self.weights.get("context",  0.0) * context
             + self.weights.get("dependency", 0.0) * dependency
         )
+        return max(0.0, min(1.0, raw))
 
 
 class SimilarityEngine:

@@ -105,11 +105,20 @@ class DistributionFitter:
 
             # Mixture-aware percentiles: combine both pools with mass-weighted weights.
             # Routine samples carry total mass (1 - ef); extended carry ef.
-            if separation.extended_weights and ef > 0.0:
+            # Fall back to uniform extended weights when extended_weights is
+            # empty (e.g. OutlierSeparation constructed directly without
+            # populating the field) so mixture percentiles are never silently
+            # skipped just because the weight list was omitted.
+            if ef > 0.0:
+                ext_w = (
+                    separation.extended_weights
+                    if separation.extended_weights
+                    else [1.0 / len(separation.extended)] * len(separation.extended)
+                )
                 combined_d = separation.routine + separation.extended
                 combined_w = (
                     [w * (1.0 - ef) for w in separation.routine_weights]
-                    + [w * ef for w in separation.extended_weights]
+                    + [w * ef for w in ext_w]
                 )
                 dist.parameters["mixture_p80"] = _weighted_percentile(
                     combined_d, combined_w, 0.80
@@ -157,6 +166,18 @@ def _weighted_percentile(
         # Degenerate case: all zero weights → uniform
         sorted_w = [1.0] * n
         total = float(n)
+
+    # Validate non-negative weights.  Negative weights produce a non-monotone
+    # CDF and silently incorrect interpolation; raise early so callers are
+    # forced to fix the upstream source rather than receiving wrong percentiles.
+    if any(w < 0.0 for w in sorted_w):
+        min_w = min(sorted_w)
+        raise ValueError(
+            f"_weighted_percentile: all weights must be non-negative; "
+            f"got minimum weight {min_w:.6g}.  Check the upstream weight "
+            f"source (e.g. NeighborSelector relevance_weights or manual "
+            f"weight lists passed to DistributionFitter)."
+        )
 
     # Build cumulative CDF as midpoint positions:
     # place point i at (cumulative_weight_before_i + 0.5 * w_i) / total

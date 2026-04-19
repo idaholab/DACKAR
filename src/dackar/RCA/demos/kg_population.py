@@ -62,7 +62,7 @@ ENRICHED_GLOBS = [
 ]
 
 SCHEMA_PATHS = [
-    "../../knowledge_graph/schemas/customMbseSchema.toml",
+    "../../knowledge_graph/schemas/mbseSchema.toml",
     "../../knowledge_graph/schemas/documentSchema.toml",
     "../../knowledge_graph/schemas/conditionReportSchema.toml",
     "../../knowledge_graph/schemas/workOrderSchema.toml",

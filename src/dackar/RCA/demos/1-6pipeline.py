@@ -16,6 +16,12 @@ PDFS = ['../examples/example_CR_2026_00123.pdf']
 
 OUTPUT_ROOT = './1-6pipeline_demo_existing_methods'
 
+# Guard: paths are relative to the demos/ directory. Fail early with a clear message.
+missing = [p for p in PDFS if not Path(p).exists()]
+if missing:
+    raise FileNotFoundError(
+        f"PDF file(s) not found (paths are relative to the demos/ directory): {missing}"
+    )
 
 # %%
 results = run_many(PDFS, output_root=OUTPUT_ROOT, model=None)

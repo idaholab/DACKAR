@@ -65,11 +65,22 @@ def _iso(dt: Optional[datetime]) -> Optional[str]:
     return dt.isoformat() if dt is not None else None
 
 
-def _window_start_iso(before_ts: Optional[str], window_days: int) -> Optional[str]:
-    """Compute the ISO start of the timeline window."""
+def _window_start_iso(before_ts: Optional[str], window_days: int) -> str:
+    """Compute the ISO start of the timeline window.
+
+    When *before_ts* is absent or cannot be parsed, falls back to
+    ``datetime.now(UTC)`` so that Cypher always receives a concrete timestamp
+    for ``$window_start`` instead of ``NULL``.  Passing ``NULL`` to py2neo has
+    undefined behaviour — the Cypher ``IS NULL`` guard fires, but the driver may
+    serialise Python ``None`` differently across versions.
+
+    Callers that stored the return value in ``window_end`` or used it for
+    reporting should check ``before_ts`` directly if they need to distinguish
+    "no upper bound" from "explicit timestamp".
+    """
     dt = _parse_dt(before_ts)
     if dt is None:
-        return None
+        dt = datetime.now(timezone.utc)  # fallback: treat detection as "now"
     return _iso(dt - timedelta(days=window_days))
 
 
@@ -223,6 +234,14 @@ class KGTimelineBuilder:
         )
 
         detection_ts = emergent_activity.get("detection_timestamp")
+        if detection_ts is None:
+            LOGGER.warning(
+                "Stage B (run=%s): detection_timestamp absent for activity %s — "
+                "KG window will be anchored to utcnow(); results may include "
+                "events after the actual detection time.",
+                run_id,
+                activity_id,
+            )
         events: List[JsonDict] = []
 
         if self.kg_driver is None:
@@ -261,6 +280,7 @@ class KGTimelineBuilder:
             "system_id": component_meta.get("system_id"),
             "system_name": component_meta.get("system_name"),
             "asset_id": component_meta.get("asset_id"),
+            "kg_driver_available": self.kg_driver is not None,
             "events": events,
             "recurrence_indicators": recurrence,
             "data_coverage": coverage,
@@ -386,21 +406,21 @@ class KGTimelineBuilder:
         Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow.
         """
         window_start = _window_start_iso(before_ts, self.config.timeline_window_days)
-        pm_code = self.config.pm_work_type_code
-        cm_code = self.config.cm_work_type_code
         cypher = (
             f"MATCH (wo:`{self.config.work_order_label}`)"
             f"-[:`{self.config.wo_component_rel}`]->"
             f"(c:`{self.config.component_label}` {{id: $component_id}})\n"
             "WHERE ($window_start IS NULL OR wo.initiated_date >= $window_start)\n"
             "  AND ($before_ts IS NULL OR wo.initiated_date < $before_ts)\n"
-            f"  AND NOT wo.work_type IN ['{pm_code}', '{cm_code}']\n"
+            "  AND NOT wo.work_type IN [$pm_code, $cm_code]\n"
             "RETURN wo"
         )
         rows = self._run_query(cypher, {
             "component_id": component_id,
             "window_start": window_start,
             "before_ts": before_ts,
+            "pm_code": self.config.pm_work_type_code,
+            "cm_code": self.config.cm_work_type_code,
         })
         events = []
         for record in rows:
@@ -700,16 +720,14 @@ class KGTimelineBuilder:
                         pm_compliance_status = "overdue"
                         pm_overdue_days = int(elapsed_days - interval)
                     else:
-                        pm_compliance_status = "current"
+                        pm_compliance_status = "compliant"
 
         return {
             "repeat_failure_count": repeat_failure_count,
             "mean_inter_event_days": mean_inter_event_days,
-            "min_inter_event_days": min_inter_event_days,
             "trend": trend,
             "last_pm_date": last_pm_date,
             "pm_compliance_status": pm_compliance_status,
-            "pm_overdue_days": pm_overdue_days,
         }
 
     def _compute_data_coverage(
@@ -733,16 +751,12 @@ class KGTimelineBuilder:
         }
         outages_represented = len(outage_ids)
 
-        window_start = _window_start_iso(detection_ts, self.config.timeline_window_days)
-
         return {
             "total_events": total_events,
             "outages_represented": outages_represented,
-            "earliest_event_date": earliest,
-            "latest_event_date": latest,
-            "window_start": window_start,
-            "window_end": detection_ts,
-            "has_gaps": False,  # gap detection requires KG completeness metadata
+            "earliest_event": earliest,
+            "latest_event": latest,
+            "data_quality_summary": None,
         }
 
     # ── Private utilities ─────────────────────────────────────────────────────

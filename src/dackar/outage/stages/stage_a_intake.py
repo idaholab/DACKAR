@@ -31,6 +31,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -136,39 +137,88 @@ _COMMON_CAPS = frozenset([
 
 _REGULATORY_PATTERNS: List[Tuple[re.Pattern, str, bool]] = [
     (re.compile(r"\bTS\s*[\d.]+\b", re.IGNORECASE),
-     "technical_specification", True),
+     "ts_surveillance", True),
     (re.compile(r"\btechnical\s+specification\b", re.IGNORECASE),
-     "technical_specification", True),
+     "ts_surveillance", True),
     (re.compile(r"\bLCO\s*[\d.]+\b", re.IGNORECASE),
-     "limiting_condition_for_operation", True),
+     "ts_surveillance", True),
     (re.compile(r"\blimiting\s+condition\s+for\s+operation\b", re.IGNORECASE),
-     "limiting_condition_for_operation", True),
+     "ts_surveillance", True),
     (re.compile(r"\bNRC\b"),
      "nrc_commitment", True),
     (re.compile(r"\b10\s*CFR\b", re.IGNORECASE),
-     "nrc_regulation", True),
+     "nrc_commitment", True),
     (re.compile(r"\bALARA\b"),
-     "alara_requirement", False),
+     "alara_constraint", False),
     (re.compile(r"\bCAP\b"),
-     "corrective_action_program", False),
+     "cap_commitment", False),
     (re.compile(r"\bsurveillance\b", re.IGNORECASE),
-     "surveillance_requirement", True),
+     "ts_surveillance", True),
     (re.compile(r"\boperability\s+determination\b", re.IGNORECASE),
-     "operability_determination", True),
+     "license_basis_inspection", True),
     (re.compile(r"\bhold\s+point\b", re.IGNORECASE),
      "hold_point", True),
     (re.compile(r"\bmode\s+(change|entry|exit)\b", re.IGNORECASE),
-     "mode_change_constraint", True),
+     "other", True),
 ]
 
-# Source confidence mapping (from activity source_system field)
+# ---------------------------------------------------------------------------
+# Execution mode flag patterns
+# Each flag maps to a frozenset of keyword patterns (case-insensitive).
+# Matched against the expanded description in _extract_execution_mode_flags().
+# These flags are strong predictors of duration variance (disrupted-execution
+# pool) and feed the mixture_weight computation in Stage D.
+# ---------------------------------------------------------------------------
+
+_RP_HOLD_PATTERNS = re.compile(
+    r"\b("
+    r"rp\s+hold|radiation\s+protection\s+hold|radiological\s+hold|"
+    r"rad\s+hold|hp\s+hold|alara\s+hold|stay\s+time|dose\s+rate\s+limit|"
+    r"radiation\s+survey\s+required|ew\s+permit"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_SCAFFOLD_PATTERNS = re.compile(
+    r"\b("
+    r"scaffold|scaffolding|staging\s+platform|erect\s+scaffold|"
+    r"access\s+platform|temporary\s+platform|work\s+platform\s+erect"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_CLEARANCE_PATTERNS = re.compile(
+    r"\b("
+    r"clearance|e\s*/\s*m\s+clearance|electrical\s+clearance|"
+    r"mechanical\s+clearance|lock\s*out|lockout|tagout|loto|"
+    r"isolation\s+clearance|equipment\s+isolation"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_VENDOR_PATTERNS = re.compile(
+    r"\b("
+    r"vendor|oem|original\s+equipment\s+manufacturer|"
+    r"specialist\s+contractor|factory\s+rep(?:resentative)?|"
+    r"manufacturer\s+rep(?:resentative)?|technical\s+representative|"
+    r"tech\s+rep|field\s+service\s+engineer"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Source confidence mapping (from activity source_system field).
+# Keys are lowercase (Stage A normalises source_system via .lower() before lookup).
+# Schema enum values: P6 → "p6", CMMS → "cmms", CAP → "cap", manual, other, maximo, sap, primavera.
 _SOURCE_CONFIDENCE: Dict[str, float] = {
-    "maximo": 0.90,
-    "primavera": 0.85,
-    "p6": 0.85,
-    "sap": 0.85,
-    "manual": 0.55,
-    "unknown": 0.40,
+    "maximo": 0.90,    # IBM Maximo CMMS — structured WO/PM records, high field completeness
+    "primavera": 0.85, # Oracle Primavera P6 — schedule-native, reliable timestamps
+    "p6": 0.85,        # P6 alias (schema canonical uppercase → lowercased)
+    "sap": 0.85,       # SAP PM module — structured, but field mapping varies by plant
+    "cmms": 0.80,      # Generic CMMS export — structured but system unknown
+    "cap": 0.70,       # Corrective Action Program record — narrative-heavy, less structured
+    "manual": 0.55,    # Human-entered; higher error rate and abbreviation density
+    "other": 0.40,     # Unknown source type
+    "unknown": 0.40,   # source_system field absent or not recognised
 }
 
 
@@ -199,8 +249,11 @@ class ActivityIntakeConfig:
     """Path to the gazetteer Excel file for HybridNERPipeline."""
 
     regulatory_keywords_path: Optional[Path] = None
-    """Path to a file mapping keyword patterns to regulatory driver types.
-    Used by _detect_regulatory_constraints(). Falls back to built-in list."""
+    """Path to a pipe-delimited file of supplementary regulatory patterns.
+    Each non-comment line: <regex_pattern>|<driver_type>|<defer_prohibited>
+    Patterns are unioned with the built-in _REGULATORY_PATTERNS set at
+    construction time.  Use this for plant-specific TS numbers or local
+    program acronyms not covered by the default vocabulary."""
 
     entity_normalizer_token_overlap_threshold: float = 0.60
     """Minimum Jaccard token-overlap score for EntityNormalizer phase-1 match."""
@@ -255,6 +308,16 @@ class ActivityIntakeProcessor:
             self._fallback_id_remover = None  # plain whitespace collapse below
             self._fallback_preprocessor = None
 
+        # Supplementary regulatory patterns loaded from config.regulatory_keywords_path.
+        # Each non-blank, non-comment line must be pipe-delimited:
+        #   <regex_pattern>|<driver_type>|<defer_prohibited>
+        # where defer_prohibited is "true" or "false" (case-insensitive).
+        # Lines prefixed with "#" are treated as comments and skipped.
+        # Patterns are unioned with _REGULATORY_PATTERNS at detection time.
+        self._supplementary_regulatory_patterns: List[Tuple[re.Pattern, str, bool]] = (
+            self._load_supplementary_regulatory_patterns()
+        )
+
         # Fallback abbreviation resolver — used when abbreviation_expander is not injected.
         if _ABBR_RESOLVER_AVAILABLE:
             abbr_file = (
@@ -303,17 +366,25 @@ class ActivityIntakeProcessor:
         has_regulatory, regulatory_drivers = self._detect_regulatory_constraints(
             emergent_activity, entities, expanded
         )
+        execution_flags = self._extract_execution_mode_flags(expanded)
         dq_score = self._compute_data_quality(emergent_activity, entities, abbr_rate)
+        lco_expires_at, hours_to_action_level, lco_clock_status = self._compute_lco_clock(
+            emergent_activity, run_context
+        )
 
         return {
             "activity_id": activity_id,
             "run_id": run_id,
             "generated_at": run_context.get("started_at", ""),
+            # N1: signal NLP preprocessing mode so downstream consumers and
+            # analyst UIs can warn when description cleaning is degraded.
+            "preprocessing_available": _CLEANERS_AVAILABLE,
             "emergence_type": emergence_type,
             "emergence_type_confidence": emergence_confidence,
             "emergence_type_rationale": emergence_rationale,
             "has_regulatory_constraint": has_regulatory,
             "regulatory_drivers": regulatory_drivers,
+            "execution_mode_flags": execution_flags,
             "normalized_description": normalized,
             "expanded_description": expanded if expanded != normalized else None,
             "extracted_entities": entities,
@@ -326,6 +397,15 @@ class ActivityIntakeProcessor:
             "component_family": component_family,
             "data_quality_score": dq_score,
             "unknown_abbreviation_rate": abbr_rate,
+            # M1: TS/LCO action-level clock fields.
+            # lco_clock_status: "not_applicable" | "unknown" | "expired" |
+            #                   "critical" | "urgent" | "normal"
+            # X2: lco_number forwarded so Stage G can display it in the clock
+            # warning prefix (e.g. "LCO 3.5.1 — 14.0 h remaining").
+            "lco_number": emergent_activity.get("lco_number"),
+            "lco_action_level_expires_at": lco_expires_at,
+            "hours_to_action_level": hours_to_action_level,
+            "lco_clock_status": lco_clock_status,
             "provenance": {
                 "generated_by": self.__class__.__name__,
                 "run_id": run_id,
@@ -336,6 +416,100 @@ class ActivityIntakeProcessor:
         }
 
     # ── Private step methods ──────────────────────────────────────────────────
+
+    def _compute_lco_clock(
+        self,
+        emergent_activity: JsonDict,
+        run_context: JsonDict,
+    ) -> Tuple[Optional[str], Optional[float], str]:
+        """Compute the TS/LCO action-level countdown clock fields.
+
+        M1 fix: surfaces the remaining time before an LCO action-level deadline
+        so the outage manager has the single most time-critical piece of
+        information immediately, rather than having to look it up manually.
+
+        Returns:
+            (lco_action_level_expires_at, hours_to_action_level, lco_clock_status)
+
+            lco_action_level_expires_at — ISO datetime passed through from
+                emergent_activity["lco_action_level_expires_at"], or None.
+            hours_to_action_level       — float hours between reference_time and
+                expiry; negative means the action level has already expired.
+                None when the expiry timestamp is unavailable.
+            lco_clock_status — one of:
+                "not_applicable" — active_lco falsy AND no lco_action_level_expires_at
+                "unknown"        — active_lco=True but no expiry timestamp; the LCO
+                                   clock is running but the deadline was not supplied
+                "expired"        — hours_to_action_level < 0
+                "critical"       — 0 ≤ hours < 4   (immediate management action required)
+                "urgent"         — 4 ≤ hours < 24  (same shift action required)
+                "normal"         — hours ≥ 24       (deadline is beyond current shift)
+
+        Reference time priority:
+            run_context["started_at"] > emergent_activity["detection_timestamp"]
+            > datetime.now(UTC)
+        """
+        expires_iso: Optional[str] = emergent_activity.get("lco_action_level_expires_at")
+        active_lco: bool = bool(emergent_activity.get("active_lco"))
+
+        # No LCO involvement at all
+        if not expires_iso and not active_lco:
+            return None, None, "not_applicable"
+
+        # Active LCO but no expiry timestamp provided — clock running, unknown deadline
+        if not expires_iso:
+            LOGGER.warning(
+                "M1: active_lco=True for activity %s but lco_action_level_expires_at "
+                "not provided — cannot compute hours_to_action_level",
+                emergent_activity.get("activity_id", "?"),
+            )
+            return None, None, "unknown"
+
+        # Parse expiry timestamp
+        expires_dt = self._parse_iso(expires_iso)
+        if expires_dt is None:
+            LOGGER.warning(
+                "M1: lco_action_level_expires_at '%s' is not a valid ISO datetime "
+                "for activity %s",
+                expires_iso,
+                emergent_activity.get("activity_id", "?"),
+            )
+            return expires_iso, None, "unknown"
+
+        # Reference time: pipeline start > detection timestamp > now
+        ref_iso: Optional[str] = (
+            run_context.get("started_at")
+            or emergent_activity.get("detection_timestamp")
+        )
+        ref_dt = self._parse_iso(ref_iso) if ref_iso else None
+        if ref_dt is None:
+            ref_dt = datetime.now(timezone.utc)
+
+        hours_remaining = round((expires_dt - ref_dt).total_seconds() / 3600.0, 2)
+
+        if hours_remaining < 0:
+            status = "expired"
+        elif hours_remaining < 4.0:
+            status = "critical"
+        elif hours_remaining < 24.0:
+            status = "urgent"
+        else:
+            status = "normal"
+
+        return expires_iso, hours_remaining, status
+
+    @staticmethod
+    def _parse_iso(iso_str: Optional[str]) -> Optional[datetime]:
+        """Parse an ISO-8601 string to a timezone-aware datetime.  Returns None on failure."""
+        if not iso_str:
+            return None
+        try:
+            dt = datetime.fromisoformat(iso_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (ValueError, TypeError):
+            return None
 
     def _clean_description(self, raw: str) -> str:
         """Normalize whitespace, punctuation, and case.
@@ -483,7 +657,10 @@ class ActivityIntakeProcessor:
                         confidence=ent.get("score", ent.get("confidence", 0.7)),
                     ))
             except Exception:  # noqa: BLE001
-                LOGGER.warning("HybridNERPipeline.generate() failed; skipping pipeline entities")
+                LOGGER.warning(
+                    "HybridNERPipeline.generate() failed; skipping pipeline entities",
+                    exc_info=True,
+                )
 
         # ── Layer 3: SpacyAnnotator (injected) ───────────────────────────────
         if self.spacy_annotator is not None:
@@ -499,7 +676,10 @@ class ActivityIntakeProcessor:
                         confidence=ent.get("confidence", 0.75),
                     ))
             except Exception:  # noqa: BLE001
-                LOGGER.warning("SpacyAnnotator.annotate() failed; skipping spacy entities")
+                LOGGER.warning(
+                    "SpacyAnnotator.annotate() failed; skipping spacy entities",
+                    exc_info=True,
+                )
 
         LOGGER.debug("Stage A NER: extracted %d entities", len(entities))
         return entities
@@ -566,7 +746,11 @@ class ActivityIntakeProcessor:
                             elif canonical_id not in comp_ids:
                                 comp_ids.append(canonical_id)
                 except Exception:  # noqa: BLE001
-                    LOGGER.debug("EntityNormalizer failed for mention '%s'", mention["text"])
+                    LOGGER.debug(
+                        "EntityNormalizer failed for mention '%s'",
+                        mention["text"],
+                        exc_info=True,
+                    )
 
         return comp_ids, sys_ids, wo_ids, cr_ids
 
@@ -712,6 +896,105 @@ class ActivityIntakeProcessor:
             "no strong classification signal; defaulting to truly_unplanned",
         )
 
+    def _extract_execution_mode_flags(self, text: str) -> JsonDict:
+        """Detect execution mode conditions from the expanded work description.
+
+        These four flags are strong predictors of duration variance — tasks
+        that require radiation protection holds, scaffold erection, equipment
+        clearances, or vendor/OEM support consistently run longer and more
+        variably than routine tasks.  They feed the mixture_weight computation
+        in Stage D (disrupted-execution pool weighting).
+
+        Pattern matching is intentionally conservative: a flag is set only when
+        a specific keyword or phrase is found, not inferred from absence.
+
+        Returns a dict with boolean values for each flag:
+            has_rp_hold          — radiation protection hold or ALARA constraint
+            requires_scaffold    — scaffold erection or temporary access platform
+            has_clearance        — electrical/mechanical clearance or LOTO
+            is_vendor_supported  — OEM/vendor/manufacturer representative involved
+
+        These map directly to the corresponding fields on ActivityCase and are
+        persisted into the HistoricalAnalogs artifact so Stage D can weight
+        the extended (disrupted) duration pool appropriately.
+        """
+        if not text:
+            return {
+                "has_rp_hold": False,
+                "requires_scaffold": False,
+                "has_clearance": False,
+                "is_vendor_supported": False,
+            }
+
+        return {
+            "has_rp_hold":         bool(_RP_HOLD_PATTERNS.search(text)),
+            "requires_scaffold":   bool(_SCAFFOLD_PATTERNS.search(text)),
+            "has_clearance":       bool(_CLEARANCE_PATTERNS.search(text)),
+            "is_vendor_supported": bool(_VENDOR_PATTERNS.search(text)),
+        }
+
+    def _load_supplementary_regulatory_patterns(
+        self,
+    ) -> List[Tuple[re.Pattern, str, bool]]:
+        """Load plant-specific regulatory patterns from config.regulatory_keywords_path.
+
+        File format — pipe-delimited, one entry per line::
+
+            # comment lines are ignored
+            TS\s*3\.4\.\d+|technical_specification|true
+            MAINT-HOLD|custom_hold_point|true
+            ALARA\s+review|alara_requirement|false
+
+        Fields:
+            regex_pattern   — Python regex string (re.IGNORECASE applied)
+            driver_type     — driver_type label written to the artifact
+            defer_prohibited — "true" / "false"
+
+        Invalid lines are skipped with a WARNING.  Returns [] when the path
+        is not configured or the file cannot be read.
+        """
+        path = self.config.regulatory_keywords_path
+        if not path:
+            return []
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            LOGGER.warning(
+                "Stage A: could not read regulatory_keywords_path %s: %s", path, exc
+            )
+            return []
+
+        patterns: List[Tuple[re.Pattern, str, bool]] = []
+        for lineno, raw_line in enumerate(text.splitlines(), start=1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("|")
+            if len(parts) != 3:
+                LOGGER.warning(
+                    "Stage A: regulatory_keywords_path line %d malformed "
+                    "(expected 3 pipe-delimited fields, got %d): %r",
+                    lineno, len(parts), line,
+                )
+                continue
+            raw_pattern, driver_type, defer_str = (p.strip() for p in parts)
+            defer_prohibited = defer_str.lower() == "true"
+            try:
+                compiled = re.compile(raw_pattern, re.IGNORECASE)
+            except re.error as exc:
+                LOGGER.warning(
+                    "Stage A: regulatory_keywords_path line %d invalid regex %r: %s",
+                    lineno, raw_pattern, exc,
+                )
+                continue
+            patterns.append((compiled, driver_type, defer_prohibited))
+
+        LOGGER.debug(
+            "Stage A: loaded %d supplementary regulatory pattern(s) from %s",
+            len(patterns), path,
+        )
+        return patterns
+
     def _detect_regulatory_constraints(
         self,
         emergent_activity: JsonDict,
@@ -728,8 +1011,8 @@ class ActivityIntakeProcessor:
             2. Pattern matching against expanded description using
                _REGULATORY_PATTERNS (TS, LCO, NRC, ALARA, CAP, surveillance,
                operability determination, hold point).
-            3. Optional external keyword vocabulary from
-               config.regulatory_keywords_path (not yet wired — placeholder).
+            3. Supplementary patterns from config.regulatory_keywords_path, unioned
+               with the built-in set at detection time.
 
         Every driver includes: driver_id, driver_type, matched_text,
         defer_prohibited, source.
@@ -756,7 +1039,7 @@ class ActivityIntakeProcessor:
         # ── Structured fields ─────────────────────────────────────────────────
         if emergent_activity.get("technical_specification_reference"):
             _add_driver(
-                "technical_specification",
+                "ts_surveillance",
                 str(emergent_activity["technical_specification_reference"]),
                 defer_prohibited=True,
                 source="intake_record_field",
@@ -770,14 +1053,15 @@ class ActivityIntakeProcessor:
             )
         if emergent_activity.get("lco_number"):
             _add_driver(
-                "limiting_condition_for_operation",
+                "ts_surveillance",
                 str(emergent_activity["lco_number"]),
                 defer_prohibited=True,
                 source="intake_record_field",
             )
 
-        # ── Text pattern matching ─────────────────────────────────────────────
-        for pattern, driver_type, defer_prohibited in _REGULATORY_PATTERNS:
+        # ── Text pattern matching (built-in + supplementary) ──────────────────
+        all_patterns = _REGULATORY_PATTERNS + self._supplementary_regulatory_patterns
+        for pattern, driver_type, defer_prohibited in all_patterns:
             match = pattern.search(text)
             if match:
                 _add_driver(

@@ -110,6 +110,7 @@ class OutlierHandler:
         strategy: str = "iqr",
         trim_pct: float = 0.10,
         mad_scale: float = 3.0,
+        iqr_multiplier: float = 1.5,
     ) -> None:
         if strategy not in self.VALID_STRATEGIES:
             raise ValueError(
@@ -118,6 +119,7 @@ class OutlierHandler:
         self.strategy = strategy
         self.trim_pct = trim_pct
         self.mad_scale = mad_scale
+        self.iqr_multiplier = iqr_multiplier
 
     # ------------------------------------------------------------------
     # Public interface
@@ -216,7 +218,7 @@ class OutlierHandler:
         q1 = self._interpolated_percentile(sorted_d, 0.25)
         q3 = self._interpolated_percentile(sorted_d, 0.75)
         iqr = q3 - q1
-        fence = q3 + 1.5 * iqr
+        fence = q3 + self.iqr_multiplier * iqr
 
         return self._split_at(durations, weights, fence, method="iqr")
 

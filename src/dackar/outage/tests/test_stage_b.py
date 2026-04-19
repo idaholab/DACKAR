@@ -140,11 +140,31 @@ class TestWindowStartIso:
         expected = (_dt(ts) - timedelta(days=365)).isoformat()
         assert result == expected
 
-    def test_none_before_ts_returns_none(self):
-        assert _window_start_iso(None, 365) is None
+    def test_none_before_ts_falls_back_to_utcnow(self):
+        """N9 fix: None before_ts must not return None — fallback to utcnow().
+        The result must be a parseable ISO string approximately (window_days)
+        days before now (within a 5-second tolerance for test execution time)."""
+        before = datetime.now(timezone.utc)
+        result = _window_start_iso(None, 365)
+        after = datetime.now(timezone.utc)
 
-    def test_invalid_ts_returns_none(self):
-        assert _window_start_iso("not-a-date", 365) is None
+        assert result is not None, "N9 fix: window_start must never be None"
+        from stages.stage_b_kg_timeline import _parse_dt
+        dt = _parse_dt(result)
+        assert dt is not None, f"Fallback result must be a valid ISO timestamp, got {result!r}"
+        # Should be approximately (before − 365 days) ≤ dt ≤ (after − 365 days)
+        lower = before - timedelta(days=365, seconds=5)
+        upper = after  - timedelta(days=365) + timedelta(seconds=5)
+        assert lower <= dt <= upper, (
+            f"Fallback window_start {dt} not within expected range [{lower}, {upper}]"
+        )
+
+    def test_invalid_ts_falls_back_to_utcnow(self):
+        """N9 fix: unparseable before_ts also falls back to utcnow()."""
+        result = _window_start_iso("not-a-date", 365)
+        assert result is not None, "N9 fix: unparseable ts must not return None"
+        from stages.stage_b_kg_timeline import _parse_dt
+        assert _parse_dt(result) is not None
 
     def test_zero_days(self):
         ts = "2026-04-10T00:00:00+00:00"
@@ -220,6 +240,22 @@ class TestBuildNoKGDriver:
         assert prov["generated_by"] == "KGTimelineBuilder"
         assert prov["timeline_window_days"] == KGTimelineConfig().timeline_window_days
 
+    def test_d1_kg_driver_available_false_when_no_driver(self):
+        """D1 fix: kg_driver_available must be False when kg_driver is None.
+
+        Before the fix the absence of the KG driver was invisible to downstream
+        stages and the analyst.  After the fix the artifact carries a
+        kg_driver_available boolean so the orchestrator can surface it in
+        review_hooks as a first-class flag.
+        """
+        result = self.b.build(self.act, self.intake, self.ctx)
+        assert "kg_driver_available" in result, (
+            "Stage B artifact must carry kg_driver_available field (D1 fix)"
+        )
+        assert result["kg_driver_available"] is False, (
+            "kg_driver_available must be False when no KG driver is injected"
+        )
+
 
 # ===========================================================================
 # _deduplicate_events
@@ -288,6 +324,89 @@ class TestComputeRecurrenceIndicators:
         ri = b._compute_recurrence_indicators(events, "2026-01-01T00:00:00+00:00")
         assert ri.get("mean_inter_event_days") is None or ri.get("mean_inter_event_days") >= 0
 
+    # ── Y6 fix: output must not include non-schema fields ────────────────────
+
+    def test_y6_no_min_inter_event_days_in_output(self):
+        """Y6 fix: min_inter_event_days must not appear in output (not in schema)."""
+        b = _builder()
+        events = [
+            _event(event_id="EV-001", timestamp="2025-01-01T00:00:00+00:00",
+                   event_type="condition_report"),
+            _event(event_id="EV-002", timestamp="2025-07-01T00:00:00+00:00",
+                   event_type="condition_report"),
+        ]
+        ri = b._compute_recurrence_indicators(events, "2026-01-01T00:00:00+00:00")
+        assert "min_inter_event_days" not in ri, (
+            "'min_inter_event_days' is not in schema (Y6 fix)"
+        )
+
+    def test_y6_no_pm_overdue_days_in_output(self):
+        """Y6 fix: pm_overdue_days must not appear in output (not in schema)."""
+        b = _builder()
+        # PM event well past overdue threshold so pm_overdue_days would be set
+        old_pm_ts = "2024-01-01T00:00:00+00:00"
+        events = [_event(event_id="PM-001", timestamp=old_pm_ts,
+                         event_type="preventive_maintenance")]
+        ri = b._compute_recurrence_indicators(events, "2026-04-10T00:00:00+00:00")
+        assert "pm_overdue_days" not in ri, (
+            "'pm_overdue_days' is not in schema (Y6 fix)"
+        )
+
+    def test_y6_only_schema_fields_in_output(self):
+        """Y6 fix: recurrence_indicators must contain only schema-defined keys."""
+        _SCHEMA_KEYS = frozenset({
+            "repeat_failure_count", "mean_inter_event_days", "trend",
+            "last_cm_date", "last_pm_date", "pm_compliance_status",
+        })
+        b = _builder()
+        events = [
+            _event(event_id="EV-001", timestamp="2025-01-01T00:00:00+00:00",
+                   event_type="condition_report"),
+            _event(event_id="PM-001", timestamp="2025-06-01T00:00:00+00:00",
+                   event_type="preventive_maintenance"),
+        ]
+        ri = b._compute_recurrence_indicators(events, "2026-04-10T00:00:00+00:00")
+        extra = set(ri.keys()) - _SCHEMA_KEYS
+        assert not extra, f"Non-schema fields in recurrence_indicators output: {extra} (Y6 fix)"
+
+    # ── Y4 fix: pm_compliance_status must use schema-valid enum values ────────
+
+    _VALID_PM_STATUSES = frozenset({"compliant", "overdue", "no_pm_defined", "unknown"})
+
+    def test_y4_pm_compliance_status_is_schema_valid(self):
+        """Y4 fix: pm_compliance_status must be in schema enum for all code paths."""
+        b = _builder()
+        # Path 1: no PM events → "unknown"
+        ri_no_pm = b._compute_recurrence_indicators([], None)
+        assert ri_no_pm["pm_compliance_status"] in self._VALID_PM_STATUSES
+
+        # Path 2: PM event within interval → "compliant" (was "current" before fix)
+        recent_pm_ts = "2026-03-01T00:00:00+00:00"   # ~40 days before detection
+        detection_ts = "2026-04-10T00:00:00+00:00"
+        events = [_event(event_id="PM-001", timestamp=recent_pm_ts,
+                         event_type="preventive_maintenance")]
+        ri_compliant = b._compute_recurrence_indicators(events, detection_ts)
+        assert ri_compliant["pm_compliance_status"] in self._VALID_PM_STATUSES
+
+        # Path 3: PM event well outside interval → "overdue"
+        old_pm_ts = "2024-01-01T00:00:00+00:00"      # > default 180-day interval
+        events_overdue = [_event(event_id="PM-002", timestamp=old_pm_ts,
+                                 event_type="preventive_maintenance")]
+        ri_overdue = b._compute_recurrence_indicators(events_overdue, detection_ts)
+        assert ri_overdue["pm_compliance_status"] in self._VALID_PM_STATUSES
+
+    def test_y4_within_interval_produces_compliant_not_current(self):
+        """Y4 fix: a PM event within the compliance window must produce 'compliant', not 'current'."""
+        b = _builder()
+        # PM ~40 days ago, default interval 180 days → well within → "compliant"
+        events = [_event(event_id="PM-001",
+                         timestamp="2026-03-01T00:00:00+00:00",
+                         event_type="preventive_maintenance")]
+        ri = b._compute_recurrence_indicators(events, "2026-04-10T00:00:00+00:00")
+        assert ri["pm_compliance_status"] == "compliant", (
+            f"Expected 'compliant', got '{ri['pm_compliance_status']}' (Y4 fix: 'current' is not a valid schema value)"
+        )
+
 
 # ===========================================================================
 # _compute_data_coverage
@@ -327,6 +446,43 @@ class TestComputeDataCoverage:
         cov = b._compute_data_coverage(events, "2026-04-10T00:00:00+00:00")
         # Either a flat count or a breakdown dict should be present
         assert "total_events" in cov
+
+    # ── Y5 fix: data_coverage field names must match schema ──────────────────
+
+    def test_y5_uses_earliest_event_not_earliest_event_date(self):
+        """Y5 fix: field must be 'earliest_event', not 'earliest_event_date'."""
+        b = _builder()
+        events = [_event(event_id="EV-001", timestamp="2025-06-01T00:00:00+00:00")]
+        cov = b._compute_data_coverage(events, "2026-04-10T00:00:00+00:00")
+        assert "earliest_event" in cov, "data_coverage must use 'earliest_event' (Y5 fix)"
+        assert "earliest_event_date" not in cov, "'earliest_event_date' is not a schema field (Y5 fix)"
+
+    def test_y5_uses_latest_event_not_latest_event_date(self):
+        """Y5 fix: field must be 'latest_event', not 'latest_event_date'."""
+        b = _builder()
+        events = [_event(event_id="EV-001", timestamp="2025-06-01T00:00:00+00:00")]
+        cov = b._compute_data_coverage(events, "2026-04-10T00:00:00+00:00")
+        assert "latest_event" in cov, "data_coverage must use 'latest_event' (Y5 fix)"
+        assert "latest_event_date" not in cov, "'latest_event_date' is not a schema field (Y5 fix)"
+
+    def test_y5_no_non_schema_fields(self):
+        """Y5 fix: output must not include window_start, window_end, or has_gaps."""
+        b = _builder()
+        cov = b._compute_data_coverage([], "2026-04-10T00:00:00+00:00")
+        for field in ("window_start", "window_end", "has_gaps"):
+            assert field not in cov, f"'{field}' is not in schema (Y5 fix)"
+
+    def test_y5_earliest_latest_event_values(self):
+        """Y5 fix: earliest_event and latest_event carry the correct timestamps."""
+        b = _builder()
+        events = [
+            _event(event_id="EV-001", timestamp="2025-01-01T00:00:00+00:00"),
+            _event(event_id="EV-002", timestamp="2025-06-01T00:00:00+00:00"),
+            _event(event_id="EV-003", timestamp="2026-01-01T00:00:00+00:00"),
+        ]
+        cov = b._compute_data_coverage(events, "2026-04-10T00:00:00+00:00")
+        assert "2025-01-01" in (cov.get("earliest_event") or "")
+        assert "2026-01-01" in (cov.get("latest_event") or "")
 
 
 # ===========================================================================

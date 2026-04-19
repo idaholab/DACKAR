@@ -40,8 +40,11 @@ Reuse targets (all read-only imports, no modifications):
 ActivityCase bridging:
     All retrieval scorers operate on ActivityCase objects.  Stage D receives
     JsonDict inputs, so _build_query() constructs a query ActivityCase from
-    intake_result and stores it as self._query_activity_case (temporary
-    per-call attribute) without polluting the query_summary output dict.
+    intake_result and returns it alongside the query_summary dict.  The
+    ActivityCase is passed explicitly through the private call chain
+    (_retrieve_candidates, _score_and_filter, _remove_duration_outliers,
+    _compute_confidence_tier, _fit_duration_distribution) so that concurrent
+    calls to retrieve() on the same instance cannot overwrite each other's state.
 """
 from __future__ import annotations
 
@@ -60,6 +63,26 @@ _TIER_DATA_SUPPORTED = "data_supported"
 _TIER_SME_INFORMED = "sme_informed"
 _TIER_LOW_CONFIDENCE = "low_confidence"
 
+# Maps ConfidenceEstimator tier names ("high"/"medium"/"low") to Stage D tier names.
+# Used when confidence_estimator is injected so the richer similarity-aware score
+# drives the tier instead of the count-only fallback.
+_CE_TIER_TO_STAGE_D: Dict[str, str] = {
+    "high":   _TIER_DATA_SUPPORTED,
+    "medium": _TIER_SME_INFORMED,
+    "low":    _TIER_LOW_CONFIDENCE,
+}
+
+
+@dataclass
+class _MatchProxy:
+    """Minimal duck-typed SimilarityMatch for ConfidenceEstimator delegation.
+
+    ConfidenceEstimator only accesses ``total_score`` and ``relevance_weight``
+    on each match, so a full SimilarityMatch import is not required.
+    """
+    total_score: float
+    relevance_weight: float
+
 # ---------------------------------------------------------------------------
 # ActivityCase bridge helpers
 # ---------------------------------------------------------------------------
@@ -76,6 +99,15 @@ def _make_activity_case(
     outage_phase: Optional[str] = None,
     is_emergent: bool = True,
     planned_duration_hours: Optional[float] = None,
+    # Gap 3 execution mode flags — extracted by Stage A, passed through here
+    # so ContextSimilarityScorer can weight analogues with matching conditions
+    # higher.  Must be explicitly set (not left unset) because ActivityCase is
+    # built via __new__ without __init__, so unset fields return None rather
+    # than the dataclass default of False, causing the scorer to skip them.
+    has_rp_hold: bool = False,
+    requires_scaffold: bool = False,
+    has_clearance: bool = False,
+    is_vendor_supported: bool = False,
     extra_fields: Optional[Dict[str, Any]] = None,
 ) -> Any:
     """Construct an ActivityCase from free-form inputs.
@@ -86,6 +118,10 @@ def _make_activity_case(
 
     Args:
         description: Cleaned/expanded text description.
+        has_rp_hold: Radiation protection hold detected in description (Stage A).
+        requires_scaffold: Scaffolding required (Stage A).
+        has_clearance: Electrical/mechanical clearance required (Stage A).
+        is_vendor_supported: Vendor/OEM involvement detected (Stage A).
         extra_fields: Any additional ActivityCase fields to set (e.g. metadata).
 
     Returns:
@@ -103,6 +139,10 @@ def _make_activity_case(
         "outage_phase": outage_phase,
         "is_emergent": is_emergent,
         "planned_duration_hours": planned_duration_hours,
+        "has_rp_hold": has_rp_hold,
+        "requires_scaffold": requires_scaffold,
+        "has_clearance": has_clearance,
+        "is_vendor_supported": is_vendor_supported,
         **(extra_fields or {}),
     }
 
@@ -120,7 +160,19 @@ def _make_activity_case(
 
 
 class _DictActivityCase:
-    """Minimal stand-in for ActivityCase when the domain module is unavailable."""
+    """Minimal stand-in for ActivityCase when the domain module is unavailable.
+
+    Used when ``outage_uncertainty.domain.activity.ActivityCase`` cannot be
+    imported.  All attribute access returns ``None`` for missing fields so
+    scorers degrade gracefully instead of raising ``AttributeError``.
+
+    .. note::
+        If a scorer receives ``None`` for a field it expects, it will silently
+        apply missing-field redistribution logic.  Check ``repr(qac)`` to
+        confirm whether you are working with a real ``ActivityCase`` or this
+        fallback — the repr includes ``"_DictActivityCase(fallback, ...)"``
+        to make this immediately visible in logs and debugger output.
+    """
 
     def __init__(self, fields: Dict[str, Any]) -> None:
         self.__dict__.update(fields)
@@ -130,6 +182,10 @@ class _DictActivityCase:
 
     def __getattr__(self, name: str) -> Any:
         return None
+
+    def __repr__(self) -> str:
+        populated = [k for k, v in self.__dict__.items() if k != "metadata" and v is not None]
+        return f"_DictActivityCase(fallback, populated={populated})"
 
 
 # ---------------------------------------------------------------------------
@@ -152,23 +208,32 @@ class HistoricalAnalogConfig:
     min_analogs_for_sme_informed: int = 1
     """Minimum analogs for sme_informed tier.  Below this, fallback is used."""
 
+    min_outages_for_data_supported: int = 3
+    """Minimum distinct outage IDs required in the analogue pool for the
+    data_supported tier.  Prevents claiming cross-cycle validity from a single
+    outage's worth of data.  When the count gate passes but the outage gate
+    does not, the tier is capped at sme_informed (never lower than sme_informed
+    solely due to this gate).  Set to 0 to disable."""
+
     outlier_iqr_factor: float = 1.5
     """IQR multiplier for duration outlier removal (Tukey fence).
-    Passed to OutlierHandler(strategy='iqr').  The IQR factor is not directly
-    configurable on OutlierHandler; Tukey 1.5 IQR is the default."""
+    Wired into the injected OutlierHandler.iqr_multiplier at construction time.
+    Standard Tukey value is 1.5; increase to 3.0 for a more permissive fence
+    (fewer outliers removed) on small or heavily right-skewed pools."""
 
-    lexical_weight: float = 0.30
-    """Weight for BM25 / token-overlap similarity component."""
+    lexical_weight: float = 0.20
+    """Weight for the lexical (BM25 / token-overlap) similarity component.
+    Passed to SimilarityAggregator at retriever construction time."""
 
     semantic_weight: float = 0.40
-    """Weight for embedding cosine similarity component."""
+    """Weight for the semantic (embedding cosine / WordNet) similarity component.
+    Passed to SimilarityAggregator at retriever construction time."""
 
-    component_weight: float = 0.20
-    """Weight for component-exact / component-family match component."""
-
-    context_weight: float = 0.10
-    """Weight for execution-context similarity component
-    (phase, discipline, execution mode flags)."""
+    context_weight: float = 0.40
+    """Weight for the context (structured metadata) similarity component.
+    component_family affinity is embedded inside the context scorer, so this
+    weight covers both execution-context fields and component-family matching.
+    Passed to SimilarityAggregator at retriever construction time."""
 
     neighbor_selector_top_k: int = 20
     """Top-k passed to NeighborSelector (should equal or exceed config.top_k)."""
@@ -176,6 +241,19 @@ class HistoricalAnalogConfig:
     prescorer_top_k_multiplier: int = 5
     """HistoricalActivityIndex.search() top_k = top_k × this multiplier
     (wider recall before expensive full scoring)."""
+
+    schedule_context_rerank_weight: float = 0.10
+    """Blend weight for the structural affinity boost applied when a
+    ScheduleContext is available (Gap 4 two-pass design).
+
+    Final score = (1 − w) × similarity_score + w × structural_affinity_score.
+
+    Conservative default (0.10): the primary signal is still text / semantic /
+    context similarity.  The structural component adds a tiebreaker based on
+    CP membership, float tightness, and fan-out complexity at the insertion site.
+    Set to 0.0 to disable re-ranking even when a ScheduleContext is provided.
+
+    Keep this value low (≤ 0.15) until validated against multi-outage data."""
 
 
 # ---------------------------------------------------------------------------
@@ -209,17 +287,43 @@ class HistoricalAnalogRetriever:
         distribution_fitter=None,
         outlier_handler=None,
         fallback_policy=None,
+        confidence_estimator=None,
     ) -> None:
         self.config = config or HistoricalAnalogConfig()
         self.similarity_engine = similarity_engine
+        # Wire config weights into the aggregator so lexical_weight /
+        # semantic_weight / context_weight in HistoricalAnalogConfig actually
+        # govern scoring.  Without this the injected SimilarityAggregator uses
+        # its own construction-time defaults regardless of operator config.
+        if similarity_engine is not None and hasattr(similarity_engine, "aggregator"):
+            try:
+                from dackar.outage.outage_uncertainty.retrieval.similarity_engine import (
+                    SimilarityAggregator,
+                )
+                cfg = self.config
+                similarity_engine.aggregator = SimilarityAggregator(
+                    weights={
+                        "lexical": cfg.lexical_weight,
+                        "semantic": cfg.semantic_weight,
+                        "context": cfg.context_weight,
+                        "dependency": 0.0,  # dependency scorer controlled separately
+                    }
+                )
+            except ImportError:
+                LOGGER.debug(
+                    "Stage D: could not import SimilarityAggregator — "
+                    "aggregator weights not updated from config"
+                )
         self.retrieval_index = retrieval_index
         self.distribution_fitter = distribution_fitter
         self.outlier_handler = outlier_handler
+        # Wire config IQR multiplier so outlier_iqr_factor actually governs the fence.
+        if outlier_handler is not None and hasattr(outlier_handler, "iqr_multiplier"):
+            outlier_handler.iqr_multiplier = self.config.outlier_iqr_factor
         self.fallback_policy = fallback_policy
+        self.confidence_estimator = confidence_estimator
 
-        # Per-call temporary state — set in _build_query, consumed by
-        # _retrieve_candidates and _score_and_filter.  Cleared after retrieve().
-        self._query_activity_case: Any = None
+        # (no per-call mutable state — qac is passed explicitly through the call chain)
 
     # ── Protocol method ───────────────────────────────────────────────────────
 
@@ -228,8 +332,30 @@ class HistoricalAnalogRetriever:
         emergent_activity: JsonDict,
         intake_result: JsonDict,
         run_context: JsonDict,
+        *,
+        schedule_context: Any = None,
     ) -> JsonDict:
         """Execute Stage D for one emergent activity.
+
+        Args:
+            emergent_activity: EmergentActivity artifact.
+            intake_result: Stage A output.
+            run_context: Run metadata block.
+            schedule_context: Optional :class:`~stages.insertion_point_determiner.ScheduleContext`
+                produced by the pre-pass ``InsertionPointDeterminer``.  When
+                provided it enables two additional behaviours:
+
+                1. **Topology stamp**: ``predecessor_ids`` and ``successor_ids``
+                   are set on the query ``ActivityCase`` from the insertion
+                   point neighbourhood.  This makes ``DependencyPatternScorer``
+                   active as soon as historical topology data enters the index
+                   (Gap 4 Layer 2 — deferred).
+
+                2. **Structural affinity re-ranking**: ``_rerank_by_schedule_context()``
+                   applies a soft boost to analogs that match the insertion
+                   site's structural risk signals (CP membership, tight float,
+                   fan-out complexity).  Blend weight controlled by
+                   ``config.schedule_context_rerank_weight``.
 
         Returns:
             HistoricalAnalogs artifact conforming to
@@ -239,19 +365,48 @@ class HistoricalAnalogRetriever:
         activity_id: str = emergent_activity["activity_id"]
         LOGGER.debug("Stage D analog retrieval for %s (run=%s)", activity_id, run_id)
 
-        query = self._build_query(emergent_activity, intake_result)
-        candidates = self._retrieve_candidates(query)
-        analogs = self._score_and_filter(query, candidates)
-        analogs, outliers_removed = self._remove_duration_outliers(analogs)
-        distribution, fallback_used = self._fit_duration_distribution(analogs)
-        confidence_tier = self._compute_confidence_tier(analogs)
-        # Authoritative tier is count-based (not the fitter's internal tier),
-        # so we override here to ensure Stage E and G see a consistent value.
-        distribution["confidence_tier"] = confidence_tier
-        retrieval_summary = self._build_retrieval_summary(analogs, fallback_used)
+        query, qac = self._build_query(emergent_activity, intake_result)
 
-        # Clear per-call state
-        self._query_activity_case = None
+        # ── Layer 2 prep: stamp insertion-site topology onto query ActivityCase ─
+        # When historical ActivityCase objects in the index gain predecessor_ids /
+        # successor_ids, DependencyPatternScorer will activate automatically.
+        if schedule_context is not None and qac is not None:
+            _stamp_topology(qac, schedule_context)
+
+        candidates = self._retrieve_candidates(query, qac)
+        analogs, candidates_below_threshold = self._score_and_filter(query, candidates, qac)
+
+        # ── Layer 1: structural affinity re-ranking ──────────────────────────
+        if schedule_context is not None and self.config.schedule_context_rerank_weight > 0:
+            analogs = self._rerank_by_schedule_context(analogs, schedule_context)
+
+        # ── Two-pass outlier design ───────────────────────────────────────────
+        # Pass 1 (_remove_duration_outliers): hard-removes noise outliers from
+        # the non-disruption sub-pool using the IQR fence.  Disruption-context
+        # analogs (sharing an active execution-mode flag with the query) bypass
+        # this fence — their elevated durations are signal, not noise.
+        #
+        # Pass 2 (_fit_duration_distribution → _fit_from_data): runs
+        # OutlierHandler.separate() again on the cleaned pool (routine analogs +
+        # disruption-context analogs mixed together).  Its purpose is different
+        # from Pass 1: it classifies the disruption-context durations into the
+        # "extended" group so DistributionFitter.fit_from_separation() can build
+        # a two-component mixture model (routine mode + disruption mode).
+        #
+        # The two passes are intentionally sequential and serve distinct roles:
+        # Pass 1 cleans noise; Pass 2 structures the remaining signal.
+        analogs, outliers_removed = self._remove_duration_outliers(analogs, qac)
+        distribution, fallback_used = self._fit_duration_distribution(analogs, qac)
+        confidence_tier = self._compute_confidence_tier(analogs, qac)
+        # Override the fitter's internal tier with the authoritative value from
+        # _compute_confidence_tier(), which uses ConfidenceEstimator (similarity-
+        # aware: CV, disruption fraction, outage diversity) when injected, or
+        # count-based two-gate logic otherwise.  Either way, Stage E and G see
+        # the same tier that drove the confidence assessment.
+        distribution["confidence_tier"] = confidence_tier
+        retrieval_summary = self._build_retrieval_summary(
+            analogs, fallback_used, candidates_below_threshold
+        )
 
         return {
             "activity_id": activity_id,
@@ -276,10 +431,11 @@ class HistoricalAnalogRetriever:
     ) -> JsonDict:
         """Assemble the retrieval query from intake result fields.
 
-        Constructs an ActivityCase for the similarity scorers and stores it in
-        self._query_activity_case (not included in the returned dict).
+        Constructs an ActivityCase for the similarity scorers and returns it
+        alongside the query_summary dict so callers can pass it explicitly
+        through the private call chain without touching instance state.
 
-        Returns a clean query_summary dict included verbatim in the artifact.
+        Returns (query_summary_dict, query_activity_case).
 
         Reuse: _make_activity_case() bridge — constructs ActivityCase from
         JsonDict fields without modifying outage_uncertainty domain classes.
@@ -302,8 +458,13 @@ class HistoricalAnalogRetriever:
         except (ValueError, TypeError):
             pass
 
-        # Build ActivityCase for similarity scorers — stored as temp attribute
-        self._query_activity_case = _make_activity_case(
+        # Read execution mode flags extracted by Stage A.
+        # Fall back to all-False when absent (e.g. pre-P2 intake artifacts or
+        # test fixtures that don't include the key).
+        _flags = intake_result.get("execution_mode_flags") or {}
+
+        # Build ActivityCase for similarity scorers
+        qac = _make_activity_case(
             description=description,
             component_family=intake_result.get("component_family"),
             task_family=intake_result.get("task_family"),
@@ -314,6 +475,10 @@ class HistoricalAnalogRetriever:
             outage_phase=emergent_activity.get("outage_phase"),
             is_emergent=True,
             planned_duration_hours=planned_hours,
+            has_rp_hold=bool(_flags.get("has_rp_hold", False)),
+            requires_scaffold=bool(_flags.get("requires_scaffold", False)),
+            has_clearance=bool(_flags.get("has_clearance", False)),
+            is_vendor_supported=bool(_flags.get("is_vendor_supported", False)),
         )
 
         return {
@@ -326,9 +491,18 @@ class HistoricalAnalogRetriever:
             "plant_id": emergent_activity.get("plant_id"),
             "outage_phase": emergent_activity.get("outage_phase"),
             "planned_duration_hours": planned_hours,
-        }
+            # Execution mode flags recorded for artifact traceability — an analyst
+            # reviewing the output can see which disruption conditions were active
+            # for this retrieval run (affects similarity scoring and outlier routing).
+            "execution_mode_flags": {
+                "has_rp_hold": bool(_flags.get("has_rp_hold", False)),
+                "requires_scaffold": bool(_flags.get("requires_scaffold", False)),
+                "has_clearance": bool(_flags.get("has_clearance", False)),
+                "is_vendor_supported": bool(_flags.get("is_vendor_supported", False)),
+            },
+        }, qac
 
-    def _retrieve_candidates(self, query: JsonDict) -> List[Any]:
+    def _retrieve_candidates(self, query: JsonDict, qac: Any) -> List[Any]:
         """Search the retrieval index for the top-k most similar past activities.
 
         Two-step retrieval:
@@ -347,7 +521,7 @@ class HistoricalAnalogRetriever:
             LOGGER.warning("Stage D: retrieval_index not injected — returning empty analog set")
             return []
 
-        query_activity = self._query_activity_case
+        query_activity = qac
         if query_activity is None:
             return []
 
@@ -373,16 +547,19 @@ class HistoricalAnalogRetriever:
         return candidates
 
     def _score_and_filter(
-        self, query: JsonDict, candidates: List[Any]
-    ) -> List[JsonDict]:
+        self, query: JsonDict, candidates: List[Any], qac: Any
+    ) -> Tuple[List[JsonDict], int]:
         """Score each candidate with the weighted composite similarity and filter.
 
-        Composite score = (
-            lexical  × config.lexical_weight  +
-            semantic × config.semantic_weight +
-            component_match × config.component_weight +
-            context  × config.context_weight
-        )
+        Composite score (3 components):
+            lexical  × config.lexical_weight   (BM25 / token-overlap)
+            semantic × config.semantic_weight  (embedding cosine / WordNet)
+            context  × config.context_weight   (structured metadata; includes
+                                                component_family affinity)
+
+        Weights are wired into the injected SimilarityAggregator at construction
+        time (see __init__).  config.lexical_weight / semantic_weight /
+        context_weight are the authoritative sources for scoring behaviour.
 
         Steps:
             1. SimilarityEngine.compare(query_activity, candidate) → SimilarityMatch
@@ -390,15 +567,21 @@ class HistoricalAnalogRetriever:
             3. Filter matches below config.similarity_threshold
             4. Convert SimilarityMatch + ActivityCase → analog dict
 
+        Returns:
+            (analogs, candidates_below_threshold) where candidates_below_threshold
+            is the count of scored candidates whose similarity score was below
+            config.similarity_threshold (N12: exposed in retrieval_summary for
+            production monitoring of retrieval quality).
+
         Reuse:
             SimilarityEngine from outage_uncertainty.retrieval.similarity_engine
             NeighborSelector from outage_uncertainty.retrieval.neighbor_selector
             (read-only imports, no modification).
         """
         if not candidates:
-            return []
+            return [], 0
 
-        query_activity = self._query_activity_case
+        query_activity = qac
 
         # ── Scoring ───────────────────────────────────────────────────────────
         matches: List[Any] = []
@@ -413,15 +596,22 @@ class HistoricalAnalogRetriever:
                 except Exception:  # noqa: BLE001
                     LOGGER.debug("SimilarityEngine.compare() failed for a candidate")
         else:
-            # No engine injected — assign uniform score 0.5 as placeholder
+            # No engine injected — assign uniform score 0.5 as placeholder.
+            # candidates_below_threshold = 0 in this path: scores are synthetic,
+            # not real threshold rejections.
             LOGGER.warning("Stage D: similarity_engine not injected — using placeholder scores")
             return [
                 _activity_to_analog(c, 0.50, {}, relevance_weight=1.0)
                 for c in candidates[: self.config.top_k]
-            ]
+            ], 0
 
         if not matches:
-            return []
+            return [], 0
+
+        # N12: count candidates below threshold before any selection step.
+        n_below_threshold: int = sum(
+            1 for m in matches if _get_score(m) < self.config.similarity_threshold
+        )
 
         # ── Neighbor selection (top-k + relevance weighting) ─────────────────
         try:
@@ -457,12 +647,117 @@ class HistoricalAnalogRetriever:
             analogs.append(analog)
 
         LOGGER.debug("Stage D: %d analogs after scoring and filtering", len(analogs))
-        return analogs
+        return analogs, n_below_threshold
+
+    def _rerank_by_schedule_context(
+        self,
+        analogs: List[JsonDict],
+        schedule_context: Any,
+    ) -> List[JsonDict]:
+        """Apply a structural affinity boost to analog similarity scores.
+
+        Blends the existing ``similarity_score`` with a ``structural_affinity_score``
+        derived from the insertion site's schedule-risk signals.  The blend weight
+        is ``config.schedule_context_rerank_weight`` (default 0.10 — conservative).
+
+        Three structural signals are evaluated:
+
+        CP membership boost (0–0.5):
+            When the insertion site is on the critical path (``insertion_on_cp``),
+            analogs whose actual duration exceeded their planned duration by ≥10%
+            are boosted.  CP-overrun histories indicate the activity type is
+            prone to extending the project finish, making them the most relevant
+            comparators for a CP insertion.
+
+        Tight-float precision boost (0–0.5):
+            When ``available_float_hours < 8 h`` (near-critical insertion),
+            analogs whose actual duration was within 15% of their planned
+            duration are boosted.  Under tight float the outage manager needs
+            predictable estimates — analogs with low relative variance provide
+            tighter confidence bounds.
+
+        Fan-out coordination boost (0–0.3):
+            When the insertion site has high fan-out (``insertion_out_degree ≥ 3``,
+            blocking 3+ downstream tasks simultaneously), ``is_vendor_supported``
+            analogs are boosted.  Vendor activities carry inherent coordination
+            complexity that mirrors the multi-successor blockage scenario.
+
+        Boosts are capped at 1.0; each analog also gets a
+        ``structural_affinity_score`` field for artifact traceability.
+        Analogs are re-sorted by the blended score before returning.
+
+        This is Layer 1 of the Gap 4 design.  Layer 2 (activating
+        ``DependencyPatternScorer`` once historical topology enters the index)
+        is enabled automatically when ``predecessor_ids`` / ``successor_ids``
+        are populated on both query and candidate ``ActivityCase`` objects.
+        """
+        w = self.config.schedule_context_rerank_weight
+        if w <= 0.0 or not analogs:
+            return analogs
+
+        on_cp: bool = bool(getattr(schedule_context, "insertion_on_cp", False))
+        available_float: float = float(
+            getattr(schedule_context, "available_float_hours", float("inf"))
+        )
+        out_degree: int = int(getattr(schedule_context, "insertion_out_degree", 0))
+
+        tight_float = available_float < 8.0
+        burst_site = out_degree >= 3
+
+        result: List[JsonDict] = []
+        for analog in analogs:
+            actual = analog.get("actual_duration_hours")
+            planned = analog.get("planned_duration_hours")
+            is_vendor = bool(analog.get("is_vendor_supported"))
+
+            affinity: float = 0.0
+
+            # Signal 1 — CP overrun: overrun analogs are most relevant for CP insertions
+            if on_cp and actual is not None and planned and planned > 0:
+                if actual / planned > 1.10:
+                    affinity += 0.5
+
+            # Signal 2 — Tight float: low-variance analogs preferred near-critical path
+            if tight_float and actual is not None and planned and planned > 0:
+                if abs(actual - planned) / planned < 0.15:
+                    affinity += 0.5
+
+            # Signal 3 — Fan-out: vendor activities suit burst-node insertions
+            if burst_site and is_vendor:
+                affinity += 0.3
+
+            affinity = min(1.0, affinity)
+            orig = analog["similarity_score"]
+            blended = round((1.0 - w) * orig + w * affinity, 4)
+
+            updated = dict(analog)
+            updated["similarity_score"] = blended
+            updated["structural_affinity_score"] = round(affinity, 4)
+            result.append(updated)
+
+        result.sort(key=lambda a: a["similarity_score"], reverse=True)
+        LOGGER.debug(
+            "Stage D: structural affinity re-ranking applied "
+            "(on_cp=%s, tight_float=%s, burst_site=%s, w=%.2f)",
+            on_cp, tight_float, burst_site, w,
+        )
+        return result
 
     def _remove_duration_outliers(
-        self, analogs: List[JsonDict]
+        self, analogs: List[JsonDict], qac: Any
     ) -> Tuple[List[JsonDict], int]:
-        """Remove duration outliers using OutlierHandler (IQR strategy).
+        """Pass 1 of the two-pass outlier design: hard-remove noise outliers.
+
+        Only non-disruption analogs — those that do *not* share an active
+        execution-mode flag with the query (has_rp_hold, requires_scaffold,
+        has_clearance, is_vendor_supported) — are subject to the IQR fence.
+        Their outliers are genuine noise (e.g. data-entry errors, mismatched
+        activities) that would inflate the distribution tail.
+
+        Disruption-context analogs bypass the fence entirely.  Their elevated
+        durations reflect real execution under constrained conditions and must
+        be preserved so that Pass 2 (``_fit_duration_distribution``) can
+        classify them into the mixture model's extended component.
 
         Only analogs with non-null actual_duration_hours participate in
         outlier detection; analogs without duration data are always retained.
@@ -480,32 +775,91 @@ class HistoricalAnalogRetriever:
         if len(with_duration) < 2:
             return analogs, 0
 
-        durations = [a["actual_duration_hours"] for _, a in with_duration]
-        weights = [a.get("relevance_weight", 1.0) for _, a in with_duration]
+        # Partition with-duration analogs into disruption-context and non-disruption.
+        # Disruption-context analogs share at least one active execution mode flag
+        # with the query; they bypass IQR so their extended durations feed the
+        # mixture model.  Non-disruption analogs go through the normal IQR fence.
+        active_flags = _active_execution_flags(qac)
+        disruption_local_indices: set = set()
+        if active_flags:
+            for local_idx, (_, a) in enumerate(with_duration):
+                if _analog_matches_flags(a, active_flags):
+                    disruption_local_indices.add(local_idx)
 
-        if self.outlier_handler is not None:
-            try:
-                separation = self.outlier_handler.separate(durations, weights)
-                routine_set = set(separation.routine)
-                kept = [(i, a) for (i, a), d in zip(with_duration, durations)
-                        if d in routine_set]
-                outliers_removed = len(with_duration) - len(kept)
-            except Exception:  # noqa: BLE001
-                LOGGER.warning("Stage D: outlier_handler.separate() failed; keeping all analogs")
-                kept = with_duration
-                outliers_removed = 0
+        if active_flags and disruption_local_indices:
+            LOGGER.debug(
+                "Stage D: %d disruption-context analog(s) bypassing IQR fence "
+                "(query active flags: %s)",
+                len(disruption_local_indices),
+                sorted(active_flags),
+            )
+
+        nd_pairs = [(i, a) for local_idx, (i, a) in enumerate(with_duration)
+                    if local_idx not in disruption_local_indices]
+        dc_pairs = [(i, a) for local_idx, (i, a) in enumerate(with_duration)
+                    if local_idx in disruption_local_indices]
+
+        # Apply IQR fence only to non-disruption analogs
+        outliers_removed = 0
+        if len(nd_pairs) >= 2:
+            nd_durations = [a["actual_duration_hours"] for _, a in nd_pairs]
+            nd_weights = [a.get("relevance_weight", 1.0) for _, a in nd_pairs]
+
+            if self.outlier_handler is not None:
+                try:
+                    separation = self.outlier_handler.separate(nd_durations, nd_weights)
+                    # Use list.remove() rather than set-membership so that
+                    # duplicate duration values are consumed one-at-a-time.
+                    # A set lookup would keep *all* analogs whose duration
+                    # matches any routine value, incorrectly retaining
+                    # duplicates that were classified as extended.
+                    routine_remaining = list(separation.routine)
+                    kept_nd = []
+                    for (i, a), d in zip(nd_pairs, nd_durations):
+                        try:
+                            routine_remaining.remove(d)
+                            kept_nd.append((i, a))
+                        except ValueError:
+                            pass  # d was classified as extended — drop it
+                    outliers_removed = len(nd_pairs) - len(kept_nd)
+                    # Integrity check: kept count must equal len(separation.routine).
+                    # If it doesn't, OutlierHandler.separate() returned modified
+                    # float values (e.g. rounded) that no longer match nd_durations
+                    # exactly, causing silent data loss.  Fall back to keep-all so
+                    # that the failure is loud and safe rather than quiet and lossy.
+                    if len(kept_nd) != len(separation.routine):
+                        LOGGER.warning(
+                            "Stage D: outlier removal kept %d analogs but expected %d "
+                            "(separation.routine size) — OutlierHandler may be "
+                            "returning modified float values.  Falling back to "
+                            "keep-all non-disruption analogs.",
+                            len(kept_nd),
+                            len(separation.routine),
+                        )
+                        kept_nd = nd_pairs
+                        outliers_removed = 0
+                except Exception:  # noqa: BLE001
+                    LOGGER.warning("Stage D: outlier_handler.separate() failed; keeping all analogs")
+                    kept_nd = nd_pairs
+            else:
+                kept_nd, outliers_removed = _tukey_filter(nd_pairs, nd_durations)
         else:
-            # Fallback: manual Tukey IQR fence
-            kept, outliers_removed = _tukey_filter(with_duration, durations)
+            kept_nd = nd_pairs
 
-        # Reconstruct in original index order: retained with-duration + all without-duration
+        # Reconstruct in original index order: routine non-disruption +
+        # all disruption-context (always kept) + all without-duration analogs.
+        kept = kept_nd + dc_pairs
         kept_indices = {i for i, _ in kept}
+        with_duration_indices = {i for i, _ in with_duration}
         all_pairs = sorted(kept + without_duration, key=lambda x: x[0])
-        result = [a for i, a in all_pairs if i in kept_indices or i not in {j for j, _ in with_duration}]
+        result = [
+            a for i, a in all_pairs
+            if i in kept_indices or i not in with_duration_indices
+        ]
         return result, outliers_removed
 
     def _fit_duration_distribution(
-        self, analogs: List[JsonDict]
+        self, analogs: List[JsonDict], qac: Any
     ) -> Tuple[JsonDict, bool]:
         """Fit a duration distribution from analog actual_duration_hours values.
 
@@ -516,10 +870,17 @@ class HistoricalAnalogRetriever:
 
         Logic:
             sample_size = count of analogs with non-null actual_duration_hours.
-            If sample_size >= config.min_analogs_for_sme_informed:
+            If sample_size >= max(2, config.min_analogs_for_sme_informed):
                 Fit via DistributionFitter.fit_from_separation() (empirical,
                 power-weight–adjusted percentiles).  fallback_used = False.
-            Else:
+            Elif sample_size == 1:
+                Single-analog prior: p50 = analog duration, p80/p90 inflated
+                by fixed factors, distribution_type = "single_analog_prior",
+                confidence_tier = low_confidence.  fallback_used = True.
+                Prevents degenerate p50 == p80 == p90 that the empirical fitter
+                would produce for n = 1, and avoids the false-precision of
+                presenting a single data point as sme_informed (0.65 confidence).
+            Else (sample_size == 0):
                 Use HierarchicalFallbackPolicy.estimate() if injected, or
                 compute a trivial planned-duration prior.  fallback_used = True.
 
@@ -541,34 +902,143 @@ class HistoricalAnalogRetriever:
         ]
         sample_size = len(durations)
 
-        if sample_size >= self.config.min_analogs_for_sme_informed:
+        if sample_size >= max(2, self.config.min_analogs_for_sme_informed):
             dist_dict = self._fit_from_data(durations, weights, sample_size)
             return dist_dict, False
 
-        # ── Fallback path ─────────────────────────────────────────────────────
-        fallback_dict = self._fit_from_fallback(durations)
+        # ── Single-analog prior ───────────────────────────────────────────────
+        if sample_size == 1:
+            # One data point carries no variance information; fitting would
+            # produce a degenerate distribution (p50 == p80 == p90).  Instead,
+            # use the analog as a p50 anchor and apply conservative inflation
+            # factors for higher percentiles.  Marking as low_confidence and
+            # fallback_used=True ensures Stage G raises _FLAG_FALLBACK and the
+            # outage manager knows the estimate rests on a single observation.
+            single_dur = durations[0]
+            return {
+                "distribution_type": "single_analog_prior",
+                "p50_hours": round(single_dur, 2),
+                "p80_hours": round(single_dur * 1.30, 2),
+                "p90_hours": round(single_dur * 1.50, 2),
+                "mean_hours": round(single_dur, 2),
+                "std_hours": None,
+                "confidence_tier": _TIER_LOW_CONFIDENCE,
+                "sample_size": 1,
+            }, True
+
+        # ── Fallback path (zero analogs) ──────────────────────────────────────
+        fallback_dict = self._fit_from_fallback(durations, qac)
         return fallback_dict, True
 
-    def _compute_confidence_tier(self, analogs: List[JsonDict]) -> str:
-        """Map analog count to a confidence tier.
+    def _compute_confidence_tier(self, analogs: List[JsonDict], qac: Any) -> str:
+        """Assign a confidence tier to the duration estimate.
 
-        data_supported : sample_size >= config.min_analogs_for_data_supported
-        sme_informed   : sample_size >= config.min_analogs_for_sme_informed
-        low_confidence : otherwise (fallback distribution in use)
+        When a ``confidence_estimator`` is injected (preferred), delegates to
+        :class:`~outage_uncertainty.uncertainty.confidence.ConfidenceEstimator`
+        which uses similarity scores, coefficient of variation, and disruption
+        fraction in addition to sample count and outage diversity.  The result
+        tier ("high"/"medium"/"low") is mapped to Stage D names via
+        ``_CE_TIER_TO_STAGE_D``.
+
+        When no estimator is injected (or the call fails), falls back to the
+        count-based two-gate logic:
+
+        1. Sample-size gate:
+           data_supported : sample_size >= config.min_analogs_for_data_supported
+           sme_informed   : sample_size >= config.min_analogs_for_sme_informed
+           low_confidence : otherwise
+
+        2. Outage diversity gate (applied only at data_supported tier):
+           Caps data_supported → sme_informed when the pool spans fewer than
+           config.min_outages_for_data_supported distinct outage cycles.
+           Disabled when the config threshold is 0.
         """
+        # ── Primary path: delegate to ConfidenceEstimator ────────────────────
+        # Requires outlier_handler to build the OutlierSeparation that
+        # ConfidenceEstimator needs for CV and disruption-fraction signals.
+        if (self.confidence_estimator is not None
+                and qac is not None
+                and self.outlier_handler is not None):
+            try:
+                with_dur = [a for a in analogs if a.get("actual_duration_hours") is not None]
+                durations = [a["actual_duration_hours"] for a in with_dur]
+                weights = [a.get("relevance_weight", 1.0) for a in with_dur]
+                separation = self.outlier_handler.separate(durations, weights)
+                matches = [
+                    _MatchProxy(
+                        total_score=a.get("similarity_score", 0.0),
+                        relevance_weight=a.get("relevance_weight", 1.0),
+                    )
+                    for a in with_dur
+                ]
+                outages_represented = len(
+                    {a["outage_id"] for a in analogs if a.get("outage_id")}
+                )
+                result = self.confidence_estimator.classify(
+                    qac,
+                    matches,
+                    separation,
+                    outages_represented=outages_represented,
+                )
+                return _CE_TIER_TO_STAGE_D.get(result.tier, _TIER_LOW_CONFIDENCE)
+            except Exception:  # noqa: BLE001
+                LOGGER.debug(
+                    "Stage D: ConfidenceEstimator.classify() failed; "
+                    "using count-based confidence tier"
+                )
+
+        # ── Fallback: count-based two-gate logic ─────────────────────────────
         sample_size = sum(
             1 for a in analogs if a.get("actual_duration_hours") is not None
         )
+
+        # Count distinct outages in the analogue pool
+        outages_represented = len(
+            {a["outage_id"] for a in analogs if a.get("outage_id")}
+        )
+
+        # Sample-size gate
         if sample_size >= self.config.min_analogs_for_data_supported:
+            count_tier = _TIER_DATA_SUPPORTED
+        elif sample_size >= self.config.min_analogs_for_sme_informed:
+            count_tier = _TIER_SME_INFORMED
+        else:
+            return _TIER_LOW_CONFIDENCE   # no analogs — diversity gate irrelevant
+
+        # Outage diversity gate (applied only at data_supported tier).
+        # The gate prevents over-claiming cross-cycle validity.  When the count
+        # gate says data_supported but the outage gate fails, the tier is capped
+        # at sme_informed — never lower.  sme_informed itself carries no outage
+        # gate because it is already a "use with caution" tier.
+        min_out_data = self.config.min_outages_for_data_supported
+
+        if count_tier == _TIER_DATA_SUPPORTED:
+            if min_out_data > 0 and outages_represented < min_out_data:
+                LOGGER.debug(
+                    "Stage D: outage diversity cap applied "
+                    "(outages_represented=%d < min_outages_for_data_supported=%d); "
+                    "capping data_supported → sme_informed.",
+                    outages_represented, min_out_data,
+                )
+                return _TIER_SME_INFORMED
             return _TIER_DATA_SUPPORTED
-        if sample_size >= self.config.min_analogs_for_sme_informed:
-            return _TIER_SME_INFORMED
-        return _TIER_LOW_CONFIDENCE
+
+        return _TIER_SME_INFORMED
 
     def _build_retrieval_summary(
-        self, analogs: List[JsonDict], fallback_used: bool
+        self,
+        analogs: List[JsonDict],
+        fallback_used: bool,
+        candidates_below_threshold: int = 0,
     ) -> JsonDict:
-        """Compute analog_count, outages_represented, plants_represented."""
+        """Compute analog_count, outages_represented, plants_represented.
+
+        N12 fix: ``candidates_below_threshold`` records how many candidates were
+        scored by the SimilarityEngine but rejected because their score was below
+        ``config.similarity_threshold``.  A high value relative to total candidates
+        signals that the threshold may be too strict for the current retrieval index
+        and should be reviewed before production deployment.
+        """
         analog_count = len(analogs)
         outage_ids = {a["outage_id"] for a in analogs if a.get("outage_id")}
         plant_ids = {a["plant_id"] for a in analogs if a.get("plant_id")}
@@ -583,6 +1053,7 @@ class HistoricalAnalogRetriever:
             "plants_represented": len(plant_ids),
             "best_similarity_score": best_score,
             "fallback_used": fallback_used,
+            "candidates_below_threshold": candidates_below_threshold,
         }
 
     # ── Distribution fitting helpers ──────────────────────────────────────────
@@ -593,10 +1064,20 @@ class HistoricalAnalogRetriever:
         weights: List[float],
         sample_size: int,
     ) -> JsonDict:
-        """Fit empirical distribution from analog duration data.
+        """Pass 2 of the two-pass outlier design: fit the mixture distribution.
 
-        Delegates to DistributionFitter.fit_from_separation() when the fitter
-        is injected; falls back to direct weighted-percentile computation.
+        Receives the noise-cleaned analog pool from Pass 1
+        (``_remove_duration_outliers``), which contains both routine analogs
+        and any disruption-context analogs that bypassed the IQR fence.
+
+        Calls ``OutlierHandler.separate()`` a second time — intentionally.
+        Here the separation's role is different from Pass 1: it classifies the
+        disruption-context durations into ``separation.extended`` so that
+        ``DistributionFitter.fit_from_separation()`` can build a two-component
+        mixture model.  Pass 1 removed noise; this pass structures the signal.
+
+        Falls back to ``_manual_distribution`` (weighted percentiles) if the
+        fitter or handler is not injected or raises.
 
         Reuse: DistributionFitter + OutlierHandler (read-only imports).
         """
@@ -611,7 +1092,7 @@ class HistoricalAnalogRetriever:
         # Manual fallback: weighted percentiles
         return _manual_distribution(durations, weights, sample_size)
 
-    def _fit_from_fallback(self, durations: List[float]) -> JsonDict:
+    def _fit_from_fallback(self, durations: List[float], qac: Any) -> JsonDict:
         """Build a fallback distribution when too few analogs are available.
 
         Uses HierarchicalFallbackPolicy (if injected) with the query ActivityCase.
@@ -621,15 +1102,15 @@ class HistoricalAnalogRetriever:
         Reuse: HierarchicalFallbackPolicy from outage_uncertainty.uncertainty.fallback_policy
         (read-only import, no modification).
         """
-        if self.fallback_policy is not None and self._query_activity_case is not None:
+        if self.fallback_policy is not None and qac is not None:
             try:
-                estimate = self.fallback_policy.estimate(self._query_activity_case)
+                estimate = self.fallback_policy.estimate(qac)
                 return _estimate_to_dict(estimate, len(durations))
             except Exception:  # noqa: BLE001
                 LOGGER.warning("Stage D: fallback_policy.estimate() failed; using prior only")
 
         # Last resort: planned_duration_hours as a point estimate
-        planned = getattr(self._query_activity_case, "planned_duration_hours", None)
+        planned = getattr(qac, "planned_duration_hours", None)
         if planned:
             return {
                 "distribution_type": "point_prior",
@@ -710,24 +1191,108 @@ def _activity_to_analog(
         "description": _g("cleaned_description") or _g("raw_description", ""),
         "similarity_breakdown": breakdown,
         "relevance_weight": round(relevance_weight, 4),
+        # Execution mode flags — propagated for disruption-context outlier routing
+        # and downstream traceability.  False when absent on the source ActivityCase.
+        "has_rp_hold": bool(_g("has_rp_hold") or False),
+        "requires_scaffold": bool(_g("requires_scaffold") or False),
+        "has_clearance": bool(_g("has_clearance") or False),
+        "is_vendor_supported": bool(_g("is_vendor_supported") or False),
     }
+
+
+def _stamp_topology(query_activity_case: Any, schedule_context: Any) -> None:
+    """Stamp predecessor_ids / successor_ids onto the query ActivityCase.
+
+    Uses the insertion site neighbourhood from ``ScheduleContext`` to give
+    the query a topological role.  This is a no-op when the fields cannot
+    be set (e.g. ``_DictActivityCase`` fallback).
+
+    Purpose: Gap 4 Layer 2 preparation.  Once historical ``ActivityCase``
+    objects in the retrieval index gain populated predecessor_ids /
+    successor_ids, ``DependencyPatternScorer`` will begin contributing a
+    non-zero score automatically — no additional code changes required.
+    """
+    after_id = getattr(schedule_context, "after_task_id", None)
+    before_id = getattr(schedule_context, "before_task_id", None)
+    try:
+        if after_id:
+            query_activity_case.predecessor_ids = [after_id]
+        if before_id:
+            query_activity_case.successor_ids = [before_id]
+    except (AttributeError, TypeError):
+        pass  # _DictActivityCase or frozen dataclass — skip gracefully
 
 
 def _tukey_filter(
     indexed: List[Tuple[int, JsonDict]],
     durations: List[float],
 ) -> Tuple[List[Tuple[int, JsonDict]], int]:
-    """Fallback Tukey IQR fence when OutlierHandler is not injected."""
+    """Fallback Tukey IQR fence when OutlierHandler is not injected.
+
+    Uses the same linear-interpolation quartile method as
+    ``OutlierHandler._interpolated_percentile`` so that the fence value is
+    consistent with the primary path.  The previous nearest-rank approach
+    (``sorted_d[n // 4]`` / ``sorted_d[(3 * n) // 4]``) set q3 = max(data)
+    for n == 4, making the fence unreachable and silently skipping all
+    outlier removal at that sample size.
+
+    Note: quartiles are computed on unweighted sorted durations (weights are
+    not available at this call site — they are embedded in each analog dict).
+    This matches the unweighted Q1/Q3 in ``OutlierHandler._iqr``.
+    """
     if len(durations) < 4:
         return indexed, 0
     sorted_d = sorted(durations)
     n = len(sorted_d)
-    q1 = sorted_d[n // 4]
-    q3 = sorted_d[(3 * n) // 4]
+
+    def _interp(q: float) -> float:
+        pos = (n - 1) * q
+        lo = int(pos)
+        hi = min(lo + 1, n - 1)
+        frac = pos - lo
+        return sorted_d[lo] * (1.0 - frac) + sorted_d[hi] * frac
+
+    q1 = _interp(0.25)
+    q3 = _interp(0.75)
     iqr = q3 - q1
     upper = q3 + 1.5 * iqr
     kept = [(i, a) for (i, a), d in zip(indexed, durations) if d <= upper]
     return kept, len(indexed) - len(kept)
+
+
+# ---------------------------------------------------------------------------
+# Execution-mode flag helpers for disruption-context outlier routing
+# ---------------------------------------------------------------------------
+
+_EXECUTION_MODE_FLAGS: Tuple[str, ...] = (
+    "has_rp_hold",
+    "requires_scaffold",
+    "has_clearance",
+    "is_vendor_supported",
+)
+
+
+def _active_execution_flags(query_activity: Any) -> frozenset:
+    """Return the set of execution mode flag names that are True on the query.
+
+    A frozenset is returned so callers can cheaply check intersection.  An
+    empty frozenset means no flags are active (gate is disabled).
+    """
+    if query_activity is None:
+        return frozenset()
+    return frozenset(
+        f for f in _EXECUTION_MODE_FLAGS
+        if bool(getattr(query_activity, f, False))
+    )
+
+
+def _analog_matches_flags(analog: JsonDict, active_flags: frozenset) -> bool:
+    """Return True if *analog* has any flag in *active_flags* set to True.
+
+    Used to identify disruption-context analogues that should bypass the
+    IQR fence in ``_remove_duration_outliers``.
+    """
+    return any(bool(analog.get(f, False)) for f in active_flags)
 
 
 def _distribution_to_dict(dist: Any, sample_size: int) -> JsonDict:
@@ -741,8 +1306,12 @@ def _distribution_to_dict(dist: Any, sample_size: int) -> JsonDict:
         "p50_hours": _g("p50"),
         "p80_hours": _g("p80"),
         "p90_hours": _g("p90"),
-        "mean_hours": _g("mean") or _g("p50"),
-        "std_hours": _g("std"),
+        "mean_hours": round(dist.mean(), 2),
+        "std_hours": (
+            round(dist.variance() ** 0.5, 2)
+            if len(getattr(dist, "samples", None) or []) >= 2
+            else None
+        ),
         "confidence_tier": getattr(dist, "confidence_tier", None),
         "sample_size": sample_size,
     }
@@ -750,14 +1319,15 @@ def _distribution_to_dict(dist: Any, sample_size: int) -> JsonDict:
 
 def _estimate_to_dict(estimate: Any, sample_size: int) -> JsonDict:
     """Convert an ActivityEstimate (fallback policy output) to a distribution dict."""
-    # ActivityEstimate may have a nested DurationDistribution or direct percentile attrs
-    dist = getattr(estimate, "duration_distribution", None) or estimate
+    # ActivityEstimate nests the distribution under `estimated_distribution`.
+    dist = getattr(estimate, "estimated_distribution", None) or estimate
+    mean_h = round(dist.mean(), 2) if callable(getattr(dist, "mean", None)) else _safe_float(getattr(dist, "p50", None))
     return {
         "distribution_type": getattr(dist, "distribution_type", "fallback"),
         "p50_hours": _safe_float(getattr(dist, "p50", None)),
         "p80_hours": _safe_float(getattr(dist, "p80", None)),
         "p90_hours": _safe_float(getattr(dist, "p90", None)),
-        "mean_hours": _safe_float(getattr(dist, "mean", None)),
+        "mean_hours": mean_h,
         "std_hours": _safe_float(getattr(dist, "std", None)),
         "confidence_tier": _TIER_LOW_CONFIDENCE,
         "sample_size": sample_size,
@@ -769,7 +1339,12 @@ def _manual_distribution(
     weights: List[float],
     sample_size: int,
 ) -> JsonDict:
-    """Compute weighted percentile distribution without DistributionFitter."""
+    """Compute weighted percentile distribution without DistributionFitter.
+
+    Uses the same midpoint-CDF + linear-interpolation algorithm as
+    ``_weighted_percentile`` in distribution_fitter.py so that this fallback
+    path produces consistent percentile estimates.
+    """
     if not durations:
         return {
             "distribution_type": "empirical",
@@ -777,25 +1352,21 @@ def _manual_distribution(
             "mean_hours": None, "std_hours": None,
             "confidence_tier": None, "sample_size": 0,
         }
-    total_w = sum(weights) or 1.0
-    norm_w = [w / total_w for w in weights]
-    pairs = sorted(zip(durations, norm_w), key=lambda x: x[0])
-    sorted_d = [p[0] for p in pairs]
-    sorted_w = [p[1] for p in pairs]
-    cumulative = []
-    acc = 0.0
-    for w in sorted_w:
-        acc += w
-        cumulative.append(acc)
+
+    try:
+        from dackar.outage.outage_uncertainty.uncertainty.distribution_fitter import (
+            _weighted_percentile,
+        )
+    except ImportError:
+        _weighted_percentile = _weighted_percentile_fallback  # type: ignore[assignment]
 
     def _wp(q: float) -> float:
-        for i, c in enumerate(cumulative):
-            if c >= q:
-                return sorted_d[i]
-        return sorted_d[-1]
+        return _weighted_percentile(durations, weights, q)
 
-    mean_h = sum(d * w for d, w in zip(sorted_d, sorted_w))
-    variance = sum(w * (d - mean_h) ** 2 for d, w in zip(sorted_d, sorted_w))
+    total_w = sum(weights) or 1.0
+    norm_w = [w / total_w for w in weights]
+    mean_h = sum(d * w for d, w in zip(durations, norm_w))
+    variance = sum(w * (d - mean_h) ** 2 for d, w in zip(durations, norm_w))
     std_h = math.sqrt(variance) if variance > 0 else 0.0
 
     return {
@@ -808,6 +1379,41 @@ def _manual_distribution(
         "confidence_tier": None,
         "sample_size": sample_size,
     }
+
+
+def _weighted_percentile_fallback(
+    values: List[float],
+    weights: List[float],
+    q: float,
+) -> float:
+    """Minimal midpoint-CDF weighted percentile used when distribution_fitter
+    cannot be imported (pure-stdlib emergency fallback, same algorithm)."""
+    if not values:
+        return 0.0
+    pairs = sorted(zip(values, weights), key=lambda p: p[0])
+    sorted_vals = [p[0] for p in pairs]
+    sorted_w = [p[1] for p in pairs]
+    total = sum(sorted_w)
+    if total <= 0.0:
+        sorted_w = [1.0] * len(sorted_vals)
+        total = float(len(sorted_vals))
+    cdf: List[float] = []
+    cumulative = 0.0
+    for w in sorted_w:
+        cdf.append((cumulative + 0.5 * w) / total)
+        cumulative += w
+    if q <= cdf[0]:
+        return sorted_vals[0]
+    if q >= cdf[-1]:
+        return sorted_vals[-1]
+    for i in range(1, len(sorted_vals)):
+        if cdf[i] >= q:
+            span = cdf[i] - cdf[i - 1]
+            if span <= 0.0:
+                return sorted_vals[i]
+            frac = (q - cdf[i - 1]) / span
+            return sorted_vals[i - 1] + frac * (sorted_vals[i] - sorted_vals[i - 1])
+    return sorted_vals[-1]
 
 
 def _safe_float(val: Any) -> Optional[float]:

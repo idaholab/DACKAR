@@ -292,6 +292,152 @@ def test_pure_negation_without_causal_attribution_stays_contradicting():
     print("  PASS test_pure_negation_without_causal_attribution_stays_contradicting")
 
 
+# ── Encoder fallback tests ────────────────────────────────────────────────────
+
+import numpy as np
+
+
+class _MockEncoder:
+    """Deterministic mock encoder for unit tests.
+
+    Returns a fixed embedding for each text based on a lookup table; unknown
+    texts get the zero vector.  Vectors are pre-normalised to unit norm.
+    """
+
+    def __init__(self, table: dict):
+        # table: {text: np.ndarray (unit-norm)}
+        self._table = table
+        self.calls: list = []
+
+    def encode(self, texts):
+        self.calls.append(texts)
+        dim = next(iter(self._table.values())).shape[0] if self._table else 4
+        out = []
+        for t in texts:
+            # normalise the lookup key the same way _norm_text does
+            key = " ".join(t.lower().split()).strip()
+            v = self._table.get(key, np.zeros(dim, dtype=float))
+            out.append(v)
+        return np.vstack(out) if out else np.zeros((0, dim), dtype=float)
+
+
+def _unit(v):
+    n = np.linalg.norm(v)
+    return v / max(n, 1e-9)
+
+
+def make_retriever_with_encoder(encoder):
+    return ChromaEvidenceRetriever(
+        store=InMemoryEvidenceStore([]),
+        config=None,
+        annotator=None,
+        encoder=encoder,
+    )
+
+
+def test_encoder_fallback_used_for_bm25_only_hit():
+    """When _vector_score = 0 and encoder is set, semantic_relevance comes from encoder cosine sim."""
+    # cause_label: "loss of lubrication"   → vector A = [1, 0, 0, 0]
+    # snippet:     "lube oil degradation"  → vector B ≈ A (dot product = 0.85)
+    a = _unit(np.array([1.0, 0.1, 0.0, 0.0]))
+    b = _unit(np.array([0.9, 0.2, 0.0, 0.0]))
+
+    snippet_text = "lube oil degradation found during inspection"
+    enc = _MockEncoder({
+        "loss of lubrication": a,
+        # _norm_text normalises the full snippet — use the exact normalised form as key
+        " ".join(snippet_text.lower().split()): b,
+    })
+    r = make_retriever_with_encoder(enc)
+
+    hit = make_hit(
+        snippet_text,
+        meta={"doc_type": "WO", "authority_level": "mandatory", "extraction_quality": 1.0,
+              "_vector_score": 0.0},  # BM25-only hit
+    )
+    qp = make_query_plan(cause_label="loss of lubrication")
+
+    # Pre-embed cause_label so _emb_cache is populated (mirrors _normalize_hits flow)
+    cause_label_emb = r._embed("loss of lubrication")
+    result = r._assess_hit_against_candidate(hit, qp, cause_label_emb=cause_label_emb)
+
+    expected_cos = float(np.dot(a, b))  # pre-normalised → dot product = cosine sim
+    assert result["semantic_relevance_score"] > 0.5, (
+        f"Expected high semantic_relevance from encoder, got {result['semantic_relevance_score']:.3f}"
+    )
+    assert result["candidate_term_overlap"] == 0.0, (
+        "Lexical overlap should be 0 (no shared tokens between cause_label and snippet keywords)"
+    )
+    print(f"  PASS test_encoder_fallback_used_for_bm25_only_hit "
+          f"(sem={result['semantic_relevance_score']:.3f}, cosine={expected_cos:.3f})")
+
+
+def test_encoder_not_called_when_vector_score_present():
+    """When _vector_score > 0, the encoder should not be used."""
+    a = _unit(np.array([1.0, 0.0, 0.0, 0.0]))
+    b = _unit(np.array([0.0, 1.0, 0.0, 0.0]))  # orthogonal — cosine = 0
+
+    enc = _MockEncoder({
+        "seal failure": a,
+        "corroded shaft bearing": b,
+    })
+    r = make_retriever_with_encoder(enc)
+
+    hit = make_hit(
+        "corroded shaft bearing replaced",
+        meta={"doc_type": "WO", "authority_level": "mandatory", "extraction_quality": 1.0,
+              "_vector_score": 0.82},  # vector score already present
+    )
+    qp = make_query_plan(cause_label="seal failure")
+
+    cause_label_emb = r._embed("seal failure")
+    result = r._assess_hit_against_candidate(hit, qp, cause_label_emb=cause_label_emb)
+
+    # semantic_relevance should be the Chroma _vector_score, not the encoder cosine (which would be 0)
+    assert_approx(result["semantic_relevance_score"], 0.82, tol=0.001,
+                  label="semantic_relevance_score should equal _vector_score")
+    print(f"  PASS test_encoder_not_called_when_vector_score_present "
+          f"(sem={result['semantic_relevance_score']:.3f})")
+
+
+def test_no_encoder_falls_back_to_lexical_overlap():
+    """When no encoder is configured, BM25-only hits use candidate_term_overlap."""
+    r = make_retriever()  # no encoder
+
+    hit = make_hit(
+        "seal degraded beyond tolerance",
+        meta={"doc_type": "WO", "authority_level": "mandatory", "extraction_quality": 1.0,
+              "_vector_score": 0.0},  # BM25-only
+    )
+    qp = make_query_plan(cause_label="seal degradation")
+
+    result = r._assess_hit_against_candidate(hit, qp, cause_label_emb=None)
+
+    # "seal" and "degraded" overlap with "seal degradation" → overlap > 0
+    assert result["candidate_term_overlap"] > 0.0
+    # semantic_relevance must equal candidate_term_overlap when no encoder and no vector score
+    assert_approx(result["semantic_relevance_score"], result["candidate_term_overlap"],
+                  label="semantic_relevance_score should equal candidate_term_overlap")
+    print(f"  PASS test_no_encoder_falls_back_to_lexical_overlap "
+          f"(overlap={result['candidate_term_overlap']:.3f})")
+
+
+def test_encoder_cache_cleared_between_retrieve_calls():
+    """_emb_cache is reset at the start of each retrieve() call."""
+    enc = _MockEncoder({"pump failure": _unit(np.array([1.0, 0.0, 0.0, 0.0]))})
+    r = make_retriever_with_encoder(enc)
+
+    # Manually prime the cache as retrieve() would
+    r._emb_cache = {}
+    r._embed("pump failure")
+    assert "pump failure" in r._emb_cache
+
+    # Simulate a new retrieve() resetting the cache
+    r._emb_cache = {}
+    assert len(r._emb_cache) == 0
+    print("  PASS test_encoder_cache_cleared_between_retrieve_calls")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -308,6 +454,11 @@ ALL_TESTS = [
     test_eca_doc_type_increases_epistemic_weight,
     test_causal_attribution_with_contradiction_cues_classified_as_supporting,
     test_pure_negation_without_causal_attribution_stays_contradicting,
+    # Encoder fallback tests
+    test_encoder_fallback_used_for_bm25_only_hit,
+    test_encoder_not_called_when_vector_score_present,
+    test_no_encoder_falls_back_to_lexical_overlap,
+    test_encoder_cache_cleared_between_retrieve_calls,
 ]
 
 

@@ -33,6 +33,8 @@
           "component_id":      { "type": "string", "description": "KG Component node ID." },
           "component_label":   { "type": "string" },
           "component_type":    { "type": "string" },
+          "asset_id":          { "type": "string", "description": "Asset this component belongs to." },
+          "role":              { "type": "string", "description": "Functional role of this component in the system (e.g., pressure_boundary, heat_transfer_surface)." },
           "relation_to_asset": {
             "type": "string",
             "enum": ["primary", "upstream", "downstream", "adjacent", "same_train"],
@@ -51,7 +53,15 @@
             "items": { "type": "string", "enum": ["REALIZES", "UPSTREAM_OF", "DOWNSTREAM_OF", "CONNECTED_TO", "PART_OF", "FEEDS"] },
             "description": "KG edge types traversed to reach this component."
           },
-          "in_service": { "type": "boolean" }
+          "in_service": { "type": "boolean" },
+          "maximo_floc": {
+            "type": ["string", "null"],
+            "description": "Maximo Functional Location (FLOC) code stored on the KG element_usage node. Used by CAPExportSerializer for functional_location resolution."
+          },
+          "sap_equipment_id": {
+            "type": ["string", "null"],
+            "description": "SAP PM Equipment ID stored on the KG element_usage node. Used by CAPExportSerializer for equipment_id resolution."
+          }
         }
       }
     },
@@ -84,7 +94,8 @@
               }
             }
           },
-          "path_length": { "type": "integer" }
+          "path_length": { "type": "integer" },
+          "path_strength": { "type": "number", "minimum": 0, "maximum": 1, "description": "Estimated causal path strength (0–1) based on hop count and edge type composition." }
         }
       }
     },
@@ -132,20 +143,27 @@
           "applies_to_component_id":{ "type": "string" },
           "component_id":           { "type": "string", "description": "Runtime-friendly alias for applies_to_component_id." },
 
+          "component_name":         { "type": "string", "description": "Human-readable name of the component this failure mode applies to." },
+          "superclass":             { "type": "string", "description": "Failure mode superclass (e.g., pressure_boundary_failure, seal_degradation)." },
           "failure_mechanism":      { "type": "string", "description": "Physical mechanism (e.g., fatigue, corrosion, wear, overload)." },
+          "expected_symptom_types": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Expected symptom types — matched against event.json symptom_signature.symptom_types."
+          },
           "expected_symptoms": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Expected symptom types for this failure mode — matched against event.json symptom_signature.symptom_types."
+            "description": "Alias for expected_symptom_types used by some runtime paths."
           },
           "expected_anomaly_pattern": {
             "type": "string",
             "enum": ["step_change", "gradual_drift", "spike", "oscillation", "dropout", "sustained_exceedance", "unknown"],
             "description": "Expected telemetry pattern — matched against telemetry_summary anomaly patterns."
           },
-          "expected_latency_min_days": { "type": "number", "description": "Minimum expected failure progression time from FMEA." },
-          "expected_latency_max_days": { "type": "number" },
-          "fmea_source_ref":           { "type": "string", "description": "Source FMEA document or node reference." },
+          "expected_latency_min_hours": { "type": "number", "description": "Minimum expected failure progression time in hours (from FMEA)." },
+          "expected_latency_max_hours": { "type": "number", "description": "Maximum expected failure progression time in hours (from FMEA)." },
+          "fmea_source_ref":            { "type": "string", "description": "Source FMEA document or node reference." },
           "rpn":                        { "type": "number", "description": "Risk Priority Number from FMEA, if available." }
         }
       }
@@ -169,14 +187,21 @@
     },
     "documents": {
       "type": "array",
-      "description": "Runtime alias for documents_in_neighborhood used by the current orchestrator.",
+      "description": "Documents linked to components in the subgraph. Used for evidence prior scoring and retrieval scoping.",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["doc_id", "doc_type"],
         "properties": {
-          "doc_id":   { "type": "string" },
-          "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OE", "OTHER"] }
+          "doc_id":                { "type": "string" },
+          "doc_type":              { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "RCA", "FMEA", "OE", "OTHER"] },
+          "title":                 { "type": "string", "description": "Human-readable document title." },
+          "created_at":            { "type": "string", "format": "date-time", "description": "Document creation timestamp." },
+          "time_distance_days":    { "type": "number", "description": "Days between document creation and the current event. Used for evidence recency scoring." },
+          "matched_asset_ids":     { "type": "array", "items": { "type": "string" }, "description": "Asset IDs this document is linked to in the KG." },
+          "matched_component_ids": { "type": "array", "items": { "type": "string" }, "description": "Component IDs this document is linked to in the KG." },
+          "priority_score":        { "type": "number", "description": "Retrieval priority score for this document." },
+          "authority_level":       { "type": "string", "enum": ["mandatory", "guidance", "informational"], "description": "Regulatory/procedural authority level." }
         }
       }
     },
@@ -215,9 +240,16 @@
           "asset_id":        { "type": "string" },
           "component_id":    { "type": "string" },
           "event_type":      { "type": "string" },
+          "severity":        { "type": "string" },
           "timestamp_start": { "type": "string", "format": "date-time" },
+          "timestamp_end":   { "type": ["string", "null"], "format": "date-time" },
+          "time_distance_days": { "type": "number", "description": "Days between this past event and the current event." },
           "days_before_current_event": { "type": "number" },
-          "resolved":        { "type": "boolean" },
+          "matched_asset_ids":        { "type": "array", "items": { "type": "string" } },
+          "matched_component_ids":    { "type": "array", "items": { "type": "string" } },
+          "matched_failure_mode_ids": { "type": "array", "items": { "type": "string" } },
+          "priority_score":  { "type": "number" },
+          "resolved":        { "type": ["boolean", "string", "null"] },
           "fm_id":           { "type": "string", "description": "Failure mode linked to this past event, if established." }
         }
        }
@@ -237,9 +269,38 @@
         },
         "monitored_variables": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "monitored_variable_id": { "type": "string" },
+                  "variable":              { "type": "string" },
+                  "sensor_id":             { "type": "string" },
+                  "tag_id":                { "type": "string" },
+                  "source_system":         { "type": "string" },
+                  "component_id":          { "type": "string" },
+                  "component_name":        { "type": "string" },
+                  "relation_type":         { "type": "string" },
+                  "matched_on":            { "type": "string" },
+                  "match_confidence":      { "type": "number" }
+                },
+                "additionalProperties": true
+              }
+            ]
+          }
         }
       }
-     }
+     },
+    "provenance": {
+      "type": "object",
+      "description": "Builder provenance: who/what generated this kg_context and with which run_id.",
+      "additionalProperties": true,
+      "properties": {
+        "builder": { "type": "string" },
+        "run_id":  { "type": "string" }
+      }
+    }
    }
  }

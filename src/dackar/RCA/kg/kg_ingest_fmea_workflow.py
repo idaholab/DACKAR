@@ -16,21 +16,21 @@ Edges:
   fmea_case    -[:IDENTIFIES_FAILURE_MODE]->  failure_mode
   failure_mode -[:HAS_RISK_ASSESSMENT]->      risk_assessment
   failure_mode -[:LEADS_TO_EFFECT]->          effect
-  failure_mode -[:APPLIES_TO]->               mbse_entity  (see below)
+  failure_mode -[:APPLIES_TO]->               element_usage  (see below)
 
 Component-type resolution (APPLIES_TO edges)
 ─────────────────────────────────────────────
 FMEA data is class-level: a row for "centrifugal_pump / seal degradation"
 applies to *every* centrifugal pump in the plant.  During ingestion the
-``component_type`` value is resolved to individual mbse_entity node IDs by
-querying the live KG:
+``component_type`` value is resolved to individual element_usage node IDs by
+querying the live KG (mbseSchema v3.1):
 
-  MATCH (c:mbse_entity)
-  WHERE toLower(c.component_type) = toLower($component_type)
+  MATCH (c:element_usage)-[:instance_of]->(def:element_definition)
+  WHERE toLower(def.domain_category) = toLower($component_type)
   RETURN c.id AS component_id
 
-An ``APPLIES_TO`` edge is created for each matched component.  If no components
-are found for a type the failure_mode node is still written (with the
+An ``APPLIES_TO`` edge is created for each matched element_usage.  If no
+usages are found for a type the failure_mode node is still written (with the
 ``component_type`` property set) and a warning is logged so the gap can be
 addressed when MBSE entities are loaded.
 
@@ -38,7 +38,7 @@ CLI usage
 ─────────
   python kg_ingest_fmea_workflow.py \\
       --schema ../../knowledge_graph/schemas/fmeaSchema.toml \\
-      --schema ../../knowledge_graph/schemas/customMbseSchema.toml \\
+      --schema ../../knowledge_graph/schemas/mbseSchema.toml \\
       --neo4j-uri bolt://localhost:7687 \\
       --neo4j-user neo4j --neo4j-pass secret \\
       fmea_pump.xlsx fmea_valve.xlsx
@@ -89,7 +89,7 @@ JsonLike = Optional[Dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------
-# Component-type → mbse_entity ID resolver
+# Component-type → element_usage ID resolver
 # ---------------------------------------------------------------------------
 
 def _resolve_component_type(
@@ -98,8 +98,9 @@ def _resolve_component_type(
     database: Optional[str],
     cache: Dict[str, List[str]],
 ) -> List[str]:
-    """Return all mbse_entity IDs whose ``component_type`` matches *component_type*.
+    """Return all element_usage IDs whose linked element_definition matches *component_type*.
 
+    Matches against ``element_definition.domain_category`` (mbseSchema v3.1).
     Results are cached per component_type string to avoid redundant queries.
 
     Args:
@@ -109,7 +110,7 @@ def _resolve_component_type(
         cache: Mutable dict used as an in-process cache across calls.
 
     Returns:
-        List of mbse_entity ``id`` values (may be empty).
+        List of element_usage ``id`` values (may be empty).
     """
     key = component_type.lower().strip()
     if key in cache:
@@ -117,8 +118,8 @@ def _resolve_component_type(
 
     try:
         rows = [dict(r) for r in client.query(
-            "MATCH (c:mbse_entity) "
-            "WHERE toLower(c.component_type) = toLower($ct) "
+            "MATCH (c:element_usage)-[:instance_of]->(def:element_definition) "
+            "WHERE toLower(def.domain_category) = toLower($ct) "
             "RETURN c.id AS component_id",
             {"ct": key},
             db=database,
@@ -130,7 +131,7 @@ def _resolve_component_type(
 
     if not ids:
         LOGGER.warning(
-            "No mbse_entity nodes found for component_type '%s'. "
+            "No element_usage nodes found for component_type '%s'. "
             "APPLIES_TO edges will be omitted; ensure MBSE entities are loaded first.",
             component_type,
         )
@@ -153,14 +154,14 @@ def build_fmea_graph(
 
     Creates ``fmea_case``, ``failure_mode``, ``risk_assessment``, and
     ``effect`` nodes with their connecting edges.  When *client* is supplied,
-    ``APPLIES_TO`` edges to ``mbse_entity`` nodes are also created after
-    resolving ``component_type`` against the live KG.
+    ``APPLIES_TO`` edges to ``element_usage`` nodes are also created after
+    resolving ``component_type`` against the live KG (mbseSchema v3.1).
 
     Args:
         schema_paths: One or more paths to TOML schema files.
         fmea_records: Output of :func:`fmeaParser.parse_fmea_file`.
         client: Optional live :class:`Py2Neo` connection used to resolve
-            component types to mbse_entity IDs.  When ``None``, APPLIES_TO
+            component types to element_usage IDs.  When ``None``, APPLIES_TO
             edges are omitted.
         database: Neo4j target database; ``None`` uses the driver default.
 
@@ -171,7 +172,7 @@ def build_fmea_graph(
     schema = load_and_merge_schemas(schema_paths)
     g = GraphBatch(schema)
 
-    # Cache component_type → [mbse_entity_id, …] to avoid per-row queries.
+    # Cache component_type → [element_usage_id, …] to avoid per-row queries.
     component_type_cache: Dict[str, List[str]] = {}
 
     # Track which fmea_case and failure_mode nodes are already in the batch.
@@ -264,17 +265,17 @@ def build_fmea_graph(
             )
             g.add_edge(fm_id, effect_id, "leads_to_effect", allow_untyped=True)
 
-        # ── APPLIES_TO → mbse_entity nodes ────────────────────────────────
+        # ── APPLIES_TO → element_usage nodes ──────────────────────────────
         if client is not None and component_type:
             mbse_ids = _resolve_component_type(
                 client, component_type, database, component_type_cache
             )
             for mbse_id in mbse_ids:
-                # mbse_entity nodes may already be in the KG; add stub here
+                # element_usage nodes may already be in the KG; add stub here
                 # so GraphBatch can track the edge endpoint.  MERGE semantics
                 # in ingest_graph_toml will not overwrite existing properties.
                 if mbse_id not in g.nodes:
-                    g.add_node(mbse_id, "mbse_entity", {"id": mbse_id})
+                    g.add_node(mbse_id, "element_usage", {"id": mbse_id})
                 try:
                     g.add_edge(fm_id, mbse_id, "applies_to", allow_untyped=False)
                 except ValueError as exc:

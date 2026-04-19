@@ -21,11 +21,17 @@ def find_enriched_jsonl_files(root: Path, globs: Sequence[str]) -> List[Path]:
 def load_jsonl(path: Path) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for lineno, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
-            records.append(json.loads(line))
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Skipping malformed JSON on line %d of %s: %s", lineno, path, exc
+                )
     return records
 
 

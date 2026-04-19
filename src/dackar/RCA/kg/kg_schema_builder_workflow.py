@@ -509,7 +509,7 @@ def _safe_ptr_entity_rel(
     """
     ProcessedTextRecord -> entity relation chooser.
     Avoid using document-scoped relations like 'mentions' when the schema
-    types them as condition_report/work_order -> mbse_entity.
+    types them as condition_report/work_order -> element_usage.
     """
     src_label = g.nodes[src]["label"]
     dst_label = g.nodes[dst]["label"]
@@ -623,8 +623,8 @@ def build_graph_from_workflow_artifacts(
         _resolve = resolve_node_label
 
     labels = {
-        "asset": _resolve(schema, "mbse_entity", "asset"),
-        "component": _resolve(schema, "mbse_entity", "component"),
+        "asset": _resolve(schema, "element_usage", "asset"),
+        "component": _resolve(schema, "element_usage", "component"),
         "failure_mode": _resolve(schema, "failure_mode"),
         "document": _resolve(schema, "Document", "document"),
         "processed_text_record": _resolve(schema, "ProcessedTextRecord", "processed_text_record"),
@@ -695,7 +695,8 @@ def build_graph_from_workflow_artifacts(
             fm_id = _prefix(fm.get("fm_id"), "FM")
             if fm_id:
                 g.add_node(fm_id, labels["failure_mode"], {"source_key": fm.get("fm_id"), "label": fm.get("fm_label")})
-                edge_type = "caused_by" if doc_label == labels["condition_report"] else "references_failure_mode"
+                # CR makes a causal assertion; other doc types merely reference the FM.
+                edge_type = "attributes_cause_to" if doc_label == labels["condition_report"] else "references_failure_mode"
                 g.add_edge(doc_node_id, fm_id, edge_type, {"confidence": fm.get("confidence")})
 
     for rec in processed_text_records or []:
@@ -834,7 +835,8 @@ def build_graph_from_workflow_artifacts(
             fm_id = _prefix(past.get("fm_id"), "FM")
             if fm_id:
                 g.add_node(fm_id, labels["failure_mode"], {"source_key": past.get("fm_id")})
-                g.add_edge(pe_id, fm_id, "caused_by", {"source": "kg_context.past_events"})
+                # The past event's identified root cause was this failure mode.
+                g.add_edge(pe_id, fm_id, "root_cause_was", {"source": "kg_context.past_events"})
 
     if telemetry_summary:
         tel_id = _prefix(f"{telemetry_summary.get('event_id')}:{telemetry_summary.get('generated_at')}", "TEL")
@@ -955,7 +957,8 @@ def build_graph_from_workflow_artifacts(
                 },
             )
             if event_id:
-                g.add_edge(cand_id, event_id, "causes", {"composite_score": candidate.get("composite_score")})
+                # RCA hypothesis: this causal factor is proposed as the explanation for the event.
+                g.add_edge(cand_id, event_id, "hypothesized_cause_of", {"composite_score": candidate.get("composite_score")})
             cause_node_id = candidate.get("cause_node_id")
             if cause_node_id:
                 # Keep original key; if it already carries a namespace do not double-prefix.
@@ -968,7 +971,8 @@ def build_graph_from_workflow_artifacts(
             fm_id = _prefix(candidate.get("cause_fm_id"), "FM")
             if fm_id:
                 g.add_node(fm_id, labels["failure_mode"], {"source_key": candidate.get("cause_fm_id"), "label": candidate.get("cause_label")})
-                g.add_edge(cand_id, fm_id, "caused_by", {})
+                # The causal hypothesis is structurally associated with this failure mode.
+                g.add_edge(cand_id, fm_id, "implicates_failure_mode", {})
             for ref in candidate.get("supporting_evidence_refs") or []:
                 ref_id = _prefix(ref, "REF")
                 g.add_node(ref_id, "EvidenceReference", {"source_key": ref})

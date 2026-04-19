@@ -18,7 +18,7 @@ Output schema: outage/schemas/temporal_event_chain.json
 Allen relation → causal relevance reference:
     OVERLAPS    → 0.90  prior event was active at emergent activity onset
     CONTAINS    → 0.85  long-running degradation encompasses the activity window
-    PRECEDES    → 0.75  classic lead-time: ended before onset
+    PRECEDES    → 0.80  classic lead-time: ended before onset
     SIMULTANEOUS→ 0.50  concurrent; possible common cause
     DURING      → 0.30  started after onset; likely a symptom, not a cause
     FOLLOWS     → 0.10  temporal contradiction; flag for analyst review
@@ -55,10 +55,17 @@ _SIMULTANEOUS = "simultaneous"
 _UNKNOWN = "unknown"
 
 # Causal relevance scores per Allen relation (mirrors TSKR scoring)
+#
+# PRECEDES score is 0.80 (not 0.75) so that high-quality, short-lag
+# PRECEDES links can reach the "strong" threshold of 0.75.
+# At 0.75 the product 0.75 × max_confidence (≈ 0.9625) = 0.721 < 0.75,
+# making "strong" unreachable for PRECEDES regardless of data quality.
+# At 0.80 the product 0.80 × 0.9625 = 0.77 ≥ 0.75 → "strong" is reachable
+# for PRECEDES links with high data_quality_score and short onset lag.
 _RELATION_SCORES: Dict[str, float] = {
     _OVERLAPS: 0.90,
     _CONTAINS: 0.85,
-    _PRECEDES: 0.75,
+    _PRECEDES: 0.80,
     _SIMULTANEOUS: 0.50,
     _DURING: 0.30,
     _FOLLOWS: 0.10,
@@ -296,13 +303,12 @@ class TemporalChainScorer:
 
         return {
             "link_id": f"LINK::{event.get('event_id', 'unk')}::{uuid.uuid4().hex[:6]}",
-            "event_id": event.get("event_id"),
-            "event_type": event.get("event_type"),
-            "event_timestamp": event_ts_raw,
+            "prior_event_id": event.get("event_id"),
+            "prior_event_type": event.get("event_type"),
+            "prior_event_timestamp": event_ts_raw,
             "allen_relation": allen_rel,
             "relation_score": round(relation_score, 4),
             "onset_lag_hours": round(lag, 2) if lag is not None else None,
-            "data_quality_score": dq,
             "confidence": round(confidence, 4),
             "causal_strength": causal_strength,
         }
@@ -327,9 +333,10 @@ class TemporalChainScorer:
             A.end   < B.start - ε  → PRECEDES
             A.start > B.end   + ε  → FOLLOWS
             A.start < B.start - ε  and A.end > B.end + ε  → CONTAINS
-            A.start < B.start - ε  and A.end within B  → OVERLAPS
-            A entirely within B    → DURING
-            otherwise              → SIMULTANEOUS
+            A.start < B.start - ε  and A.end within B     → OVERLAPS  (left overlap)
+            A entirely within B                            → DURING
+            A.start within B       and A.end > B.end + ε  → OVERLAPS  (right overlap)
+            otherwise                                      → SIMULTANEOUS
         """
         if prior_start is None or activity_start is None:
             return _UNKNOWN
@@ -354,8 +361,9 @@ class TemporalChainScorer:
             return _OVERLAPS
         if a_e <= b_e + eps:         # a_s >= b_s - eps: A entirely within B
             return _DURING
-        # A started within B (a_s >= b_s - eps) but extends beyond B (a_e > b_e + eps)
-        return _SIMULTANEOUS
+        # A started within B (a_s >= b_s - eps) but extends beyond B (a_e > b_e + eps):
+        # right-side overlap — prior event was active at activity onset and outlasted it.
+        return _OVERLAPS
 
     def _compute_confidence(
         self,
@@ -372,9 +380,15 @@ class TemporalChainScorer:
         """
         relation_component = _RELATION_SCORES.get(allen_relation, 0.0)
 
+        # N10: For OVERLAPS/CONTAINS the temporal relation already encodes precedence
+        # (the prior event was active at or spanned the activity window).  Applying
+        # lag-decay would penalise long-running degradation events that are exactly
+        # the kind of cause we most want to surface.  Force lag_plausibility=1.0.
+        if allen_relation in (_OVERLAPS, _CONTAINS):
+            lag_plausibility = 1.0
         # Lag plausibility: positive lags ≤ 24 h are most credible causal leads;
         # negative lags (A after B onset) indicate symptoms rather than causes.
-        if onset_lag_hours is None:
+        elif onset_lag_hours is None:
             lag_plausibility = 0.5
         elif onset_lag_hours < 0:
             lag_plausibility = 0.1
@@ -422,10 +436,16 @@ class TemporalChainScorer:
             max_relation_score, has_temporal_contradiction, causal_posture.
 
         causal_posture logic:
-            'contradicted'       — any link is temporal_contradiction
-            'supported'          — any strong link present
-            'partial'            — any moderate link, no strong
-            'weak'               — all links are weak
+            'contradicted_with_support' — contradiction(s) present AND at least one
+                                          strong or moderate supporting link.
+                                          Contradictions may reflect data-entry errors
+                                          or async documentation; the positive evidence
+                                          is preserved for analyst review.
+            'contradicted'       — contradiction(s) present AND no strong/moderate link
+                                   (all remaining links are weak or none)
+            'supported'          — strong link present, no contradiction
+            'partial'            — moderate link present, no strong, no contradiction
+            'weak'               — all links are weak, no contradiction
             'insufficient_data'  — no links
         """
         if not links:
@@ -444,13 +464,21 @@ class TemporalChainScorer:
         strongest = max(links, key=lambda lnk: lnk["relation_score"])
         strengths = {lnk["causal_strength"] for lnk in links}
 
+        supporting = strengths - {"temporal_contradiction"}
         if has_contradiction:
-            posture = "contradicted"
-        elif "strong" in strengths:
+            if "strong" in supporting or "moderate" in supporting:
+                # Positive evidence and contradictions coexist — preserve both signals
+                # for the analyst rather than letting a single FOLLOWS link overwrite
+                # otherwise strong causal support.
+                posture = "contradicted_with_support"
+            else:
+                # No meaningful support alongside the contradiction
+                posture = "contradicted"
+        elif "strong" in supporting:
             posture = "supported"
-        elif "moderate" in strengths:
+        elif "moderate" in supporting:
             posture = "partial"
-        elif "weak" in strengths:
+        elif "weak" in supporting:
             posture = "weak"
         else:
             posture = "insufficient_data"

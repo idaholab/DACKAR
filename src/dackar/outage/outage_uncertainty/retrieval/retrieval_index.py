@@ -152,9 +152,52 @@ class HistoricalActivityIndex:
         scored.sort(key=lambda x: x[1], reverse=True)
         return [activity_id for activity_id, _ in scored[:top_k]]
 
-    def get(self, activity_id: str) -> ActivityCase:
-        """Retrieve a single activity by ID."""
-        return self._activities[activity_id]
+    def get(self, activity_id: str) -> ActivityCase | None:
+        """Retrieve a single activity by ID, or ``None`` if not found.
+
+        Returns ``None`` rather than raising ``KeyError`` so callers can use
+        a simple ``if activity is not None`` guard.  This matches ``dict.get()``
+        semantics and avoids silent swallowing of ``KeyError`` in broad
+        ``except Exception`` blocks (which could mask unrelated bugs).
+
+        Callers that treat a missing ID as a programming error can assert::
+
+            activity = index.get(activity_id)
+            assert activity is not None, f"expected {activity_id} in index"
+        """
+        return self._activities.get(activity_id)
+
+    def upsert(self, activity: ActivityCase) -> None:
+        """Add or replace one activity without rebuilding the full index.
+
+        Typical use: the completion feedback loop writes back an emergent
+        activity with ``actual_duration_hours`` set so the current session's
+        Stage D retrievals immediately use the real execution time.
+
+        The prescorer is stateless (scores on demand over ``_activities``), so
+        no rebuild is required — the updated activity is visible to ``search()``
+        on the very next call.
+
+        Args:
+            activity: Updated ActivityCase.  Must have a non-empty
+                ``activity_id``.
+
+        Raises:
+            ValueError: If ``activity.activity_id`` is empty or ``None``.
+        """
+        if not activity.activity_id:
+            raise ValueError(
+                "activity.activity_id must be non-empty for upsert; "
+                "received an ActivityCase with no ID"
+            )
+        is_new = activity.activity_id not in self._activities
+        self._activities[activity.activity_id] = activity
+        logger.debug(
+            "HistoricalActivityIndex.upsert: activity %s %s (%d total)",
+            activity.activity_id,
+            "added" if is_new else "updated in place",
+            len(self._activities),
+        )
 
     def __len__(self) -> int:
         return len(self._activities)

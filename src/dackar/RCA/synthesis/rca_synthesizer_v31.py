@@ -60,6 +60,7 @@ class RuleValidatedRCASynthesizerV31:
         pm_compliance: Optional[JsonDict],
         ishikawa_matrix: Optional[JsonDict],
         run_context: JsonDict,
+        cmms_context: Optional[JsonDict] = None,
     ) -> JsonDict:
         event_id = event.get("event_id") or event["id"]
         rca_id = f"RCA::{event_id}::{uuid.uuid4()}"
@@ -77,6 +78,7 @@ class RuleValidatedRCASynthesizerV31:
             operational_context=operational_context,
             pm_compliance=pm_compliance,
             ishikawa_matrix=ishikawa_matrix,
+            cmms_context=cmms_context,
             run_context=run_context,
         )
 
@@ -94,6 +96,17 @@ class RuleValidatedRCASynthesizerV31:
         except Exception as exc:
             validation_errors.append(f"llm_generation_error: {exc}")
 
+        # Build the full set of valid candidate IDs from the complete candidate
+        # list (not just the truncated set passed in the prompt) so that a
+        # candidate legitimately ranked below max_candidates_in_prompt does not
+        # trigger a false hallucination error.
+        _all_input_candidate_ids: set = {
+            c.get("candidate_id")
+            for c in (causality_candidates.get("candidates") or [])
+            if c.get("candidate_id")
+        }
+        _all_input_candidate_ids.add("NONE")  # "NONE" is always a valid sentinel
+
         card: Optional[JsonDict] = None
         if raw_output is not None:
             card = self._normalize_llm_output(
@@ -103,6 +116,16 @@ class RuleValidatedRCASynthesizerV31:
                 evidence_bundle=evidence_bundle,
                 run_context=run_context,
             )
+            # Hard-error if the LLM chose a candidate_id that does not exist in
+            # the input candidates list.  Unlike the semantic checks below (which
+            # can be recovered by the fallback path), a hallucinated ID means the
+            # LLM fabricated a hypothesis entirely — the fallback is always safer.
+            llm_primary_id = (card.get("primary_hypothesis") or {}).get("candidate_id")
+            if llm_primary_id and llm_primary_id not in _all_input_candidate_ids:
+                validation_errors.append(
+                    f"primary_hypothesis.candidate_id '{llm_primary_id}' is not a "
+                    f"valid input candidate ID — probable LLM hallucination"
+                )
             validation_errors.extend(self._validate_card_semantics(card))
 
         if (card is None or validation_errors) and self.config.allow_fallback_template_fill:
@@ -159,6 +182,7 @@ class RuleValidatedRCASynthesizerV31:
         pm_compliance: Optional[JsonDict],
         ishikawa_matrix: Optional[JsonDict],
         run_context: JsonDict,
+        cmms_context: Optional[JsonDict] = None,
     ) -> str:
         compact_context = {
             "event": {
@@ -197,6 +221,7 @@ class RuleValidatedRCASynthesizerV31:
             "ishikawa_matrix": ishikawa_matrix,
             "pm_compliance": pm_compliance,
             "operational_context": operational_context,
+            "cmms_context": self._compact_cmms_context(cmms_context),
         }
 
         instructions = """
@@ -211,8 +236,11 @@ Rules:
 - primary_hypothesis.composite_score must match or be directly derived from candidate composite_score.
 - Every narrative claim must be supported by at least one citation.
 - citations[].source_type must be one of:
-  kg_path, evidence_snippet, telemetry_anomaly, fmea_record, pm_check, operational_context
+  kg_path, evidence_snippet, telemetry_anomaly, fmea_record, pm_check, operational_context, cmms_record
 - Do not invent ids.
+- If cmms_context is present and non-empty, consider recurrence_summary when assessing confidence.
+  Open CRs or WOs on the same component strengthen immediate_corrective actions.
+  Sister equipment CRs are weaker signal — note them as contextual, not primary evidence.
 - Be conservative. If evidence is weak, use confidence_label = speculative or low.
 - Keep alternatives concise.
 - Recommended actions should be engineering-appropriate and tied to the selected hypothesis when possible.
@@ -289,6 +317,41 @@ analyst_review = {
             + "\n\nINPUT_CONTEXT=\n"
             + json.dumps(compact_context, indent=2)
         )
+
+    def _compact_cmms_context(self, cmms_context: Optional[JsonDict]) -> Optional[JsonDict]:
+        """
+        Return a token-efficient summary of cmms_context for the prompt.
+
+        Only the most recent CR/WO records (up to 5 each) are included,
+        with long_text stripped (long_text is already in Chroma for
+        semantic retrieval — duplicating it in the prompt wastes tokens).
+        The recurrence_summary and lookback window are always included.
+        """
+        if not cmms_context:
+            return None
+
+        def _strip_long_text(records: list, id_field: str) -> list:
+            out = []
+            for r in records[:5]:
+                rec = {k: v for k, v in r.items() if k != "long_text"}
+                out.append(rec)
+            return out
+
+        summary = cmms_context.get("recurrence_summary") or {}
+        # Include sister component list (compact — id, label, match_type only)
+        sister_components = [
+            {k: v for k, v in s.items() if k in ("component_id", "component_label", "match_type")}
+            for s in (cmms_context.get("sister_components") or [])
+        ]
+        return {
+            "lookback_from":      cmms_context.get("lookback_from"),
+            "lookback_to":        cmms_context.get("lookback_to"),
+            "lookback_anchor":    cmms_context.get("lookback_anchor"),
+            "recurrence_summary": summary,
+            "sister_components":  sister_components or None,
+            "cr_records":  _strip_long_text(cmms_context.get("cr_records") or [], "cr_id"),
+            "wo_records":  _strip_long_text(cmms_context.get("wo_records") or [], "wo_id"),
+        }
 
     # ------------------------------------------------------------------
     # Normalize raw LLM output into final card shell
@@ -1627,7 +1690,7 @@ analyst_review = {
         evidence_rows = card.get("evidence", []) or []
         has_primary_supporting_evidence = any(
             isinstance(ev, dict)
-            and ev.get("support_role") == "supporting"
+            and (ev.get("support_role") or "").strip().lower() == "supporting"
             and ev.get("linked_candidate_id") == primary_candidate_id
             and bool(ev.get("source_id"))
             for ev in evidence_rows

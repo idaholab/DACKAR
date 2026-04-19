@@ -62,11 +62,17 @@ class DurationEstimator:
         fitter,
         confidence_estimator,
         fallback_policy,
+        *,
+        low_coverage_threshold: float = 0.4,
     ) -> None:
         self.outlier_handler = outlier_handler
         self.fitter = fitter
         self.confidence_estimator = confidence_estimator
         self.fallback_policy = fallback_policy
+        # Mirrors NeighborSelector.warn_below — keep in sync when constructing
+        # the pipeline so the warning fires at the same threshold as the
+        # low-coverage flag set by the selector.
+        self.low_coverage_threshold = low_coverage_threshold
 
     # ------------------------------------------------------------------
     # Public interface
@@ -140,7 +146,10 @@ class DurationEstimator:
         distribution.parameters["confidence_tier"] = result.tier
 
         # ---- Step 5: build warnings -------------------------------------
-        warnings = self._build_warnings(result, separation, matches)
+        warnings = self._build_warnings(
+            result, separation, matches,
+            low_coverage_threshold=self.low_coverage_threshold,
+        )
 
         # ---- Step 6: assemble estimate ----------------------------------
         return ActivityEstimate(
@@ -160,7 +169,13 @@ class DurationEstimator:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_warnings(result, separation, matches) -> list[str]:
+    def _build_warnings(
+        result,
+        separation,
+        matches,
+        *,
+        low_coverage_threshold: float = 0.4,
+    ) -> list[str]:
         warnings: list[str] = []
 
         # Confidence tier
@@ -185,10 +200,11 @@ class DurationEstimator:
                 "after outlier separation; distribution may be unreliable."
             )
 
-        # Low-coverage flag from NeighborSelector (best match below warn_below)
-        if matches and max(m.total_score for m in matches) < 0.4:
+        # Low-coverage flag — threshold must match NeighborSelector.warn_below
+        # used when building the match list so both checks fire at the same point.
+        if matches and max(m.total_score for m in matches) < low_coverage_threshold:
             warnings.append(
-                "Best analogue similarity is below 0.4. "
+                f"Best analogue similarity is below {low_coverage_threshold:.2g}. "
                 "The retrieved cases may not be representative."
             )
 

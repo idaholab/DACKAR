@@ -368,6 +368,41 @@ class ArtifactStore(Protocol):
         ...
 
 
+# ── Analog persistence — completion feedback loop ────────────────────────────
+
+@runtime_checkable
+class AnalogPersister(Protocol):
+    """Write completed ActivityCase records to the backing analog store.
+
+    Called by ``CompletionFeedbackWriter`` after a successful
+    ``record_completion()`` call.  Concrete implementations live in
+    ``stages/completion_feedback.py`` (``CsvAnalogPersister``).
+
+    The contract is intentionally narrow — a single ``append`` method —
+    to keep the persistence surface minimal, testable, and easy to swap.
+    Implementations must be idempotent: appending the same activity twice
+    (e.g. from a duplicate callback) must not corrupt the store.
+    """
+
+    def append(self, activity: Any) -> None:
+        """Persist one completed ActivityCase to the backing store."""
+        ...
+
+
+class NoOpAnalogPersister:
+    """Test stub and safe default — accepts writes silently.
+
+    ``appended`` accumulates all received activities and is inspectable in
+    tests to verify what was written without touching the filesystem.
+    """
+
+    def __init__(self) -> None:
+        self.appended: List[Any] = []
+
+    def append(self, activity: Any) -> None:  # noqa: D102
+        self.appended.append(activity)
+
+
 # ── Configuration dataclasses ─────────────────────────────────────────────────
 
 @dataclass

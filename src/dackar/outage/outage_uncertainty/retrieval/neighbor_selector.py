@@ -31,6 +31,7 @@ the ``ActivityEstimate`` (see ``DurationEstimator``).
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 
 from outage_uncertainty.domain.result_types import SimilarityMatch
@@ -52,6 +53,20 @@ class NeighborSelector:
             ``low_coverage`` attribute after calling :meth:`select`.
         weight_exponent: α for power weighting.  Higher values give
             stronger relative preference to top matches.  Default ``2.0``.
+
+    Thread-safety
+    -------------
+    ``NeighborSelector`` instances are **not thread-safe**.  :meth:`select`
+    writes back to ``self.low_coverage`` as a side-effect, so concurrent
+    calls on the same instance from multiple threads will race.  In a
+    multithreaded pipeline, either:
+
+    * create one ``NeighborSelector`` per thread / task, or
+    * guard shared instances with an external lock and read
+      ``low_coverage`` within the same critical section as the
+      :meth:`select` call that set it.
+
+    The current single-threaded outage pipeline is unaffected.
     """
 
     def __init__(
@@ -74,8 +89,10 @@ class NeighborSelector:
     def select(self, matches: list[SimilarityMatch]) -> list[SimilarityMatch]:
         """Sort, optionally hard-floor, take top-k, assign relevance weights.
 
-        Mutates ``relevance_weight`` on the returned :class:`SimilarityMatch`
-        objects in-place so the original list objects also reflect the weights.
+        Returns a **new** list of :class:`SimilarityMatch` copies whose
+        ``relevance_weight`` fields carry the power-normalised weights.  The
+        input *matches* are never modified, so callers that hold references to
+        the original objects see no side-effects.
 
         Returns an empty list when no matches are available.
         """
@@ -101,31 +118,60 @@ class NeighborSelector:
         total = sum(raw_weights)
 
         if total > 0.0:
-            for match, rw in zip(selected, raw_weights):
-                match.relevance_weight = rw / total
+            final = [
+                dataclasses.replace(m, relevance_weight=rw / total)
+                for m, rw in zip(selected, raw_weights)
+            ]
         else:
             # All scores are exactly 0 — assign uniform weights
             uniform = 1.0 / len(selected)
-            for match in selected:
-                match.relevance_weight = uniform
+            final = [dataclasses.replace(m, relevance_weight=uniform) for m in selected]
 
         # ---- Low-coverage flag ------------------------------------------
-        self.low_coverage = selected[0].total_score < self.warn_below
+        self.low_coverage = final[0].total_score < self.warn_below
         if self.low_coverage:
             logger.debug(
                 "NeighborSelector: low coverage — best score %.3f < warn_below %.3f",
-                selected[0].total_score,
+                final[0].total_score,
                 self.warn_below,
             )
 
-        return selected
+        return final
 
-    def has_low_coverage(self, matches: list[SimilarityMatch]) -> bool:
+    def has_low_coverage(
+        self,
+        matches: list[SimilarityMatch] | None = None,
+    ) -> bool:
         """Return ``True`` if the best match is below the warning threshold.
 
-        Can be called *before* :meth:`select` (reads raw scores) or after
-        (reads the cached ``self.low_coverage`` flag).
+        Two calling modes:
+
+        **Pre-select** — pass the raw match list before calling
+        :meth:`select`.  The method computes the best score directly from
+        *matches* and compares it against ``warn_below``.
+
+        **Post-select** — call with no argument (or ``matches=None``) after
+        :meth:`select` has run.  Returns the cached ``self.low_coverage`` flag
+        that was set during the most recent :meth:`select` call.  This
+        correctly reflects the filtered, top-k–selected set rather than the
+        original pre-filter candidates.
+
+        .. code-block:: python
+
+            # pre-select check
+            if selector.has_low_coverage(raw_matches):
+                ...
+
+            selected = selector.select(raw_matches)
+
+            # post-select check (reads cached flag)
+            if selector.has_low_coverage():
+                ...
         """
+        if matches is None:
+            # Post-select: use the flag set by the most recent select() call.
+            return self.low_coverage
+        # Pre-select: compute from the provided raw match list.
         if not matches:
             return True
         return max(m.total_score for m in matches) < self.warn_below

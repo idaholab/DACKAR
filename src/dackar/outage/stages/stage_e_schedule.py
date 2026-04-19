@@ -38,9 +38,11 @@ Python path note:
 from __future__ import annotations
 
 import logging
+import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -58,6 +60,24 @@ _CONFIDENCE_SCORE: Dict[str, float] = {
 # Small epsilon for float comparisons (hours)
 _FLOAT_EPSILON = 0.01
 
+# Regulatory constraint detection for displaced task enrichment.
+# Mirrors the pattern set in stage_a_intake._REGULATORY_KEYWORDS_RE so that
+# displaced tasks with TS/LCO/NRC/hold-point/surveillance language in their
+# description are correctly flagged without creating a cross-stage import.
+_REGULATORY_KEYWORDS_RE = re.compile(
+    r"\b(TS\s*[\d.]+|technical\s+specification|LCO\s*[\d.]+|limiting\s+condition"
+    r"|NRC|ALARA|CAP\b|corrective\s+action\s+program|surveillance|10\s*CFR"
+    r"|operability\s+determination|hold\s+point|quality\s+hold"
+    r"|mode\s+change|entry\s+condition)\b",
+    re.IGNORECASE,
+)
+
+# Minimum credible duration for a Monte Carlo scenario (hours).
+# Samples below this floor indicate bad data in the analog index and are
+# clamped with a WARNING so the issue surfaces rather than silently producing
+# nonsensical schedule arithmetic (e.g. zero-duration tasks on the CP).
+_MIN_DURATION_HOURS = 0.1
+
 
 # ---------------------------------------------------------------------------
 # Internal data structures
@@ -74,6 +94,12 @@ class _ScheduleNetwork:
 
     pert: Any               # LOGOS Pert
     baseline_cp_hours: float
+    # Locked-baseline fields — populated when a separate baseline schedule
+    # version is successfully loaded; None when baseline locking is disabled
+    # or the baseline schedule is unavailable.
+    locked_baseline_cp_hours: Optional[float] = None
+    locked_baseline_start: Optional[datetime] = None  # for absolute finish computation
+    working_start: Optional[datetime] = None          # for projected_finish computation
 
 
 @dataclass
@@ -118,6 +144,57 @@ class ScheduleImpactConfig:
     """Which schedule version to load: 'baseline', 'working', or 'as_run'.
     'working' (latest update) is the correct basis for live outage decisions."""
 
+    baseline_schedule_version: str = "baseline"
+    """Version tag for the locked kickoff baseline schedule.  When non-empty,
+    Stage E loads a second copy of the schedule at this version to compute
+    schedule variance (how far the outage has already slipped from the original
+    plan) and total overrun (variance + cp_drag from this activity).
+    Set to empty string to disable baseline locking."""
+
+    high_crew_utilization_threshold: float = 0.80
+    """Crew utilization fraction (0–1) above which a skill type is flagged as
+    high-utilization in the crew_continuity section.  0.80 = 80% of available
+    crew already committed at the insertion window."""
+
+    fatigue_risk_off_shift_hours: float = 2.0
+    """Hours of off-shift overlap in the insertion window that trigger a
+    fatigue_risk flag.  When the proposed insertion window extends more than
+    this many hours into off-shift time the crew continuity assessment flags
+    a potential fatigue / overnight-work risk."""
+
+    # ── Permit lead time ──────────────────────────────────────────────────────
+    permit_lead_times_enabled: bool = True
+    """Master switch for permit/approval lead time modeling.  When False the
+    proposed_start is not adjusted and no permit overhead is added to Monte
+    Carlo scenarios.  Set to False to restore the pre-permit-lead-time behavior
+    for comparison or backward-compatible testing."""
+
+    rp_hold_lead_time_hours: float = 4.0
+    """Hours of RP (radiation protection) survey + ALARA briefing required
+    before work can start when ``has_rp_hold`` is True.  Represents one RP
+    review cycle; complex high-dose jobs may require more."""
+
+    scaffold_lead_time_hours: float = 8.0
+    """Hours for scaffold erection and inspection sign-off when
+    ``requires_scaffold`` is True.  Sized as one full shift — scaffold must
+    be erected, inspected, and certified before the activity starts."""
+
+    clearance_lead_time_hours: float = 2.0
+    """Hours for electrical or mechanical clearance / LOTO procedures when
+    ``has_clearance`` is True.  LOTO establishment typically takes 1–3 hours
+    depending on the number of isolation points."""
+
+    permit_lead_time_mode: str = "max"
+    """How to combine overlapping permits when multiple flags are active.
+
+    ``"max"``  (default) — permits are requested in parallel; the longest
+               single permit drives the delay.  Appropriate when the outage
+               manager can start all approval processes simultaneously.
+
+    ``"sum"``  — permits must be obtained sequentially; lead times are added.
+               Use for plants whose procedures require serial sign-off (e.g.
+               clearance must precede RP survey at that unit)."""
+
 
 # ---------------------------------------------------------------------------
 # Stage implementation
@@ -134,10 +211,13 @@ class ScheduleImpactAssessor:
         schedule_graph_builder: Object with .build(outage_data) → LOGOS Pert.
                                  The Pert must have generateInfo() already called
                                  (i.e. infoDict is populated with ES/EF/LS/LF/slack).
-        monte_carlo: Reserved — MC is implemented directly in this stage using
-                     the LOGOS set_durations() + generateInfo() pattern.
-        cp_analyzer: Reserved — CP metrics are computed from the MC results
-                     directly; no separate analyzer object is required.
+        monte_carlo: Unused — MC sampling is implemented directly in this
+                     stage via ``_run_monte_carlo()`` using the LOGOS
+                     ``set_durations()`` + ``generateInfo()`` pattern.
+                     Reserved for future external injection.
+        cp_analyzer: Unused — CP metrics are computed directly from the
+                     ``_SimResult`` distributions.  Reserved for future
+                     external injection.
     """
 
     def __init__(
@@ -164,8 +244,22 @@ class ScheduleImpactAssessor:
         intake_result: JsonDict,
         historical_analogs: JsonDict,
         run_context: JsonDict,
+        *,
+        schedule_context: Any = None,
     ) -> JsonDict:
         """Execute Stage E for one emergent activity.
+
+        Args:
+            emergent_activity: EmergentActivity artifact.
+            intake_result: Stage A output.
+            historical_analogs: Stage D output (duration distribution consumed here).
+            run_context: Run metadata block.
+            schedule_context: Optional :class:`~stages.insertion_point_determiner.ScheduleContext`
+                produced by the pre-pass ``InsertionPointDeterminer``.  When
+                provided the insertion point determination step is skipped —
+                ``schedule_context.to_insertion_point()`` is used directly.
+                This avoids loading and traversing the schedule network twice
+                (once in the pre-pass and once here).
 
         Returns:
             ScheduleImpactAssessment artifact conforming to
@@ -181,9 +275,54 @@ class ScheduleImpactAssessor:
         schedule_network, schedule_version_id = self._load_schedule_network(
             emergent_activity
         )
-        insertion_point = self._determine_insertion_point(
-            emergent_activity, intake_result, schedule_network
+
+        # Use pre-computed insertion point when the two-pass pre-pass ran; this
+        # avoids traversing the schedule network a second time.
+        if schedule_context is not None:
+            insertion_point = schedule_context.to_insertion_point()
+            LOGGER.debug(
+                "Stage E: using pre-computed insertion point from ScheduleContext "
+                "(after=%s, on_cp=%s)",
+                getattr(schedule_context, "after_task_id", None),
+                getattr(schedule_context, "insertion_on_cp", None),
+            )
+        else:
+            insertion_point = self._determine_insertion_point(
+                emergent_activity, intake_result, schedule_network
+            )
+        # ── Permit / approval lead time ───────────────────────────────────────
+        # Computed from execution_mode_flags extracted by Stage A.  Lead time
+        # is a fixed calendar overhead before the activity can start — it shifts
+        # proposed_start forward and is added to every Monte Carlo scenario
+        # duration so that CP drag correctly reflects the approval ceiling.
+        execution_mode_flags: JsonDict = (
+            intake_result.get("execution_mode_flags") or {}
         )
+        if self.config.permit_lead_times_enabled:
+            permit_lead_time = _compute_permit_lead_time(
+                execution_mode_flags,
+                rp_hold_hours=self.config.rp_hold_lead_time_hours,
+                scaffold_hours=self.config.scaffold_lead_time_hours,
+                clearance_hours=self.config.clearance_lead_time_hours,
+                mode=self.config.permit_lead_time_mode,
+            )
+        else:
+            permit_lead_time = {
+                "total_lead_hours": 0.0,
+                "rp_hold_hours": 0.0,
+                "scaffold_hours": 0.0,
+                "clearance_hours": 0.0,
+                "start_adjusted": False,
+                "combination_mode": self.config.permit_lead_time_mode,
+                "notes": ["Permit lead time modeling disabled via config."],
+            }
+
+        lead_hours: float = permit_lead_time["total_lead_hours"]
+
+        # Shift proposed_start / proposed_finish forward by lead_hours.
+        if lead_hours > 0:
+            insertion_point = _shift_insertion_times(insertion_point, lead_hours)
+
         duration_for_float = (
             duration_dist.get("p80_hours")
             if self.config.use_p80_for_float_analysis
@@ -192,11 +331,18 @@ class ScheduleImpactAssessor:
         float_analysis = self._compute_float_analysis(
             schedule_network, insertion_point, duration_for_float
         )
+        # Pass lead_hours to Monte Carlo so each scenario includes the permit
+        # overhead in the effective activity duration fed to the CPM engine.
         sim_result = self._run_monte_carlo(
-            schedule_network, insertion_point, duration_dist
+            schedule_network, insertion_point, duration_dist,
+            permit_lead_hours=lead_hours,
         )
         cp_metrics = self._compute_cp_metrics(
-            sim_result, schedule_network.baseline_cp_hours
+            sim_result,
+            schedule_network.baseline_cp_hours,
+            locked_baseline_cp_hours=schedule_network.locked_baseline_cp_hours,
+            locked_baseline_start=schedule_network.locked_baseline_start,
+            working_start=schedule_network.working_start,
         )
         displaced = self._identify_displaced_tasks(
             schedule_network, insertion_point, duration_for_float
@@ -206,6 +352,9 @@ class ScheduleImpactAssessor:
             conflicts = self._check_resource_conflicts(
                 emergent_activity, insertion_point, schedule_network
             )
+        crew_continuity = self._assess_crew_continuity(
+            emergent_activity, insertion_point, schedule_network
+        )
         confidence = self._compute_confidence(duration_dist, schedule_network)
 
         return {
@@ -228,13 +377,22 @@ class ScheduleImpactAssessor:
             "cp_impact": cp_metrics,
             "displaced_tasks": displaced[: self.config.max_displaced_tasks_reported],
             "resource_conflicts": conflicts,
+            "crew_continuity": crew_continuity,
+            "permit_lead_time": permit_lead_time,
             "confidence": confidence,
-            "notes": [
-                "cp_impact metrics derived from 3-scenario deterministic proxy "
-                "(p50/p80/p90 duration scenarios) — full Monte Carlo integration "
-                "with RAVEN is deferred pending Pert interface restructuring. "
-                "Treat percentile estimates conservatively."
-            ],
+            "notes": (
+                [
+                    f"cp_impact metrics derived from "
+                    f"{self.config.monte_carlo_runs}-run lognormal Monte Carlo "
+                    "simulation (LOGOS Pert CPM engine, BaseCPMmodel pattern)."
+                ]
+                if self.config.monte_carlo_runs >= 10
+                else [
+                    "cp_impact metrics derived from 3-scenario deterministic "
+                    "proxy (p50/p80/p90 duration scenarios). "
+                    "Set monte_carlo_runs ≥ 10 for probabilistic estimates."
+                ]
+            ),
             "provenance": {
                 "generated_by": self.__class__.__name__,
                 "run_id": run_id,
@@ -288,7 +446,38 @@ class ScheduleImpactAssessor:
             outage_data.outage_config.get("version_id") or outage_id
         )
 
-        return _ScheduleNetwork(pert=pert, baseline_cp_hours=baseline_cp_hours), schedule_version_id
+        # Extract working schedule start for absolute datetime computations.
+        working_start: Optional[datetime] = None
+        if hasattr(pert, "startTime") and pert.startTime:
+            working_start = _ensure_tz(pert.startTime)
+
+        # Optionally load the locked kickoff baseline for schedule variance.
+        locked_baseline_cp_hours: Optional[float] = None
+        locked_baseline_start: Optional[datetime] = None
+        if self.config.baseline_schedule_version:
+            try:
+                baseline_data = self.schedule_loader(
+                    outage_id, version=self.config.baseline_schedule_version
+                )
+                baseline_pert = self.schedule_graph_builder.build(baseline_data)
+                baseline_pert.generateInfo()
+                locked_baseline_cp_hours = baseline_pert.getProjectDuration()
+                if hasattr(baseline_pert, "startTime") and baseline_pert.startTime:
+                    locked_baseline_start = _ensure_tz(baseline_pert.startTime)
+            except Exception:  # noqa: BLE001
+                LOGGER.debug(
+                    "Stage E: locked baseline schedule unavailable for outage %s "
+                    "(version=%s); schedule variance will not be reported.",
+                    outage_id, self.config.baseline_schedule_version,
+                )
+
+        return _ScheduleNetwork(
+            pert=pert,
+            baseline_cp_hours=baseline_cp_hours,
+            locked_baseline_cp_hours=locked_baseline_cp_hours,
+            locked_baseline_start=locked_baseline_start,
+            working_start=working_start,
+        ), schedule_version_id
 
     def _determine_insertion_point(
         self,
@@ -484,21 +673,116 @@ class ScheduleImpactAssessor:
         schedule_network: _ScheduleNetwork,
         insertion_point: JsonDict,
         duration_dist: JsonDict,
+        *,
+        permit_lead_hours: float = 0.0,
     ) -> _SimResult:
         """Run Monte Carlo simulation for probabilistic CP impact.
 
-        NOTE: Monte Carlo integration with RAVEN is deferred pending a planned
-        restructuring of the LOGOS Pert ↔ RAVEN interface.  This method
-        currently returns a _SimResult populated with three deterministic
-        scenarios (p50, p80, p90) so that _compute_cp_metrics() can produce
-        conservative-but-grounded estimates without probabilistic sampling.
+        Samples task duration from a lognormal distribution fitted to the
+        Stage D percentile estimates (p50 as median; sigma fitted from p80
+        when available, or from mean/std via method-of-moments).  Each
+        sample is fed to the LOGOS Pert CPM engine using the
+        ``BaseCPMmodel`` pattern: clone once, insert once, then loop
+        ``set_durations()`` + ``resetInfo()`` + ``generateInfo()`` per
+        iteration, recording the project duration and CP membership of the
+        emergent activity.
 
-        Future implementation will mirror the LOGOS BaseCPMmodel.run() pattern:
-            1. Pert.clone_for_analysis() → clean copy for what-if analysis.
-            2. Pert.insert_task(task_dict, after_task_id, before_task_id)
-               → first-class topology mutation (proposed addition to Pert).
-            3. For each RAVEN sample: set_durations({emergent_id: sample})
-               → generateInfo() → record project duration + CP membership.
+        When ``set_durations`` is not available on the Pert object, falls
+        back to cloning the Pert on every iteration (slower but correct for
+        any duck-typed Pert-like object).
+
+        When ``config.monte_carlo_runs < 10``, falls back to the lightweight
+        3-scenario deterministic proxy (p50/p80/p90) for backwards
+        compatibility with unit tests and low-latency scoring contexts.
+
+        Args:
+            permit_lead_hours: Fixed approval/permit overhead (hours) added to
+                every sample before it is fed to the CPM engine.  This shifts
+                the CP distribution uniformly upward, correctly increasing
+                cp_drag for activities that require RP surveys, scaffold
+                erection, or LOTO clearances before starting.
+        """
+        n_runs = self.config.monte_carlo_runs
+        if n_runs < 10:
+            return self._run_3scenario_proxy(
+                schedule_network, insertion_point, duration_dist,
+                permit_lead_hours=permit_lead_hours,
+            )
+
+        emergent_task_id = insertion_point.get("emergent_task_id", "EA_MC")
+        after_task_id = insertion_point.get("after_task_id")
+        before_task_id = insertion_point.get("before_task_id")
+
+        # Seed the initial clone at p50 + lead (topology only; overwritten
+        # per iteration via set_durations or a fresh clone).
+        seed_dur = max(
+            (duration_dist.get("p50_hours") or _MIN_DURATION_HOURS) + permit_lead_hours,
+            _MIN_DURATION_HOURS,
+        )
+        pert = schedule_network.pert
+        modified_pert = self._build_modified_pert(
+            pert, emergent_task_id, seed_dur, after_task_id, before_task_id
+        )
+
+        sampler = self._build_duration_sampler(duration_dist, permit_lead_hours)
+
+        project_durations: List[float] = []
+        on_cp_count = 0
+
+        if hasattr(modified_pert, "set_durations"):
+            # Efficient LOGOS path: mutate durations in-place, regenerate CPM.
+            for _ in range(n_runs):
+                sampled_dur = sampler()
+                modified_pert.set_durations({emergent_task_id: sampled_dur})
+                modified_pert.resetInfo()
+                modified_pert.generateInfo()
+                project_durations.append(modified_pert.getProjectDuration())
+                emergent_act = modified_pert.task_to_activity.get(emergent_task_id)
+                if emergent_act and emergent_act in modified_pert.infoDict:
+                    slack = modified_pert.infoDict[emergent_act].get("slack", 999.0)
+                    if abs(slack) <= _FLOAT_EPSILON:
+                        on_cp_count += 1
+        else:
+            # Safe fallback: clone Pert on every iteration.
+            for _ in range(n_runs):
+                sampled_dur = sampler()
+                scenario_pert = self._build_modified_pert(
+                    pert, emergent_task_id, sampled_dur,
+                    after_task_id, before_task_id,
+                )
+                project_durations.append(scenario_pert.getProjectDuration())
+                emergent_act = scenario_pert.task_to_activity.get(emergent_task_id)
+                if emergent_act and emergent_act in scenario_pert.infoDict:
+                    slack = scenario_pert.infoDict[emergent_act].get("slack", 999.0)
+                    if abs(slack) <= _FLOAT_EPSILON:
+                        on_cp_count += 1
+
+        LOGGER.debug(
+            "Stage E MC: %d samples for task '%s' "
+            "(lognormal fit from p50/p80/std; permit_lead=%.1f h).",
+            n_runs, emergent_task_id, permit_lead_hours,
+        )
+        return _SimResult(
+            project_durations=project_durations,
+            on_cp_count=on_cp_count,
+            n_runs=n_runs,
+            emergent_task_id=emergent_task_id,
+        )
+
+    def _run_3scenario_proxy(
+        self,
+        schedule_network: _ScheduleNetwork,
+        insertion_point: JsonDict,
+        duration_dist: JsonDict,
+        *,
+        permit_lead_hours: float = 0.0,
+    ) -> _SimResult:
+        """3-scenario deterministic proxy (p50 / p80 / p90).
+
+        Used when ``config.monte_carlo_runs < 10`` — lightweight alternative
+        for backwards-compatible tests and low-latency scoring contexts.
+        ``_compute_cp_metrics()`` detects fewer than 10 samples and maps
+        the three values directly to estimated_new_cp / p80_cp / p90_cp.
         """
         emergent_task_id = insertion_point.get("emergent_task_id", "EA_MC")
         after_task_id = insertion_point.get("after_task_id")
@@ -508,11 +792,32 @@ class ScheduleImpactAssessor:
         p80: float = duration_dist.get("p80_hours") or p50
         p90: float = duration_dist.get("p90_hours") or p80
 
+        def _clamp(val: float, label: str) -> float:
+            if val < _MIN_DURATION_HOURS:
+                LOGGER.warning(
+                    "Stage E: duration scenario %s=%.4f h is below minimum "
+                    "floor (%.1f h); clamping. Check analog index for "
+                    "zero/negative actual_duration_hours entries.",
+                    label, val, _MIN_DURATION_HOURS,
+                )
+                return _MIN_DURATION_HOURS
+            return val
+
+        p50 = _clamp(p50, "p50")
+        p80 = _clamp(p80, "p80")
+        p90 = _clamp(p90, "p90")
+
+        effective_scenarios = (
+            p50 + permit_lead_hours,
+            p80 + permit_lead_hours,
+            p90 + permit_lead_hours,
+        )
+
         pert = schedule_network.pert
         project_durations: List[float] = []
         on_cp_count = 0
 
-        for scenario_dur in (p50, p80, p90):
+        for scenario_dur in effective_scenarios:
             if scenario_dur <= 0:
                 continue
             scenario_pert = self._build_modified_pert(
@@ -520,8 +825,6 @@ class ScheduleImpactAssessor:
                 after_task_id, before_task_id,
             )
             project_durations.append(scenario_pert.getProjectDuration())
-
-            # CP membership check
             emergent_act = scenario_pert.task_to_activity.get(emergent_task_id)
             if emergent_act and emergent_act in scenario_pert.infoDict:
                 slack = scenario_pert.infoDict[emergent_act].get("slack", 999.0)
@@ -529,10 +832,9 @@ class ScheduleImpactAssessor:
                     on_cp_count += 1
 
         LOGGER.debug(
-            "Stage E MC deferred — using 3-scenario deterministic proxy "
+            "Stage E MC: 3-scenario proxy "
             "(p50=%.1f h, p80=%.1f h, p90=%.1f h).", p50, p80, p90
         )
-
         return _SimResult(
             project_durations=project_durations,
             on_cp_count=on_cp_count,
@@ -540,10 +842,65 @@ class ScheduleImpactAssessor:
             emergent_task_id=emergent_task_id,
         )
 
+    def _build_duration_sampler(
+        self,
+        duration_dist: JsonDict,
+        permit_lead_hours: float = 0.0,
+    ) -> Callable[[], float]:
+        """Return a callable that draws one lognormal sample (hours) per call.
+
+        Fitting priority:
+            1. ``mean_hours`` + ``std_hours`` → method-of-moments lognormal.
+            2. ``p50_hours`` + ``p80_hours``  → sigma from 80th percentile
+               (Φ⁻¹(0.80) ≈ 0.8416).
+            3. ``p50_hours`` + ``p90_hours``  → sigma from 90th percentile
+               (Φ⁻¹(0.90) ≈ 1.2816).
+            4. ``p50_hours`` only             → minimal spread (σ = 0.10),
+               near-deterministic behaviour.
+
+        ``permit_lead_hours`` is added to every sample so that the approval
+        overhead is always included in the effective task duration fed to the
+        CPM engine.  Samples below ``_MIN_DURATION_HOURS`` are clamped.
+        """
+        p50 = max(
+            duration_dist.get("p50_hours") or _MIN_DURATION_HOURS,
+            _MIN_DURATION_HOURS,
+        )
+        p80 = duration_dist.get("p80_hours")
+        p90 = duration_dist.get("p90_hours")
+        mean = duration_dist.get("mean_hours")
+        std = duration_dist.get("std_hours")
+
+        if mean is not None and mean > 0 and std is not None and std > 0:
+            # Method-of-moments: Var[X] = (exp(σ²) - 1) · E[X]²
+            sigma = math.sqrt(math.log(1.0 + (std / mean) ** 2))
+            mu = math.log(mean) - sigma ** 2 / 2.0
+        elif p80 is not None and p80 > p50:
+            mu = math.log(p50)
+            sigma = (math.log(p80) - mu) / 0.8416
+        elif p90 is not None and p90 > p50:
+            mu = math.log(p50)
+            sigma = (math.log(p90) - mu) / 1.2816
+        else:
+            mu = math.log(p50)
+            sigma = 0.10
+
+        sigma = max(sigma, 0.01)  # safety floor against degenerate inputs
+        rng = np.random.default_rng()
+
+        def _sample() -> float:
+            raw = rng.lognormal(mean=mu, sigma=sigma)
+            return max(raw + permit_lead_hours, _MIN_DURATION_HOURS)
+
+        return _sample
+
     def _compute_cp_metrics(
         self,
         sim_result: _SimResult,
         baseline_cp_hours: float,
+        locked_baseline_cp_hours: Optional[float] = None,
+        locked_baseline_start: Optional[datetime] = None,
+        working_start: Optional[datetime] = None,
     ) -> JsonDict:
         """Compute project-level CP impact metrics from the simulation result.
 
@@ -556,11 +913,24 @@ class ScheduleImpactAssessor:
             cp_sensitivity_score    — fraction of scenarios where emergent
                                       task was on CP (0 / 0.33 / 0.67 / 1.0)
 
+        When locked_baseline_cp_hours is provided (baseline locking enabled),
+        additional variance fields are computed:
+            schedule_variance_hours — baseline_cp_hours - locked_baseline_cp_hours
+                                      Positive means the outage has already slipped
+                                      from the original kickoff plan before this
+                                      activity is considered.
+            total_overrun_hours     — max(0, estimated_new_cp - locked_baseline_cp_hours)
+                                      Total slip vs. original plan after insertion.
+            locked_baseline_finish  — ISO datetime of original planned outage finish.
+            projected_finish_after_insertion
+                                    — ISO datetime of projected finish after inserting
+                                      the emergent activity (p50 scenario).
+
         When a full MC result is available (future RAVEN integration), the
         same fields are computed from the full distribution.
         """
         if not sim_result.project_durations:
-            return {
+            result: JsonDict = {
                 "baseline_cp_hours": round(baseline_cp_hours, 2),
                 "estimated_new_cp_hours": round(baseline_cp_hours, 2),
                 "cp_drag_hours": 0.0,
@@ -568,6 +938,15 @@ class ScheduleImpactAssessor:
                 "p80_cp_hours": round(baseline_cp_hours, 2),
                 "p90_cp_hours": round(baseline_cp_hours, 2),
             }
+            if locked_baseline_cp_hours is not None:
+                result.update(
+                    self._locked_baseline_fields(
+                        baseline_cp_hours, baseline_cp_hours,
+                        locked_baseline_cp_hours,
+                        locked_baseline_start, working_start,
+                    )
+                )
+            return result
 
         durs = sorted(sim_result.project_durations)
         # For a 3-scenario proxy the indices map to p50/p80/p90 directly;
@@ -587,13 +966,63 @@ class ScheduleImpactAssessor:
             if sim_result.n_runs > 0 else 0.0
         )
 
-        return {
+        result = {
             "baseline_cp_hours": round(baseline_cp_hours, 2),
             "estimated_new_cp_hours": round(p50, 2),
             "cp_drag_hours": round(cp_drag, 2),
             "cp_sensitivity_score": round(sensitivity, 4),
             "p80_cp_hours": round(p80, 2),
             "p90_cp_hours": round(p90, 2),
+        }
+        if locked_baseline_cp_hours is not None:
+            result.update(
+                self._locked_baseline_fields(
+                    p50, baseline_cp_hours,
+                    locked_baseline_cp_hours,
+                    locked_baseline_start, working_start,
+                )
+            )
+        return result
+
+    @staticmethod
+    def _locked_baseline_fields(
+        estimated_new_cp: float,
+        working_cp: float,
+        locked_baseline_cp_hours: float,
+        locked_baseline_start: Optional[datetime],
+        working_start: Optional[datetime],
+    ) -> JsonDict:
+        """Compute schedule-variance fields relative to the locked baseline.
+
+        Args:
+            estimated_new_cp: p50 project duration after inserting the activity.
+            working_cp: Current working-plan duration (pre-insertion).
+            locked_baseline_cp_hours: Original kickoff plan duration.
+            locked_baseline_start: Original planned start datetime.
+            working_start: Current working-plan start datetime.
+        """
+        schedule_variance = round(working_cp - locked_baseline_cp_hours, 2)
+        total_overrun = round(max(0.0, estimated_new_cp - locked_baseline_cp_hours), 2)
+
+        locked_finish_iso: Optional[str] = None
+        if locked_baseline_start is not None:
+            locked_finish_iso = (
+                locked_baseline_start
+                + timedelta(hours=locked_baseline_cp_hours)
+            ).isoformat()
+
+        projected_finish_iso: Optional[str] = None
+        if working_start is not None:
+            projected_finish_iso = (
+                working_start + timedelta(hours=estimated_new_cp)
+            ).isoformat()
+
+        return {
+            "locked_baseline_cp_hours": round(locked_baseline_cp_hours, 2),
+            "schedule_variance_hours": schedule_variance,
+            "total_overrun_hours": total_overrun,
+            "locked_baseline_finish": locked_finish_iso,
+            "projected_finish_after_insertion": projected_finish_iso,
         }
 
     def _identify_displaced_tasks(
@@ -636,13 +1065,18 @@ class ScheduleImpactAssessor:
             shift = new_es - old_es
 
             if shift > _FLOAT_EPSILON:
+                description = getattr(act, "description", None) or act.name
                 displaced.append({
                     "task_id": act.name,
-                    "description": getattr(act, "description", None) or act.name,
+                    "description": description,
                     "es_shift_hours": round(shift, 2),
                     "new_float_hours": round(new_info.get("slack", 0.0), 2),
-                    # KG enrichment required to populate this field:
-                    "has_regulatory_constraint": False,
+                    # Populated from the task description using the same
+                    # regulatory keyword patterns as Stage A intake.  A KG
+                    # lookup would be more authoritative but requires a
+                    # connected driver; description matching covers the
+                    # common cases (TS, LCO, NRC, surveillance, hold point).
+                    "has_regulatory_constraint": _has_regulatory_constraint(description),
                 })
 
         displaced.sort(key=lambda x: x["es_shift_hours"], reverse=True)
@@ -807,6 +1241,162 @@ class ScheduleImpactAssessor:
 
         return conflicts
 
+    def _assess_crew_continuity(
+        self,
+        emergent_activity: JsonDict,
+        insertion_point: JsonDict,
+        schedule_network: _ScheduleNetwork,
+    ) -> JsonDict:
+        """Assess shift-boundary, fatigue, and background-utilization risks.
+
+        Unlike ``_check_resource_conflicts()`` — which answers the binary
+        question "do we have enough crew?" — this method quantifies *how tight*
+        the resource situation is and whether the insertion window crosses shift
+        boundaries or extends into off-shift hours.
+
+        Three sub-assessments are produced:
+
+        Shift calendar:
+            ``off_shift_overlap_hours`` — hours of the insertion window that
+            fall outside the active shift.  Zero on 24/7 schedules.
+            ``shift_boundary_conflict`` — True when a shift-start event
+            (crew handover) falls inside the window; mid-job handovers
+            require explicit work-package transfer.
+            ``fatigue_risk`` — True when ``off_shift_overlap_hours`` exceeds
+            ``config.fatigue_risk_off_shift_hours``.
+
+        Background utilization (per skill type in the crew pool):
+            For each skill: available crew (minimum over window) vs. the
+            number of workers already committed to other tasks in that window
+            (derived from the infoDict ES/EF).  Flags skills above the
+            ``config.high_crew_utilization_threshold`` fraction.
+
+        Returns a dict suitable for inclusion in the Stage E artifact as the
+        ``crew_continuity`` key.  When no crew pool is attached to the Pert
+        (e.g. CPM-only stub schedules) the method returns a minimal dict with
+        ``available: false`` rather than raising.
+        """
+        pert = schedule_network.pert
+
+        proposed_start_iso = insertion_point.get("proposed_start")
+        proposed_finish_iso = insertion_point.get("proposed_finish")
+        if not proposed_start_iso or not proposed_finish_iso:
+            return {"available": False, "reason": "insertion window datetimes not set"}
+
+        start_dt = _parse_dt(proposed_start_iso)
+        end_dt = _parse_dt(proposed_finish_iso)
+        if start_dt is None or end_dt is None or end_dt <= start_dt:
+            return {"available": False, "reason": "could not parse insertion window datetimes"}
+
+        shift_start_hour: int = getattr(pert, "shift_start_hour", 0)
+        working_hours_per_day: int = getattr(pert, "working_hours_per_day", 24)
+
+        # ── Shift calendar analysis ───────────────────────────────────────────
+        off_shift_hours = _off_shift_overlap_hours(
+            start_dt, end_dt, shift_start_hour, working_hours_per_day
+        )
+        boundary_conflict = _has_shift_boundary(
+            start_dt, end_dt, shift_start_hour, working_hours_per_day
+        )
+        fatigue_risk = off_shift_hours > self.config.fatigue_risk_off_shift_hours
+
+        # ── Background utilization ────────────────────────────────────────────
+        crew_pool = getattr(pert, "crew_pool", None)
+        utilization_by_skill: JsonDict = {}
+        peak_skill: Optional[str] = None
+        peak_pct: float = 0.0
+
+        if crew_pool is not None and hasattr(crew_pool, "resources"):
+            # Hours from project start that correspond to the insertion window
+            base_dt: Optional[datetime] = None
+            if hasattr(pert, "startTime") and pert.startTime:
+                base_dt = _ensure_tz(pert.startTime)
+
+            win_start_offset: Optional[float] = None
+            win_end_offset: Optional[float] = None
+            if base_dt is not None:
+                win_start_offset = (start_dt - base_dt).total_seconds() / 3600.0
+                win_end_offset = (end_dt - base_dt).total_seconds() / 3600.0
+
+            # Committed crew per skill: tasks active during the insertion window
+            committed_by_skill: Dict[str, int] = {}
+            if win_start_offset is not None and win_end_offset is not None:
+                for act, info in pert.infoDict.items():
+                    es = info.get("es", 0.0)
+                    ef = info.get("ef", 0.0)
+                    # Overlap: task's [ES, EF) intersects window [win_start, win_end)
+                    if es < win_end_offset and ef > win_start_offset:
+                        for req in getattr(act, "required_resources", []):
+                            skill = req.get("skill_type")
+                            count = int(req.get("crew_count") or 0)
+                            if skill:
+                                committed_by_skill[skill] = (
+                                    committed_by_skill.get(skill, 0) + count
+                                )
+
+            for skill in sorted(crew_pool.resources):
+                try:
+                    available = crew_pool.get_availability_in_range(
+                        skill, start_dt, end_dt
+                    )
+                except Exception:
+                    LOGGER.debug(
+                        "Stage E crew_continuity: pool query failed for skill=%s", skill
+                    )
+                    continue
+
+                committed = committed_by_skill.get(skill, 0)
+                free = max(0, available - committed)
+                util_pct = (
+                    round(min(100.0, committed / available * 100.0), 1)
+                    if available > 0 else 100.0
+                )
+                high_util = (
+                    util_pct / 100.0 >= self.config.high_crew_utilization_threshold
+                )
+                utilization_by_skill[skill] = {
+                    "available": available,
+                    "committed": committed,
+                    "free": free,
+                    "utilization_pct": util_pct,
+                    "high_utilization": high_util,
+                }
+                if util_pct > peak_pct:
+                    peak_pct = util_pct
+                    peak_skill = skill
+
+        # ── Notes ─────────────────────────────────────────────────────────────
+        notes: List[str] = []
+        if boundary_conflict:
+            notes.append(
+                "Insertion window spans a shift handover; "
+                "work package transfer to incoming crew must be planned."
+            )
+        if fatigue_risk:
+            notes.append(
+                f"Insertion window extends {off_shift_hours:.1f} h into off-shift hours "
+                f"(threshold {self.config.fatigue_risk_off_shift_hours:.1f} h); "
+                "verify crew availability or plan for overtime authorisation."
+            )
+        high_util_skills = [s for s, d in utilization_by_skill.items() if d["high_utilization"]]
+        if high_util_skills:
+            notes.append(
+                "High crew utilization at insertion window for: "
+                + ", ".join(high_util_skills)
+                + f" (threshold ≥{self.config.high_crew_utilization_threshold * 100:.0f}%)."
+            )
+
+        return {
+            "available": True,
+            "off_shift_overlap_hours": round(off_shift_hours, 2),
+            "shift_boundary_conflict": boundary_conflict,
+            "fatigue_risk": fatigue_risk,
+            "utilization_at_window": utilization_by_skill,
+            "peak_utilization_skill": peak_skill,
+            "peak_utilization_pct": round(peak_pct, 1),
+            "notes": notes,
+        }
+
     def _compute_confidence(
         self, duration_dist: JsonDict, schedule_network: _ScheduleNetwork
     ) -> float:
@@ -882,6 +1472,82 @@ class ScheduleImpactAssessor:
 # Module-level utility functions
 # ---------------------------------------------------------------------------
 
+def _off_shift_overlap_hours(
+    start: datetime,
+    end: datetime,
+    shift_start_hour: int,
+    working_hours_per_day: int,
+) -> float:
+    """Return the number of hours in [start, end) that fall outside the active shift.
+
+    On a 24/7 schedule (``working_hours_per_day >= 24``) this is always 0.
+    For partial-day schedules the shift runs daily from ``shift_start_hour``
+    for ``working_hours_per_day`` hours; hours outside that window are counted.
+
+    Scans in 1-hour increments from the first whole hour >= start to end,
+    weighting each segment by the fraction that overlaps [start, end).
+    This is straightforward and correct up to the nearest minute; a more
+    sophisticated closed-form approach is not needed for this application.
+    """
+    if working_hours_per_day >= 24 or end <= start:
+        return 0.0
+
+    shift_end_hour = (shift_start_hour + working_hours_per_day) % 24
+
+    def _in_shift(h: int) -> bool:
+        if shift_start_hour < shift_end_hour:
+            return shift_start_hour <= h < shift_end_hour
+        # Midnight-crossing shift
+        return h >= shift_start_hour or h < shift_end_hour
+
+    total = 0.0
+    # Snap back to the start of the hour containing `start`
+    cursor = start.replace(minute=0, second=0, microsecond=0)
+    while cursor < end:
+        seg_start = max(cursor, start)
+        seg_end = min(cursor + timedelta(hours=1), end)
+        if not _in_shift(cursor.hour):
+            total += (seg_end - seg_start).total_seconds() / 3600.0
+        cursor += timedelta(hours=1)
+    return total
+
+
+def _has_shift_boundary(
+    start: datetime,
+    end: datetime,
+    shift_start_hour: int,
+    working_hours_per_day: int,
+) -> bool:
+    """Return True if a shift-start event falls strictly inside (start, end).
+
+    On 24/7 schedules there are no shift boundaries; returns False.
+    A shift-start event occurs once per day at ``shift_start_hour``; crossing
+    this boundary mid-job requires a formal work-package handover.
+    """
+    if working_hours_per_day >= 24 or end <= start:
+        return False
+
+    # Walk day-by-day from the day containing `start`
+    candidate = start.replace(
+        hour=shift_start_hour, minute=0, second=0, microsecond=0
+    )
+    # Start from the current day; advance to the next occurrence if it's <= start
+    if candidate <= start:
+        candidate += timedelta(days=1)
+    return candidate < end
+
+
+def _has_regulatory_constraint(text: Optional[str]) -> bool:
+    """Return True if *text* contains regulatory-constraint keywords.
+
+    Mirrors the pattern set in stage_a_intake so that displaced tasks and
+    other description-bearing artifacts can be enriched without a KG lookup.
+    """
+    if not text:
+        return False
+    return bool(_REGULATORY_KEYWORDS_RE.search(text))
+
+
 def _parse_dt(iso_str: Optional[str]) -> Optional[datetime]:
     """Parse an ISO-8601 string to a timezone-aware datetime."""
     if not iso_str:
@@ -922,5 +1588,111 @@ def _default_phase_windows(
     }
     frac = _PHASE_MAP.get(outage_phase.lower(), (0.0, 1.0))
     return frac[0] * total_hours, frac[1] * total_hours
+
+
+def _shift_insertion_times(
+    insertion_point: JsonDict,
+    lead_hours: float,
+) -> JsonDict:
+    """Return a new insertion_point dict with proposed_start and proposed_finish
+    shifted forward by ``lead_hours``.
+
+    If either ISO field is absent or unparseable the original value is kept
+    unchanged (graceful degradation — the shift is best-effort).
+    """
+    if lead_hours <= 0:
+        return insertion_point
+
+    result = dict(insertion_point)
+    delta = timedelta(hours=lead_hours)
+
+    for key in ("proposed_start", "proposed_finish"):
+        iso = insertion_point.get(key)
+        if not iso:
+            continue
+        dt = _parse_dt(iso)
+        if dt is not None:
+            result[key] = (dt + delta).isoformat()
+
+    return result
+
+
+def _compute_permit_lead_time(
+    execution_mode_flags: Dict[str, Any],
+    *,
+    rp_hold_hours: float,
+    scaffold_hours: float,
+    clearance_hours: float,
+    mode: str = "max",
+) -> JsonDict:
+    """Compute the permit/approval lead time for an emergent activity.
+
+    The lead time is the calendar overhead that must elapse *before* the
+    activity can start — permits and approvals happen before the first wrench
+    turn, not concurrently with the work.
+
+    Args:
+        execution_mode_flags: Dict with boolean keys ``has_rp_hold``,
+            ``requires_scaffold``, ``has_clearance`` (all default False when
+            absent — safe to pass an empty dict).
+        rp_hold_hours: RP survey + ALARA briefing lead time (from config).
+        scaffold_hours: Scaffold erection + inspection lead time (from config).
+        clearance_hours: E/M LOTO procedure lead time (from config).
+        mode: ``"max"`` (parallel permits, longest drives delay) or
+              ``"sum"`` (sequential permits, all times added).
+
+    Returns:
+        Dict with keys:
+            total_lead_hours        – effective delay before work can start
+            rp_hold_hours           – contribution from RP hold (0 if inactive)
+            scaffold_hours          – contribution from scaffold (0 if inactive)
+            clearance_hours         – contribution from clearance (0 if inactive)
+            start_adjusted          – True when total_lead_hours > 0
+            combination_mode        – ``"max"`` or ``"sum"``
+            notes                   – list of human-readable strings
+    """
+    flags = execution_mode_flags or {}
+    rp_component    = rp_hold_hours  if flags.get("has_rp_hold")       else 0.0
+    scaf_component  = scaffold_hours if flags.get("requires_scaffold")  else 0.0
+    clear_component = clearance_hours if flags.get("has_clearance")     else 0.0
+
+    components = [rp_component, scaf_component, clear_component]
+    if mode == "sum":
+        total = sum(components)
+    else:  # "max" (default)
+        total = max(components)
+
+    notes: List[str] = []
+    if rp_component > 0:
+        notes.append(
+            f"RP hold: {rp_component:.1f} h survey/briefing lead time required."
+        )
+    if scaf_component > 0:
+        notes.append(
+            f"Scaffold: {scaf_component:.1f} h erection/inspection lead time required."
+        )
+    if clear_component > 0:
+        notes.append(
+            f"Clearance/LOTO: {clear_component:.1f} h establishment lead time required."
+        )
+    if total > 0 and mode == "max":
+        notes.append(
+            f"Permits processed in parallel; critical path lead time = {total:.1f} h."
+        )
+    elif total > 0 and mode == "sum":
+        notes.append(
+            f"Permits processed sequentially; total lead time = {total:.1f} h."
+        )
+
+    return {
+        "total_lead_hours": round(total, 2),
+        "rp_hold_hours": round(rp_component, 2),
+        "scaffold_hours": round(scaf_component, 2),
+        "clearance_hours": round(clear_component, 2),
+        "start_adjusted": total > 0,
+        "combination_mode": mode,
+        "notes": notes,
+    }
+
 
 
