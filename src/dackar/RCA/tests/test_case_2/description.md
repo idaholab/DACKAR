@@ -33,7 +33,7 @@
 ## Observations 
 * main symptom: condenser vacuum degradation with unit power reduction
 * primary systems involved: condenser, circulating water / air removal, condensate and feedwater
-* supporting system c*ontext: loss or degradation of an AC/instrumentation support function
+* supporting system context: loss or degradation of an AC/instrumentation support function
 * competing hypotheses:
     1) condenser tube fouling / reduced heat transfer
     2) air in-leakage degrading vacuum
