@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
+import copy
 import json
 import logging
 import uuid
@@ -303,7 +304,22 @@ class RCAReasoningOrchestrator:
             )
         self._validate_and_persist(run_id, "evidence_bundle", evidence_bundle)
 
+        causality_candidates_pre_refine: Optional[JsonDict] = None
         if hasattr(self.causality_engine, "refine_with_evidence"):
+            causality_candidates_pre_refine = copy.deepcopy(causality_candidates)
+            if self.config.persist_intermediate_artifacts:
+                pre_val = self._validate_artifact(
+                    run_id, "causality_candidates", causality_candidates_pre_refine
+                )
+                self.artifact_store.save(
+                    run_id, "causality_candidates_pre_refine", causality_candidates_pre_refine
+                )
+                if pre_val is not None:
+                    self.artifact_store.save(
+                        run_id,
+                        "causality_candidates_pre_refine__validation",
+                        pre_val,
+                    )
             causality_candidates = self.causality_engine.refine_with_evidence(
                 causality_candidates=causality_candidates,
                 evidence_bundle=evidence_bundle,
@@ -365,6 +381,7 @@ class RCAReasoningOrchestrator:
             kg_context=kg_context,
             tskr_patterns=tskr_patterns,
             causality_candidates=causality_candidates,
+            causality_candidates_pre_refine=causality_candidates_pre_refine,
             evidence_bundle=evidence_bundle,
             ishikawa_matrix=ishikawa_matrix,
             cmms_context=cmms_context,
@@ -380,6 +397,7 @@ class RCAReasoningOrchestrator:
             "kg_context": kg_context,
             "tskr_patterns": tskr_patterns,
             "causality_candidates": causality_candidates,
+            "causality_candidates_pre_refine": causality_candidates_pre_refine,
             "evidence_bundle": evidence_bundle,
             "ishikawa_matrix": ishikawa_matrix,
             "cmms_context": cmms_context,
@@ -522,12 +540,68 @@ class RCAReasoningOrchestrator:
                 self.artifact_store.save(run_id, f"{artifact_name}__validation", validation)
 
 
+    @staticmethod
+    def _rank_candidates_by_composite(cands: List[JsonDict]) -> Dict[str, int]:
+        sorted_c = sorted(
+            cands,
+            key=lambda c: (-float(c.get("composite_score") or 0.0), str(c.get("candidate_id") or "")),
+        )
+        return {str(c["candidate_id"]): i + 1 for i, c in enumerate(sorted_c) if c.get("candidate_id")}
+
+    def _build_scoring_evolution(
+        self,
+        pre_refine: Optional[JsonDict],
+        post_refine: JsonDict,
+    ) -> Optional[List[JsonDict]]:
+        """Compact v1→v2 summary for run_manifest when pre-refine snapshot exists."""
+        if not pre_refine or not isinstance(pre_refine.get("candidates"), list):
+            return None
+        v1 = list(pre_refine.get("candidates") or [])
+        v2 = list(post_refine.get("candidates") or [])
+        if not v1 or not v2:
+            return None
+        r1 = self._rank_candidates_by_composite(v1)
+        r2 = self._rank_candidates_by_composite(v2)
+        by_id_v1 = {str(c.get("candidate_id")): c for c in v1 if c.get("candidate_id")}
+        by_id_v2 = {str(c.get("candidate_id")): c for c in v2 if c.get("candidate_id")}
+        ids = sorted(set(by_id_v1) | set(by_id_v2))
+        rows: List[JsonDict] = []
+        for cid in ids:
+            c_pre = by_id_v1.get(cid)
+            c_post = by_id_v2.get(cid)
+            s1 = (c_pre or {}).get("scores") or {}
+            s2 = (c_post or {}).get("scores") or {}
+            rows.append(
+                {
+                    "candidate_id": cid,
+                    "rank_pre_refine": r1.get(cid),
+                    "rank_post_refine": r2.get(cid),
+                    "composite_pre": round(float((c_pre or {}).get("composite_score") or 0.0), 5)
+                    if c_pre
+                    else None,
+                    "composite_post": round(float((c_post or {}).get("composite_score") or 0.0), 5)
+                    if c_post
+                    else None,
+                    "evidence_score_pre": round(float(s1.get("evidence") or 0.0), 5) if c_pre else None,
+                    "evidence_score_post": round(float(s2.get("evidence") or 0.0), 5) if c_post else None,
+                    "evidence_posture_post": (c_post or {}).get("evidence_posture"),
+                }
+            )
+        rows.sort(
+            key=lambda x: abs(
+                (x["rank_post_refine"] or 999) - (x["rank_pre_refine"] or 999)
+            ),
+            reverse=True,
+        )
+        return rows
+
     def _stage_g_finalize_manifest(
         self,
         run_context: JsonDict,
         kg_context: JsonDict,
         tskr_patterns: JsonDict,
         causality_candidates: JsonDict,
+        causality_candidates_pre_refine: Optional[JsonDict],
         evidence_bundle: JsonDict,
         ishikawa_matrix: Optional[JsonDict],
         cmms_context: Optional[JsonDict],
@@ -552,6 +626,11 @@ class RCAReasoningOrchestrator:
             evidence_bundle=evidence_bundle,
         )
 
+        scoring_evolution = self._build_scoring_evolution(
+            causality_candidates_pre_refine,
+            causality_candidates,
+        )
+
         return {
             "run_id": run_context["run_id"],
             "completed_at": utcnow_iso(),
@@ -561,6 +640,8 @@ class RCAReasoningOrchestrator:
                 "evidence_refinement_applied": bool(
                     ((causality_candidates.get("provenance") or {}).get("evidence_refinement_applied", False))
                 ),
+                "causality_pre_refine_persisted": causality_candidates_pre_refine is not None,
+                "scoring_evolution": scoring_evolution,
                 "enable_ishikawa": bool(self.config.enable_ishikawa),
                 "top_k_candidates": self.config.top_k_candidates,
                 "top_k_evidence": self.config.top_k_evidence,
@@ -570,6 +651,10 @@ class RCAReasoningOrchestrator:
                 "tskr_patterns": {
                     "present": True,
                     "pattern_count": len(tskr_patterns.get("patterns", [])),
+                },
+                "causality_candidates_pre_refine": {
+                    "present": causality_candidates_pre_refine is not None,
+                    "candidate_count": len((causality_candidates_pre_refine or {}).get("candidates", [])),
                 },
                 "causality_candidates": {
                     "present": True,

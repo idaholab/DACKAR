@@ -1,13 +1,14 @@
 # RCA Visualization App — Architecture & Design Notes
-**Date**: April 20, 2026
-**Context**: Companion tool to the DACKAR RCA pipeline (Orchestrator v3.2)
+**Date**: April 20, 2026  
+**Last updated**: April 21, 2026 (added **§20** — embedding the orchestrator in the viz app; Phases 3–5 as before)  
+**Context**: Companion tool to the DACKAR RCA pipeline (Orchestrator v3.2)  
 **Location**: `DACKAR/src/dackar/RCA/viz/`
 
 ---
 
 ## 1. Purpose
 
-The viz app provides human-readable views of all RCA pipeline artifacts — both for **pre-run fixture inspection** (verifying inputs before running the pipeline) and **post-run result review** (inspecting and comparing pipeline outputs). It is not part of the pipeline itself and carries no write-back capability.
+The viz app provides human-readable views of all RCA pipeline artifacts — both for **pre-run fixture inspection** (verifying inputs before running the pipeline) and **post-run result review** (inspecting and comparing pipeline outputs). It is **not** the pipeline runtime: it does not call `RCAReasoningOrchestrator.run()` or persist new run folders. It carries no write-back capability. See **§20** if you want to embed a full workflow run inside Streamlit later.
 
 The app directly addresses two usability gaps identified during the April 20 systems engineering review:
 - Artifacts are JSON/JSONL files that are hard to navigate manually
@@ -30,16 +31,17 @@ The full result JSON already contains all artifacts as nested keys (`run_context
 
 ## 3. Panels (Tabs)
 
-Six panels, rendered as Streamlit tabs. First two are always available; remaining four require the full run result.
+Seven sections, selected via horizontal **`st.radio`** (same UX as tabs). Validation / KG / Telemetry are usable with partial fixtures; others depend on the loaded bundle.
 
-| Tab | Data sources | Available in fixture mode? |
-|-----|-------------|---------------------------|
-| **0 — Validation & Run Status** | `run_manifest`, `input_validation`, `output_validation` | Partial (input validation only) |
-| **1 — KG Context** | `kg_context` | Yes |
-| **2 — Telemetry & Temporal** | `telemetry_summary`, `tskr_patterns` | Partial (telemetry only) |
-| **3 — Candidates** | `causality_candidates` v1 + v2 (from run result) | Partial (v1 only from fixtures) |
-| **4 — Evidence** | `evidence_bundle`, `causality_candidates` | Yes (fixtures) |
-| **5 — RCA Card** | `rca_card` | No (run result only) |
+| Section | Data sources | Available in fixture mode? |
+|--------|-------------|---------------------------|
+| **Validation & Run Status** | `run_manifest`, `input_validation`, `output_validation` | Partial (input validation only) |
+| **KG Context** | `kg_context` | Yes |
+| **Telemetry & Temporal** | `telemetry_summary`, `tskr_patterns`, optional **`kg_context`** (FMEA latency strip) | Partial (telemetry only) |
+| **Candidates** | `causality_candidates` (post-refine); optional **`causality_candidates_pre_refine`** on bundle or sidebar path for delta | Yes; **delta** uses embedded pre-refine when the orchestrator persisted it (Phase 5) or the optional sidebar JSON |
+| **Evidence** | `evidence_bundle`, `causality_candidates` | Yes (fixtures) |
+| **Ishikawa & CMMS** | `ishikawa_matrix`, `cmms_context` | Partial (often null) |
+| **RCA Card** | `rca_card` | No (run result only) |
 
 ---
 
@@ -52,12 +54,14 @@ viz/
 ├── requirements.txt
 ├── panels/
 │   ├── __init__.py
-│   ├── validation.py               # Tab 0
-│   ├── kg_context.py               # Tab 1
-│   ├── telemetry.py                # Tab 2
-│   ├── candidates.py               # Tab 3
-│   ├── evidence.py                 # Tab 4
-│   └── rca_card.py                 # Tab 5
+│   ├── validation.py
+│   ├── kg_context.py
+│   ├── telemetry.py
+│   ├── candidates.py
+│   ├── evidence.py
+│   ├── rca_card.py
+│   ├── extra_artifacts.py          # Ishikawa + CMMS
+│   └── pipeline_nav.py             # §14 sidebar navigator
 └── utils/
     ├── __init__.py
     ├── color_maps.py               # Shared color scales (score thresholds, roles, postures)
@@ -164,6 +168,8 @@ def render_telemetry_panel(telemetry_summary: dict, tskr_patterns: dict | None) 
 
 **D — Scoring config block**: weights, thresholds, tskr_enabled — shown as a small reference card
 
+**E — Extended pools** (collapsed by default): `event_analogs[]`, `filtered_out_candidates[]`, and `screening` / `summary` blocks from `causality_candidates` so engineers see near-misses and screening notes.
+
 **Key methods**:
 ```python
 def build_score_chart(candidates_v1: list, candidates_v2: list | None) -> plotly.graph_objects.Figure
@@ -197,6 +203,10 @@ def render_candidates_panel(causality_candidates: dict, run_result: dict | None)
 **D — Query plan** (expandable):
 - Shows the queries used to retrieve evidence for each candidate (support query + contradiction query)
 - Useful for debugging low-quality retrieval
+
+**E — Retrieval health** (when metadata present): `bm25_available`, per-candidate hit counts, warnings for dense-only retrieval.
+
+**F — Export**: Download filtered `evidence_bundle.results` as CSV for offline review.
 
 **Key methods**:
 ```python
@@ -381,10 +391,208 @@ No live Neo4j connection required. All graph topology is rendered from `kg_conte
 
 ## 10. Known Data Quality Notes (Inform Panel Behavior)
 
-These issues (identified in the April 20 systems engineering review) affect what the viz app can and cannot show reliably:
+These issues affect what the viz app can and cannot show reliably. Several items were **revised** after code review (April 20, 2026):
 
-- **Safety function impact**: `kg_context.safety_functions[]` may be populated but is not currently propagated to `rca_card.recommended_actions[].priority`. The RCA Card panel should render it from kg_context directly alongside recommended actions rather than relying on the rca_card to carry it.
-- **Evidence excerpts in rca_card.evidence[]**: These are summary-derived, not verbatim retrieved text. The Evidence panel should display snippets from `evidence_bundle.results[]` directly (verbatim) rather than repeating the rca_card evidence rows.
-- **Score evolution**: The delta between v1 and v2 candidates is not a named artifact. The Candidates panel computes and renders this delta at display time from the two candidate lists.
-- **Confidence always medium**: `fallback_used: True` in all current runs. The Validation panel should note this explicitly so engineers are not confused by a consistent "medium" confidence label.
-- **TSKR first-pattern-only limitation**: The Telemetry panel should display a warning when a failure mode has only one TSKR pattern, as additional patterns may have been lost.
+- **Safety function impact**: `kg_context.safety_functions[]` may be populated but is not always reflected in `rca_card.recommended_actions[].priority`. The RCA Card panel should render safety context from `kg_context` (and candidate `affected_safety_functions` when present) alongside recommended actions, not only from the card.
+- **Evidence text**: **Prefer** verbatim text from `evidence_bundle.results[]` in the Evidence tab. The deterministic synthesizer sets `rca_card.evidence[].excerpt` from the selected snippet when available; LLM or partial paths may still differ. Do not assume `rca_card` excerpts are always non-verbatim.
+- **Score evolution (v1 → v2)**: The orchestrator still **overwrites** `causality_candidates` after `refine_with_evidence()`. **Option B is implemented:** immediately before refine, a deep copy is validated as `causality_candidates` and saved as **`causality_candidates_pre_refine`** (when `persist_intermediate_artifacts` is true), returned from `run()`, and summarized on **`run_manifest.pipeline_config.scoring_evolution`**. Monolithic `full_result.json` files produced outside this path will not contain the new keys until the exporter merges them. **Option A** (manual second file) remains supported via the sidebar path and overrides the bundle snapshot when set.
+- **Confidence label**: When `validation_status.fallback_used` is true, calibration may cap primary confidence (e.g. medium). The Validation tab should surface `fallback_used` so engineers interpret the label correctly.
+- **TSKR patterns per failure mode**: `TSKRTemporalScorerV1` emits **one** pattern per `failure_modes[]` entry. Causality engines index **lists** per `target_id` and select **max confidence** if multiple patterns exist. A “lost pattern” warning applies only if future scorers emit multiple rows per `fm_id` or merged artifacts duplicate targets — not the historical single-list bug.
+
+---
+
+## 11. Canonical data contract (`ArtifactBundle`)
+
+All loaders normalize toward a single in-memory dict (keys optional unless a tab needs them):
+
+| Key | Typical source |
+|-----|----------------|
+| `run_context` | `full_result` / run folder |
+| `kg_context` | `full_result`, `kg_context.json` |
+| `telemetry_summary` | `full_result`, `telemetry_summary.json` |
+| `tskr_patterns` | `full_result`, `tskr_patterns.json` |
+| `causality_candidates` | `full_result`, `causality_candidates.json` |
+| `evidence_bundle` | `full_result`, `evidence_bundle.json` |
+| `ishikawa_matrix` | `full_result` (optional) |
+| `cmms_context` | `full_result` (optional) |
+| `rca_card` | `full_result` |
+| `input_validation` | `full_result` / `validation__inputs` style |
+| `output_validation` | `full_result` / `validation__outputs` style |
+| `run_manifest` | `full_result` |
+| `event` | `event.json` in fixtures (not always present in `full_result` — optional) |
+| `operational_context`, `pm_compliance` | fixture files when present |
+
+**Rule:** Missing keys are `None`; tabs show an explicit empty state (see §13).
+
+### Fixture directory file names
+
+The loader merges known filenames from a directory (examples from `tests/test_case_2/fixtures/`):
+
+`event.json`, `telemetry_summary.json`, `kg_context.json`, `tskr_patterns.json`, `causality_candidates.json`, `evidence_bundle.json`, `operational_context.json`, `pm_compliance.json`, `evidence_store_rows.json` (stored under `evidence_store_rows` — dev helper, not orchestrator output).
+
+Nested fixture sets (e.g. `test_case_1/fixtures/case_001_bearing_wear/`) are supported if the user passes **that** directory path.
+
+---
+
+## 12. Loader behavior and v1 / v2 candidate delta
+
+### Auto-detect
+
+- Path is a **file** ending in `.json` → load as **full result** (entire object becomes the bundle; keys pass through).
+- Path is a **directory** → treat as **fixtures**: read each mapped filename if present.
+
+### Optional second path (delta)
+
+- Sidebar: optional **“Pre-refine causality JSON”** (or second `full_result` path).  
+- If the file has top-level `candidates`, treat it as **`causality_candidates_pre_refine`** (parallel key in session / merged overlay).  
+- Candidates tab ranks using the same tie-break as engines: sort by `composite_score` descending, then `candidate_id` ascending.
+
+### Pipeline target contract (recommended)
+
+**Option B (implemented):** `RCAReasoningOrchestrator` persists `causality_candidates_pre_refine.json` immediately after evidence retrieval and before `refine_with_evidence()` (same validation schema as `causality_candidates`). `run_manifest.pipeline_config` includes `scoring_evolution`, `causality_pre_refine_persisted`, and `artifacts.causality_candidates_pre_refine`. The viz reads `causality_candidates_pre_refine` from the bundle for the Candidates delta without a manual second file.
+
+**Option A (fallback):** Analyst copies `causality_candidates.json` from the run folder immediately after Stage D (before refine) and loads it in the optional field.
+
+---
+
+## 13. Session state, UX, and performance
+
+- **`st.session_state`:** `artifacts`, `primary_path`, `load_error`, **`rca_viz_tab_radio`**, **`rca_viz_evidence_filter`**; **Load / reload** resets tab and evidence filter.
+- **Large JSON:** Use `st.json` inside `st.expander` per top-level key; for very large blobs, offer **“Raw path + file size”** only or truncate display (e.g. first 50k chars) with download link.
+- **Evidence table:** `st.dataframe` with height cap; optional CSV download.
+- **Pyvis:** `@st.cache_data` on HTML generation keyed by `json.dumps(kg_context, sort_keys=True)` (`panels/kg_context.py`); very large subgraphs may need a future node cap.
+
+### Empty states (copy guidance)
+
+| Tab | When missing |
+|-----|----------------|
+| Validation | “No `run_manifest` / validation bundles loaded.” |
+| KG | “No `kg_context`.” |
+| Telemetry | “No `telemetry_summary`.” |
+| Candidates | “No `causality_candidates`.” / banner if no pre-refine file for delta |
+| Evidence | “No `evidence_bundle`.” |
+| RCA Card | “No `rca_card` (fixture-only load).” |
+| Ishikawa & CMMS | “No `ishikawa_matrix` / `cmms_context`.” |
+
+---
+
+## 14. “Reasoning process” view (pipeline navigator)
+
+**Implemented** in the **sidebar** (`panels/pipeline_nav.py`): linear stages aligned with `RCAReasoningOrchestrator.run()`:
+
+`Inputs` → `KG context` → `TSKR` → `Candidates (generate)` → `Evidence` → `Candidates (refine)` → `Ishikawa (optional)` → `RCA card` → `Manifest`
+
+For each stage: ✅ / ⚠️ / ❌ / ⚪ (Ishikawa disabled in run config) as described in code. **Clicking a stage** sets `st.session_state.rca_viz_tab_radio` to the matching section (Validation, KG Context, Telemetry & Temporal, Candidates, Evidence, Ishikawa & CMMS, RCA Card).
+
+```mermaid
+flowchart TD
+  A[Inputs_validation] --> B[KG_context]
+  B --> C[TSKR_patterns]
+  C --> D[Candidates_generate]
+  D --> E[Evidence_retrieve]
+  E --> F[Candidates_refine]
+  F --> G[Ishikawa_opt]
+  G --> H[RCA_synthesize]
+  H --> I[Run_manifest]
+```
+
+---
+
+## 15. Phased implementation
+
+| Phase | Scope | Outcome |
+|-------|--------|---------|
+| **0** | This document | Spec + checklist |
+| **1** | `loader.py` + `app.py` shell: paths, load, `st.json` / expanders per key, pipeline checklist | Prove real bundles load |
+| **2** | Tabs 0, 3, 4 (validation, candidates+delta, evidence) | Highest review value |
+| **3** | Tabs 1–2 (Plotly + Pyvis) | Integration-heavy |
+| **4** | Tab 5 + cross-links (candidate id → evidence filter) | Analyst polish |
+| **5** | Pipeline Option B | Done — `causality_candidates_pre_refine` + `scoring_evolution` (see §12) |
+
+**Current repo status:** Phase **1–3** complete for KG + Telemetry per §5 Tabs 1–2 (including FMEA latency Gantt when KG has latency fields, TSKR violation coloring, per-signal stats expanders, KG past-event timeline, document causal statements, Pyvis asset/seed/past-event nodes, **`@st.cache_data`** on Pyvis HTML). **§14** pipeline navigator in sidebar. **Phase 4:** RCA Card + cross-navigation. **Phase 5:** pre-refine snapshot + `scoring_evolution` on orchestrator and bundle. **Optional Phase 6** (embed `run()` in Streamlit): not implemented — see **§20** and `app.py` sidebar expander “Viewer vs full RCA run”.
+
+---
+
+## 16. Testing, security, packaging
+
+- **Smoke:** From `viz/`, `streamlit run app.py` with path to `tests/test_case_2/rca_runs_case_002/v32_full_result.json` or `tests/test_case_2/fixtures/` — expect no unhandled exception.
+- **Security:** Optional env `RCA_VIZ_ALLOWED_ROOTS` (use `os.pathsep`-separated absolute prefixes); reject loads outside allowed roots when set. Default local dev: trusted user.
+- **Run command:** `cd DACKAR/src/dackar/RCA/viz` then `streamlit run app.py` (keeps `from loader import` working). Alternatively `python -m streamlit run app.py` from the same directory.
+- **Pins:** See `viz/requirements.txt`.
+
+---
+
+## 17. Related documents
+
+- [RCA_dual_review_progress_tracker_april_20.md](../diagrams/april_20/RCA_dual_review_progress_tracker_april_20.md) — review gaps and progress.
+- [RCA_TSKR_orchestrator_causality_deep_pass_april_20.md](../diagrams/april_20/RCA_TSKR_orchestrator_causality_deep_pass_april_20.md) — TSKR + orchestrator + v31/v32 semantics.
+- [RCA_workflow_april_2.md](../diagrams/april_20/RCA_workflow_april_2.md) — formal workflow steps.
+
+---
+
+## 18. Implementation checklist
+
+| Phase | Deliverable | Status |
+|-------|-------------|--------|
+| 0 | Expand `RCA_VIZ_ARCHITECTURE.md` (§10–§18, diagram, checklist) | Done |
+| 1 | `loader.py`, `app.py`, `requirements.txt`, package stubs | Done |
+| 1b | Raw JSON viewer: use `selectbox` + `st.json` (Streamlit forbids **nested expanders**) | Done (2026-04-21) |
+| 2 | Rich Validation / Candidates / Evidence panels | Done (2026-04-21) |
+| 3 | KG Pyvis + Telemetry Plotly (§5 Tabs 1–2) | Done (2026-04-21) — telemetry: FMEA strip, TSKR windows + colored table + sortable DF, per-signal stats metrics; KG: Pyvis asset/seed/past events, FM filter, doc dates + causal statements, past-event scatter; **`panels/pipeline_nav.py`** §14 |
+| 4 | RCA Card + cross-navigation | Done (2026-04-21) — `app.py` horizontal `st.radio` tab bar + `rca_viz_evidence_filter`; `rca_card.py` / `candidates.py` navigation buttons |
+| 5 | Orchestrator: persist pre-refine candidates + manifest `scoring_evolution` | Done (2026-04-21) — `causality_candidates_pre_refine` artifact + return key; manifest fields; `loader` fixture map; Validation tab shows `scoring_evolution` table when present |
+| 6 (future) | Embed `RCAReasoningOrchestrator.run()` in Streamlit (“Run from viewer”) | Not started — design notes in **§20** |
+
+---
+
+## 19. Data flow (loader → UI)
+
+```mermaid
+flowchart LR
+  inputs[Fixtures_or_full_result_JSON]
+  loader[load_artifacts]
+  bundle[ArtifactBundle_session_state]
+  tabs[Streamlit_tabs]
+  inputs --> loader --> bundle --> tabs
+  optionalPre[Optional_pre_refine_JSON]
+  optionalPre --> loader
+```
+
+---
+
+## 20. Viewer vs embedded workflow (orchestrator in the app)
+
+### 20.1 Current behavior
+
+- The Streamlit app is a **read-only consumer** of JSON: `load_artifacts()` reads `full_result.json` or a fixtures directory and stores the dict in `st.session_state["artifacts"]`.
+- **No** Neo4j, Chroma, LLM, or `FileArtifactStore` paths are opened from the viz process for the purpose of executing a new run. The **§14** pipeline navigator is a **navigation and presence** aid, not a job runner.
+
+### 20.2 Running the full RCA analysis today
+
+Use the same Python entry points you already use for development (e.g. `build_dev_orchestrator(...).run(event=..., telemetry_summary=..., ...)` or your CLI/notebook), with all required **live** dependencies configured (Neo4j client + DB, evidence store for `ChromaEvidenceRetriever`, `schema_dir` for `RCAArtifactValidator`, optional LLM for synthesis, `output_dir` for `FileArtifactStore`). Then point this app at the produced **`v32_full_result.json`** (or the run’s artifact directory if you add a merge step).
+
+Minimum inputs the orchestrator expects (typical dev path) are described in orchestrator code and tests: at least **`event`** and **`telemetry_summary`**; optional **`operational_context`**, **`pm_compliance`**; **`kg_context`** / **`tskr_patterns`** / **`causality_candidates`** / **`evidence_bundle`** may be supplied or built inside `run()`.
+
+### 20.3 If you embed the workflow in Streamlit later (design notes)
+
+This would be a **separate feature** (sometimes called “Run from viewer”):
+
+| Concern | Notes |
+|--------|--------|
+| **Scope** | Add a sidebar section or tab: paths/IDs for inputs, “Run” button, progress `st.status`, then merge the returned dict into `st.session_state["artifacts"]` (or set `input_path` to the written `full_result.json` and reload). |
+| **Dependencies** | The orchestrator process must see the same env as a headless run: Neo4j URI/auth, evidence collection, schema directory, optional Ollama/API keys. Streamlit runs in the user’s local process — secrets should use `st.secrets` or env vars, not hard-coded credentials. |
+| **Isolation** | Long runs block the Streamlit script unless you use **threading**, **`subprocess`** to a small CLI wrapper, or an external queue. Prefer subprocess or a dedicated worker if runs exceed a few tens of seconds. |
+| **Errors** | Surface validation failures and optional-artifact warnings the same way the orchestrator already records them; avoid leaving `session_state` half-updated on failure. |
+| **Security** | Re-use `RCA_VIZ_ALLOWED_ROOTS` for any output path; never execute arbitrary user code from uploaded files. |
+| **Packaging** | `requirements.txt` for the viz would need to align with orchestrator extras (py2neo, chromadb, etc.) if you import the orchestrator from the same environment. |
+
+**Recommendation:** keep the viz **read-only** for production analyst machines; run the pipeline in CI, a notebook, or a small API service, then open the artifact bundle here. Embedding is reasonable for **local dev demos** once subprocess + config story is clean.
+
+### 20.4 Checklist (optional future work)
+
+| Item | Status |
+|------|--------|
+| “Run pipeline” UI + config | Not started |
+| Subprocess or worker for non-blocking runs | Not started |
+| Merge `run()` return dict into viewer session | Not started |
+| Document env vars / `st.secrets` keys for embedded mode | Not started |
