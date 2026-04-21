@@ -225,6 +225,37 @@ def test_confidence_decision_result_has_attention_flags():
     print("  PASS test_confidence_decision_result_has_attention_flags")
 
 
+def test_high_confidence_achievable_with_fallback():
+    """Sprint 1 fix: _calibrate_primary_confidence can reach 'high' with fallback_used=True.
+
+    Before the fix, 'and not fallback_used' in the high-confidence condition and
+    the subsequent cap block made high confidence structurally impossible.
+    """
+    s = make_synthesizer()
+    posture = {
+        "passed_minimum_evidence_gate": True,
+        "supporting_evidence_count": 3,
+        "contradicting_evidence_count": 0,
+        "contextual_evidence_count": 1,
+        "evidence_posture": "supported",
+        "primary_score": 0.72,
+        "runner_up_gap": 0.15,
+        "recurrence_score": 0.50,
+        "recurrence_confidence": "medium",
+        "common_cause_score": 0.0,
+        "common_cause_confidence": "none",
+        "suspected_common_cause": False,
+        "candidate_in_common_cause_cluster": False,
+        "temporal_posture": "supported",
+        "temporal_contradiction": False,
+        "latency_violation_type": "none",
+        "fallback_used": True,
+    }
+    result = s._calibrate_primary_confidence(posture)
+    assert result == "high", f"expected 'high', got '{result}'"
+    print("  PASS test_high_confidence_achievable_with_fallback")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -241,6 +272,7 @@ ALL_TESTS = [
     test_confidence_decision_weak_support,
     test_confidence_decision_no_support,
     test_confidence_decision_result_has_attention_flags,
+    test_high_confidence_achievable_with_fallback,
 ]
 
 

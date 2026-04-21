@@ -558,6 +558,17 @@ class ChromaRecordStore:
             else:
                 chroma_where = {"$and": clauses}
 
+        if wanted_component_ids:
+            LOGGER.warning(
+                "ChromaRecordStore: component_ids filter applied as Python post-filter "
+                "on top-%d dense hits — not as a Chroma index-level filter.  "
+                "Documents outside the top-%d similarity results are not scanned.  "
+                "Increase top_k or re-ingest with component_id as a scalar metadata field "
+                "to improve component-level retrieval precision.",
+                top_k * 4,
+                top_k * 4,
+            )
+
         dense_hits: List[Dict[str, Any]] = []
         # Fetch extra candidates when component post-filtering is active so that
         # attrition from the filter does not starve downstream consumers.

@@ -83,6 +83,9 @@ class RCAArtifactValidator:
         "rca_card",
         "operational_context",
         "pm_compliance",
+        "cmms_context",
+        "run_context",
+        "run_manifest",
         "document",
         "processed_text_record",
     }

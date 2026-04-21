@@ -72,6 +72,7 @@ class CausalityEngineConfigV32:
     top_k_candidates: int = 10
     weights: Dict[str, float] = None
     minimum_evidence_threshold: float = 0.35
+    minimum_pre_evidence_threshold: float = 0.10
     minimum_composite_threshold: float = 0.30
     temporal_window_days_cap: int = 3650
     review_alternative_gap: float = 0.10
@@ -87,6 +88,12 @@ class CausalityEngineConfigV32:
                 "evidence": 0.20,
                 "governance": 0.10,
             }
+        total = sum(self.weights.values())
+        if abs(total - 1.0) > 0.001:
+            raise ValueError(
+                f"CausalityEngineConfigV32.weights must sum to 1.0 (got {total:.4f}). "
+                f"Current weights: {self.weights}"
+            )
 
 
 class RuleBasedCausalityEngineV32:
@@ -291,7 +298,7 @@ class RuleBasedCausalityEngineV32:
                 "rpn_prior": round(rpn_prior, 4),
             }
             composite = self._combine_scores(scores)
-            meets_evidence_threshold = evidence >= self.config.minimum_evidence_threshold
+            meets_evidence_threshold = evidence >= self.config.minimum_pre_evidence_threshold
             candidate = {
                 "candidate_id": f"FM::{fm_id}",
                 "hypothesis_type": "failure_mode",
@@ -450,7 +457,7 @@ class RuleBasedCausalityEngineV32:
             }
 
             composite = self._combine_scores(scores)
-            meets_evidence_threshold = evidence >= self.config.minimum_evidence_threshold
+            meets_evidence_threshold = evidence >= self.config.minimum_pre_evidence_threshold
             candidate = {
                 "candidate_id": f"EVENT::{event_id}",
                 "hypothesis_type": "historical_event",
@@ -614,8 +621,10 @@ class RuleBasedCausalityEngineV32:
         """
         if retrieved_hit_count == 0 and support_score == 0.0 and contradiction_score == 0.0:
             return "no_data"
+        if support_score == 0.0 and contradiction_score > 0.0:
+            return "contradicted"  # any contra evidence with zero support
         if contradiction_score >= 0.45 and contradiction_score > support_score:
-            return "contradicted"
+            return "contradicted"  # strong contra dominates even mixed evidence
         if support_score >= 0.55 and support_score > contradiction_score:
             return "supported"
         if support_score >= 0.30 and contradiction_score >= 0.20:
@@ -700,12 +709,16 @@ class RuleBasedCausalityEngineV32:
             # Treat existing evidence score as prior/doc-availability prior
             prior_evidence_score = float((candidate.get("scores") or {}).get("evidence", 0.0) or 0.0)
 
+            # Authority weight: 1.0 until evidence retriever populates best_source_tier.
+            authority_weight = self._AUTHORITY_WEIGHTS.get(
+                ev.get("best_source_tier"), 1.0
+            )
             refined_evidence_score = max(
                 0.0,
                 min(
                     1.0,
                     0.30 * prior_evidence_score
-                    + 0.55 * support_score
+                    + 0.55 * support_score * authority_weight
                     + 0.15 * contextual_score
                     - 0.45 * contradiction_score,
                 ),
@@ -774,13 +787,13 @@ class RuleBasedCausalityEngineV32:
                     boost = min(0.15, 0.05 * len(resolved_matches))
                     support_score = min(1.0, support_score + boost)
                     candidate["scores"]["evidence_entity_boost"] = round(boost, 4)
-                    # Recompute refined_evidence_score with boosted support
+                    # Recompute refined_evidence_score with boosted support (same authority weight)
                     refined_evidence_score = max(
                         0.0,
                         min(
                             1.0,
                             0.30 * prior_evidence_score
-                            + 0.55 * support_score
+                            + 0.55 * support_score * authority_weight
                             + 0.15 * contextual_score
                             - 0.45 * contradiction_score,
                         ),
@@ -861,15 +874,35 @@ class RuleBasedCausalityEngineV32:
         evidence_ok = bool(candidate.get("meets_evidence_threshold", False))
         return composite_ok and evidence_ok
 
+    # Maps seed_match_type to structural score.  Components matched via a
+    # preceding temporal anomaly are strong causal candidates (0.80).
+    _SEED_STRUCTURAL_SCORES: Dict[str, float] = {
+        "seed":                           0.85,
+        "telemetry":                      0.90,
+        "telemetry_anomaly_precedes":     0.80,
+        "telemetry_anomaly_simultaneous": 0.70,
+    }
+    _DEFAULT_NEIGHBOR_SCORE: float = 0.75
+    _UNKNOWN_COMPONENT_SCORE: float = 0.40
+
+    # Evidence source authority weights.  Matches RCA_Data_Management_Strategy.md §6.
+    # Applied to best_support_score in refine_with_evidence() when best_source_tier
+    # is present in the per-candidate evidence summary.  Defaults to 1.0 if absent
+    # (backward compatible — evidence retriever populates the field in a later sprint).
+    _AUTHORITY_WEIGHTS: Dict[str, float] = {
+        "plant_instance":  1.00,
+        "plant_procedure": 0.80,
+        "plant_fmea":      0.70,
+        "plant_family":    0.50,
+        "oe_iris":         0.40,
+        "oe_adams":        0.30,
+    }
+
     def _structural_score_for_fm(self, component_id, components):
         if component_id and component_id in components:
             seed_type = components[component_id].get("seed_match_type")
-            if seed_type == "seed":
-                return 0.85
-            if seed_type == "telemetry":
-                return 0.90
-            return 0.75
-        return 0.40
+            return self._SEED_STRUCTURAL_SCORES.get(seed_type, self._DEFAULT_NEIGHBOR_SCORE)
+        return self._UNKNOWN_COMPONENT_SCORE
 
     # Priority → raw signal weight.  Critical alarms are strong structural
     # corroboration; informational alarms are near-noise.

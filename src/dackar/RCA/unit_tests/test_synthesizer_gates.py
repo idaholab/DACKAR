@@ -259,6 +259,73 @@ def test_gate_composite_exactly_at_threshold():
     print("  PASS test_gate_composite_exactly_at_threshold")
 
 
+# ── H6 — posture-aware recommended actions ───────────────────────────────────
+
+def test_recommended_actions_no_warning_when_supported():
+    """H6: supported posture → posture_warning is None on each action."""
+    s = make_synthesizer()
+    candidate = {"candidate_id": "CAND-A", "cause_label": "corrosion", "evidence_posture": "supported"}
+    actions = [{"action_type": "inspection", "description": "Inspect welds", "priority": "high"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["posture_warning"] is None
+    print("  PASS test_recommended_actions_no_warning_when_supported")
+
+
+def test_recommended_actions_warning_when_contradicted():
+    """H6: contradicted posture → posture_warning populated on every action."""
+    s = make_synthesizer()
+    candidate = {"candidate_id": "CAND-A", "cause_label": "bearing wear", "evidence_posture": "contradicted"}
+    actions = [
+        {"action_type": "investigation", "description": "Investigate wear pattern", "priority": "high"},
+        {"action_type": "monitoring",    "description": "Monitor vibration",       "priority": "medium"},
+    ]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert len(result) == 2
+    for row in result:
+        assert row["posture_warning"] is not None
+        assert "contradict" in row["posture_warning"].lower()
+    print("  PASS test_recommended_actions_warning_when_contradicted")
+
+
+def test_recommended_actions_warning_when_no_data():
+    """H6: no_data posture → posture_warning populated on every action."""
+    s = make_synthesizer()
+    candidate = {"candidate_id": "CAND-A", "cause_label": "fouling", "evidence_posture": "no_data"}
+    actions = [{"action_type": "inspection", "description": "Inspect internals", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["posture_warning"] is not None
+    assert "speculative" in result[0]["posture_warning"].lower()
+    print("  PASS test_recommended_actions_warning_when_no_data")
+
+
+def test_recommended_actions_warning_absent_when_no_primary_candidate():
+    """H6: None primary_candidate → posture_warning is None (no posture available)."""
+    s = make_synthesizer()
+    actions = [{"action_type": "inspection", "description": "Check seals", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=None)
+    assert result[0]["posture_warning"] is None
+    print("  PASS test_recommended_actions_warning_absent_when_no_primary_candidate")
+
+
+def test_gate_whitespace_padded_support_role_passes():
+    """Sprint 3 / S10 fix: support_role='  Supporting  ' (whitespace + mixed case) → passes.
+
+    Before the fix, raw string comparison would fail.  The current implementation
+    uses .strip().lower() so whitespace-padded values are normalised correctly.
+    """
+    s = make_synthesizer()
+    ev = minimal_supporting_evidence("FM::CAND-A")
+    ev["support_role"] = "  Supporting  "
+    card = minimal_card(
+        candidate_id="FM::CAND-A",
+        composite_score=0.82,
+        citations=[minimal_citation()],
+        evidence=[ev],
+    )
+    assert s._passes_minimum_evidence_gate(card) is True
+    print("  PASS test_gate_whitespace_padded_support_role_passes")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -276,6 +343,11 @@ ALL_TESTS = [
     test_gate_supporting_evidence_wrong_candidate_fails,
     test_gate_passes_all_requirements,
     test_gate_composite_exactly_at_threshold,
+    test_recommended_actions_no_warning_when_supported,
+    test_recommended_actions_warning_when_contradicted,
+    test_recommended_actions_warning_when_no_data,
+    test_recommended_actions_warning_absent_when_no_primary_candidate,
+    test_gate_whitespace_padded_support_role_passes,
 ]
 
 

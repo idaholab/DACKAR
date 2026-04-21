@@ -723,6 +723,18 @@ analyst_review = {
 
         return normalized
 
+    # Postured that warrant a visible warning on recommended actions.
+    _POSTURE_WARNINGS: Dict[str, str] = {
+        "contradicted": (
+            "Evidence contradicts the primary hypothesis — recommended actions are precautionary "
+            "pending further investigation. Analyst review required before implementation."
+        ),
+        "no_data":      (
+            "No supporting evidence was retrieved for the primary hypothesis — actions are "
+            "speculative. Re-run with updated evidence corpus before acting."
+        ),
+    }
+
     def _normalize_recommended_actions(
         self,
         actions: List[JsonDict],
@@ -731,6 +743,8 @@ analyst_review = {
         normalized: List[JsonDict] = []
         primary_candidate_id = (primary_candidate or {}).get("candidate_id")
         primary_cause_label = (primary_candidate or {}).get("cause_label", "the selected hypothesis")
+        evidence_posture = (primary_candidate or {}).get("evidence_posture")
+        posture_warning = self._POSTURE_WARNINGS.get(evidence_posture or "")
 
         for i, action in enumerate(actions or [], start=1):
             if not isinstance(action, dict):
@@ -750,6 +764,8 @@ analyst_review = {
                 "expected_observation_if_true",
                 f"Plant observations should be consistent with {primary_cause_label} if this hypothesis is correct."
             )
+
+            action_row["posture_warning"] = posture_warning
 
             normalized.append(action_row)
 
@@ -1202,12 +1218,8 @@ analyst_review = {
             and clear_separation
             and pattern_reinforced
             and temporal_posture == "supported"
-            and not fallback_used
         ):
             confidence = "high"
-
-        if fallback_used:
-            confidence = self._cap_confidence_label(confidence, "medium")
 
         return confidence
 

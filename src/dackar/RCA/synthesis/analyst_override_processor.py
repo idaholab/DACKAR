@@ -154,6 +154,12 @@ class AnalystOverrideProcessor:
         prov["analyst_override_id"] = override_id
         card["provenance"] = prov
 
+        primary_diff = self._compute_primary_diff(
+            original_primary,
+            card.get("primary_hypothesis"),
+            override_type,
+        )
+
         override_record: JsonDict = {
             "override_id": override_id,
             "run_id": run_id,
@@ -165,6 +171,7 @@ class AnalystOverrideProcessor:
             "rationale": rationale,
             "original_primary": original_primary,
             "override_primary": override_primary_snapshot,
+            "primary_diff": primary_diff,
             "questions_resolved": questions_resolved,
             "evidence_additions": evidence_additions,
             "writeback_decision": writeback_decision,
@@ -269,6 +276,27 @@ class AnalystOverrideProcessor:
             "confidence_label": ph.get("confidence_label"),
             "fm_id": ph.get("fm_id"),
         }
+
+    def _compute_primary_diff(
+        self,
+        original: JsonDict,
+        new_primary: Optional[JsonDict],
+        override_type: str,
+    ) -> Optional[JsonDict]:
+        """Return a structured before/after delta for primary_candidate_change overrides.
+
+        Fields compared: candidate_id, cause_label, composite_score, confidence_label.
+        Returns None for override types that don't change the primary candidate.
+        """
+        if override_type != "primary_candidate_change" or not new_primary:
+            return None
+        diff: JsonDict = {}
+        for field in ("candidate_id", "cause_label", "composite_score", "confidence_label"):
+            old_val = original.get(field)
+            new_val = new_primary.get(field)
+            if old_val != new_val:
+                diff[field] = {"from": old_val, "to": new_val}
+        return diff or None
 
     def _swap_primary(
         self,

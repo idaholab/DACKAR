@@ -12,10 +12,12 @@ _compute_review_hooks builds writeback_ready (8-condition AND gate) and next_ste
     2. schema_valid          (rca_card.validation_status.schema_valid)
     3. all_claims_cited      (rca_card.validation_status.all_claims_cited)
     4. passed_minimum_evidence_gate
-    5. not fallback_used
-    6. not decision_required
-    7. writeback_recommendation == "ready_if_accepted"
-    8. decision_status == "candidate_ready"
+    5. not decision_required
+    6. writeback_recommendation == "ready_if_accepted"
+    7. decision_status == "candidate_ready"
+
+  Note: fallback_used no longer blocks writeback — the deterministic path is
+  production-quality and should be writeback-eligible when all other gates pass.
 
   next_step:
     "writeback"              → writeback_ready=True
@@ -142,13 +144,13 @@ def test_writeback_blocked_when_evidence_gate_failed():
     print("  PASS test_writeback_blocked_when_evidence_gate_failed")
 
 
-def test_writeback_blocked_when_fallback_used():
-    """fallback_used=True → writeback_ready=False."""
+def test_writeback_allowed_when_fallback_used_and_all_conditions_met():
+    """fallback_used=True no longer blocks writeback — the deterministic path is production-quality."""
     o = make_orchestrator()
     card = make_clean_card(fallback_used=True)
     result = o._compute_review_hooks(card, make_output_validation(ok=True))
-    assert result["writeback_ready"] is False
-    print("  PASS test_writeback_blocked_when_fallback_used")
+    assert result["writeback_ready"] is True
+    print("  PASS test_writeback_allowed_when_fallback_used_and_all_conditions_met")
 
 
 def test_writeback_blocked_when_decision_required():
@@ -181,21 +183,25 @@ def test_writeback_blocked_when_decision_status_not_candidate_ready():
 def test_next_step_is_analyst_review_when_outputs_ok_but_not_writeback():
     """outputs_ok=True but one condition fails → next_step='analyst_review'."""
     o = make_orchestrator()
-    card = make_clean_card(fallback_used=True)   # one condition fails
+    card = make_clean_card(all_claims_cited=False)   # one condition fails
     result = o._compute_review_hooks(card, make_output_validation(ok=True))
     assert result["next_step"] == "analyst_review"
     print("  PASS test_next_step_is_analyst_review_when_outputs_ok_but_not_writeback")
 
 
-def test_requires_human_review_always_true():
-    """requires_human_review is always True regardless of writeback status."""
+def test_requires_human_review_computed_from_conditions():
+    """requires_human_review is False when all quality gates pass, True otherwise."""
     o = make_orchestrator()
-    for ok_val in [True, False]:
-        result = o._compute_review_hooks(make_clean_card(), make_output_validation(ok=ok_val))
-        assert result["requires_human_review"] is True, (
-            f"requires_human_review should always be True (outputs_ok={ok_val})"
-        )
-    print("  PASS test_requires_human_review_always_true")
+    # All conditions met → no human review needed
+    result = o._compute_review_hooks(make_clean_card(), make_output_validation(ok=True))
+    assert result["requires_human_review"] is False, "should not require review when all gates pass"
+    # outputs_ok=False → human review required
+    result = o._compute_review_hooks(make_clean_card(), make_output_validation(ok=False))
+    assert result["requires_human_review"] is True, "should require review when outputs are invalid"
+    # decision_required=True → human review required
+    result = o._compute_review_hooks(make_clean_card(decision_required=True), make_output_validation(ok=True))
+    assert result["requires_human_review"] is True, "should require review when decision_required"
+    print("  PASS test_requires_human_review_computed_from_conditions")
 
 
 def test_result_includes_all_diagnostic_fields():
@@ -222,12 +228,12 @@ ALL_TESTS = [
     test_writeback_blocked_when_schema_invalid,
     test_writeback_blocked_when_claims_not_cited,
     test_writeback_blocked_when_evidence_gate_failed,
-    test_writeback_blocked_when_fallback_used,
+    test_writeback_allowed_when_fallback_used_and_all_conditions_met,
     test_writeback_blocked_when_decision_required,
     test_writeback_blocked_when_recommendation_not_ready,
     test_writeback_blocked_when_decision_status_not_candidate_ready,
     test_next_step_is_analyst_review_when_outputs_ok_but_not_writeback,
-    test_requires_human_review_always_true,
+    test_requires_human_review_computed_from_conditions,
     test_result_includes_all_diagnostic_fields,
 ]
 

@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RunManifest",
+  "description": "Run manifest assembled at Stage G. Summarises pipeline configuration, artifact inventory, primary conclusion, and review hooks for the completed run.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["run_id", "completed_at", "input_refs", "pipeline_config", "artifacts", "review_hooks"],
+
+  "properties": {
+    "run_id":       { "type": "string", "description": "Matches the run_context.run_id for this run." },
+    "completed_at": { "type": "string", "format": "date-time" },
+
+    "input_refs": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["event_id", "asset_id"],
+      "properties": {
+        "event_id":  { "type": ["string", "null"] },
+        "asset_id":  { "type": ["string", "null"] }
+      }
+    },
+
+    "pipeline_config": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "causality_engine_version":          { "type": "string" },
+        "evidence_refinement_applied":       { "type": "boolean" },
+        "causality_pre_refine_persisted":    { "type": "boolean" },
+        "enable_ishikawa":                   { "type": "boolean" },
+        "top_k_candidates":                  { "type": "integer" },
+        "top_k_evidence":                    { "type": "integer" },
+        "scoring_evolution": {
+          "type": ["array", "null"],
+          "description": "v1→v2 candidate ranking delta rows, sorted by |rank_post - rank_pre|.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["candidate_id"],
+            "properties": {
+              "candidate_id":         { "type": "string" },
+              "rank_pre_refine":      { "type": ["integer", "null"] },
+              "rank_post_refine":     { "type": ["integer", "null"] },
+              "composite_pre":        { "type": ["number", "null"] },
+              "composite_post":       { "type": ["number", "null"] },
+              "evidence_score_pre":   { "type": ["number", "null"] },
+              "evidence_score_post":  { "type": ["number", "null"] },
+              "evidence_posture_post":{ "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+
+    "artifacts": {
+      "type": "object",
+      "description": "Inventory of artifacts produced by this run.",
+      "additionalProperties": true,
+      "properties": {
+        "kg_context":                   { "type": "object", "properties": { "present": { "type": "boolean" } } },
+        "tskr_patterns":                { "type": "object" },
+        "causality_candidates":         { "type": "object" },
+        "causality_candidates_pre_refine": { "type": "object" },
+        "evidence_bundle":              { "type": "object" },
+        "ishikawa_matrix":              { "type": "object" },
+        "cmms_context":                 { "type": "object" },
+        "rca_card":                     { "type": "object" }
+      }
+    },
+
+    "primary_conclusion": {
+      "type": "object",
+      "description": "Compact summary of the primary hypothesis conclusion.",
+      "additionalProperties": true,
+      "properties": {
+        "candidate_id":    { "type": ["string", "null"] },
+        "cause_label":     { "type": ["string", "null"] },
+        "confidence_label":{ "type": ["string", "null"], "enum": ["high", "medium", "low", "speculative", null] },
+        "decision_status": { "type": ["string", "null"] }
+      }
+    },
+
+    "review_hooks": {
+      "type": "object",
+      "description": "Computed signals for analyst review routing.",
+      "additionalProperties": true,
+      "required": ["writeback_ready", "next_step"],
+      "properties": {
+        "writeback_ready":       { "type": "boolean" },
+        "requires_human_review": { "type": "boolean" },
+        "next_step": {
+          "type": "string",
+          "enum": ["writeback", "analyst_review", "validation_remediation"]
+        }
+      }
+    },
+
+    "validation": {
+      "type": "object",
+      "description": "Input and output validation reports.",
+      "additionalProperties": true
+    }
+  }
+}

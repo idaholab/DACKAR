@@ -207,6 +207,9 @@ class RCAReasoningOrchestrator:
         evidence_bundle: Optional[JsonDict] = None,
     ) -> JsonDict:
         run_id = str(uuid.uuid4())
+        self.artifact_store.save(run_id, "run_status", {
+            "run_id": run_id, "run_complete": False, "started_at": utcnow_iso(),
+        })
         # Accumulates validation failures for optional artifacts.  Required
         # artifact failures still raise immediately (via _raise_if_invalid).
         optional_artifact_failures: List[JsonDict] = []
@@ -391,6 +394,20 @@ class RCAReasoningOrchestrator:
             optional_artifact_failures=optional_artifact_failures,
         )
         self.artifact_store.save(run_id, "run_manifest", run_manifest)
+
+        scoring_evolution = (run_manifest.get("pipeline_config") or {}).get("scoring_evolution")
+        if scoring_evolution is not None:
+            self.artifact_store.save(run_id, "scoring_evolution", {
+                "run_id": run_id,
+                "generated_at": run_manifest["completed_at"],
+                "rows": scoring_evolution,
+            })
+
+        self.artifact_store.save(run_id, "run_status", {
+            "run_id": run_id,
+            "run_complete": True,
+            "completed_at": run_manifest["completed_at"],
+        })
 
         return {
             "run_context": run_context,
@@ -731,10 +748,17 @@ class RCAReasoningOrchestrator:
             and schema_valid
             and all_claims_cited
             and passed_minimum_evidence_gate
-            and not fallback_used
             and not decision_required
             and writeback_recommendation == "ready_if_accepted"
             and decision_status == "candidate_ready"
+        )
+
+        requires_human_review = bool(
+            decision_required
+            or not all_claims_cited
+            or not passed_minimum_evidence_gate
+            or not outputs_ok
+            or decision_status not in ("candidate_ready",)
         )
 
         if writeback_ready:
@@ -745,7 +769,7 @@ class RCAReasoningOrchestrator:
             next_step = "validation_remediation"
 
         return {
-            "requires_human_review": True,
+            "requires_human_review": requires_human_review,
             "writeback_ready": writeback_ready,
             "next_step": next_step,
             "outputs_ok": outputs_ok,
@@ -1117,8 +1141,7 @@ class RCAReasoningOrchestrator:
             run_id=run_id,
         )
 
-        if self.config.persist_intermediate_artifacts:
-            self.artifact_store.save(run_id, "cmms_context", cmms_context)
+        self._validate_and_persist(run_id, "cmms_context", cmms_context, optional=True)
 
         # Inject narratives into evidence store for semantic retrieval
         chroma_docs = builder.get_chroma_documents(cmms_context)

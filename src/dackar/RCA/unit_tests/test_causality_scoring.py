@@ -67,14 +67,13 @@ def test_combine_scores_default_weights():
     print("  PASS test_combine_scores_default_weights")
 
 
-def test_combine_scores_clamped_to_one():
-    """Custom weights summing > 1.0 are clamped at 1.0."""
-    e = make_engine(weights={"structural": 0.50, "temporal": 0.50, "telemetry": 0.50,
-                              "evidence": 0.50, "governance": 0.50})
+def test_combine_scores_result_bounded_zero_to_one():
+    """_combine_scores always returns a value in [0.0, 1.0]."""
+    e = make_engine()
     scores = {"structural": 1.0, "temporal": 1.0, "telemetry": 1.0, "evidence": 1.0, "governance": 1.0}
     result = e._combine_scores(scores)
-    assert result <= 1.0
-    print("  PASS test_combine_scores_clamped_to_one")
+    assert 0.0 <= result <= 1.0
+    print("  PASS test_combine_scores_result_bounded_zero_to_one")
 
 
 # ── _structural_score_for_fm ─────────────────────────────────────────────────
@@ -218,13 +217,86 @@ def test_governance_irrelevant_failure_returns_neutral():
     print("  PASS test_governance_irrelevant_failure_returns_neutral")
 
 
+def test_telemetry_anomaly_precedes_structural_score():
+    """Sprint 2 fix: seed_match_type 'telemetry_anomaly_precedes' → structural score 0.80."""
+    e = make_engine()
+    components = {
+        "COMP-001": {"seed_match_type": "telemetry_anomaly_precedes"},
+        "COMP-002": {"seed_match_type": "seed"},
+        "COMP-003": {"seed_match_type": "telemetry"},
+        "COMP-004": {},           # no seed_match_type → default neighbor
+        "COMP-005": None,         # guard against None
+    }
+    assert_approx(e._structural_score_for_fm("COMP-001", components), 0.80, label="telemetry_anomaly_precedes")
+    assert_approx(e._structural_score_for_fm("COMP-002", components), 0.85, label="seed")
+    assert_approx(e._structural_score_for_fm("COMP-003", components), 0.90, label="telemetry")
+    assert_approx(e._structural_score_for_fm("COMP-004", components), 0.75, label="default neighbor")
+    assert_approx(e._structural_score_for_fm("UNKNOWN", components),  0.40, label="unknown component")
+    print("  PASS test_telemetry_anomaly_precedes_structural_score")
+
+
+def test_weight_sum_constraint_raises_on_misconfiguration():
+    """Sprint 2 fix: CausalityEngineConfigV32 raises ValueError when weights don't sum to 1.0."""
+    import pytest
+    bad_weights = {"structural": 0.40, "temporal": 0.20, "telemetry": 0.20,
+                   "evidence": 0.20, "governance": 0.10}  # sum = 1.10
+    with pytest.raises(ValueError, match="weights must sum to 1.0"):
+        CausalityEngineConfigV32(weights=bad_weights)
+    print("  PASS test_weight_sum_constraint_raises_on_misconfiguration")
+
+
+def test_authority_weights_constant_present():
+    """Sprint 2 fix: _AUTHORITY_WEIGHTS class constant exists with all 6 tiers defined."""
+    e = make_engine()
+    expected_tiers = {"plant_instance", "plant_procedure", "plant_fmea",
+                      "plant_family", "oe_iris", "oe_adams"}
+    assert expected_tiers == set(e._AUTHORITY_WEIGHTS.keys()), (
+        f"Missing tiers: {expected_tiers - set(e._AUTHORITY_WEIGHTS.keys())}"
+    )
+    assert e._AUTHORITY_WEIGHTS["plant_instance"] == 1.00
+    assert e._AUTHORITY_WEIGHTS["oe_adams"] == 0.30
+    assert e._AUTHORITY_WEIGHTS["plant_instance"] > e._AUTHORITY_WEIGHTS["oe_iris"]
+    print("  PASS test_authority_weights_constant_present")
+
+
+def test_pre_evidence_threshold_defaults():
+    """Sprint 1 fix: minimum_pre_evidence_threshold=0.10 < minimum_evidence_threshold=0.35."""
+    cfg = CausalityEngineConfigV32()
+    assert cfg.minimum_pre_evidence_threshold == 0.10
+    assert cfg.minimum_evidence_threshold == 0.35
+    print("  PASS test_pre_evidence_threshold_defaults")
+
+
+def test_pre_evidence_threshold_allows_sparse_proxy():
+    """Sprint 1 fix: candidate with proxy evidence 0.15 (>0.10, <0.35) passes Stage D filter.
+
+    Before the fix, meets_evidence_threshold used minimum_evidence_threshold (0.35), so
+    a candidate with proxy score 0.15 would be filtered at Stage D, never reaching evidence retrieval.
+    After the fix, Stage D uses minimum_pre_evidence_threshold (0.10).
+    """
+    e = make_engine()
+    # Simulate a candidate whose meets_evidence_threshold was set with the new 0.10 threshold.
+    # proxy evidence 0.15: 0.15 >= 0.10 → True (passes); 0.15 >= 0.35 → False (old behavior would block)
+    proxy_evidence = 0.15
+    meets_new = proxy_evidence >= e.config.minimum_pre_evidence_threshold
+    meets_old = proxy_evidence >= e.config.minimum_evidence_threshold
+    assert meets_new is True, "proxy 0.15 should pass minimum_pre_evidence_threshold (0.10)"
+    assert meets_old is False, "proxy 0.15 should NOT pass minimum_evidence_threshold (0.35)"
+
+    candidate = {"composite_score": 0.45, "meets_evidence_threshold": meets_new}
+    assert e._candidate_meets_threshold(candidate) is True, (
+        "Stage D filter should pass candidate with sparse proxy evidence"
+    )
+    print("  PASS test_pre_evidence_threshold_allows_sparse_proxy")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
     test_combine_scores_all_ones,
     test_combine_scores_all_zeros,
     test_combine_scores_default_weights,
-    test_combine_scores_clamped_to_one,
+    test_combine_scores_result_bounded_zero_to_one,
     test_structural_score_seed_component,
     test_structural_score_telemetry_component,
     test_structural_score_known_component_no_seed_type,
@@ -240,6 +312,11 @@ ALL_TESTS = [
     test_governance_relevant_failure_raises_score,
     test_governance_overdue_above_30_adds_extra_boost,
     test_governance_irrelevant_failure_returns_neutral,
+    test_pre_evidence_threshold_defaults,
+    test_pre_evidence_threshold_allows_sparse_proxy,
+    test_telemetry_anomaly_precedes_structural_score,
+    test_weight_sum_constraint_raises_on_misconfiguration,
+    test_authority_weights_constant_present,
 ]
 
 

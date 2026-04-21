@@ -242,6 +242,23 @@ class ChromaEvidenceRetriever:
             else "unknown"
         )
 
+        if retrieval_mode == "dense_only":
+            LOGGER.warning(
+                "EvidenceRetriever: BM25 unavailable — retrieval degraded to dense-only "
+                "(run_id=%s). Keyword-precise matching (tag numbers, procedure codes) is "
+                "reduced. Re-ingest the Chroma collection in the same process to restore "
+                "hybrid retrieval.",
+                run_context.get("run_id"),
+            )
+
+        component_ids_requested = bool(
+            self.config.include_component_filter
+            and any(
+                q.get("query_type") != "oe"
+                for q in planned_queries
+            )
+        )
+
         return {
             "bundle_id": f"EVB::{run_context.get('run_id')}::{event.get('event_id') or event.get('id')}",
             "generated_at": utcnow_iso(),
@@ -272,6 +289,13 @@ class ChromaEvidenceRetriever:
                 "query_count": len(planned_queries),
                 "retrieval_mode": retrieval_mode,
                 "bm25_available": bm25_available,
+                "retrieval_quality_warning": (
+                    "BM25 unavailable — dense-only retrieval active; keyword precision reduced."
+                    if retrieval_mode == "dense_only" else None
+                ),
+                "component_filter_mode": (
+                    "post_filter" if component_ids_requested else "none"
+                ),
             },
         }
 

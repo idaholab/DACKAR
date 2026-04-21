@@ -305,6 +305,24 @@ def test_posture_weak():
     print("  PASS test_posture_weak")
 
 
+def test_posture_contradicted_weak_contra_zero_support():
+    """Sprint 2 fix: support=0, contradiction=0.20 (below 0.45 threshold) → 'contradicted'.
+
+    Before the fix this returned 'weak' because only contradiction_score >= 0.45 triggered
+    'contradicted'. Any contradicting evidence with zero support is epistemically 'contradicted'.
+    """
+    e = make_engine()
+    assert e._evidence_posture(0.0, 0.20, 0.10, retrieved_hit_count=2) == "contradicted"
+    print("  PASS test_posture_contradicted_weak_contra_zero_support")
+
+
+def test_posture_still_weak_when_support_present_and_contra_low():
+    """Non-regression: support>0 with weak contradiction stays 'weak', not 'contradicted'."""
+    e = make_engine()
+    assert e._evidence_posture(0.20, 0.15, 0.10, retrieved_hit_count=3) == "weak"
+    print("  PASS test_posture_still_weak_when_support_present_and_contra_low")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -322,6 +340,8 @@ ALL_TESTS = [
     test_posture_mixed,
     test_posture_contextual_only,
     test_posture_weak,
+    test_posture_contradicted_weak_contra_zero_support,
+    test_posture_still_weak_when_support_present_and_contra_low,
 ]
 
 

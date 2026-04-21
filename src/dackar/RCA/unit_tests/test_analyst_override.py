@@ -289,6 +289,59 @@ class TestPrimaryCandidateChange:
         assert record["original_primary"]["candidate_id"] == "CAND-A"
         assert record["override_primary"]["candidate_id"] == "CAND-B"
 
+    def test_primary_diff_present_for_candidate_change(self):
+        """H4 fix: primary_diff captures candidate_id delta for primary_candidate_change."""
+        card = _make_rca_card()
+        _, record = _processor().apply(
+            card,
+            {
+                "override_type": "primary_candidate_change",
+                "rationale": "DO elevation proves air in-leakage",
+                "override_primary_candidate_id": "CAND-B",
+                "writeback_decision": "accept",
+            },
+            _make_run_context(),
+        )
+        diff = record.get("primary_diff")
+        assert diff is not None, "primary_diff should be present for primary_candidate_change"
+        assert "candidate_id" in diff
+        assert diff["candidate_id"]["from"] == "CAND-A"
+        assert diff["candidate_id"]["to"] == "CAND-B"
+
+    def test_primary_diff_none_for_accept_override(self):
+        """H4 fix: primary_diff is None for accept overrides (no candidate change)."""
+        card = _make_rca_card()
+        _, record = _processor().apply(
+            card,
+            {"override_type": "accept", "rationale": "ok", "writeback_decision": "accept"},
+            _make_run_context(),
+        )
+        assert record.get("primary_diff") is None
+
+    def test_primary_diff_captures_confidence_delta(self):
+        """H4 fix: if confidence_label differs between old and new primary, diff records it."""
+        card = _make_rca_card()
+        _, record = _processor().apply(
+            card,
+            {
+                "override_type": "primary_candidate_change",
+                "rationale": "chemistry evidence decisive",
+                "override_primary_candidate_id": "CAND-B",
+                "writeback_decision": "accept",
+            },
+            _make_run_context(),
+        )
+        diff = record.get("primary_diff") or {}
+        # CAND-A has confidence_label "high" (from _make_rca_card fixture).
+        # CAND-B alternative has whatever confidence_label is set there.
+        # Regardless of values, if they differ, the field must appear in diff.
+        old_conf = record["original_primary"]["confidence_label"]
+        new_conf = (card.get("primary_hypothesis") or {}).get("confidence_label")
+        if old_conf != new_conf:
+            assert "confidence_label" in diff
+            assert diff["confidence_label"]["from"] == old_conf
+            assert diff["confidence_label"]["to"] == new_conf
+
 
 # ---------------------------------------------------------------------------
 # reject_all

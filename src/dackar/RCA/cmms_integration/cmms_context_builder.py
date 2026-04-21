@@ -252,6 +252,7 @@ class CMMSContextBuilder:
                 "text": text,
                 "metadata": {
                     "source":              "cmms_live",
+                    "source_tier":         "plant_instance",
                     "record_type":         "cr",
                     "run_id":              run_id,
                     "event_id":            event_id,
@@ -271,6 +272,7 @@ class CMMSContextBuilder:
                 "text": text,
                 "metadata": {
                     "source":              "cmms_live",
+                    "source_tier":         "plant_instance",
                     "record_type":         "wo",
                     "run_id":              run_id,
                     "event_id":            event_id,
