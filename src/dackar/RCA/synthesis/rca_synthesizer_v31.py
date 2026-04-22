@@ -26,6 +26,7 @@ class RCASynthesizerConfig:
     llm_prompt_version: str = "rca_synth_v3_1"
     temperature: float = 0.1
     max_candidates_in_prompt: int = 5
+    max_synthesis_extra_review_candidates: int = 8
     max_evidence_in_prompt: int = 10
     allow_fallback_template_fill: bool = True
     minimum_primary_score: float = 0.35
@@ -115,18 +116,18 @@ class RuleValidatedRCASynthesizerV31:
                 event=event,
                 evidence_bundle=evidence_bundle,
                 run_context=run_context,
+                causality_candidates=causality_candidates,
             )
-            # Hard-error if the LLM chose a candidate_id that does not exist in
-            # the input candidates list.  Unlike the semantic checks below (which
-            # can be recovered by the fallback path), a hallucinated ID means the
-            # LLM fabricated a hypothesis entirely — the fallback is always safer.
+            # Hard-reject: never keep an LLM card with an invented primary id (SE review §6.7 H4).
             llm_primary_id = (card.get("primary_hypothesis") or {}).get("candidate_id")
             if llm_primary_id and llm_primary_id not in _all_input_candidate_ids:
+                card = None
                 validation_errors.append(
                     f"primary_hypothesis.candidate_id '{llm_primary_id}' is not a "
-                    f"valid input candidate ID — probable LLM hallucination"
+                    f"valid input candidate ID — LLM hallucination; discarding LLM output"
                 )
-            validation_errors.extend(self._validate_card_semantics(card))
+            if card is not None:
+                validation_errors.extend(self._validate_card_semantics(card))
 
         if (card is None or validation_errors) and self.config.allow_fallback_template_fill:
             fallback_used = True
@@ -145,6 +146,17 @@ class RuleValidatedRCASynthesizerV31:
         if card is None:
             raise ValueError("Failed to synthesize RCA card and no fallback was available.")
 
+        self._enforce_balanced_card_evidence(
+            card=card,
+            selected_candidates=selected_candidates,
+            evidence_pool=(evidence_bundle.get("results") or []),
+            max_rows=max(10, int(self.config.max_evidence_in_prompt)),
+        )
+
+        # Apply deterministic safety-significance routing on top of both LLM and
+        # fallback cards so action priority reflects affected safety functions.
+        self._apply_safety_significance_postprocessing(card, causality_candidates)
+
         card["validation_status"]["validation_errors"] = validation_errors
         card["validation_status"]["retry_count"] = retry_count
         card["validation_status"]["fallback_used"] = fallback_used
@@ -158,9 +170,27 @@ class RuleValidatedRCASynthesizerV31:
     # Selection
     # ------------------------------------------------------------------
     def _select_candidates(self, causality_candidates: JsonDict) -> List[JsonDict]:
-        candidates = causality_candidates.get("candidates", [])
-        candidates = sorted(candidates, key=lambda x: x.get("composite_score", 0.0), reverse=True)
-        return candidates[: self.config.max_candidates_in_prompt]
+        """Top-N by score plus any ``review_required`` rows (SE review §6.7 H1 / NH11)."""
+        cands: List[JsonDict] = [dict(c) for c in (causality_candidates.get("candidates") or [])]
+        if not cands:
+            return []
+        cands = sorted(
+            cands, key=lambda x: (x.get("composite_score", 0.0) or 0.0), reverse=True
+        )
+        n = int(self.config.max_candidates_in_prompt)
+        extra_max = int(self.config.max_synthesis_extra_review_candidates)
+        out = cands[:n]
+        seen = {c.get("candidate_id") for c in out if c.get("candidate_id")}
+        for c in cands:
+            if len(out) >= n + extra_max:
+                break
+            cid = c.get("candidate_id")
+            if not cid or cid in seen:
+                continue
+            if c.get("review_required"):
+                out.append(c)
+                seen.add(cid)
+        return out
 
     def _select_evidence(self, evidence_bundle: JsonDict) -> List[JsonDict]:
         evidence = evidence_bundle.get("results", [])
@@ -226,7 +256,7 @@ class RuleValidatedRCASynthesizerV31:
 
         instructions = """
 Return ONLY JSON with these top-level keys:
-executive_summary, primary_hypothesis, alternatives, evidence, recommended_actions, analyst_review
+executive_summary, primary_hypothesis, contributing_causes, alternatives, evidence, recommended_actions, analyst_review
 
 Rules:
 - Use candidate fields from v3.1 directly.
@@ -278,6 +308,14 @@ alternatives[] = {
   "reason_not_primary": str,
   "supports": [str, ...] optional,
   "weaknesses": [str, ...] optional,
+  "citations": [...]
+}
+
+contributing_causes[] = {
+  "candidate_id": str,
+  "cause_label": str,
+  "contribution_type": "contributing|enabling|escalating",
+  "rationale": str,
   "citations": [...]
 }
 
@@ -363,11 +401,19 @@ analyst_review = {
         event: JsonDict,
         evidence_bundle: JsonDict,
         run_context: JsonDict,
+        causality_candidates: JsonDict,
     ) -> JsonDict:
         primary = raw_output.get("primary_hypothesis", {}) or {}
         primary_candidate = None
+        primary_candidate_full = None
         if isinstance(primary, dict) and primary.get("candidate_id") and primary.get("candidate_id") != "NONE":
             primary_candidate = primary
+            for c in (causality_candidates.get("candidates") or []):
+                if isinstance(c, dict) and c.get("candidate_id") == primary.get("candidate_id"):
+                    primary_candidate_full = c
+                    break
+        if primary_candidate_full is None:
+            primary_candidate_full = primary_candidate
 
         return {
             "rca_id": rca_id,
@@ -389,6 +435,10 @@ analyst_review = {
             },
             "executive_summary": raw_output.get("executive_summary", {}),
             "primary_hypothesis": primary,
+            "contributing_causes": self._normalize_contributing_causes(
+                raw_output.get("contributing_causes", []),
+                primary_candidate=primary_candidate,
+            ),
             "alternatives": self._normalize_alternatives(
                 raw_output.get("alternatives", []),
                 primary_candidate=primary_candidate,
@@ -399,7 +449,7 @@ analyst_review = {
             ),
             "recommended_actions": self._normalize_recommended_actions(
                 raw_output.get("recommended_actions", []),
-                primary_candidate=primary_candidate,
+                primary_candidate=primary_candidate_full,
             ),
             "analyst_review": raw_output.get("analyst_review", {}),
             "provenance": {
@@ -459,7 +509,11 @@ analyst_review = {
     ) -> Optional[str]:
         metadata = evidence_row.get("metadata") or {}
 
-        linked_candidate_id = evidence_row.get("linked_candidate_id") or metadata.get("candidate_id")
+        linked_candidate_id = (
+            evidence_row.get("linked_candidate_id")
+            or metadata.get("linked_candidate_id")
+            or metadata.get("candidate_id")
+        )
         if linked_candidate_id:
             return str(linked_candidate_id)
 
@@ -639,6 +693,34 @@ analyst_review = {
 
         return normalized
 
+    def _normalize_contributing_causes(
+        self,
+        causes: List[JsonDict],
+        primary_candidate: Optional[JsonDict],
+    ) -> List[JsonDict]:
+        normalized: List[JsonDict] = []
+        primary_id = (primary_candidate or {}).get("candidate_id")
+        for row in causes or []:
+            if not isinstance(row, dict):
+                continue
+            cid = row.get("candidate_id")
+            if not cid or cid == primary_id:
+                continue
+            contribution_type = str(row.get("contribution_type") or "contributing").strip().lower()
+            if contribution_type not in {"contributing", "enabling", "escalating"}:
+                contribution_type = "contributing"
+            citations = row.get("citations") if isinstance(row.get("citations"), list) else []
+            normalized.append(
+                {
+                    "candidate_id": str(cid),
+                    "cause_label": str(row.get("cause_label") or "Unspecified contributing factor"),
+                    "contribution_type": contribution_type,
+                    "rationale": str(row.get("rationale") or "Contributes to event progression but is not selected as the primary mechanism."),
+                    "citations": citations,
+                }
+            )
+        return normalized
+
     def _normalize_evidence_rows(
         self,
         evidence_rows: List[JsonDict],
@@ -734,6 +816,28 @@ analyst_review = {
             "speculative. Re-run with updated evidence corpus before acting."
         ),
     }
+    _CRITICAL_SAFETY_KEYWORDS = (
+        "reactor protection",
+        "reactor trip",
+        "trip logic",
+        "reactor shutdown",
+        "containment isolation",
+        "safety injection actuation",
+        "esfas",
+        "rps",
+    )
+    _HIGH_SAFETY_KEYWORDS = (
+        "core cooling",
+        "emergency core cooling",
+        "emergency cooling",
+        "residual heat removal",
+        "decay heat removal",
+        "eccs",
+        "rhr",
+        "rcic",
+        "hpci",
+        "lpi",
+    )
 
     def _normalize_recommended_actions(
         self,
@@ -745,6 +849,9 @@ analyst_review = {
         primary_cause_label = (primary_candidate or {}).get("cause_label", "the selected hypothesis")
         evidence_posture = (primary_candidate or {}).get("evidence_posture")
         posture_warning = self._POSTURE_WARNINGS.get(evidence_posture or "")
+        safety_ctx = self._candidate_safety_context(primary_candidate)
+        barrier_ctx = self._candidate_barrier_context(primary_candidate)
+        risk_ctx = self._candidate_risk_context(primary_candidate)
 
         for i, action in enumerate(actions or [], start=1):
             if not isinstance(action, dict):
@@ -766,10 +873,264 @@ analyst_review = {
             )
 
             action_row["posture_warning"] = posture_warning
+            action_row["priority"] = self._apply_safety_priority(
+                str(action_row.get("priority") or "low"),
+                safety_ctx,
+            )
+            action_row["priority"] = self._apply_barrier_priority(
+                action_row["priority"],
+                barrier_ctx,
+            )
+            action_row["priority"] = self._apply_risk_priority(
+                action_row["priority"],
+                risk_ctx,
+            )
+            self._apply_barrier_rationale_weighting(action_row, barrier_ctx)
+            self._apply_risk_rationale_weighting(action_row, risk_ctx)
 
             normalized.append(action_row)
 
         return normalized
+
+    @staticmethod
+    def _priority_rank(priority: str) -> int:
+        order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+        return order.get(str(priority or "low").lower(), 0)
+
+    @classmethod
+    def _max_priority(cls, a: str, b: str) -> str:
+        return a if cls._priority_rank(a) >= cls._priority_rank(b) else b
+
+    @classmethod
+    def _bump_priority(cls, base: str, steps: int = 1) -> str:
+        ordered = ["low", "medium", "high", "critical"]
+        idx = max(0, min(len(ordered) - 1, cls._priority_rank(base)))
+        return ordered[min(len(ordered) - 1, idx + max(0, steps))]
+
+    @staticmethod
+    def _normalize_safety_text(value: Any) -> str:
+        return str(value or "").lower().replace("_", " ").replace("-", " ").strip()
+
+    @classmethod
+    def _contains_any_keyword(cls, values: List[str], keywords: tuple) -> bool:
+        return any(any(k in v for k in keywords) for v in values)
+
+    @staticmethod
+    def _candidate_safety_context(primary_candidate: Optional[JsonDict]) -> JsonDict:
+        functions = (primary_candidate or {}).get("affected_safety_functions") or []
+        if not isinstance(functions, list):
+            functions = []
+        categories: List[str] = []
+        names = [
+            str(sf.get("sf_name") or sf.get("sf_id") or "")
+            for sf in functions
+            if isinstance(sf, dict) and (sf.get("sf_name") or sf.get("sf_id"))
+        ]
+        for sf in functions:
+            if not isinstance(sf, dict):
+                continue
+            categories.extend(
+                [
+                    RuleValidatedRCASynthesizerV31._normalize_safety_text(sf.get("sf_category")),
+                    RuleValidatedRCASynthesizerV31._normalize_safety_text(sf.get("sf_name")),
+                    RuleValidatedRCASynthesizerV31._normalize_safety_text(sf.get("sf_id")),
+                ]
+            )
+        categories = [c for c in categories if c]
+        tier = "none"
+        if RuleValidatedRCASynthesizerV31._contains_any_keyword(
+            categories, RuleValidatedRCASynthesizerV31._CRITICAL_SAFETY_KEYWORDS
+        ):
+            tier = "critical"
+        elif RuleValidatedRCASynthesizerV31._contains_any_keyword(
+            categories, RuleValidatedRCASynthesizerV31._HIGH_SAFETY_KEYWORDS
+        ):
+            tier = "high"
+        elif categories:
+            tier = "medium"
+        return {"tier": tier, "names": names[:4]}
+
+    def _candidate_barrier_context(self, primary_candidate: Optional[JsonDict]) -> JsonDict:
+        functions = (primary_candidate or {}).get("affected_safety_functions") or []
+        if not isinstance(functions, list):
+            functions = []
+        names = [
+            str(sf.get("sf_name") or sf.get("sf_id") or "")
+            for sf in functions
+            if isinstance(sf, dict) and (sf.get("sf_name") or sf.get("sf_id"))
+        ]
+        barrier_signal = float(((primary_candidate or {}).get("scores") or {}).get("barrier_signal", 0.0) or 0.0)
+        return {
+            "degraded_count": len(names),
+            "names": names[:4],
+            "barrier_signal": round(barrier_signal, 4),
+        }
+
+    @staticmethod
+    def _candidate_risk_context(primary_candidate: Optional[JsonDict]) -> JsonDict:
+        scores = (primary_candidate or {}).get("scores") or {}
+        scalar = float(scores.get("risk_significance_scalar", 0.0) or 0.0)
+        tier = str(
+            scores.get("risk_significance_tier")
+            or (primary_candidate or {}).get("risk_significance_tier")
+            or ""
+        ).strip().lower()
+        if not tier:
+            if scalar >= 0.9:
+                tier = "critical"
+            elif scalar >= 0.7:
+                tier = "high"
+            elif scalar >= 0.45:
+                tier = "medium"
+            elif scalar > 0.0:
+                tier = "low"
+            else:
+                tier = "none"
+        return {"scalar": round(scalar, 4), "tier": tier}
+
+    @classmethod
+    def _apply_safety_priority(cls, current_priority: str, safety_ctx: JsonDict) -> str:
+        base = str(current_priority or "low").lower()
+        tier = str((safety_ctx or {}).get("tier") or "none").lower()
+        if tier == "critical":
+            return cls._max_priority(base, "critical")
+        if tier == "high":
+            return cls._max_priority(base, "high")
+        if tier == "medium":
+            return cls._max_priority(base, "medium")
+        return base
+
+    @classmethod
+    def _apply_barrier_priority(cls, current_priority: str, barrier_ctx: JsonDict) -> str:
+        base = str(current_priority or "low").lower()
+        degraded_count = int((barrier_ctx or {}).get("degraded_count", 0) or 0)
+        if degraded_count >= 3:
+            return cls._max_priority(base, "critical")
+        if degraded_count >= 2:
+            return cls._max_priority(base, "high")
+        return base
+
+    @classmethod
+    def _apply_risk_priority(cls, current_priority: str, risk_ctx: JsonDict) -> str:
+        base = str(current_priority or "low").lower()
+        scalar = float((risk_ctx or {}).get("scalar", 0.0) or 0.0)
+        tier = str((risk_ctx or {}).get("tier") or "").lower()
+        if tier == "critical" or scalar >= 0.90:
+            return cls._max_priority(base, "critical")
+        if tier == "high" or scalar >= 0.70:
+            return cls._max_priority(base, "high")
+        if tier == "medium" or scalar >= 0.45:
+            return cls._max_priority(base, "medium")
+        return base
+
+    @staticmethod
+    def _apply_barrier_rationale_weighting(action_row: JsonDict, barrier_ctx: JsonDict) -> None:
+        degraded_count = int((barrier_ctx or {}).get("degraded_count", 0) or 0)
+        if degraded_count <= 0:
+            return
+        names = ", ".join((barrier_ctx or {}).get("names") or [])
+        signal = (barrier_ctx or {}).get("barrier_signal")
+        clause = (
+            "Barrier degradation affects defense-in-depth"
+            + (f" functions ({names})" if names else "")
+            + (
+                f" with barrier_signal={signal}"
+                if signal not in (None, "", 0, 0.0)
+                else ""
+            )
+            + "; prioritize compensatory controls and verification actions."
+        )
+        prior = str(action_row.get("rationale") or "").strip()
+        if clause not in prior:
+            action_row["rationale"] = f"{prior} {clause}".strip()
+
+    @staticmethod
+    def _apply_risk_rationale_weighting(action_row: JsonDict, risk_ctx: JsonDict) -> None:
+        scalar = float((risk_ctx or {}).get("scalar", 0.0) or 0.0)
+        if scalar <= 0.0:
+            return
+        tier = str((risk_ctx or {}).get("tier") or "none").lower()
+        clause = (
+            f"Risk significance scalar={round(scalar, 3)} (tier={tier}) indicates elevated consequence potential; "
+            "prioritize timely validation and compensatory measures."
+        )
+        prior = str(action_row.get("rationale") or "").strip()
+        if clause not in prior:
+            action_row["rationale"] = f"{prior} {clause}".strip()
+
+    def _apply_safety_significance_postprocessing(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        primary_id = ((card.get("primary_hypothesis") or {}).get("candidate_id"))
+        if not primary_id or primary_id == "NONE":
+            return
+        primary_candidate = None
+        for c in (causality_candidates.get("candidates") or []):
+            if isinstance(c, dict) and c.get("candidate_id") == primary_id:
+                primary_candidate = c
+                break
+        if primary_candidate is None:
+            return
+        safety_ctx = self._candidate_safety_context(primary_candidate)
+        risk_ctx = self._candidate_risk_context(primary_candidate)
+        if safety_ctx.get("tier") == "none" and float(risk_ctx.get("scalar", 0.0) or 0.0) <= 0.0:
+            return
+        summary = card.setdefault("executive_summary", {})
+        flags = summary.setdefault("analyst_attention_flags", [])
+        if isinstance(flags, list):
+            if safety_ctx.get("tier") != "none":
+                names = ", ".join(safety_ctx.get("names") or [])
+                msg = (
+                    "Primary hypothesis impacts safety functions"
+                    + (f" ({names})" if names else "")
+                    + f"; recommended action priority elevated to {safety_ctx.get('tier')} where applicable."
+                )
+                if msg not in flags:
+                    flags.append(msg)
+            risk_scalar = float(risk_ctx.get("scalar", 0.0) or 0.0)
+            if risk_scalar > 0.0:
+                risk_msg = (
+                    f"Primary hypothesis risk significance scalar={round(risk_scalar, 3)} "
+                    f"(tier={risk_ctx.get('tier')}); prioritize conservative validation before writeback."
+                )
+                if risk_msg not in flags:
+                    flags.append(risk_msg)
+        primary = card.setdefault("primary_hypothesis", {})
+        why_primary = primary.setdefault("why_primary", [])
+        if isinstance(why_primary, list):
+            risk_scalar = float(risk_ctx.get("scalar", 0.0) or 0.0)
+            if risk_scalar > 0.0:
+                line = (
+                    f"Risk significance assessment indicates {risk_ctx.get('tier')} consequence potential "
+                    f"(scalar {round(risk_scalar, 3)})."
+                )
+                if line not in why_primary:
+                    why_primary.append(line)
+        uncertainties = primary.setdefault("uncertainties", [])
+        if isinstance(uncertainties, list):
+            risk_scalar = float(risk_ctx.get("scalar", 0.0) or 0.0)
+            if risk_scalar > 0.0:
+                line = (
+                    "Risk scalar is heuristic (safety-function mapping) and should be confirmed against "
+                    "plant PRA/significance guidance before final writeback."
+                )
+                if line not in uncertainties:
+                    uncertainties.append(line)
+        actions = card.get("recommended_actions") or []
+        if isinstance(actions, list):
+            for a in actions:
+                if not isinstance(a, dict):
+                    continue
+                a["priority"] = self._apply_safety_priority(
+                    str(a.get("priority") or "low"),
+                    safety_ctx,
+                )
+                a["priority"] = self._apply_risk_priority(
+                    str(a.get("priority") or "low"),
+                    risk_ctx,
+                )
 
     def _summarize_primary_evidence_posture(
         self,
@@ -1280,6 +1641,7 @@ analyst_review = {
                     "linked_candidate_id": None,
                 }
             ]
+            actions = self._normalize_recommended_actions(actions, primary_candidate=top)
 
             analyst_review = {
                 "decision_required": True,
@@ -1304,8 +1666,13 @@ analyst_review = {
                 if isinstance(_alt_cand, dict) and _alt_cand.get("candidate_id"):
                     _card_candidate_ids.add(_alt_cand["candidate_id"])
 
+            balanced_evidence = self._balanced_fallback_evidence(
+                selected_evidence=selected_evidence,
+                selected_candidates=selected_candidates,
+                max_rows=10,
+            )
             evidence: List[JsonDict] = []
-            for i, e in enumerate(selected_evidence[:10], start=1):
+            for i, e in enumerate(balanced_evidence, start=1):
                 support_role = self._infer_evidence_support_role(e, top)
                 linked_candidate_id = self._infer_linked_candidate_id(e, top)
                 # Strip candidate links for IDs not visible in this card.
@@ -1483,6 +1850,38 @@ analyst_review = {
                     }
                 )
 
+            contributing_causes: List[JsonDict] = []
+            for alt in selected_candidates[1:3]:
+                if not isinstance(alt, dict):
+                    continue
+                if not alt.get("candidate_id"):
+                    continue
+                score_gap = float(top.get("composite_score", 0.0) or 0.0) - float(
+                    alt.get("composite_score", 0.0) or 0.0
+                )
+                should_include = bool(alt.get("review_required")) or score_gap <= 0.08
+                if not should_include:
+                    continue
+                contributing_causes.append(
+                    {
+                        "candidate_id": alt.get("candidate_id"),
+                        "cause_label": alt.get("cause_label"),
+                        "contribution_type": "contributing",
+                        "rationale": (
+                            "Candidate remains causally relevant and should be evaluated as a contributing cause "
+                            "alongside the selected primary hypothesis."
+                        ),
+                        "citations": [
+                            {
+                                "claim_summary": "Contributing mechanism remains plausible.",
+                                "source_type": "kg_path",
+                                "source_id": alt.get("candidate_id"),
+                                "excerpt": "Candidate retained near top ranking during deterministic synthesis.",
+                            }
+                        ],
+                    }
+                )
+
             actions = [
                 {
                     "action_id": "ACT-001",
@@ -1541,6 +1940,11 @@ analyst_review = {
             },
             "executive_summary": executive_summary,
             "primary_hypothesis": primary,
+            "contributing_causes": (
+                []
+                if top is None
+                else contributing_causes
+            ),
             "alternatives": alternatives,
             "evidence": evidence,
             "recommended_actions": actions,
@@ -1552,6 +1956,153 @@ analyst_review = {
                 "card_version": 1,
             },
         }
+
+    def _balanced_fallback_evidence(
+        self,
+        *,
+        selected_evidence: List[JsonDict],
+        selected_candidates: List[JsonDict],
+        max_rows: int = 10,
+    ) -> List[JsonDict]:
+        if not selected_evidence:
+            return []
+        if max_rows <= 0:
+            return []
+        candidate_ids: List[str] = [
+            str(c.get("candidate_id"))
+            for c in (selected_candidates[:3] or [])
+            if isinstance(c, dict) and c.get("candidate_id")
+        ]
+        by_score = sorted(
+            [e for e in selected_evidence if isinstance(e, dict)],
+            key=lambda x: float(x.get("score", 0.0) or 0.0),
+            reverse=True,
+        )
+        picked: List[JsonDict] = []
+        seen_keys: set = set()
+
+        def _row_key(row: JsonDict) -> str:
+            meta = row.get("metadata") or {}
+            cid = str(row.get("linked_candidate_id") or meta.get("linked_candidate_id") or "")
+            sid = str(row.get("snippet_id") or row.get("doc_id") or "")
+            role = str((meta.get("support_role") or row.get("support_role") or "")).strip().lower()
+            return f"{sid}::{cid}::{role}"
+
+        def _add_if_new(row: JsonDict) -> None:
+            if len(picked) >= max_rows:
+                return
+            key = _row_key(row)
+            if key in seen_keys:
+                return
+            seen_keys.add(key)
+            picked.append(row)
+
+        # Ensure alternatives are represented: first supporting then contradicting
+        # row per in-card candidate when available.
+        for cid in candidate_ids:
+            for preferred_role in ("supporting", "contradicting"):
+                for row in by_score:
+                    meta = row.get("metadata") or {}
+                    row_cid = str(row.get("linked_candidate_id") or meta.get("linked_candidate_id") or "")
+                    row_role = str(meta.get("support_role") or row.get("support_role") or "").strip().lower()
+                    if row_cid == cid and row_role == preferred_role:
+                        _add_if_new(row)
+                        break
+
+        # Fill remainder by global ranking.
+        for row in by_score:
+            if len(picked) >= max_rows:
+                break
+            _add_if_new(row)
+        return picked[:max_rows]
+
+    def _enforce_balanced_card_evidence(
+        self,
+        *,
+        card: JsonDict,
+        selected_candidates: List[JsonDict],
+        evidence_pool: List[JsonDict],
+        max_rows: int,
+    ) -> None:
+        """
+        Tighten LLM-path evidence balance by ensuring in-card alternatives are represented.
+        """
+        if not isinstance(card, dict):
+            return
+        evidence_rows = card.get("evidence")
+        if not isinstance(evidence_rows, list):
+            return
+        if len(evidence_rows) >= max_rows:
+            return
+
+        card_candidate_ids: List[str] = []
+        primary_id = str((card.get("primary_hypothesis") or {}).get("candidate_id") or "").strip()
+        if primary_id and primary_id != "NONE":
+            card_candidate_ids.append(primary_id)
+        for alt in (card.get("alternatives") or []):
+            if isinstance(alt, dict) and alt.get("candidate_id"):
+                cid = str(alt.get("candidate_id")).strip()
+                if cid and cid not in card_candidate_ids:
+                    card_candidate_ids.append(cid)
+        if len(card_candidate_ids) <= 1:
+            return
+
+        present_candidate_ids = set()
+        for row in evidence_rows:
+            if not isinstance(row, dict):
+                continue
+            linked = row.get("linked_candidate_id")
+            if linked:
+                present_candidate_ids.add(str(linked))
+
+        missing = [cid for cid in card_candidate_ids if cid not in present_candidate_ids]
+        if not missing:
+            return
+
+        candidate_rank = {
+            str(c.get("candidate_id")): idx
+            for idx, c in enumerate(selected_candidates or [])
+            if isinstance(c, dict) and c.get("candidate_id")
+        }
+        pool_rows = sorted(
+            [r for r in (evidence_pool or []) if isinstance(r, dict)],
+            key=lambda r: float(r.get("score", 0.0) or 0.0),
+            reverse=True,
+        )
+        next_idx = len(evidence_rows) + 1
+        existing_source_ids = {str(r.get("source_id") or "") for r in evidence_rows if isinstance(r, dict)}
+        for cid in sorted(missing, key=lambda x: candidate_rank.get(x, 999)):
+            if len(evidence_rows) >= max_rows:
+                break
+            selected_row = None
+            for row in pool_rows:
+                row_cid = self._infer_linked_candidate_id(row, None)
+                if row_cid != cid:
+                    continue
+                source_id = str(row.get("snippet_id") or row.get("doc_id") or "")
+                if source_id and source_id in existing_source_ids:
+                    continue
+                selected_row = row
+                break
+            if selected_row is None:
+                continue
+            role = self._infer_evidence_support_role(selected_row, None)
+            source_id = str(selected_row.get("snippet_id") or selected_row.get("doc_id") or f"EVSRC-{next_idx:03d}")
+            evidence_rows.append(
+                {
+                    "evidence_id": f"EV-{next_idx:03d}",
+                    "source_type": "evidence_snippet",
+                    "source_id": source_id,
+                    "doc_id": selected_row.get("doc_id"),
+                    "authority_level": (selected_row.get("metadata") or {}).get("authority_level", "unknown"),
+                    "support_role": role,
+                    "linked_candidate_id": cid,
+                    "summary": f"Balanced evidence coverage for candidate {cid}.",
+                    "excerpt": str(selected_row.get("snippet") or ""),
+                }
+            )
+            existing_source_ids.add(source_id)
+            next_idx += 1
 
     # ------------------------------------------------------------------
     # Validation
@@ -1600,6 +2151,10 @@ analyst_review = {
             errors.append("recommended_actions empty")
         if not card.get("evidence"):
             errors.append("evidence empty")
+        if "contributing_causes" not in card:
+            errors.append("contributing_causes missing")
+        elif not isinstance(card.get("contributing_causes"), list):
+            errors.append("contributing_causes invalid")
         if "decision_required" not in review:
             errors.append("analyst_review.decision_required missing")
         if not review.get("writeback_recommendation"):
@@ -1624,6 +2179,17 @@ analyst_review = {
                     errors.append(f"alternatives[{i}].weaknesses invalid")
                 elif len(alt.get("weaknesses", [])) == 0:
                     errors.append(f"alternatives[{i}].weaknesses empty")
+
+        for i, cause in enumerate(card.get("contributing_causes", [])):
+            if not isinstance(cause, dict):
+                errors.append(f"contributing_causes[{i}] invalid")
+                continue
+            if not cause.get("candidate_id"):
+                errors.append(f"contributing_causes[{i}].candidate_id missing")
+            elif cause.get("candidate_id") not in valid_candidate_ids:
+                errors.append(f"contributing_causes[{i}].candidate_id unknown")
+            if not cause.get("rationale"):
+                errors.append(f"contributing_causes[{i}].rationale missing")
 
         for i, ev in enumerate(card.get("evidence", [])):
             if not ev.get("evidence_id"):

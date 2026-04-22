@@ -52,6 +52,27 @@ _PM_CHECK_KEYWORDS = {
     "scheduled_pm":      {"wear", "degradat", "aging", "maintenance", "overhaul"},
     "other":             set(),
 }
+_CRITICAL_BARRIER_KEYWORDS = (
+    "reactor protection",
+    "reactor trip",
+    "trip logic",
+    "reactor shutdown",
+    "containment isolation",
+    "esfas",
+    "rps",
+)
+_HIGH_BARRIER_KEYWORDS = (
+    "core cooling",
+    "emergency core cooling",
+    "residual heat removal",
+    "decay heat removal",
+    "eccs",
+    "rhr",
+    "rcic",
+    "hpci",
+)
+_CRITICAL_RISK_KEYWORDS = _CRITICAL_BARRIER_KEYWORDS
+_HIGH_RISK_KEYWORDS = _HIGH_BARRIER_KEYWORDS
 
 
 def utcnow_iso() -> str:
@@ -241,6 +262,10 @@ class RuleBasedCausalityEngineV32:
             "candidates": retained_candidates,
             "event_analogs": event_analogs,
             "filtered_out_candidates": filtered_out_candidates,
+            "pipeline_health": self._build_pipeline_health(
+                retained_candidates=retained_candidates,
+                filtered_out_candidates=filtered_out_candidates,
+            ),
             "provenance": {
                 "engine": "RuleBasedCausalityEngineV32",
                 "run_id": run_context.get("run_id"),
@@ -259,6 +284,13 @@ class RuleBasedCausalityEngineV32:
                 continue
             component_id = fm.get("component_id")
             topology = self._structural_score_for_fm(component_id, components)
+            affected_safety_functions = self._affected_safety_functions_for_candidate(
+                component_id=component_id,
+                sf_index=sf_index or {},
+                impact_type="direct",
+            )
+            barrier_signal = self._barrier_signal_from_safety_functions(affected_safety_functions)
+            barrier_delta = 0.10 * barrier_signal  # [0.0, +0.10]
             symptom_score = self._symptom_match_score(event, fm, telemetry_summary)
             symptom_delta = 0.40 * (symptom_score - 0.5)   # [-0.20, +0.20]
             # Alarm corroboration: a critical unacknowledged alarm on the same
@@ -272,7 +304,7 @@ class RuleBasedCausalityEngineV32:
             rpn_raw = fm.get("rpn")
             rpn_prior = min(1.0, float(rpn_raw) / 1000.0) if rpn_raw else 0.0
             rpn_delta = 0.08 * rpn_prior                    # [0.0, +0.08]
-            structural = max(0.0, min(1.0, topology + symptom_delta + alarm_delta + rpn_delta))
+            structural = max(0.0, min(1.0, topology + symptom_delta + alarm_delta + rpn_delta + barrier_delta))
             temporal_parts = self._temporal_score_for_fm(fm, telemetry_summary, event_time, tskr_index)
             telemetry = self._telemetry_score_for_fm(telemetry_summary, fm, component_id, components)
             evidence = self._evidence_score_for_fm(documents)
@@ -284,18 +316,32 @@ class RuleBasedCausalityEngineV32:
                 component_id=component_id,
                 fm_id=fm_id,
             )
+            risk_ctx = self._risk_significance_from_safety_functions(
+                affected_safety_functions=affected_safety_functions,
+                barrier_signal=barrier_signal,
+            )
+            governance_base = float(gov["score"])
+            governance_adjusted, governance_risk_delta = self._apply_risk_significance_to_governance(
+                governance_score=governance_base,
+                risk_significance_scalar=float(risk_ctx["scalar"]),
+            )
             scores = {
                 "structural": structural,
                 "temporal": temporal_parts["temporal"],
                 "telemetry": telemetry,
                 "evidence": evidence,
-                "governance": gov["score"],
+                "governance": governance_adjusted,
+                "governance_base": round(governance_base, 6),
+                "governance_risk_delta": round(governance_risk_delta, 6),
+                "risk_significance_scalar": round(float(risk_ctx["scalar"]), 4),
+                "risk_significance_tier": risk_ctx["tier"],
                 "tskr_pattern_match": temporal_parts["tskr_pattern_match"],
                 "temporal_precedence": temporal_parts["temporal_precedence"],
                 "latency_consistency": temporal_parts["latency_consistency"],
                 "symptom_match": round(symptom_score, 4),
                 "alarm_signal": round(alarm_signal, 4),
                 "rpn_prior": round(rpn_prior, 4),
+                "barrier_signal": round(barrier_signal, 4),
             }
             composite = self._combine_scores(scores)
             meets_evidence_threshold = evidence >= self.config.minimum_pre_evidence_threshold
@@ -315,6 +361,7 @@ class RuleBasedCausalityEngineV32:
                         + f"); "
                         f"symptom match {round(symptom_score, 4)} → delta {round(symptom_delta, 4)}; "
                         f"alarm signal {round(alarm_signal, 4)} → delta {round(alarm_delta, 4)}; "
+                        + (f"barrier signal {round(barrier_signal, 4)} → delta {round(barrier_delta, 4)}; " if barrier_signal > 0 else "")
                         + (f"RPN {rpn_raw} → prior {round(rpn_prior, 4)} → delta {round(rpn_delta, 4)}; " if rpn_raw else "")
                         + f"structural = {round(structural, 4)}."
                     ),
@@ -323,14 +370,25 @@ class RuleBasedCausalityEngineV32:
                         "Telemetry score derived from anomaly count, severity, and telemetry-linked component alignment"
                         + (
                             f"; FMEA expected pattern '{fm.get('expected_anomaly_pattern')}' "
-                            + ("matched" if fm.get("expected_anomaly_pattern") == self._dominant_telemetry_pattern(telemetry_summary) else "did not match")
+                            + (
+                                "matched"
+                                if self._pattern_similarity_score(
+                                    self._normalize_symptom_text(fm.get("expected_anomaly_pattern")),
+                                    self._normalize_symptom_text(self._dominant_telemetry_pattern(telemetry_summary)),
+                                ) >= 0.7
+                                else "did not match"
+                            )
                             + f" observed pattern '{self._dominant_telemetry_pattern(telemetry_summary)}'"
                             if fm.get("expected_anomaly_pattern") and fm.get("expected_anomaly_pattern") != "unknown"
                             else ""
                         ) + "."
                     ),
                     "evidence": "Evidence score derived from presence of operational and engineering documents.",
-                    "governance": self._governance_rationale(gov),
+                    "governance": (
+                        self._governance_rationale(gov)
+                        + f" Risk significance tier={risk_ctx['tier']} scalar={round(float(risk_ctx['scalar']), 4)} "
+                        + f"adjusted governance from {round(governance_base, 4)} to {round(governance_adjusted, 4)}."
+                    ),
                 },
                 "composite_score": composite,
                 "confidence_label": self._normalized_confidence_label(composite),
@@ -388,11 +446,7 @@ class RuleBasedCausalityEngineV32:
                 candidate_component_id=component_id,
                 operational_context=operational_context,
             )
-            candidate["affected_safety_functions"] = self._affected_safety_functions_for_candidate(
-                component_id=component_id,
-                sf_index=sf_index or {},
-                impact_type="direct",
-            )
+            candidate["affected_safety_functions"] = affected_safety_functions
             out.append(candidate)
         return out
 
@@ -440,20 +494,41 @@ class RuleBasedCausalityEngineV32:
             # historical event add structural weight (same component is still
             # in abnormal state, consistent with the analog).
             pe_component_id = pe.get("component_id")
+            affected_safety_functions = self._affected_safety_functions_for_candidate(
+                component_id=pe_component_id,
+                sf_index=sf_index or {},
+                impact_type="indirect",
+            )
+            barrier_signal = self._barrier_signal_from_safety_functions(affected_safety_functions)
+            barrier_delta = 0.07 * barrier_signal   # [0.0, +0.07] for analog hypotheses
+            risk_ctx = self._risk_significance_from_safety_functions(
+                affected_safety_functions=affected_safety_functions,
+                barrier_signal=barrier_signal,
+            )
+            governance_base = float(gov["score"])
+            governance_adjusted, governance_risk_delta = self._apply_risk_significance_to_governance(
+                governance_score=governance_base,
+                risk_significance_scalar=float(risk_ctx["scalar"]),
+            )
             pe_components = {pe_component_id: {"seed_match_type": "neighbor"}} if pe_component_id else {}
             alarm_signal = self._alarm_signal_for_candidate(pe_component_id, operational_context, pe_components)
             alarm_delta = 0.10 * alarm_signal               # [0.0, +0.10] — smaller than FM weight
-            structural = min(1.0, structural + alarm_delta)
+            structural = min(1.0, structural + alarm_delta + barrier_delta)
             scores = {
                 "structural": structural,
                 "temporal": temporal_parts["temporal"],
                 "telemetry": telemetry,
                 "evidence": evidence,
-                "governance": gov["score"],
+                "governance": governance_adjusted,
+                "governance_base": round(governance_base, 6),
+                "governance_risk_delta": round(governance_risk_delta, 6),
+                "risk_significance_scalar": round(float(risk_ctx["scalar"]), 4),
+                "risk_significance_tier": risk_ctx["tier"],
                 "tskr_pattern_match": temporal_parts["tskr_pattern_match"],
                 "temporal_precedence": temporal_parts["temporal_precedence"],
                 "latency_consistency": temporal_parts["latency_consistency"],
                 "alarm_signal": round(alarm_signal, 4),
+                "barrier_signal": round(barrier_signal, 4),
             }
 
             composite = self._combine_scores(scores)
@@ -470,12 +545,17 @@ class RuleBasedCausalityEngineV32:
                 "score_rationale": {
                     "structural": (
                         f"Historical event scored from shared asset/component/failure-mode context; "
-                        f"alarm signal {round(alarm_signal, 4)} → delta {round(alarm_delta, 4)}."
+                        f"alarm signal {round(alarm_signal, 4)} → delta {round(alarm_delta, 4)}; "
+                        + (f"barrier signal {round(barrier_signal, 4)} → delta {round(barrier_delta, 4)}." if barrier_signal > 0 else "no barrier signal.")
                     ),
                     "temporal": "Temporal score reflects precedence and recency, plus TSKR-style anomaly presence.",
                     "telemetry": "Telemetry score reflects active anomaly burden and analog alignment support.",
                     "evidence": "Evidence score reflects matching context and supporting document availability.",
-                    "governance": self._governance_rationale(gov),
+                    "governance": (
+                        self._governance_rationale(gov)
+                        + f" Risk significance tier={risk_ctx['tier']} scalar={round(float(risk_ctx['scalar']), 4)} "
+                        + f"adjusted governance from {round(governance_base, 4)} to {round(governance_adjusted, 4)}."
+                    ),
                 },
                 "composite_score": composite,
                 "confidence_label": self._normalized_confidence_label(composite),
@@ -529,11 +609,7 @@ class RuleBasedCausalityEngineV32:
                 candidate_component_id=pe.get("component_id"),
                 operational_context=operational_context,
             )
-            candidate["affected_safety_functions"] = self._affected_safety_functions_for_candidate(
-                component_id=pe.get("component_id"),
-                sf_index=sf_index or {},
-                impact_type="indirect",
-            )
+            candidate["affected_safety_functions"] = affected_safety_functions
             out.append(candidate)
         return out
 
@@ -550,6 +626,9 @@ class RuleBasedCausalityEngineV32:
         score_gap = primary_score - other_score
 
         if score_gap > self.config.review_alternative_gap:
+            return False
+
+        if str(other_candidate.get("evidence_posture", "") or "").lower() == "contradicted":
             return False
 
         temporal_posture = str(other_candidate.get("temporal_posture", "") or "").lower()
@@ -730,6 +809,15 @@ class RuleBasedCausalityEngineV32:
             candidate["scores"]["evidence_contradiction"] = round(contradiction_score, 6)
             candidate["scores"]["evidence_context"] = round(contextual_score, 6)
             candidate["scores"]["evidence"] = round(refined_evidence_score, 6)
+            risk_scalar = float((candidate.get("scores") or {}).get("risk_significance_scalar", 0.0) or 0.0)
+            governance_base = float((candidate.get("scores") or {}).get("governance_base", (candidate.get("scores") or {}).get("governance", 0.0)) or 0.0)
+            governance_adjusted, governance_risk_delta = self._apply_risk_significance_to_governance(
+                governance_score=governance_base,
+                risk_significance_scalar=risk_scalar,
+            )
+            candidate["scores"]["governance_base"] = round(governance_base, 6)
+            candidate["scores"]["governance_risk_delta"] = round(governance_risk_delta, 6)
+            candidate["scores"]["governance"] = round(governance_adjusted, 6)
 
             candidate["supporting_evidence_refs"] = list(ev.get("supporting_snippet_ids", []))[:5]
             candidate["contradicting_evidence_refs"] = list(ev.get("contradicting_snippet_ids", []))[:5]
@@ -812,6 +900,21 @@ class RuleBasedCausalityEngineV32:
 
         candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
 
+        gap = float(self.config.review_alternative_gap)
+        for i in range(len(candidates) - 1):
+            s0 = float(candidates[i].get("composite_score", 0.0) or 0.0)
+            s1 = float(candidates[i + 1].get("composite_score", 0.0) or 0.0)
+            if s0 - s1 <= gap:
+                candidates[i]["review_required"] = True
+                candidates[i + 1]["review_required"] = True
+        for c in candidates:
+            if c.get("evidence_posture") == "contradicted":
+                c["review_required"] = True
+            tp = str(c.get("temporal_posture", "") or "").lower()
+            tev = c.get("temporal_evidence") or {}
+            if tp == "contradicted" or bool(tev.get("temporal_contradiction", False)):
+                c["review_required"] = True
+
         passed_threshold = []
         failed_threshold = []
         for candidate in candidates:
@@ -850,6 +953,10 @@ class RuleBasedCausalityEngineV32:
 
         payload["candidates"] = retained_candidates
         payload["filtered_out_candidates"] = filtered_out_candidates
+        payload["pipeline_health"] = self._build_pipeline_health(
+            retained_candidates=retained_candidates,
+            filtered_out_candidates=filtered_out_candidates,
+        )
 
         if "summary" in payload and isinstance(payload["summary"], dict):
             payload["summary"]["retained_candidate_count"] = len(retained_candidates)
@@ -868,6 +975,27 @@ class RuleBasedCausalityEngineV32:
         provenance["evidence_refinement_applied"] = True
 
         return payload
+
+    @staticmethod
+    def _build_pipeline_health(
+        *,
+        retained_candidates: List[JsonDict],
+        filtered_out_candidates: List[JsonDict],
+    ) -> JsonDict:
+        issues: List[str] = []
+        if not retained_candidates:
+            return {
+                "status": "red",
+                "issues": [
+                    "No candidates survived screening thresholds.",
+                    "Run requires analyst remediation or wider search-space review.",
+                ],
+            }
+        status = "green"
+        if filtered_out_candidates:
+            status = "yellow"
+            issues.append("One or more candidates were filtered out by thresholds/top-k.")
+        return {"status": status, "issues": issues}
 
     def _candidate_meets_threshold(self, candidate: JsonDict) -> bool:
         composite_ok = float(candidate.get("composite_score", 0.0)) >= self.config.minimum_composite_threshold
@@ -1013,29 +1141,52 @@ class RuleBasedCausalityEngineV32:
         type_weight = 0.0
 
         # --- Anomaly pattern sub-signal ---
-        fm_pattern = fm.get("expected_anomaly_pattern")
-        observed_pattern = self._dominant_telemetry_pattern(telemetry_summary)
+        fm_pattern = self._normalize_symptom_text(fm.get("expected_anomaly_pattern"))
+        observed_pattern = self._normalize_symptom_text(self._dominant_telemetry_pattern(telemetry_summary))
         if not observed_pattern or observed_pattern == "unknown":
-            observed_pattern = (event.get("symptom_signature") or {}).get("anomaly_pattern")
+            observed_pattern = self._normalize_symptom_text((event.get("symptom_signature") or {}).get("anomaly_pattern"))
         if fm_pattern and observed_pattern and observed_pattern != "unknown":
-            pattern_score  = 1.0 if fm_pattern == observed_pattern else 0.0
+            pattern_score  = self._pattern_similarity_score(fm_pattern, observed_pattern)
             pattern_weight = 0.6
 
         # --- Symptom type sub-signal ---
         # Prefer the list field (kg_context schema name); fall back to the
         # semicolon-delimited string emitted by fmeaParser (stored on the KG node
         # as 'expected_symptoms' and returned by _fetch_failure_modes).
-        fm_types = set(fm.get("expected_symptom_types") or [])
+        fm_types = set(
+            self._normalize_symptom_text(x)
+            for x in (fm.get("expected_symptom_types") or [])
+            if self._normalize_symptom_text(x)
+        )
         if not fm_types:
             raw_symptoms = fm.get("expected_symptoms") or ""
             if raw_symptoms:
-                fm_types = {s.strip() for s in str(raw_symptoms).split(";") if s.strip()}
-        event_types = set((event.get("symptom_signature") or {}).get("symptom_types") or [])
+                fm_types = {
+                    self._normalize_symptom_text(s)
+                    for s in re.split(r"[;,]", str(raw_symptoms))
+                    if self._normalize_symptom_text(s)
+                }
+        event_types = set(
+            self._normalize_symptom_text(x)
+            for x in ((event.get("symptom_signature") or {}).get("symptom_types") or [])
+            if self._normalize_symptom_text(x)
+        )
         if fm_types and event_types:
-            intersection = len(fm_types & event_types)
-            recall    = intersection / len(fm_types)
-            precision = intersection / len(event_types)
-            type_score  = (2 * recall * precision / (recall + precision)) if (recall + precision) > 0 else 0.0
+            phrase_intersection = len(fm_types & event_types)
+            recall = phrase_intersection / len(fm_types)
+            precision = phrase_intersection / len(event_types)
+            phrase_f1 = (2 * recall * precision / (recall + precision)) if (recall + precision) > 0 else 0.0
+
+            fm_tokens = {tok for phrase in fm_types for tok in phrase.split() if tok}
+            event_tokens = {tok for phrase in event_types for tok in phrase.split() if tok}
+            token_overlap = (
+                len(fm_tokens & event_tokens) / len(fm_tokens | event_tokens)
+                if (fm_tokens | event_tokens)
+                else 0.0
+            )
+            # Prefer exact phrase agreement, but keep partial token overlap as
+            # a softer signal for alias/format variants.
+            type_score = max(phrase_f1, 0.85 * token_overlap)
             type_weight = 0.4
 
         total_weight = pattern_weight + type_weight
@@ -1043,6 +1194,49 @@ class RuleBasedCausalityEngineV32:
             return 0.5  # no symptom data — return neutral
 
         return (pattern_score * pattern_weight + type_score * type_weight) / total_weight
+
+    @staticmethod
+    def _normalize_symptom_text(value: Any) -> str:
+        text = str(value or "").lower().strip()
+        text = text.replace("_", " ").replace("-", " ")
+        text = re.sub(r"[^a-z0-9\s]", " ", text)
+        return " ".join(text.split())
+
+    @classmethod
+    def _pattern_similarity_score(cls, expected_pattern: str, observed_pattern: str) -> float:
+        expected = cls._normalize_symptom_text(expected_pattern)
+        observed = cls._normalize_symptom_text(observed_pattern)
+        if not expected or not observed:
+            return 0.5
+
+        def _canonical(p: str) -> str:
+            tokens = set(p.split())
+            if "drift" in tokens or ("gradual" in tokens and "trend" in tokens):
+                return "drift"
+            if "spike" in tokens or "surge" in tokens:
+                return "spike"
+            if "step" in tokens:
+                return "step"
+            if "oscillation" in tokens or "oscillatory" in tokens:
+                return "oscillation"
+            if "drop" in tokens or "dip" in tokens:
+                return "drop"
+            if "rise" in tokens or "increase" in tokens:
+                return "rise"
+            return p
+
+        c_expected = _canonical(expected)
+        c_observed = _canonical(observed)
+        if c_expected == c_observed:
+            return 1.0
+        if c_expected in c_observed or c_observed in c_expected:
+            return 0.7
+        exp_tokens = set(c_expected.split())
+        obs_tokens = set(c_observed.split())
+        if not exp_tokens or not obs_tokens:
+            return 0.0
+        overlap = len(exp_tokens & obs_tokens) / len(exp_tokens | obs_tokens)
+        return max(0.0, min(1.0, 0.65 * overlap))
 
     @staticmethod
     def _dominant_telemetry_pattern(telemetry_summary):
@@ -1659,6 +1853,80 @@ class RuleBasedCausalityEngineV32:
             })
         return result
 
+    @staticmethod
+    def _normalize_barrier_text(value: Any) -> str:
+        return str(value or "").lower().replace("_", " ").replace("-", " ").strip()
+
+    def _barrier_signal_from_safety_functions(self, affected_safety_functions: List[JsonDict]) -> float:
+        if not affected_safety_functions:
+            return 0.0
+        values: List[str] = []
+        for sf in affected_safety_functions:
+            if not isinstance(sf, dict):
+                continue
+            values.extend(
+                [
+                    self._normalize_barrier_text(sf.get("sf_category")),
+                    self._normalize_barrier_text(sf.get("sf_name")),
+                    self._normalize_barrier_text(sf.get("sf_id")),
+                ]
+            )
+        values = [v for v in values if v]
+        if any(any(k in v for k in _CRITICAL_BARRIER_KEYWORDS) for v in values):
+            return 1.0
+        if any(any(k in v for k in _HIGH_BARRIER_KEYWORDS) for v in values):
+            return 0.7
+        return 0.4
+
+    def _risk_significance_from_safety_functions(
+        self,
+        *,
+        affected_safety_functions: List[JsonDict],
+        barrier_signal: float = 0.0,
+    ) -> JsonDict:
+        if not affected_safety_functions:
+            return {"scalar": 0.0, "tier": "none"}
+        values: List[str] = []
+        for sf in affected_safety_functions:
+            if not isinstance(sf, dict):
+                continue
+            values.extend(
+                [
+                    self._normalize_barrier_text(sf.get("sf_category")),
+                    self._normalize_barrier_text(sf.get("sf_name")),
+                    self._normalize_barrier_text(sf.get("sf_id")),
+                ]
+            )
+        values = [v for v in values if v]
+        tier = "medium"
+        scalar = 0.6
+        if any(any(k in v for k in _CRITICAL_RISK_KEYWORDS) for v in values):
+            tier = "critical"
+            scalar = 1.0
+        elif any(any(k in v for k in _HIGH_RISK_KEYWORDS) for v in values):
+            tier = "high"
+            scalar = 0.8
+
+        affected_count = len([sf for sf in affected_safety_functions if isinstance(sf, dict)])
+        if affected_count >= 2:
+            scalar += 0.05
+        if affected_count >= 3:
+            scalar += 0.05
+        scalar = min(1.0, max(scalar, float(barrier_signal)))
+        return {"scalar": round(scalar, 4), "tier": tier}
+
+    @staticmethod
+    def _apply_risk_significance_to_governance(
+        *,
+        governance_score: float,
+        risk_significance_scalar: float,
+    ) -> tuple[float, float]:
+        base = max(0.0, min(1.0, float(governance_score or 0.0)))
+        risk = max(0.0, min(1.0, float(risk_significance_scalar or 0.0)))
+        delta = 0.20 * risk
+        adjusted = min(1.0, base + delta)
+        return round(adjusted, 6), round(delta, 6)
+
     def _build_past_event_index(self, kg_context):
         past_events = kg_context.get("past_events", []) or []
         by_asset: Dict[str, List[JsonDict]] = {}
@@ -2263,6 +2531,15 @@ class RuleBasedCausalityEngineV32:
                 f"support={support_score:.3f}, contradiction={contradiction_score:.3f}, "
                 f"context={contextual_score:.3f}, prior={prior_evidence_score:.3f}."
             )
+        risk_scalar = float(((candidate.get("scores") or {}).get("risk_significance_scalar", 0.0) or 0.0))
+        governance_base = float(((candidate.get("scores") or {}).get("governance_base", 0.0) or 0.0))
+        governance_score = float(((candidate.get("scores") or {}).get("governance", 0.0) or 0.0))
+        if risk_scalar > 0.0:
+            rationale["governance"] = (
+                str(rationale.get("governance") or "").strip()
+                + f" Stage F risk significance scalar={risk_scalar:.3f} keeps governance-adjusted score at {governance_score:.3f}"
+                + (f" (base {governance_base:.3f})." if governance_base > 0.0 else ".")
+            ).strip()
 
     def _pattern_confidence(self, pattern):
         if not pattern:

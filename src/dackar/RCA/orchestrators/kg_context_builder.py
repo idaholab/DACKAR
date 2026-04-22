@@ -55,6 +55,7 @@ class Neo4jKGContextBuilder:
         operational_context: Optional[JsonDict],
         pm_compliance: Optional[JsonDict],
         run_context: JsonDict,
+        focus_component_ids: Optional[List[str]] = None,
     ) -> JsonDict:
         self._basic_input_checks(event, telemetry_summary)
 
@@ -63,6 +64,9 @@ class Neo4jKGContextBuilder:
 
         seed_info = self._resolve_seed_nodes(event, telemetry_summary)
         component_ids = seed_info["component_ids"]
+        focus_components = {str(x) for x in (focus_component_ids or []) if x}
+        if focus_components:
+            component_ids = set(component_ids) | focus_components
         seed_variables = seed_info["monitored_variables"]
         seed_assets = seed_info["asset_ids"]
 
@@ -131,6 +135,7 @@ class Neo4jKGContextBuilder:
                 "asset_ids": sorted(seed_assets),
                 "monitored_variables": seed_variables,
                 "seed_component_ids": sorted(component_ids),
+                "reentry_focus_component_ids": sorted(focus_components),
             },
             "provenance": {
                 "builder": "Neo4jKGContextBuilder",
@@ -425,6 +430,8 @@ class Neo4jKGContextBuilder:
                c.id AS component_id,
                c.name AS component_name,
                fm.superclass AS superclass,
+               fm.fmea_revision_date AS fmea_revision_date,
+               fm.revision_date AS revision_date,
                fm.expected_latency_min_hours AS expected_latency_min_hours,
                fm.expected_latency_max_hours AS expected_latency_max_hours,
                fm.failure_mechanism AS failure_mechanism,

@@ -292,6 +292,74 @@ def test_pure_negation_without_causal_attribution_stays_contradicting():
     print("  PASS test_pure_negation_without_causal_attribution_stays_contradicting")
 
 
+def test_structural_contradiction_for_alternate_root_cause():
+    """
+    candidate_contradiction query + explicit root-cause phrasing for an alternate
+    mechanism should trigger structural contradiction when candidate alignment is low.
+    """
+    r = make_retriever()
+    snippet = "Root cause determined to be pump cavitation; caused by suction blockage."
+    hit = make_hit(
+        snippet,
+        meta={
+            "doc_type": "ECA",
+            "authority_level": "mandatory",
+            "extraction_quality": 1.0,
+            "eca_causal_factors_text": "pump cavitation | suction blockage",
+        },
+    )
+    qp = make_query_plan(
+        cause_label="tube fouling",
+        query_type="candidate_contradiction",
+    )
+    result = r._assess_hit_against_candidate(hit, qp)
+    assert result["structural_contradiction_hit"] is True
+    assert result["structural_contradiction_score"] >= 0.35
+    assert result["support_role"] == "contradicting"
+    print("  PASS test_structural_contradiction_for_alternate_root_cause")
+
+
+def test_structural_contradiction_not_set_when_candidate_alignment_high():
+    """Same-candidate causal attribution should not be marked as structural contradiction."""
+    r = make_retriever()
+    snippet = "Root cause determined to be tube fouling in condenser bundle."
+    hit = make_hit(
+        snippet,
+        meta={
+            "doc_type": "ECA",
+            "authority_level": "mandatory",
+            "extraction_quality": 1.0,
+            "eca_causal_factors_text": "tube fouling",
+        },
+    )
+    qp = make_query_plan(
+        cause_label="tube fouling",
+        query_type="candidate_contradiction",
+    )
+    result = r._assess_hit_against_candidate(hit, qp)
+    assert result["structural_contradiction_hit"] is False
+    print("  PASS test_structural_contradiction_not_set_when_candidate_alignment_high")
+
+
+def test_structural_contradiction_suppressed_by_failure_mode_refs_match():
+    """Structured failure_mode_refs alignment should suppress alternate-root contradiction hit."""
+    r = make_retriever()
+    hit = make_hit(
+        "Root cause determined to be lubrication loss in bearing train.",
+        meta={
+            "doc_type": "CR",
+            "authority_level": "mandatory",
+            "extraction_quality": 1.0,
+            "failure_mode_refs": ["FM::LUBE-LOSS"],
+            "failure_mode_refs_text": "FM::LUBE-LOSS",
+        },
+    )
+    qp = make_query_plan(cause_label="lube loss", query_type="candidate_contradiction")
+    result = r._assess_hit_against_candidate(hit, qp)
+    assert result["structural_contradiction_hit"] is False
+    print("  PASS test_structural_contradiction_suppressed_by_failure_mode_refs_match")
+
+
 # ── Encoder fallback tests ────────────────────────────────────────────────────
 
 import numpy as np
@@ -454,6 +522,9 @@ ALL_TESTS = [
     test_eca_doc_type_increases_epistemic_weight,
     test_causal_attribution_with_contradiction_cues_classified_as_supporting,
     test_pure_negation_without_causal_attribution_stays_contradicting,
+    test_structural_contradiction_for_alternate_root_cause,
+    test_structural_contradiction_not_set_when_candidate_alignment_high,
+    test_structural_contradiction_suppressed_by_failure_mode_refs_match,
     # Encoder fallback tests
     test_encoder_fallback_used_for_bm25_only_hit,
     test_encoder_not_called_when_vector_score_present,

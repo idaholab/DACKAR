@@ -68,6 +68,15 @@ def minimal_valid_card():
                 "weaknesses": ["DO elevation inconsistent with tube fouling"],
             }
         ],
+        "contributing_causes": [
+            {
+                "candidate_id": "FM::CAND-B",
+                "cause_label": "Tube fouling",
+                "contribution_type": "contributing",
+                "rationale": "May have increased thermal load but does not explain dissolved oxygen signal.",
+                "citations": [],
+            }
+        ],
         "evidence": [
             {
                 "evidence_id": "E001",
@@ -235,6 +244,15 @@ def test_empty_recommended_actions_is_error():
     print("  PASS test_empty_recommended_actions_is_error")
 
 
+def test_missing_contributing_causes_is_error():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    del card["contributing_causes"]
+    errors = s._validate_card_semantics(card)
+    assert any("contributing_causes missing" in e for e in errors)
+    print("  PASS test_missing_contributing_causes_is_error")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -252,6 +270,7 @@ ALL_TESTS = [
     test_alternative_missing_reason_not_primary,
     test_empty_evidence_list_is_error,
     test_empty_recommended_actions_is_error,
+    test_missing_contributing_causes_is_error,
 ]
 
 

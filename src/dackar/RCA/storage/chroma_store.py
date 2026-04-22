@@ -111,7 +111,7 @@ def _normalize_filter_meta(filter_meta: Optional[Dict[str, Any]]) -> Dict[str, A
     Examples:
       - doc_ids   -> doc_id
       - doc_types -> doc_type
-      - component_ids is handled via post-filtering (not passable to Chroma where clause)
+      - component_ids is translated in query_doc_type() into primary_component_id
     """
     raw = dict(filter_meta or {})
     norm: Dict[str, Any] = {}
@@ -127,9 +127,9 @@ def _normalize_filter_meta(filter_meta: Optional[Dict[str, Any]]) -> Dict[str, A
 
         target_key = alias_map.get(key, key)
 
-        # component_ids is a list field stored as a JSON string in Chroma metadata.
-        # Chroma's where clause cannot query inside a JSON-encoded list, so we skip
-        # it here and apply it as a Python post-filter in query_doc_type instead.
+        # component_ids is handled separately in query_doc_type():
+        # translated into a primary_component_id Chroma index filter plus
+        # optional legacy post-filter fallback.
         if target_key == "component_ids":
             continue
 
@@ -146,11 +146,15 @@ def _doc_matches_component_ids(doc: Document, wanted: set) -> bool:
     """Return True if *doc* is associated with at least one of the *wanted* component IDs.
 
     Checks:
-      1. The scalar ``component_id`` metadata field (populated for single-component records).
-      2. The ``component_ids`` field, which may be a JSON-encoded list (how Chroma stores
+      1. The scalar ``primary_component_id`` metadata field (index-friendly path).
+      2. The scalar ``component_id`` metadata field (legacy single-component path).
+      3. The ``component_ids`` field, which may be a JSON-encoded list (how Chroma stores
          list-valued metadata) or a plain Python list (BM25 in-memory path).
     """
     meta = doc.metadata or {}
+    primary = meta.get("primary_component_id")
+    if primary and primary in wanted:
+        return True
     scalar = meta.get("component_id")
     if scalar and scalar in wanted:
         return True
@@ -176,6 +180,32 @@ def _sanitize_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
     return clean
 
 
+def _record_component_ids(metadata: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    scalar = metadata.get("component_id")
+    if isinstance(scalar, str) and scalar.strip():
+        out.append(scalar.strip())
+
+    raw = metadata.get("component_ids")
+    if isinstance(raw, str):
+        try:
+            decoded = json.loads(raw)
+            if isinstance(decoded, list):
+                out.extend(str(x).strip() for x in decoded if str(x).strip())
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    elif isinstance(raw, (list, tuple, set)):
+        out.extend(str(x).strip() for x in raw if str(x).strip())
+
+    seen = set()
+    deduped: List[str] = []
+    for cid in out:
+        if cid not in seen:
+            seen.add(cid)
+            deduped.append(cid)
+    return deduped
+
+
 
 def build_chroma_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
     metadata = dict(record.get("metadata") or {})
@@ -191,6 +221,10 @@ def build_chroma_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
     metadata.setdefault("page_end", provenance.get("page_end", metadata.get("page_end")))
     metadata.setdefault("authority_level", provenance.get("authority_level", metadata.get("authority_level")))
     metadata.setdefault("section_role", provenance.get("section_role", metadata.get("section_role")))
+    # Primary scalar component key enables true Chroma index-level component filtering.
+    component_ids = _record_component_ids(metadata)
+    if component_ids:
+        metadata.setdefault("primary_component_id", component_ids[0])
 
     # Flatten condition_assessment nested object into scalar keys so Chroma can
     # store and return them.  Source priority: record-level > metadata-level.
@@ -534,8 +568,9 @@ class ChromaRecordStore:
         vs = state.vectorstore
         filter_sane = _normalize_filter_meta(filter_meta)
 
-        # component_ids cannot be passed to the Chroma where clause (list stored as JSON
-        # string); extract it here for Python post-filtering after retrieval.
+        # component_ids is translated to index-level primary_component_id filtering.
+        # Legacy records without primary_component_id are optionally recovered through
+        # a compatibility post-filter pass against component_ids/component_id metadata.
         wanted_component_ids: set = set((filter_meta or {}).get("component_ids") or [])
 
         if not filter_sane:
@@ -558,21 +593,19 @@ class ChromaRecordStore:
             else:
                 chroma_where = {"$and": clauses}
 
-        if wanted_component_ids:
-            LOGGER.warning(
-                "ChromaRecordStore: component_ids filter applied as Python post-filter "
-                "on top-%d dense hits — not as a Chroma index-level filter.  "
-                "Documents outside the top-%d similarity results are not scanned.  "
-                "Increase top_k or re-ingest with component_id as a scalar metadata field "
-                "to improve component-level retrieval precision.",
-                top_k * 4,
-                top_k * 4,
-            )
-
         dense_hits: List[Dict[str, Any]] = []
-        # Fetch extra candidates when component post-filtering is active so that
-        # attrition from the filter does not starve downstream consumers.
-        fetch_k = top_k * (4 if wanted_component_ids else 2)
+        fetch_k = top_k * 2
+        fallback_fetch_k = top_k * 4
+        indexed_component_filter_active = bool(wanted_component_ids)
+        if indexed_component_filter_active:
+            comp_clause = {"primary_component_id": {"$in": sorted(wanted_component_ids)}}
+            if chroma_where is None:
+                chroma_where = comp_clause
+            elif "$and" in chroma_where and isinstance(chroma_where.get("$and"), list):
+                chroma_where = {"$and": list(chroma_where["$and"]) + [comp_clause]}
+            else:
+                chroma_where = {"$and": [chroma_where, comp_clause]}
+
         try:
             scored = vs.similarity_search_with_score(query_text, k=fetch_k, filter=chroma_where)
             for doc, score in scored:
@@ -586,8 +619,8 @@ class ChromaRecordStore:
                 if not rid:
                     LOGGER.warning("Dense retrieval returned hit with no stable record_id; skipping.")
                     continue
-                if wanted_component_ids and not _doc_matches_component_ids(doc, wanted_component_ids):
-                    continue
+                if wanted_component_ids:
+                    doc.metadata["_component_filter_strategy"] = "index_filter"
                 dense_hits.append({
                     "record_id": rid,
                     "score": float(score),
@@ -596,6 +629,45 @@ class ChromaRecordStore:
                 })
         except Exception as exc:
             LOGGER.warning("Dense retrieval failed for doc_type '%s': %s", doc_type, exc)
+
+        if wanted_component_ids and len(dense_hits) < top_k:
+            # Compatibility path for older ingested records that do not yet carry
+            # primary_component_id metadata.
+            try:
+                legacy_scored = vs.similarity_search_with_score(query_text, k=fallback_fetch_k, filter=filter_sane or None)
+                seen = {h.get("record_id") for h in dense_hits}
+                legacy_added = 0
+                for doc, score in legacy_scored:
+                    rid = _stable_record_id_from_doc(doc)
+                    if not rid or rid in seen:
+                        continue
+                    doc.metadata = dict(doc.metadata or {})
+                    if doc.metadata.get("primary_component_id"):
+                        continue
+                    if not _doc_matches_component_ids(doc, wanted_component_ids):
+                        continue
+                    doc.metadata["_score"] = float(score)
+                    doc.metadata["_vector_score"] = float(score)
+                    doc.metadata["_component_filter_strategy"] = "legacy_post_filter"
+                    dense_hits.append(
+                        {
+                            "record_id": rid,
+                            "score": float(score),
+                            "document": doc,
+                            "metadata": doc.metadata,
+                        }
+                    )
+                    seen.add(rid)
+                    legacy_added += 1
+                if legacy_added:
+                    LOGGER.warning(
+                        "ChromaRecordStore: component filter used index-level primary_component_id "
+                        "plus legacy post-filter fallback for %d records lacking primary_component_id. "
+                        "Re-ingest collections to remove fallback dependence.",
+                        legacy_added,
+                    )
+            except Exception as exc:
+                LOGGER.warning("Legacy component fallback retrieval failed for doc_type '%s': %s", doc_type, exc)
 
         bm25_hits: List[Dict[str, Any]] = []
         bm25 = self._get_or_build_bm25(state)
@@ -611,6 +683,12 @@ class ChromaRecordStore:
                         and (not wanted_component_ids or _doc_matches_component_ids(d, wanted_component_ids))
                     ]
                 for doc in docs:
+                    if wanted_component_ids and "_component_filter_strategy" not in (doc.metadata or {}):
+                        doc.metadata = dict(doc.metadata or {})
+                        if doc.metadata.get("primary_component_id"):
+                            doc.metadata["_component_filter_strategy"] = "index_filter"
+                        else:
+                            doc.metadata["_component_filter_strategy"] = "legacy_post_filter"
                     rid = _stable_record_id_from_doc(doc)
                     if not rid:
                         LOGGER.warning("BM25 retrieval returned hit with no stable record_id; skipping.")

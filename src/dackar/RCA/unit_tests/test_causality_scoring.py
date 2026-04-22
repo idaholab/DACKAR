@@ -237,11 +237,14 @@ def test_telemetry_anomaly_precedes_structural_score():
 
 def test_weight_sum_constraint_raises_on_misconfiguration():
     """Sprint 2 fix: CausalityEngineConfigV32 raises ValueError when weights don't sum to 1.0."""
-    import pytest
     bad_weights = {"structural": 0.40, "temporal": 0.20, "telemetry": 0.20,
                    "evidence": 0.20, "governance": 0.10}  # sum = 1.10
-    with pytest.raises(ValueError, match="weights must sum to 1.0"):
+    try:
         CausalityEngineConfigV32(weights=bad_weights)
+    except ValueError as exc:
+        assert "weights must sum to 1.0" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for invalid weight sum")
     print("  PASS test_weight_sum_constraint_raises_on_misconfiguration")
 
 
@@ -257,6 +260,64 @@ def test_authority_weights_constant_present():
     assert e._AUTHORITY_WEIGHTS["oe_adams"] == 0.30
     assert e._AUTHORITY_WEIGHTS["plant_instance"] > e._AUTHORITY_WEIGHTS["oe_iris"]
     print("  PASS test_authority_weights_constant_present")
+
+
+def test_barrier_signal_critical_keywords_returns_one():
+    """Barrier-aware scoring: critical safety-function keywords -> signal 1.0."""
+    e = make_engine()
+    signal = e._barrier_signal_from_safety_functions(
+        [{"sf_name": "RPS Actuation", "sf_category": "trip_logic", "sf_id": "SF::RPS-A"}]
+    )
+    assert_approx(signal, 1.0, label="critical barrier signal")
+    print("  PASS test_barrier_signal_critical_keywords_returns_one")
+
+
+def test_barrier_signal_empty_returns_zero():
+    """Barrier-aware scoring: no safety-function linkage -> signal 0.0."""
+    e = make_engine()
+    signal = e._barrier_signal_from_safety_functions([])
+    assert_approx(signal, 0.0, label="empty barrier signal")
+    print("  PASS test_barrier_signal_empty_returns_zero")
+
+
+def test_risk_significance_critical_keywords_returns_one():
+    """§8.4: critical safety-function linkage should map to scalar 1.0."""
+    e = make_engine()
+    ctx = e._risk_significance_from_safety_functions(
+        affected_safety_functions=[
+            {"sf_name": "Reactor Protection", "sf_category": "reactor_protection", "sf_id": "SF::RPS"},
+        ],
+        barrier_signal=0.0,
+    )
+    assert ctx["tier"] == "critical"
+    assert_approx(float(ctx["scalar"]), 1.0, label="critical risk scalar")
+    print("  PASS test_risk_significance_critical_keywords_returns_one")
+
+
+def test_risk_significance_high_keywords_returns_high_scalar():
+    """§8.4: high-tier cooling functions should map near 0.8+."""
+    e = make_engine()
+    ctx = e._risk_significance_from_safety_functions(
+        affected_safety_functions=[
+            {"sf_name": "ECCS Train A", "sf_category": "emergency_core_cooling", "sf_id": "SF::ECCS-A"},
+        ],
+        barrier_signal=0.0,
+    )
+    assert ctx["tier"] == "high"
+    assert float(ctx["scalar"]) >= 0.8
+    print("  PASS test_risk_significance_high_keywords_returns_high_scalar")
+
+
+def test_governance_adjusts_with_risk_significance():
+    """§8.4: governance score should receive bounded risk-significance lift."""
+    e = make_engine()
+    adjusted, delta = e._apply_risk_significance_to_governance(
+        governance_score=0.50,
+        risk_significance_scalar=0.80,
+    )
+    assert_approx(delta, 0.16, label="governance risk delta")
+    assert_approx(adjusted, 0.66, label="governance adjusted")
+    print("  PASS test_governance_adjusts_with_risk_significance")
 
 
 def test_pre_evidence_threshold_defaults():
@@ -317,6 +378,11 @@ ALL_TESTS = [
     test_telemetry_anomaly_precedes_structural_score,
     test_weight_sum_constraint_raises_on_misconfiguration,
     test_authority_weights_constant_present,
+    test_barrier_signal_critical_keywords_returns_one,
+    test_barrier_signal_empty_returns_zero,
+    test_risk_significance_critical_keywords_returns_one,
+    test_risk_significance_high_keywords_returns_high_scalar,
+    test_governance_adjusts_with_risk_significance,
 ]
 
 

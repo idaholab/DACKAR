@@ -10,7 +10,6 @@ _RCA_ROOT = Path(__file__).resolve().parent.parent
 if str(_RCA_ROOT) not in sys.path:
     sys.path.insert(0, str(_RCA_ROOT))
 
-import pytest
 from cmms_integration.cmms_adapter import MockCMMSAdapter, NoOpCMMSAdapter
 from cmms_integration.cmms_context_builder import (
     CMMSContextBuilder,
@@ -470,6 +469,40 @@ class TestGetChromaDocuments:
         ctx = CMMSContextBuilder(NoOpCMMSAdapter()).build(_event(), _kg_context(), run_id="run-001")
         docs = CMMSContextBuilder(NoOpCMMSAdapter()).get_chroma_documents(ctx)
         assert docs == []
+
+    def test_path_a_metadata_includes_doc_identity_and_asset(self):
+        cr = _make_cr(cr_id="CR-42", long_text="Structured CR narrative.")
+        adapter = MockCMMSAdapter(cr_records=[cr])
+        ctx = CMMSContextBuilder(adapter).build(_event(asset_id="PUMP-77"), _kg_context(), run_id="run-001")
+        docs = CMMSContextBuilder(adapter).get_chroma_documents(ctx)
+        assert docs
+        meta = docs[0]["metadata"]
+        assert meta["ingestion_path"] == "path_a_structured"
+        assert meta["doc_type"] == "CR"
+        assert meta["doc_id"] == "CMMS::CR::CR-42"
+        assert meta["asset_id"] == "PUMP-77"
+
+    def test_path_a_structured_fields_are_flattened(self):
+        cr = _make_cr(
+            cr_id="CR-77",
+            long_text="Pump degraded due to lube starvation.",
+        )
+        cr["condition_assessment"] = {
+            "as_found_condition": "DEGRADED",
+            "as_left_condition": "ACCEPTABLE",
+        }
+        cr["failure_mode_refs"] = [{"fm_id": "FM::LUBE-LOSS"}]
+        cr["extracted_causal_statements"] = [
+            {"cause_text": "loss of lubrication", "connector": "caused", "effect_text": "bearing wear"}
+        ]
+        adapter = MockCMMSAdapter(cr_records=[cr])
+        ctx = CMMSContextBuilder(adapter).build(_event(), _kg_context(), run_id="run-001")
+        docs = CMMSContextBuilder(adapter).get_chroma_documents(ctx)
+        meta = docs[0]["metadata"]
+        assert meta["ca_as_found_condition"] == "degraded"
+        assert meta["ca_as_left_condition"] == "acceptable"
+        assert "FM::LUBE-LOSS" in (meta.get("failure_mode_refs") or [])
+        assert "loss of lubrication caused bearing wear" in (meta.get("causal_statements_text") or "")
 
 
 # ---------------------------------------------------------------------------

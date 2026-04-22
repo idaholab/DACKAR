@@ -87,6 +87,7 @@ class EvidenceRetrieverConfig:
     score_threshold: float = 0.0
     score_metric: str = "kg_guided_semantic_relevance"
     contradiction_cues: Optional[List[str]] = None
+    structural_contradiction_cues: Optional[List[str]] = None
     support_cues: Optional[List[str]] = None
     contextual_cues: Optional[List[str]] = None
     doc_type_priority: Optional[Dict[str, float]] = None
@@ -115,6 +116,14 @@ class EvidenceRetrieverConfig:
                 "no abnormality",
                 "failed to reproduce",
                 "normal condition",
+            ]
+        if self.structural_contradiction_cues is None:
+            self.structural_contradiction_cues = [
+                "root cause",
+                "caused by",
+                "resulted in",
+                "determined to be",
+                "confirmed as",
             ]
         if self.support_cues is None:
             self.support_cues = [
@@ -258,6 +267,16 @@ class ChromaEvidenceRetriever:
                 for q in planned_queries
             )
         )
+        component_filter_mode = self._component_filter_mode(
+            merged_hits=merged,
+            component_ids_requested=component_ids_requested,
+        )
+
+        pipeline_health = self._build_pipeline_health(
+            planned_queries=planned_queries,
+            merged_hits=merged,
+            retrieval_mode=retrieval_mode,
+        )
 
         return {
             "bundle_id": f"EVB::{run_context.get('run_id')}::{event.get('event_id') or event.get('id')}",
@@ -281,6 +300,7 @@ class ChromaEvidenceRetriever:
                 "doc_ids": doc_ids,
                 "doc_type": included_doc_types,
             },
+            "pipeline_health": pipeline_health,
             "results": merged[: self.config.top_k_total],
             "provenance": {
                 "retriever": "ChromaEvidenceRetriever",
@@ -293,11 +313,29 @@ class ChromaEvidenceRetriever:
                     "BM25 unavailable — dense-only retrieval active; keyword precision reduced."
                     if retrieval_mode == "dense_only" else None
                 ),
-                "component_filter_mode": (
-                    "post_filter" if component_ids_requested else "none"
-                ),
+                "component_filter_mode": component_filter_mode,
             },
         }
+
+    @staticmethod
+    def _component_filter_mode(
+        *,
+        merged_hits: Sequence[JsonDict],
+        component_ids_requested: bool,
+    ) -> str:
+        if not component_ids_requested:
+            return "none"
+        strategies = set()
+        for hit in merged_hits:
+            vec_meta = (hit.get("metadata") or {}).get("_vector_metadata") or {}
+            strategy = str(vec_meta.get("_component_filter_strategy") or "").strip().lower()
+            if strategy:
+                strategies.add(strategy)
+        if "legacy_post_filter" in strategies:
+            return "index_filter_with_legacy_post_filter"
+        if "index_filter" in strategies:
+            return "index_filter"
+        return "post_filter"
 
     def _build_queries(
         self,
@@ -320,6 +358,7 @@ class ChromaEvidenceRetriever:
             cause_label = cand.get("cause_label")
             if not cause_label:
                 continue
+            candidate_component_ids = self._candidate_component_ids(cand, kg_context)
 
             candidate_terms = [asset_id, cause_label]
             if cand.get("cause_node_id"):
@@ -336,6 +375,7 @@ class ChromaEvidenceRetriever:
                     "candidate_id": cand.get("candidate_id"),
                     "cause_label": cause_label,
                     "hypothesis_type": cand.get("hypothesis_type"),
+                    "candidate_component_ids": candidate_component_ids,
                     "query_intent": "candidate_support_check",
                 }
             )
@@ -350,6 +390,7 @@ class ChromaEvidenceRetriever:
                     "candidate_id": cand.get("candidate_id"),
                     "cause_label": cause_label,
                     "hypothesis_type": cand.get("hypothesis_type"),
+                    "candidate_component_ids": candidate_component_ids,
                     "query_intent": "candidate_contradiction_check",
                 }
             )
@@ -373,6 +414,30 @@ class ChromaEvidenceRetriever:
                     "weight": 0.85,
                     "doc_types": ["CR", "WO", "SOP", "FMEA", "MANUAL"],
                     "query_intent": "component_context",
+                }
+            )
+
+        # Components surfaced as out-of-boundary anomalies should get targeted
+        # retrieval even when they are weakly represented (or absent) in KG paths.
+        for oob in (kg_context.get("out_of_boundary_anomalies") or []):
+            if not isinstance(oob, dict):
+                continue
+            comp = str(oob.get("component_id") or oob.get("sensor_id") or oob.get("tag_id") or "").strip()
+            label = str(oob.get("component_label") or oob.get("name") or "").strip()
+            if not comp and not label:
+                continue
+            terms = [asset_id]
+            if comp:
+                terms.append(comp)
+            if label:
+                terms.append(label)
+            query_plans.append(
+                {
+                    "query_text": " ".join(t for t in terms if t),
+                    "query_type": "out_of_boundary",
+                    "weight": 0.75,
+                    "doc_types": ["CR", "WO", "ECA", "RCA", "SOP", "FMEA", "MANUAL"],
+                    "query_intent": "kg_gap_investigation",
                 }
             )
 
@@ -413,6 +478,31 @@ class ChromaEvidenceRetriever:
             )
 
         return query_plans
+
+    @staticmethod
+    def _candidate_component_ids(candidate: JsonDict, kg_context: JsonDict) -> List[str]:
+        component_ids: List[str] = []
+        node_ids = {
+            str(n.get("node_id"))
+            for n in (candidate.get("kg_path") or [])
+            if isinstance(n, dict) and n.get("node_id")
+        }
+        known_components = {
+            str(c.get("component_id"))
+            for c in (kg_context.get("components") or [])
+            if isinstance(c, dict) and c.get("component_id")
+        }
+        component_ids.extend(sorted(node_ids.intersection(known_components)))
+        if candidate.get("hypothesis_type") == "failure_mode":
+            fm_id = str(candidate.get("cause_node_id") or "")
+            if fm_id:
+                for fm in (kg_context.get("failure_modes") or []):
+                    if not isinstance(fm, dict):
+                        continue
+                    if str(fm.get("fm_id") or "") == fm_id and fm.get("component_id"):
+                        component_ids.append(str(fm.get("component_id")))
+        deduped = sorted(set([c for c in component_ids if c]))
+        return deduped[:8]
 
     def _build_operational_context_query(
         self,
@@ -483,7 +573,9 @@ class ChromaEvidenceRetriever:
                     filters["doc_ids"] = doc_ids
 
         if not is_oe_query and self.config.include_component_filter:
-            component_ids = [c["component_id"] for c in kg_context.get("components", []) if c.get("component_id")]
+            component_ids = list(query_plan.get("candidate_component_ids") or [])
+            if not component_ids:
+                component_ids = [c["component_id"] for c in kg_context.get("components", []) if c.get("component_id")]
             if component_ids:
                 filters["component_ids"] = component_ids
 
@@ -561,6 +653,7 @@ class ChromaEvidenceRetriever:
         support_cue_hit = _contains_any(snippet, self.config.support_cues or [])
         contradiction_cue_hit = _contains_any(snippet, self.config.contradiction_cues or [])
         contextual_cue_hit = _contains_any(snippet, self.config.contextual_cues or [])
+        structural_cue_hit = _contains_any(snippet, self.config.structural_contradiction_cues or [])
 
         # Unambiguous causal connectors: the snippet explicitly attributes the
         # event to this candidate's failure mode, not just mentions a related topic.
@@ -576,6 +669,7 @@ class ChromaEvidenceRetriever:
         support_score = 0.0
         contradiction_score = 0.0
         context_score = 0.0
+        structural_contradiction_score = 0.0
 
         if semantic_relevance > 0:
             support_score += 0.45 * semantic_relevance
@@ -604,6 +698,41 @@ class ChromaEvidenceRetriever:
             contradiction_score += 0.15
         else:
             context_score += 0.10
+
+        # Structural contradiction (E4): explicit alternate causal attribution
+        # should weigh more than pure absence-of-evidence wording.
+        structured_causal_text = _norm_text(
+            " ".join(
+                [
+                    str(meta.get("eca_causal_factors_text") or ""),
+                    str(meta.get("causal_statements_text") or ""),
+                    str(meta.get("failure_mode_refs_text") or ""),
+                ]
+            )
+        )
+        failure_mode_refs = meta.get("failure_mode_refs") or []
+        if isinstance(failure_mode_refs, str):
+            failure_mode_refs = _tokenize(failure_mode_refs.replace("|", " "))
+        elif isinstance(failure_mode_refs, list):
+            failure_mode_refs = [str(x).strip() for x in failure_mode_refs if str(x).strip()]
+        else:
+            failure_mode_refs = []
+        structural_alignment = max(
+            candidate_term_overlap,
+            _overlap_score(candidate_terms, _tokenize(structured_causal_text)),
+            _overlap_score(candidate_terms, _tokenize(" ".join(failure_mode_refs))),
+        )
+        explicit_structured_match = bool(structural_alignment >= 0.35)
+        structural_contradiction_hit = bool(
+            query_type == "candidate_contradiction"
+            and structural_cue_hit
+            and semantic_relevance < 0.25
+            and structural_alignment < 0.20
+            and not explicit_structured_match
+        )
+        if structural_contradiction_hit:
+            structural_contradiction_score = 0.35
+            contradiction_score += structural_contradiction_score
 
         support_score *= authority_weight * float(extraction_quality) * epistemic_weight
         contradiction_score *= authority_weight * float(extraction_quality) * epistemic_weight
@@ -711,6 +840,8 @@ class ChromaEvidenceRetriever:
             "epistemic_weight": round(epistemic_weight, 6),
             "evidence_score": evidence_score,
             "evidence_role_confidence": evidence_score,
+            "structural_contradiction_hit": structural_contradiction_hit,
+            "structural_contradiction_score": round(structural_contradiction_score, 6),
             # spaCy annotation signals — None when annotator not configured
             "spacy_conjecture_fraction": round(conjecture_fraction, 4),
             "spacy_temporal_relation": (
@@ -828,6 +959,8 @@ class ChromaEvidenceRetriever:
                     "contradicting_count": 0,
                     "contextual_count": 0,
                     "best_support_score": 0.0,
+                    "best_source_tier": None,
+                    "_best_support_tier_score": -1.0,
                     "best_contradiction_score": 0.0,
                     "best_context_score": 0.0,
                     "supporting_snippet_ids": [],
@@ -850,7 +983,12 @@ class ChromaEvidenceRetriever:
 
             if role == "supporting":
                 group["supporting_count"] += 1
-                group["best_support_score"] = max(group["best_support_score"], float(h.get("support_score", 0.0)))
+                support_score = float(h.get("support_score", 0.0))
+                group["best_support_score"] = max(group["best_support_score"], support_score)
+                if support_score >= float(group.get("_best_support_tier_score", -1.0)):
+                    tier = meta.get("source_tier")
+                    group["best_source_tier"] = str(tier) if tier else None
+                    group["_best_support_tier_score"] = support_score
                 if snippet_id:
                     group["supporting_snippet_ids"].append(snippet_id)
             elif role == "contradicting":
@@ -915,6 +1053,7 @@ class ChromaEvidenceRetriever:
                 group["lag_is_approximate"] = False
 
             group.pop("_measurements", None)
+            group.pop("_best_support_tier_score", None)
 
             # Deduplicate and materialise NER entity lists
             def _dedup(lst):
@@ -938,6 +1077,27 @@ class ChromaEvidenceRetriever:
             )
         )
         return out
+
+    @staticmethod
+    def _build_pipeline_health(
+        *,
+        planned_queries: Sequence[JsonDict],
+        merged_hits: Sequence[JsonDict],
+        retrieval_mode: str,
+    ) -> JsonDict:
+        status = "green"
+        issues: List[str] = []
+        if not planned_queries:
+            status = "red"
+            issues.append("No retrieval queries were generated.")
+        if not merged_hits:
+            status = "red"
+            issues.append("No evidence hits were retrieved.")
+        if retrieval_mode == "dense_only":
+            if status != "red":
+                status = "yellow"
+            issues.append("BM25 unavailable; retrieval degraded to dense-only mode.")
+        return {"status": status, "issues": issues}
     
     def _dedupe_and_rank(self, hits: Sequence[JsonDict]) -> List[JsonDict]:
         # Candidate-specific hits (linked_candidate_id set) are deduplicated per
@@ -984,6 +1144,39 @@ class InMemoryEvidenceStore:
     def add(self, row: JsonDict) -> None:
         self.rows.append(row)
 
+    def add_documents(self, docs: List[JsonDict]) -> int:
+        """
+        Accept CMMS-style Chroma document payloads and normalize into row format.
+        """
+        added = 0
+        for idx, doc in enumerate(docs or [], start=1):
+            if not isinstance(doc, dict):
+                continue
+            text = str(doc.get("text") or "").strip()
+            meta = dict(doc.get("metadata") or {})
+            if not text:
+                continue
+            doc_id = str(meta.get("doc_id") or "").strip()
+            if not doc_id:
+                # Keep deterministic IDs for ad-hoc docs that don't provide one.
+                doc_id = f"DOC::INMEM::{len(self.rows) + idx}"
+                meta["doc_id"] = doc_id
+            snippet_id = str(
+                meta.get("snippet_id")
+                or meta.get("record_id")
+                or f"{doc_id}::chunk_0"
+            )
+            row = {
+                "snippet_id": snippet_id,
+                "doc_id": doc_id,
+                "section": str(meta.get("section") or "cmms_context"),
+                "snippet": text,
+                "metadata": meta,
+            }
+            self.rows.append(row)
+            added += 1
+        return added
+
     def query(
         self,
         query_text: str,
@@ -1006,6 +1199,16 @@ class InMemoryEvidenceStore:
                 if "component_ids" in filters:
                     component_val = meta.get("component_id")
                     component_vals = meta.get("component_ids", [])
+                    if isinstance(component_vals, str):
+                        try:
+                            import json as _json
+                            decoded = _json.loads(component_vals)
+                            if isinstance(decoded, list):
+                                component_vals = decoded
+                            else:
+                                component_vals = []
+                        except Exception:
+                            component_vals = []
                     ok = (component_val in filters["component_ids"]) or any(
                         c in filters["component_ids"] for c in component_vals
                     )

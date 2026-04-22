@@ -198,6 +198,63 @@ Combines all sub-module outputs into the `pm_compliance.json` artifact.
 
 ---
 
-*End of architecture notes — April 21, 2026*
-*Status: Design only — not yet implemented*
-*Dependencies before implementation: KG PM-to-FM linkage tags; CMMS export format specification*
+## 9. Implementation (in progress, April 2026)
+
+### 9.1 Code location
+
+| Path | Role |
+|------|------|
+| `DACKAR/src/dackar/RCA/pm_compliance/` | Python package: loaders, verifiers, scope/effectiveness/currency helpers, **aggregator** |
+| `DACKAR/src/dackar/RCA/schemas/pm_compliance.json` | **Canonical** JSON schema for the pipeline (extended with optional fields from §5: `event_id`, `assessment_date`, `look_back_window_days`, `fmea_pm_linkage_available`, `data_quality_notes`, `components[]`, and summary roll-ups; `wo_id` on each `checks[]` row for Stage D traceability) |
+| `DACKAR/src/dackar/RCA/unit_tests/test_pm_compliance_aggregator.py` | Schema smoke tests and verifier edge cases (run: `python test_pm_compliance_aggregator.py` from `unit_tests/` with `RCA` on `sys.path`) |
+
+**Public entry point:** `from pm_compliance import build_pm_compliance, PMComplianceConfig` (add `src/dackar/RCA` to `PYTHONPATH` or run from a context that already loads RCA the same way as other unit tests).
+
+### 9.2 Schema alignment (§5 vs. pipeline)
+
+The **original** pipeline and `causality_engine_v32` read **`checks[]`** (with `status` `pass` \| `fail` \| `unknown`, `overdue_by_days`, optional `component_id` / `applicable_fm_ids`). The narrative §5 schema (nested `components[].pm_tasks`) is represented as: **`checks[]` + optional `components[]` summary** so one artifact stays **schema-valid** and **Stage D compatible**. The aggregator fills `components[]` with scope/degradation fields when data exists.
+
+### 9.3 Phase 1 (current) behaviour
+
+- **Input:** `event` (at least `asset_id`, `timestamp_start`), optional `kg_context`, optional `export_rows` (pre-parsed task rows: `check_id`, `check_type`, dates, `applicable_fm_ids`, etc.).
+- **PMScheduleLoader** filters rows by `asset_id` and optional `component_id` list from the KG.
+- **PMExecutionVerifier** derives `status` / `overdue_by_days` from `next_due_date` + `event` time, or passes through explicit `compliance_status` when the export already computed it.
+- **PMScopeAnalyzer** sets `fmea_pm_linkage_available` when the KG exposes PM↔FM fields on failure modes (see `preventing_pm_task_ids` / `detecting_pm_task_ids` / `pm_task_ids`); otherwise scope gap lists are **advisory/empty** until linkage exists.
+- **Not yet done:** live CMMS API in this package (reuse / extend `cmms_integration` adapters), orchestrator `run()` hook to call `build_pm_compliance` as “Stage 5A”, NER for as-found vocabulary, Stage H `pm_corrective` action synthesis from `scope_gaps` (orchestrator/synthesizer change).
+
+### 9.4 Dependencies still external
+
+- **CMMS export column mapping** — implement a dedicated parser that produces `export_rows` for `build_pm_compliance`.
+- **KG PM↔FM tags** — populate Neo4j / `kg_context.failure_modes[]` with the field names the scope analyzer looks for, or expand the mapper when your graph model uses different property names.
+
+### 9.5 Alignment with §3–§7 (code vs. spec)
+
+| Spec item | In code? | Notes |
+|-----------|----------|--------|
+| **§3.1** PMScheduleLoader, calendar vs. operating hours | **Partial** | Loader filters `export_rows` by `asset_id` / components. Operating-hour / CBM tasks get a **data_quality_note** if `frequency_type=operating_hours` and no `operating_hours_at_event`; `not_applicable` status is supported. |
+| **§3.2** Last WO / `last_pm_date`, overdue, `missed_cycles` | **Partial** | Derives from **export** `next_due_date` + event time (or `compliance_status` overrides). Does **not** yet query the most recent **closed** WO from CMMS by task code. |
+| **§3.2** As-found “degraded” edge case | **Not yet** | No extra penalty beyond what appears in `details` + effectiveness heuristics. |
+| **§3.3** Scope, `fmea_pm_linkage_available` | **Aligned** | `True` only when the KG has explicit PM id lists on failure modes (`preventing_pm_task_ids`, `detecting_pm_task_ids`, `pm_task_ids`). **False** if coverage comes only from export `applicable_fm_ids` (advisory; note added). **Free-text** PM↔FM match is **not** implemented (per §3.3, optional / brittle). |
+| **§3.3** `coverage_type` per task | **Partial** | Pass-through on each `pm_tasks[]` row if `export_rows` set `coverage_type`; else `none`. |
+| **§3.4** `pm_found_defect_rate`, `last_as_found` | **Partial** | `last_as_found` in `pm_tasks` from `as_found_last` / `as_found_condition` on the export row. Defect **rate** not yet in `summary` (add when controlled vocabulary exists). |
+| **§3.5** `pm_frequency_concern` | **Yes** | Uses `PMCurrencyChecker.frequency_concern` with `kg_context.failure_modes[].mean_time_between_events_days` and `export_rows[*].frequency_days` + `applicable_fm_ids`. |
+| **§3.5–3.6** `maintenance_induced_risk` / `has_scope_gaps_for_primary_fm` | **Partial** | Matches §3.6 when **`primary_fm_id=`** is passed to `build_pm_compliance` (e.g. from the eventual primary candidate after a first pass, or a second run). **Without** `primary_fm_id`, heuristics use only gap + overdue. |
+| **§5** `components[].pm_tasks` + `summary` roll-ups | **Yes** | `pm_tasks` populated from export rows; pipeline **`checks[]`** + optional **`components[]`**; JSON Schema remains canonical for validation. |
+| **§4 / Stage H** `pm_corrective` + priority | **Not in module** | Still requires synthesizer / orchestrator to consume `summary` + `components`. |
+
+### 9.6 Unit tests
+
+`unit_tests/test_pm_compliance_aggregator.py` (run as `python test_pm_compliance_aggregator.py` from `RCA/unit_tests/`) includes:
+
+- JSON Schema validation for the built artifact (Draft 7 + `date-time` formats).
+- Overdue / fail paths and `overdue_items`.
+- **`fmea_pm_linkage_available` is False** when only export `applicable_fm_ids` is present (no KG tags).
+- **`not_applicable`** → `checks[].status=pass` (governance-neutral).
+- **`_rollup_risk`** primary + gap + overdue → `high` / `medium`.
+- **`RuleBasedCausalityEngineV32._governance_details`** accepts the built `pm` dict (Stage D path).
+
+---
+
+*End of architecture notes — April 21, 2026*  
+*Implementation status: **Phase 1 package in `RCA/pm_compliance/`**; orchestrator integration pending*  
+*Dependencies: KG PM-to-FM linkage (for full scope analysis); CMMS export format spec (for row parser)*

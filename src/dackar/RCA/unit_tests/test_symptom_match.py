@@ -18,6 +18,8 @@ Key invariants:
  10. _dominant_telemetry_pattern: no signals → None
  11. _dominant_telemetry_pattern: "unknown" patterns excluded
  12. _dominant_telemetry_pattern: returns most frequent pattern
+ 13. Pattern aliases/format variants normalize to the same class
+ 14. Symptom type matching tolerates case and delimiter differences
 """
 import sys
 from pathlib import Path
@@ -228,6 +230,36 @@ def test_no_event_types_but_fm_has_types():
     print("  PASS test_no_event_types_but_fm_has_types")
 
 
+def test_pattern_alias_normalization_matches():
+    """
+    FM pattern 'gradual_drift' and telemetry pattern 'drift' should match after
+    normalization/canonicalization.
+    """
+    e = make_engine()
+    score = e._symptom_match_score(
+        make_event(),
+        make_fm(expected_anomaly_pattern="gradual_drift"),
+        make_telemetry(signals=[make_signal_with_anomaly("S1", "drift")]),
+    )
+    assert_approx(score, 1.0, label="pattern alias normalization")
+    print("  PASS test_pattern_alias_normalization_matches")
+
+
+def test_symptom_type_case_and_delimiter_normalization():
+    """
+    expected_symptoms string with mixed delimiters/case should align with
+    event symptom_types after normalization.
+    """
+    e = make_engine()
+    score = e._symptom_match_score(
+        make_event(symptom_types=["DO Elevation", "BackPressure-Increase"]),
+        make_fm(expected_symptoms="do_elevation; backpressure increase"),
+        make_telemetry(),
+    )
+    assert score >= 0.95, f"normalized symptom type match should be high, got {score}"
+    print("  PASS test_symptom_type_case_and_delimiter_normalization")
+
+
 # ── _dominant_telemetry_pattern tests ─────────────────────────────────────
 
 def test_dominant_pattern_no_signals():
@@ -289,6 +321,8 @@ ALL_TESTS = [
     test_event_anomaly_pattern_fallback,
     test_expected_symptoms_string_fallback,
     test_no_event_types_but_fm_has_types,
+    test_pattern_alias_normalization_matches,
+    test_symptom_type_case_and_delimiter_normalization,
     test_dominant_pattern_no_signals,
     test_dominant_pattern_no_anomalies,
     test_dominant_pattern_single,

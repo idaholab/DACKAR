@@ -16,6 +16,7 @@ separately by the orchestrator, which has access to the evidence store.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -243,24 +244,34 @@ class CMMSContextBuilder:
         docs: List[JsonDict] = []
         run_id    = cmms_context.get("run_id", "")
         event_id  = cmms_context.get("event_id", "")
+        asset_id  = cmms_context.get("asset_id", "")
 
         for rec in cmms_context.get("cr_records") or []:
             text = rec.get("long_text") or rec.get("short_description") or ""
             if not text.strip():
                 continue
+            cr_id = str(rec.get("cr_id") or "").strip()
+            doc_id = f"CMMS::CR::{cr_id}" if cr_id else ""
+            structured = self._extract_structured_fields(rec)
             docs.append({
                 "text": text,
                 "metadata": {
+                    "ingestion_path":      "path_a_structured",
                     "source":              "cmms_live",
                     "source_tier":         "plant_instance",
                     "record_type":         "cr",
+                    "doc_type":            "CR",
                     "run_id":              run_id,
                     "event_id":            event_id,
+                    "asset_id":            asset_id,
+                    "doc_id":              doc_id,
                     "cr_id":               rec.get("cr_id", ""),
                     "component_id":        rec.get("component_id"),
+                    "component_ids":       [rec.get("component_id")] if rec.get("component_id") else [],
                     "is_sister_equipment": rec.get("is_sister_equipment", False),
                     "days_before_event":   rec.get("days_before_event"),
                     "status":              rec.get("status", ""),
+                    **structured,
                 },
             })
 
@@ -268,23 +279,94 @@ class CMMSContextBuilder:
             text = rec.get("long_text") or rec.get("short_description") or ""
             if not text.strip():
                 continue
+            wo_id = str(rec.get("wo_id") or "").strip()
+            doc_id = f"CMMS::WO::{wo_id}" if wo_id else ""
+            structured = self._extract_structured_fields(rec)
             docs.append({
                 "text": text,
                 "metadata": {
+                    "ingestion_path":      "path_a_structured",
                     "source":              "cmms_live",
                     "source_tier":         "plant_instance",
                     "record_type":         "wo",
+                    "doc_type":            "WO",
                     "run_id":              run_id,
                     "event_id":            event_id,
+                    "asset_id":            asset_id,
+                    "doc_id":              doc_id,
                     "wo_id":               rec.get("wo_id", ""),
                     "component_id":        rec.get("component_id"),
+                    "component_ids":       [rec.get("component_id")] if rec.get("component_id") else [],
                     "is_sister_equipment": rec.get("is_sister_equipment", False),
                     "days_before_event":   rec.get("days_before_event"),
                     "status":              rec.get("status", ""),
+                    **structured,
                 },
             })
 
         return docs
+
+    @staticmethod
+    def _normalize_token(value: Any) -> str:
+        if value is None:
+            return ""
+        return " ".join(str(value).replace("_", " ").replace("-", " ").lower().split()).strip()
+
+    @classmethod
+    def _extract_structured_fields(cls, record: JsonDict) -> JsonDict:
+        """
+        Extract and flatten Path-A structured CMMS fields for retrieval metadata.
+        """
+        out: JsonDict = {}
+        condition = record.get("condition_assessment") or {}
+        if isinstance(condition, dict):
+            as_found = (
+                condition.get("as_found_condition")
+                or condition.get("as_found")
+                or condition.get("as_found_text")
+            )
+            as_left = (
+                condition.get("as_left_condition")
+                or condition.get("as_left")
+                or condition.get("as_left_text")
+            )
+            if as_found is not None:
+                out["ca_as_found_condition"] = cls._normalize_token(as_found)
+            if as_left is not None:
+                out["ca_as_left_condition"] = cls._normalize_token(as_left)
+
+        refs = record.get("failure_mode_refs") or []
+        ref_tokens: List[str] = []
+        if isinstance(refs, list):
+            for row in refs:
+                if isinstance(row, dict):
+                    token = row.get("fm_id") or row.get("failure_mode_id") or row.get("label")
+                    if token:
+                        ref_tokens.append(str(token).strip())
+                elif row:
+                    ref_tokens.append(str(row).strip())
+        if ref_tokens:
+            deduped = sorted({x for x in ref_tokens if x})
+            out["failure_mode_refs"] = deduped
+            out["failure_mode_refs_text"] = " | ".join(deduped)
+
+        statements = record.get("extracted_causal_statements") or []
+        structured_lines: List[str] = []
+        if isinstance(statements, list):
+            for row in statements[:8]:
+                if not isinstance(row, dict):
+                    continue
+                cause = str(row.get("cause_text") or "").strip()
+                connector = str(row.get("connector") or "").strip()
+                effect = str(row.get("effect_text") or "").strip()
+                sentence = str(row.get("sentence_text") or row.get("sentence") or "").strip()
+                text = sentence or " ".join(x for x in [cause, connector, effect] if x).strip()
+                if text:
+                    structured_lines.append(re.sub(r"\s+", " ", text))
+        if structured_lines:
+            out["causal_statements_text"] = " | ".join(structured_lines)
+
+        return out
 
     # ------------------------------------------------------------------
     # Internal helpers

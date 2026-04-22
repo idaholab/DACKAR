@@ -267,6 +267,25 @@ def test_temporal_relation_backfill():
     print("  PASS test_temporal_relation_backfill")
 
 
+def test_refine_preserves_risk_adjusted_governance():
+    """§8.4: Stage F should keep governance adjusted by risk-significance scalar."""
+    e = make_engine()
+    candidates = make_candidates("CAND-A", prior_evidence=0.40)
+    candidates["candidates"][0]["scores"]["governance"] = 0.50
+    candidates["candidates"][0]["scores"]["governance_base"] = 0.50
+    candidates["candidates"][0]["scores"]["risk_significance_scalar"] = 0.80
+    result = e.refine_with_evidence(
+        candidates,
+        make_evidence_bundle([make_summary("CAND-A", best_support_score=0.80, hit_count=3)]),
+    )
+    c = get_candidate(result, "CAND-A")
+    assert c is not None
+    assert_approx(float(c["scores"]["governance_base"]), 0.50, label="governance_base")
+    assert_approx(float(c["scores"]["governance_risk_delta"]), 0.16, tol=0.02, label="governance_risk_delta")
+    assert_approx(float(c["scores"]["governance"]), 0.66, tol=0.02, label="governance")
+    print("  PASS test_refine_preserves_risk_adjusted_governance")
+
+
 # ── _evidence_posture classification tests ────────────────────────────────────
 
 def test_posture_no_data():
@@ -334,6 +353,7 @@ ALL_TESTS = [
     test_evidence_gap_false_when_hits_present,
     test_two_candidates_refined_independently,
     test_temporal_relation_backfill,
+    test_refine_preserves_risk_adjusted_governance,
     test_posture_no_data,
     test_posture_contradicted,
     test_posture_supported,

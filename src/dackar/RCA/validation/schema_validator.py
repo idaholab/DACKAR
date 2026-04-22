@@ -80,12 +80,14 @@ class RCAArtifactValidator:
         "causality_candidates",
         "evidence_bundle",
         "ishikawa_matrix",
+        "barrier_analysis",
         "rca_card",
         "operational_context",
         "pm_compliance",
         "cmms_context",
         "run_context",
         "run_manifest",
+        "reentry_execution",
         "document",
         "processed_text_record",
     }
@@ -1338,6 +1340,33 @@ class RCAArtifactValidator:
                             f"Alternative {idx} candidate_id '{alt_id}' is not present in causality_candidates."
                         ),
                         path=["alternatives", str(idx), "candidate_id"],
+                    ))
+
+            for idx, cc in enumerate(rca_card.get("contributing_causes") or []):
+                if not isinstance(cc, dict):
+                    continue
+                cc_id = cc.get("candidate_id")
+                if cc_id is None:
+                    continue
+                if cc_id == primary_candidate_id:
+                    issues.append(self._issue(
+                        artifact="rca_card",
+                        severity=self._sev("warning"),
+                        code="contributing_cause_duplicates_primary",
+                        message=(
+                            f"contributing_causes[{idx}] repeats primary candidate_id '{cc_id}'."
+                        ),
+                        path=["contributing_causes", str(idx), "candidate_id"],
+                    ))
+                elif cc_id not in candidate_ids:
+                    issues.append(self._issue(
+                        artifact="rca_card",
+                        severity=self._sev("warning"),
+                        code="contributing_cause_not_in_candidates",
+                        message=(
+                            f"contributing_causes[{idx}].candidate_id '{cc_id}' is not present in causality_candidates."
+                        ),
+                        path=["contributing_causes", str(idx), "candidate_id"],
                     ))
 
         if evidence:

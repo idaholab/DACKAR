@@ -4,7 +4,7 @@
   "description": "Run manifest assembled at Stage G. Summarises pipeline configuration, artifact inventory, primary conclusion, and review hooks for the completed run.",
   "type": "object",
   "additionalProperties": true,
-  "required": ["run_id", "completed_at", "input_refs", "pipeline_config", "artifacts", "review_hooks"],
+  "required": ["run_id", "completed_at", "input_refs", "pipeline_config", "artifacts", "review_hooks", "pipeline_health", "ap913_completeness"],
 
   "properties": {
     "run_id":       { "type": "string", "description": "Matches the run_context.run_id for this run." },
@@ -48,6 +48,15 @@
               "evidence_posture_post":{ "type": ["string", "null"] }
             }
           }
+        },
+        "reentry_execution": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "auto_reentry_enabled": { "type": "boolean" },
+            "attempt_count": { "type": "integer", "minimum": 0 },
+            "attempts": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+          }
         }
       }
     },
@@ -63,6 +72,18 @@
         "causality_candidates_pre_refine": { "type": "object" },
         "evidence_bundle":              { "type": "object" },
         "ishikawa_matrix":              { "type": "object" },
+        "barrier_analysis":             { "type": "object" },
+        "reentry_execution":            { "type": "object" },
+        "workflow_dispatch": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "present": { "type": "boolean" },
+            "dispatched": { "type": "boolean" },
+            "target_queue": { "type": ["string", "null"] },
+            "transport_status": { "type": ["string", "null"] }
+          }
+        },
         "cmms_context":                 { "type": "object" },
         "rca_card":                     { "type": "object" }
       }
@@ -91,7 +112,83 @@
         "next_step": {
           "type": "string",
           "enum": ["writeback", "analyst_review", "validation_remediation"]
+        },
+        "degraded_run": { "type": "boolean" },
+        "degraded_reasons": { "type": "array", "items": { "type": "string" } },
+        "reentry_hook": { "type": "object", "additionalProperties": true },
+        "workflow_dispatch": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "dispatch_enabled": { "type": "boolean" },
+            "dispatched": { "type": "boolean" },
+            "target_queue": { "type": ["string", "null"] },
+            "dispatch_ref": { "type": ["string", "null"] },
+            "transport_status": { "type": ["string", "null"] },
+            "transport_ref": { "type": ["string", "null"] }
+          }
+        },
+        "hard_abort_on_kg_red_state": { "type": "boolean" },
+        "hard_abort_required": { "type": "boolean" }
+      }
+    },
+    "pipeline_health": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "issues"],
+      "properties": {
+        "status": { "type": "string", "enum": ["green", "yellow", "red"] },
+        "issues": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "stage_health": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "kg_governance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "issues", "failure_mode_count", "min_failure_modes_required"],
+      "properties": {
+        "status": { "type": "string", "enum": ["green", "yellow", "red"] },
+        "issues": { "type": "array", "items": { "type": "string" } },
+        "failure_mode_count": { "type": "integer", "minimum": 0 },
+        "min_failure_modes_required": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "barrier_analysis": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["summary"],
+      "properties": {
+        "summary": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["overall_status", "barrier_count", "degraded_barrier_count"],
+          "properties": {
+            "overall_status": { "type": "string", "enum": ["green", "yellow", "red"] },
+            "barrier_count": { "type": "integer", "minimum": 0 },
+            "degraded_barrier_count": { "type": "integer", "minimum": 0 }
+          }
         }
+      }
+    },
+    "ap913_completeness": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "root_cause_identified",
+        "direct_cause_identified",
+        "contributing_causes_identified",
+        "extent_of_condition_assessed",
+        "effectiveness_review_defined"
+      ],
+      "properties": {
+        "root_cause_identified": { "type": "boolean" },
+        "direct_cause_identified": { "type": "boolean" },
+        "contributing_causes_identified": { "type": "boolean" },
+        "extent_of_condition_assessed": { "type": "boolean" },
+        "effectiveness_review_defined": { "type": "boolean" }
       }
     },
 

@@ -251,6 +251,114 @@ def test_evidence_ids_are_sequential():
     print("  PASS test_evidence_ids_are_sequential")
 
 
+def test_fallback_evidence_balances_primary_and_alternative():
+    """Fallback evidence block should include alternatives when candidate-linked evidence exists."""
+    s = make_synthesizer()
+    c0 = make_candidate("FM::PRIMARY", "primary cause", 0.82)
+    c1 = make_candidate("FM::ALT-1", "alt cause", 0.74)
+    ev_primary = make_evidence_item("SNIP-P", "DOC-P", linked_candidate_id="FM::PRIMARY", support_role="supporting")
+    ev_alt = make_evidence_item("SNIP-A", "DOC-A", linked_candidate_id="FM::ALT-1", support_role="supporting")
+    ev_context = make_evidence_item("SNIP-C", "DOC-C", linked_candidate_id=None, support_role="contextual")
+    card = s._fallback_card(
+        rca_id="RCA-001",
+        event=make_event(),
+        selected_candidates=[c0, c1],
+        selected_evidence=[ev_primary, ev_context, ev_alt],
+        causality_candidates=make_causality_candidates(c0, c1),
+        evidence_bundle=make_evidence_bundle(),
+        run_context=make_run_context(),
+        prior_errors=[],
+    )
+    linked_ids = {row.get("linked_candidate_id") for row in (card.get("evidence") or []) if row.get("linked_candidate_id")}
+    assert "FM::PRIMARY" in linked_ids
+    assert "FM::ALT-1" in linked_ids
+    print("  PASS test_fallback_evidence_balances_primary_and_alternative")
+
+
+def test_safety_postprocessing_adds_flag_and_escalates_priority():
+    """C4/C5: safety-significant primary adds analyst flag and escalates action priority."""
+    s = make_synthesizer()
+    card = {
+        "primary_hypothesis": {"candidate_id": "FM::PRIMARY"},
+        "executive_summary": {"analyst_attention_flags": []},
+        "recommended_actions": [{"action_id": "A1", "action_type": "monitoring", "description": "x", "priority": "medium"}],
+    }
+    causality = {
+        "candidates": [
+            {
+                "candidate_id": "FM::PRIMARY",
+                "affected_safety_functions": [{"sf_name": "Reactor Protection", "sf_category": "reactor_protection"}],
+            }
+        ]
+    }
+    s._apply_safety_significance_postprocessing(card, causality)
+    assert card["recommended_actions"][0]["priority"] == "critical"
+    flags = card["executive_summary"]["analyst_attention_flags"]
+    assert any("safety functions" in f.lower() for f in flags)
+    print("  PASS test_safety_postprocessing_adds_flag_and_escalates_priority")
+
+
+def test_risk_postprocessing_adds_visibility_to_summary_and_primary():
+    """Follow-up: risk scalar should surface in analyst flags and primary text."""
+    s = make_synthesizer()
+    card = {
+        "primary_hypothesis": {"candidate_id": "FM::PRIMARY", "why_primary": [], "uncertainties": []},
+        "executive_summary": {"analyst_attention_flags": []},
+        "recommended_actions": [{"action_id": "A1", "action_type": "monitoring", "description": "x", "priority": "low"}],
+    }
+    causality = {
+        "candidates": [
+            {
+                "candidate_id": "FM::PRIMARY",
+                "scores": {"risk_significance_scalar": 0.8, "risk_significance_tier": "high"},
+            }
+        ]
+    }
+    s._apply_safety_significance_postprocessing(card, causality)
+    flags = card["executive_summary"]["analyst_attention_flags"]
+    assert any("risk significance scalar" in f.lower() for f in flags)
+    assert any("risk significance assessment" in x.lower() for x in card["primary_hypothesis"]["why_primary"])
+    assert any("heuristic" in x.lower() for x in card["primary_hypothesis"]["uncertainties"])
+    assert card["recommended_actions"][0]["priority"] == "high"
+    print("  PASS test_risk_postprocessing_adds_visibility_to_summary_and_primary")
+
+
+def test_enforce_balanced_card_evidence_adds_missing_alternative_row():
+    s = make_synthesizer()
+    card = {
+        "primary_hypothesis": {"candidate_id": "FM::PRIMARY"},
+        "alternatives": [{"candidate_id": "FM::ALT-1"}],
+        "evidence": [
+            {
+                "evidence_id": "EV-001",
+                "source_type": "evidence_snippet",
+                "source_id": "SNIP-P",
+                "doc_id": "DOC-P",
+                "support_role": "supporting",
+                "linked_candidate_id": "FM::PRIMARY",
+                "summary": "Primary support",
+                "excerpt": "x",
+            }
+        ],
+    }
+    selected_candidates = [
+        make_candidate("FM::PRIMARY", "primary cause", 0.82),
+        make_candidate("FM::ALT-1", "alt cause", 0.70),
+    ]
+    evidence_pool = [
+        make_evidence_item("SNIP-A", "DOC-A", linked_candidate_id="FM::ALT-1", support_role="supporting"),
+    ]
+    s._enforce_balanced_card_evidence(
+        card=card,
+        selected_candidates=selected_candidates,
+        evidence_pool=evidence_pool,
+        max_rows=10,
+    )
+    linked_ids = {row.get("linked_candidate_id") for row in card.get("evidence", [])}
+    assert "FM::ALT-1" in linked_ids
+    print("  PASS test_enforce_balanced_card_evidence_adds_missing_alternative_row")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -261,6 +369,10 @@ ALL_TESTS = [
     test_evidence_linked_to_out_of_card_candidate_stripped,
     test_card_with_candidate_passes_validation,
     test_evidence_ids_are_sequential,
+    test_fallback_evidence_balances_primary_and_alternative,
+    test_safety_postprocessing_adds_flag_and_escalates_priority,
+    test_risk_postprocessing_adds_visibility_to_summary_and_primary,
+    test_enforce_balanced_card_evidence_adds_missing_alternative_row,
 ]
 
 

@@ -87,7 +87,7 @@ def sig_block(sensor_id: str, anomalies: list) -> dict:
 
 
 def anom(start_h: float, end_h: float, severity: str = "medium",
-         score: float = None) -> dict:
+         score: float = None, interval_type: str = None) -> dict:
     """Anomaly block with ISO string timestamps."""
     a = {
         "timestamp_start": h(start_h).isoformat(),
@@ -96,6 +96,8 @@ def anom(start_h: float, end_h: float, severity: str = "medium",
     }
     if score is not None:
         a["score"] = score
+    if interval_type is not None:
+        a["interval_type"] = interval_type
     return a
 
 
@@ -186,6 +188,18 @@ def test_allen_point_event_during():
     assert rel == DURING
 
 
+def test_allen_open_interval_touching_start_is_precedes():
+    """Open-end anomaly touching event start is treated as PRECEDES."""
+    rel, _ = allen_relation(ivl(-2, 0), EVENT, epsilon_hours=0.0, interval_type="open")
+    assert rel == PRECEDES
+
+
+def test_allen_closed_interval_touching_start_not_precedes():
+    """Closed anomaly touching event start should not be PRECEDES."""
+    rel, _ = allen_relation(ivl(-2, 0), EVENT, epsilon_hours=0.0, interval_type="closed")
+    assert rel != PRECEDES
+
+
 def test_allen_causal_priority_order():
     """CAUSAL_PRIORITY matches expected order: OVERLAPS > CONTAINS > PRECEDES > DURING > FOLLOWS."""
     assert CAUSAL_PRIORITY == (OVERLAPS, CONTAINS, PRECEDES, DURING, FOLLOWS)
@@ -261,6 +275,13 @@ def test_extract_anomaly_windows_normal():
     assert len(windows) == 2
     assert windows[0]["sensor_id"] == "S1"
     assert windows[0]["severity"] == "high"
+    assert windows[0]["interval_type"] == "closed"
+
+
+def test_extract_anomaly_windows_interval_type_propagation():
+    ts = {"signals": [sig_block("S1", [anom(0, 2, "high", interval_type="half_open_end")])]}
+    windows = sc()._extract_anomaly_windows(ts)
+    assert windows[0]["interval_type"] == "half_open_end"
 
 
 def test_extract_anomaly_windows_skips_missing_timestamp():
@@ -930,6 +951,24 @@ def test_pattern_temporal_contradiction_from_latency_violation():
     assert pattern["temporal_contradiction"] is True
 
 
+def test_pattern_temporal_contradiction_from_stage_b_relation():
+    """Stage-B follow relation should force temporal contradiction."""
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[win(-5, -1, "medium")],   # PRECEDES on direct scoring
+        anomaly_window_summary=sc()._summarize_anomaly_windows([win(-5, -1)]),
+        signal_ids=["S1"],
+        telemetry_support=0.7,
+        operator_family="interval_interval",
+        fm=_make_fm(latency_min=1.0, latency_max=10.0),
+        past_events=[],
+        stage_b_allen_relation="follows",
+    )
+    assert pattern["stage_b_temporal_contradiction"] is True
+    assert pattern["temporal_contradiction"] is True
+
+
 def test_pattern_confidence_clamped_at_one():
     """Confidence must never exceed 1.0."""
     pattern = sc()._score_failure_mode_pattern(
@@ -983,10 +1022,11 @@ def _make_event(start_h: float = 0.0, end_h: float = 10.0) -> dict:
     }
 
 
-def _make_kg_context(*fm_ids: str) -> dict:
+def _make_kg_context(*fm_ids: str, out_of_boundary_anomalies=None) -> dict:
     return {
         "failure_modes": [_make_fm(fm_id=fid) for fid in fm_ids],
         "past_events": [],
+        "out_of_boundary_anomalies": out_of_boundary_anomalies or [],
     }
 
 
@@ -1059,6 +1099,22 @@ def test_score_summary_fields():
     assert "anomaly_point_count" in s
     assert "avg_confidence" in s
     assert "top_supported_targets" in s
+    assert "tone_vocabulary_version" in s
+    assert "dominant_tone" in s
+
+
+def test_score_summary_reports_tone_uncertainty_for_transient_only():
+    ts = {"asset_id": "ASSET-01", "signals": [sig_block("S1", [anom(-0.05, 0.0, "low")])]}
+    result = sc().score(
+        event=_make_event(),
+        telemetry_summary=ts,
+        kg_context=_make_kg_context("FM-01"),
+        operational_context=None,
+        run_context={"run_id": "R-42"},
+    )
+    summary = result["summary"]
+    assert summary["dominant_tone"] == "transient_excursion"
+    assert summary["tone_calibration_uncertainty"] is True
 
 
 def test_score_provenance_fields():
@@ -1099,6 +1155,63 @@ def test_score_temporal_contradiction_reflected_in_pattern():
         run_context={"run_id": "R-001"},
     )
     assert result["patterns"][0]["temporal_contradiction"] is True
+
+
+def test_score_applies_stage_b_allen_handshake():
+    """Stage-C pattern should carry Stage-B follow contradiction for same component."""
+    ts = {"asset_id": "ASSET-01", "signals": [sig_block("S1", [anom(-3, -1, "medium")])]}
+    kg = _make_kg_context(
+        "FM-01",
+        out_of_boundary_anomalies=[
+            {"component_id": "C-01", "allen_relation": "follows"},
+        ],
+    )
+    result = sc().score(
+        event=_make_event(),
+        telemetry_summary=ts,
+        kg_context=kg,
+        operational_context=None,
+        run_context={"run_id": "R-001"},
+    )
+    pattern = result["patterns"][0]
+    assert pattern["stage_b_allen_relation"] == "follows"
+    assert pattern["stage_b_temporal_contradiction"] is True
+    assert pattern["temporal_contradiction"] is True
+
+
+def test_score_summary_reports_unmatched_cr_stats():
+    kg = _make_kg_context("FM-01")
+    kg["past_events"] = [
+        {"event_id": "CMMS::CR::1", "event_type": "cmms_cr", "matched_failure_mode_ids": ["FM-01"]},
+        {"event_id": "CMMS::CR::2", "event_type": "cmms_cr", "matched_failure_mode_ids": []},
+    ]
+    result = sc().score(
+        event=_make_event(),
+        telemetry_summary=_make_telemetry(-3, -1),
+        kg_context=kg,
+        operational_context=None,
+        run_context={"run_id": "R-001"},
+    )
+    summary = result["summary"]
+    assert summary["total_cr_count"] == 2
+    assert summary["unmatched_cr_count"] == 1
+    assert 0.49 <= float(summary["unmatched_cr_rate"]) <= 0.51
+    assert summary["high_cr_match_failure_rate"] is True
+
+
+def test_score_summary_zero_unmatched_when_no_cr_history():
+    result = sc().score(
+        event=_make_event(),
+        telemetry_summary=_make_telemetry(-3, -1),
+        kg_context=_make_kg_context("FM-01"),
+        operational_context=None,
+        run_context={"run_id": "R-001"},
+    )
+    summary = result["summary"]
+    assert summary["total_cr_count"] == 0
+    assert summary["unmatched_cr_count"] == 0
+    assert float(summary["unmatched_cr_rate"]) == 0.0
+    assert summary["high_cr_match_failure_rate"] is False
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

@@ -48,6 +48,7 @@ def allen_relation(
     a: Interval,
     b: Interval,
     epsilon_hours: float = 0.5,
+    interval_type: str = "closed",
 ) -> Tuple[str, float]:
     """Classify the temporal relation of interval A relative to reference interval B.
 
@@ -56,6 +57,8 @@ def allen_relation(
     ``b`` is the event interval; ``a`` is an anomaly or maintenance window.
     ``epsilon_hours`` absorbs timestamp noise and near-simultaneous boundary
     cases — boundaries within epsilon are treated as touching.
+    ``interval_type`` controls whether anomaly endpoints are interpreted as
+    closed/open when evaluating boundary-touching cases.
 
     Decision logic (evaluated in order):
 
@@ -67,10 +70,26 @@ def allen_relation(
                    "started inside b and ended after b" (consequential anomaly)
     """
     eps = epsilon_hours * 3600.0
-    a_s = a.start.timestamp()
-    a_e = a.end.timestamp()
+    a_s_raw = a.start.timestamp()
+    a_e_raw = a.end.timestamp()
     b_s = b.start.timestamp()
     b_e = b.end.timestamp()
+
+    norm_interval_type = str(interval_type or "closed").strip().lower()
+    if norm_interval_type not in {"closed", "open", "half_open_start", "half_open_end"}:
+        norm_interval_type = "closed"
+
+    # Use a tiny endpoint shift to model open boundaries. This keeps relation
+    # semantics deterministic while preserving existing epsilon-based tolerance.
+    endpoint_shift_s = 1e-6
+    start_shift = endpoint_shift_s if norm_interval_type in {"open", "half_open_start"} else 0.0
+    end_shift = endpoint_shift_s if norm_interval_type in {"open", "half_open_end"} else 0.0
+    a_s = a_s_raw + start_shift
+    a_e = a_e_raw - end_shift
+    if a_e < a_s:
+        midpoint = (a_s_raw + a_e_raw) / 2.0
+        a_s = midpoint
+        a_e = midpoint
 
     if a_s > b_e + eps:
         rel = FOLLOWS

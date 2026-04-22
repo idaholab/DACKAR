@@ -10,6 +10,35 @@
 
     "asset_id": { "type": "string", "description": "Asset identifier — must resolve to a KG Asset node." },
 
+    "event_id": {
+      "type": "string",
+      "description": "Event under analysis — optional, used for traceability and staleness review (PM Compliance module)."
+    },
+    "assessment_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this assessment was generated (or as-of / event time). See PM_Compliance_Module_Architecture.md."
+    },
+    "look_back_window_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "CMMS/schedule lookback horizon used for this artifact."
+    },
+    "fmea_pm_linkage_available": {
+      "type": "boolean",
+      "description": "True when KG provides explicit PM task ↔ failure mode tags (or equivalent); when false, scope analysis is advisory only."
+    },
+    "data_quality_notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Human-readable caveats (missing WOs, partial export, CBM not evaluated, etc.)."
+    },
+    "components": {
+      "type": "array",
+      "description": "Per-component PM detail (module extension). When absent, use checks[] + summary only.",
+      "items": { "type": "object" }
+    },
+
     "window": {
       "type": "object",
       "additionalProperties": false,
@@ -63,6 +92,10 @@
             "type": "array",
             "items": { "type": "string" },
             "description": "KG FailureMode node IDs explicitly targeted by this PM check (e.g., a surveillance test designed to verify a specific trip function). Optional override that narrows governance scoring to specific failure modes."
+          },
+          "wo_id": {
+            "type": "string",
+            "description": "Closing WO for the PM execution; copied into governance rationale by Stage D."
           }
         }
       }
@@ -104,7 +137,20 @@
           "maximum": 1.0,
           "description": "Fraction of checks passed: passed / total_checks. Used as a normalized compliance signal in Step 5 evidence scoring."
         },
-        "notes": { "type": "string" }
+        "notes": { "type": "string" },
+        "overall_compliance": {
+          "type": "string",
+          "enum": ["compliant", "partial", "non_compliant"]
+        },
+        "maintenance_induced_risk": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "has_scope_gaps_for_primary_fm": { "type": "boolean" },
+        "data_quality_confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        }
       }
     }
   }

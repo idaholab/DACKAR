@@ -307,6 +307,143 @@ def test_recommended_actions_warning_absent_when_no_primary_candidate():
     print("  PASS test_recommended_actions_warning_absent_when_no_primary_candidate")
 
 
+def test_recommended_actions_priority_escalates_for_critical_safety_function():
+    """C4/C5: critical safety-function impact forces action priority to critical."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "reactor trip logic fault",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_name": "Reactor Protection", "sf_category": "reactor_protection"}
+        ],
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Validate trip logic", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "critical"
+    print("  PASS test_recommended_actions_priority_escalates_for_critical_safety_function")
+
+
+def test_recommended_actions_priority_escalates_for_high_safety_function():
+    """C4/C5: core-cooling impact forces at least high priority."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "RHR pump degradation",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_name": "Core Cooling", "sf_category": "core_cooling"}
+        ],
+    }
+    actions = [{"action_type": "monitoring", "description": "Monitor pump vibration", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "high"
+    print("  PASS test_recommended_actions_priority_escalates_for_high_safety_function")
+
+
+def test_recommended_actions_priority_escalates_for_critical_aliases():
+    """Third pass: alias/abbreviation forms like RPS still map to critical."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "trip relay drift",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_id": "SF::RPS-ACT", "sf_name": "RPS Actuation", "sf_category": "trip_logic"}
+        ],
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Check relay setpoints", "priority": "high"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "critical"
+    print("  PASS test_recommended_actions_priority_escalates_for_critical_aliases")
+
+
+def test_recommended_actions_priority_escalates_for_high_aliases():
+    """Third pass: alias/abbreviation forms like ECCS still map to high."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "injection flow margin loss",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_id": "SF::ECCS-TRAIN-A", "sf_name": "ECCS Train A", "sf_category": "emergency_core_cooling"}
+        ],
+    }
+    actions = [{"action_type": "monitoring", "description": "Trend injection header pressure", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "high"
+    print("  PASS test_recommended_actions_priority_escalates_for_high_aliases")
+
+
+def test_recommended_actions_priority_boosts_for_multiple_degraded_barriers():
+    """§8.3 depth pass: multiple degraded barriers force high-priority actioning."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "multi-train degradation",
+        "evidence_posture": "supported",
+        "scores": {"barrier_signal": 0.7},
+        "affected_safety_functions": [
+            {"sf_id": "SF::RHR-A", "sf_name": "RHR Train A", "sf_category": "residual_heat_removal"},
+            {"sf_id": "SF::RHR-B", "sf_name": "RHR Train B", "sf_category": "residual_heat_removal"},
+        ],
+    }
+    actions = [{"action_type": "monitoring", "description": "Trend pump performance", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] in {"high", "critical"}
+    print("  PASS test_recommended_actions_priority_boosts_for_multiple_degraded_barriers")
+
+
+def test_recommended_actions_rationale_includes_barrier_weighting():
+    """§8.3 depth pass: rationale explicitly references barrier degradation."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "containment isolation relay drift",
+        "evidence_posture": "supported",
+        "scores": {"barrier_signal": 1.0},
+        "affected_safety_functions": [
+            {"sf_id": "SF::CI-TRAIN-A", "sf_name": "Containment Isolation Train A", "sf_category": "containment_isolation"},
+        ],
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Validate relay logic", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert "barrier degradation" in (result[0].get("rationale") or "").lower()
+    print("  PASS test_recommended_actions_rationale_includes_barrier_weighting")
+
+
+def test_recommended_actions_priority_escalates_for_risk_scalar():
+    """§8.4: high risk-significance scalar should force high priority floor."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "safety-significant leakage",
+        "evidence_posture": "supported",
+        "scores": {"risk_significance_scalar": 0.8, "risk_significance_tier": "high"},
+    }
+    actions = [{"action_type": "monitoring", "description": "Increase trending", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "high"
+    print("  PASS test_recommended_actions_priority_escalates_for_risk_scalar")
+
+
+def test_recommended_actions_rationale_includes_risk_significance():
+    """§8.4: action rationale should mention risk-significance scalar/tier."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "containment relay drift",
+        "evidence_posture": "supported",
+        "scores": {"risk_significance_scalar": 1.0, "risk_significance_tier": "critical"},
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Validate logic", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    rationale = (result[0].get("rationale") or "").lower()
+    assert "risk significance scalar" in rationale
+    assert "tier=critical" in rationale
+    print("  PASS test_recommended_actions_rationale_includes_risk_significance")
+
+
 def test_gate_whitespace_padded_support_role_passes():
     """Sprint 3 / S10 fix: support_role='  Supporting  ' (whitespace + mixed case) → passes.
 
@@ -347,6 +484,14 @@ ALL_TESTS = [
     test_recommended_actions_warning_when_contradicted,
     test_recommended_actions_warning_when_no_data,
     test_recommended_actions_warning_absent_when_no_primary_candidate,
+    test_recommended_actions_priority_escalates_for_critical_safety_function,
+    test_recommended_actions_priority_escalates_for_high_safety_function,
+    test_recommended_actions_priority_escalates_for_critical_aliases,
+    test_recommended_actions_priority_escalates_for_high_aliases,
+    test_recommended_actions_priority_boosts_for_multiple_degraded_barriers,
+    test_recommended_actions_rationale_includes_barrier_weighting,
+    test_recommended_actions_priority_escalates_for_risk_scalar,
+    test_recommended_actions_rationale_includes_risk_significance,
     test_gate_whitespace_padded_support_role_passes,
 ]
 

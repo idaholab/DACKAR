@@ -46,6 +46,11 @@ class TSKRTemporalScorerConfig:
     anomaly_count_weight: float = 0.20
     lag_consistency_weight: float = 0.15
     telemetry_support_floor: float = 0.35
+    tone_vocabulary_version: str = "npp_tone_v1"
+    tone_transient_max_minutes: float = 5.0
+    tone_watch_min_minutes: float = 5.0
+    tone_alert_min_minutes: float = 10.0
+    tone_trip_min_minutes: float = 2.0
 
 
 @dataclass
@@ -96,12 +101,15 @@ class TSKRTemporalScorerV1:
         anomaly_windows      = self._extract_anomaly_windows(telemetry_summary)
         anomaly_window_summary = self._summarize_anomaly_windows(anomaly_windows)
         signal_ids           = self._extract_signal_ids(telemetry_summary)
-        telemetry_support    = self._telemetry_support_score(telemetry_summary)
+        telemetry_support    = self._telemetry_support_score(anomaly_windows)
+        tone_summary         = self._summarize_tones(anomaly_windows)
         operator_family      = self._infer_operator_family(event_start, event_end, anomaly_windows)
 
         past_events = kg_context.get("past_events") or []
+        stage_b_allen_by_component = self._stage_b_allen_relation_by_component(kg_context)
         patterns: List[JsonDict] = []
         for fm in kg_context.get("failure_modes", []) or []:
+            fm_component_id = fm.get("component_id") or fm.get("applies_to_component_id")
             pattern = self._score_failure_mode_pattern(
                 event_id=event_id,
                 asset_id=asset_id,
@@ -114,6 +122,7 @@ class TSKRTemporalScorerV1:
                 operator_family=operator_family,
                 fm=fm,
                 past_events=past_events,
+                stage_b_allen_relation=stage_b_allen_by_component.get(str(fm_component_id or "")),
             )
             patterns.append(pattern)
 
@@ -124,6 +133,7 @@ class TSKRTemporalScorerV1:
             sum(float(p.get("confidence") or 0.0) for p in patterns) / len(patterns)
             if patterns else 0.0
         )
+        recurrence_quality = self._recurrence_match_quality_stats(past_events)
 
         return {
             "event_id": event_id,
@@ -143,11 +153,20 @@ class TSKRTemporalScorerV1:
                     for p in supported[:3]
                     if p.get("target_id")
                 ],
+                "total_cr_count": recurrence_quality["total_cr_count"],
+                "unmatched_cr_count": recurrence_quality["unmatched_cr_count"],
+                "unmatched_cr_rate": recurrence_quality["unmatched_cr_rate"],
+                "high_cr_match_failure_rate": recurrence_quality["high_cr_match_failure_rate"],
+                "tone_vocabulary_version": self.config.tone_vocabulary_version,
+                "dominant_tone": tone_summary["dominant_tone"],
+                "tone_counts": tone_summary["tone_counts"],
+                "tone_calibration_uncertainty": tone_summary["tone_calibration_uncertainty"],
             },
             "provenance": {
                 "generated_by": "TSKRTemporalScorerV1",
                 "run_id": run_context.get("run_id"),
                 "generated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+                "tone_vocabulary_version": self.config.tone_vocabulary_version,
             },
         }
 
@@ -169,11 +188,68 @@ class TSKRTemporalScorerV1:
                     "start":         start,
                     "end":           end,
                     "pattern":       a.get("pattern"),
+                    "interval_type": self._normalize_interval_type(a.get("interval_type")),
                     "severity":      a.get("severity"),
-                    "severity_score": a.get("severity_score"),
+                    "severity_score": (
+                        a.get("severity_score")
+                        if isinstance(a.get("severity_score"), (int, float))
+                        else a.get("score")
+                    ),
+                    "tone":          self._classify_tone(
+                        start=start,
+                        end=end,
+                        severity=a.get("severity"),
+                        severity_score=(a.get("severity_score") if isinstance(a.get("severity_score"), (int, float)) else a.get("score")),
+                    ),
                 })
         windows.sort(key=lambda x: x["start"])
         return windows
+
+    @staticmethod
+    def _is_cr_like_event(row: JsonDict) -> bool:
+        event_type = str((row or {}).get("event_type") or "").strip().lower()
+        event_id = str((row or {}).get("event_id") or "").strip().upper()
+        return (
+            "cmms_cr" in event_type
+            or event_type == "cr"
+            or event_id.startswith("CMMS::CR::")
+        )
+
+    @classmethod
+    def _recurrence_match_quality_stats(cls, past_events: List[JsonDict]) -> Dict[str, Any]:
+        cr_events = [pe for pe in (past_events or []) if isinstance(pe, dict) and cls._is_cr_like_event(pe)]
+        total_cr = len(cr_events)
+        unmatched_cr = sum(
+            1
+            for pe in cr_events
+            if not (pe.get("matched_failure_mode_ids") or pe.get("fm_id"))
+        )
+        unmatched_rate = (float(unmatched_cr) / float(total_cr)) if total_cr > 0 else 0.0
+        return {
+            "total_cr_count": total_cr,
+            "unmatched_cr_count": unmatched_cr,
+            "unmatched_cr_rate": round(unmatched_rate, 4),
+            "high_cr_match_failure_rate": bool(total_cr > 0 and unmatched_rate > 0.30),
+        }
+
+    @staticmethod
+    def _normalize_interval_type(value: Any) -> str:
+        normalized = str(value or "closed").strip().lower()
+        if normalized not in {"closed", "open", "half_open_start", "half_open_end"}:
+            return "closed"
+        return normalized
+
+    @classmethod
+    def _stage_b_allen_relation_by_component(cls, kg_context: JsonDict) -> Dict[str, str]:
+        mapping: Dict[str, str] = {}
+        for row in (kg_context.get("out_of_boundary_anomalies") or []):
+            if not isinstance(row, dict):
+                continue
+            comp = str(row.get("component_id") or row.get("related_component_id") or "").strip()
+            relation = str(row.get("allen_relation") or "").strip().lower()
+            if comp and relation:
+                mapping[comp] = relation
+        return mapping
 
     def _summarize_anomaly_windows(
         self, anomaly_windows: List[Dict[str, Any]]
@@ -209,27 +285,96 @@ class TSKRTemporalScorerV1:
     # Scoring helpers                                                       #
     # ------------------------------------------------------------------ #
 
-    def _telemetry_support_score(self, telemetry_summary: JsonDict) -> float:
+    def _telemetry_support_score(self, anomaly_windows: Any) -> float:
+        if isinstance(anomaly_windows, dict):
+            anomaly_windows = self._extract_anomaly_windows(anomaly_windows)
+        anomaly_windows = anomaly_windows or []
         total = 0.0
         count = 0
-        for sig in telemetry_summary.get("signals", []) or []:
-            for a in sig.get("anomalies", []) or []:
-                sev  = str(a.get("severity") or "").lower()
-                score = a.get("score")
-                base  = self.config.telemetry_support_floor
-                if sev == "high":
-                    base = 0.9
-                elif sev == "medium":
-                    base = 0.7
-                elif sev == "low":
-                    base = 0.5
-                if isinstance(score, (int, float)):
-                    base = max(base, min(1.0, float(score)))
-                total += base
-                count += 1
+        for window in anomaly_windows:
+            tone = str(window.get("tone") or "").strip().lower()
+            base = {
+                "trip_band_persistent": 0.90,
+                "alert_band_persistent": 0.70,
+                "watch_band_persistent": 0.50,
+                "transient_excursion": 0.40,
+                "unclassified_anomaly": self.config.telemetry_support_floor,
+            }.get(tone, self.config.telemetry_support_floor)
+            score = window.get("severity_score")
+            if isinstance(score, (int, float)):
+                base = max(base, min(1.0, float(score)))
+            total += base
+            count += 1
         if total == 0.0:
             return 0.0
         return clamp01(total / max(1.0, count))
+
+    def _classify_tone(
+        self,
+        *,
+        start: Optional[datetime],
+        end: Optional[datetime],
+        severity: Any,
+        severity_score: Any,
+    ) -> str:
+        """
+        Deterministic tone classification from anomaly severity and duration.
+        """
+        if start is None:
+            return "unclassified_anomaly"
+        end_dt = end or start
+        duration_min = max(0.0, (end_dt - start).total_seconds() / 60.0)
+        sev_text = str(severity or "").strip().lower()
+        sev_val = 0.5
+        has_known_severity = False
+        if isinstance(severity_score, (int, float)):
+            sev_val = float(severity_score)
+            has_known_severity = True
+        elif sev_text == "high":
+            sev_val = 0.9
+            has_known_severity = True
+        elif sev_text == "medium":
+            sev_val = 0.7
+            has_known_severity = True
+        elif sev_text == "low":
+            sev_val = 0.5
+            has_known_severity = True
+
+        if not has_known_severity:
+            return "unclassified_anomaly"
+
+        if duration_min < self.config.tone_transient_max_minutes and sev_val < 0.85:
+            return "transient_excursion"
+        if sev_val >= 0.85 and duration_min >= self.config.tone_trip_min_minutes:
+            return "trip_band_persistent"
+        if sev_val >= 0.65 and duration_min >= self.config.tone_alert_min_minutes:
+            return "alert_band_persistent"
+        if sev_val >= 0.40 and duration_min >= self.config.tone_watch_min_minutes:
+            return "watch_band_persistent"
+        return "transient_excursion"
+
+    @staticmethod
+    def _summarize_tones(anomaly_windows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not anomaly_windows:
+            return {
+                "dominant_tone": None,
+                "tone_counts": {},
+                "tone_calibration_uncertainty": True,
+            }
+        counts: Dict[str, int] = {}
+        for w in anomaly_windows:
+            tone = str(w.get("tone") or "unclassified_anomaly")
+            counts[tone] = counts.get(tone, 0) + 1
+        dominant = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        uncertainty = bool(
+            counts.get("unclassified_anomaly", 0) > 0
+            or counts.get("transient_excursion", 0) == len(anomaly_windows)
+        )
+        return {
+            "dominant_tone": dominant,
+            "tone_counts": counts,
+            "tone_calibration_uncertainty": uncertainty,
+        }
 
     def _severity_weight(self, window: Dict[str, Any]) -> float:
         """Return a [0.1, 1.0] weight from a window's severity fields.
@@ -341,7 +486,12 @@ class TSKRTemporalScorerV1:
             start = window["start"]
             end   = window["end"] or start
             a     = Interval(start=start, end=end)
-            rel, base = allen_relation(a, event_interval, self.config.simultaneous_epsilon_hours)
+            rel, base = allen_relation(
+                a,
+                event_interval,
+                self.config.simultaneous_epsilon_hours,
+                interval_type=window.get("interval_type", "closed"),
+            )
             weight = self._severity_weight(window)
 
             present_relations.add(rel)
@@ -523,6 +673,7 @@ class TSKRTemporalScorerV1:
         operator_family: Optional[str],
         fm: JsonDict,
         past_events: List[JsonDict],
+        stage_b_allen_relation: Optional[str] = None,
     ) -> JsonDict:
 
         fm_id        = fm.get("fm_id")
@@ -545,9 +696,11 @@ class TSKRTemporalScorerV1:
         )
         latency_score = latency_details["latency_alignment_score"]
 
+        stage_b_temporal_contradiction = str(stage_b_allen_relation or "").lower() == FOLLOWS
         temporal_contradiction = (
             relation == FOLLOWS
             or latency_details["latency_violation_type"] in {"too_fast", "too_slow"}
+            or stage_b_temporal_contradiction
         )
 
         history_score, recurrence_profile = self._score_history_support(
@@ -605,6 +758,8 @@ class TSKRTemporalScorerV1:
             "latency_alignment_score":    latency_details["latency_alignment_score"],
             "latency_violation_type":     latency_details["latency_violation_type"],
             "temporal_contradiction": temporal_contradiction,
+            "stage_b_allen_relation": stage_b_allen_relation,
+            "stage_b_temporal_contradiction": stage_b_temporal_contradiction,
             # Recurrence fields (new)
             "recurrence_count":            recurrence_profile.count,
             "recurrence_trend":            recurrence_profile.trend,

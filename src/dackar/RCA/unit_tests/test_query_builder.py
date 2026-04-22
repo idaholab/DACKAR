@@ -15,6 +15,7 @@ Key invariants:
   7. 'operational_context' query added when context has actionable terms
   8. Candidate query carries correct candidate_id, cause_label, hypothesis_type
   9. Query weight: candidate=1.00, candidate_contradiction=0.70
+ 10. out_of_boundary_anomalies produce targeted kg_gap_investigation queries
 """
 import sys
 from pathlib import Path
@@ -44,6 +45,7 @@ def make_kg_context(components=None, failure_modes=None, documents=None):
         "components": components or [],
         "failure_modes": failure_modes or [],
         "documents": documents or [],
+        "out_of_boundary_anomalies": [],
     }
 
 
@@ -259,6 +261,72 @@ def test_operational_context_not_added_when_only_asset_id():
     print("  PASS test_operational_context_not_added_when_only_asset_id")
 
 
+def test_out_of_boundary_query_added_when_present():
+    r = make_retriever()
+    kg = make_kg_context()
+    kg["out_of_boundary_anomalies"] = [
+        {"component_id": "CMP-LEAK-01", "component_label": "Expansion Joint"},
+    ]
+    plans = r._build_queries(
+        event=make_event("ASSET-001"),
+        kg_context=kg,
+        causality_candidates={"candidates": []},
+        operational_context=None,
+    )
+    oob = plans_of_type(plans, "out_of_boundary")
+    assert len(oob) == 1
+    assert oob[0]["query_intent"] == "kg_gap_investigation"
+    assert "CMP-LEAK-01" in oob[0]["query_text"]
+    print("  PASS test_out_of_boundary_query_added_when_present")
+
+
+def test_candidate_filters_use_candidate_component_ids():
+    r = make_retriever()
+    kg = make_kg_context(
+        components=[{"component_id": "CMP-A"}, {"component_id": "CMP-B"}],
+        failure_modes=[{"fm_id": "FM-A", "component_id": "CMP-A"}],
+    )
+    cand = {
+        "candidate_id": "FM::FM-A",
+        "cause_label": "seal leakage",
+        "cause_node_id": "FM-A",
+        "hypothesis_type": "failure_mode",
+        "kg_path": [{"node_id": "CMP-A"}],
+    }
+    plans = r._build_queries(
+        event=make_event("ASSET-001"),
+        kg_context=kg,
+        causality_candidates={"candidates": [cand]},
+        operational_context=None,
+    )
+    candidate_plan = plans_of_type(plans, "candidate")[0]
+    filters = r._build_filters(asset_id="ASSET-001", query_plan=candidate_plan, kg_context=kg)
+    assert filters.get("component_ids") == ["CMP-A"]
+    print("  PASS test_candidate_filters_use_candidate_component_ids")
+
+
+def test_component_filter_mode_reports_index_filter():
+    mode = ChromaEvidenceRetriever._component_filter_mode(
+        merged_hits=[
+            {"metadata": {"_vector_metadata": {"_component_filter_strategy": "index_filter"}}},
+        ],
+        component_ids_requested=True,
+    )
+    assert mode == "index_filter"
+    print("  PASS test_component_filter_mode_reports_index_filter")
+
+
+def test_component_filter_mode_reports_legacy_fallback():
+    mode = ChromaEvidenceRetriever._component_filter_mode(
+        merged_hits=[
+            {"metadata": {"_vector_metadata": {"_component_filter_strategy": "legacy_post_filter"}}},
+        ],
+        component_ids_requested=True,
+    )
+    assert mode == "index_filter_with_legacy_post_filter"
+    print("  PASS test_component_filter_mode_reports_legacy_fallback")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -274,6 +342,10 @@ ALL_TESTS = [
     test_fallback_query_when_no_plans,
     test_operational_context_query_added_with_alarm,
     test_operational_context_not_added_when_only_asset_id,
+    test_out_of_boundary_query_added_when_present,
+    test_candidate_filters_use_candidate_component_ids,
+    test_component_filter_mode_reports_index_filter,
+    test_component_filter_mode_reports_legacy_fallback,
 ]
 
 

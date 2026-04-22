@@ -14,6 +14,7 @@ Key invariants tested:
   6. Output sorted by best_support - 0.5*best_contradiction
   7. Empty input → empty list
   8. mean_conjecture_fraction averaged across hits
+  9. best_source_tier tracks the strongest supporting snippet tier
 """
 import sys
 from pathlib import Path
@@ -46,6 +47,7 @@ def make_hit(
     conjecture_fraction=None,
     mechanisms=None,
     outcomes=None,
+    source_tier=None,
 ):
     meta = {
         "linked_candidate_id": candidate_id,
@@ -55,6 +57,7 @@ def make_hit(
         "spacy_conjecture_fraction": conjecture_fraction,
         "mechanisms": mechanisms or [],
         "outcomes": outcomes or [],
+        "source_tier": source_tier,
     }
     return {
         "snippet_id": snippet_id,
@@ -210,6 +213,19 @@ def test_output_sorted_by_net_support_score():
     print("  PASS test_output_sorted_by_net_support_score")
 
 
+def test_best_source_tier_from_strongest_supporting_hit():
+    r = make_retriever()
+    hits = [
+        make_hit("S1", "CAND-A", "supporting", support_score=0.61, source_tier="plant_family"),
+        make_hit("S2", "CAND-A", "supporting", support_score=0.82, source_tier="plant_instance"),
+        make_hit("S3", "CAND-A", "contextual", context_score=0.4, source_tier="oe_iris"),
+    ]
+    result = r._build_candidate_evidence_summary(hits)
+    g = find_group(result, "CAND-A")
+    assert g["best_source_tier"] == "plant_instance"
+    print("  PASS test_best_source_tier_from_strongest_supporting_hit")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -222,6 +238,7 @@ ALL_TESTS = [
     test_aggregated_mechanisms_deduped_case_insensitive,
     test_mean_conjecture_fraction_averaged,
     test_output_sorted_by_net_support_score,
+    test_best_source_tier_from_strongest_supporting_hit,
 ]
 
 
