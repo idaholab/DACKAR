@@ -1,5 +1,5 @@
 # RCA Pipeline — Comprehensive Systems Engineering Review
-**Date**: April 21, 2026 · **Sprint 1 applied**: April 21, 2026 · **Sprint 2 applied**: April 21, 2026 · **Option B applied**: April 21, 2026 · **Sprint 5 applied**: April 21, 2026 · **Post–April 21 SE code batch applied**: April 21, 2026
+**Date**: April 21, 2026 · **Sprint 1 applied**: April 21, 2026 · **Sprint 2 applied**: April 21, 2026 · **Option B applied**: April 21, 2026 · **Sprint 5 applied**: April 21, 2026 · **Post–April 21 SE code batch applied**: April 21, 2026 · **Sprint 6 applied**: April 21, 2026 · **Sprint 7 applied**: April 21, 2026
 **Baseline**: Orchestrator v3.2 · Schema set v3.2 · RCA_pipeline_stages.md (April 21)
 **Reviewer perspective**: Systems Engineer / RCA Practitioner (nuclear power plant)
 **Scope**: Cross-document synthesis covering all four companion documents:
@@ -180,13 +180,16 @@ Carry `pipeline_health` field in each artifact, and have Stage J's `next_step` r
 
 ---
 
-### 4.3 Governance Score Asset-Level, Not Failure-Mode-Specific (MEDIUM — PARTIALLY FIXED)
+### 4.3 Governance Score Asset-Level, Not Failure-Mode-Specific (MEDIUM — ✅ FIXED Sprint 6)
 
 **Finding**: Per `RCA_workflow_april_2.md` §6: "governance score is currently computed at the asset level and applied uniformly to all candidates regardless of whether the failed PM item is related to the specific failure mode being scored." Per §13, this is marked `[FIXED]`.
 
-**Residual gap**: Even with candidate-specific PM linkage, the governance dimension weight (0.10) is applied identically to all failure mode types. A maintenance-induced failure mode (seal degradation due to missed PM) should have a much higher governance weight than an external failure mode (weather-induced corrosion). The governance dimension is meaningful only for failure modes where PM is a preventive control.
+**Residual gap**: Even with candidate-specific PM linkage, the governance dimension weight (0.10) was applied identically to all failure mode types.
 
-**Recommendation**: Make the governance dimension weight configurable per `failure_mode_category`. For failure modes with `failure_category == "maintenance_preventable"`, governance weight = 0.20; for `failure_category == "external"`, governance weight = 0.02.
+**Fix applied (Sprint 6)**:
+- `RuleBasedCausalityEngineV32._governance_weight_for_fm(superclass)` classifies FM superclass by keyword: maintenance-preventable keywords (bearing, seal, lubrication, wear, fouling, calibration, …) → weight 0.20; external-cause keywords (environmental, design, vendor, manufacturing, flood, …) → weight 0.02; default → 0.10. Maintenance classification takes precedence when both keyword sets match (e.g. "external corrosion" → 0.20, since corrosion is addressable by PM).
+- `_combine_scores` now accepts optional `weights_override`; FM candidates pass their category weight at scoring time and `scores["governance_weight"]` persists it for Stage F re-compute in `_refresh_candidate_confidence_and_thresholds`.
+- Tests: `unit_tests/test_causality_scoring.py` — 5 new NM3 tests.
 
 ---
 
@@ -391,7 +394,7 @@ Stage 5B is responsible for routing each document type to the correct path. The 
 
 **A1 — No cross-artifact timestamp consistency** (MEDIUM — ⚠️ PARTIALLY ADDRESSED): `telemetry.window.end` is not verified to be ≥ `event.timestamp_start`. A telemetry summary from the wrong time window passes silently. *Post–April 21: non-blocking `input_guards` on `run_context` surface this class of issue; behavior is warning-style, not a hard block.*
 
-**A2 — Severity not used to adjust evidence floor** (MEDIUM): `event.severity` is stored in `run_context` but never consumed downstream. A severity-5 event should trigger a higher `minimum_evidence_gate` — more evidence is required before a high-severity finding can be marked `writeback_ready`.
+**A2 — Severity not used to adjust evidence floor** (MEDIUM — ✅ FIXED Sprint 6): `event.severity` is now stored in `run_context.input_refs.event_severity` and consumed by `_compute_review_hooks`. `RuleValidatedRCASynthesizerV31._SEVERITY_SCORE_FLOORS` maps severity 1–5 to composite score floors (0.30 / 0.32 / 0.35 / 0.45 / 0.55). A `passed_severity_gate` flag blocks `writeback_ready` and adds a `degraded_reasons` message when the primary composite does not clear the floor; gate is bypassed when severity is absent. Tests: `unit_tests/test_review_hooks.py` — 5 new A2 tests.
 
 **A3 — `output_dir` writability not verified at entry** (LOW — ✅ FIXED): Stage I will fail mid-pipeline if `output_dir` is not writable. Stage A should verify writeability and abort early with a clear error rather than failing at persistence time. *Post–April 21: `orchestrators/input_guards.assert_output_dir_writable` is invoked at pipeline start in `rca_reasoning_orchestrator.py` when using `FileArtifactStore`.*
 
@@ -401,7 +404,7 @@ Stage 5B is responsible for routing each document type to the correct path. The 
 
 **B1 — `telemetry_anomaly_precedes` not in TOPOLOGY_BASE** (see §4.2 above — HIGH)
 
-**B2 — Document window undifferentiated by type** (MEDIUM): The ±90-day document ranking window is applied uniformly to all document types. FMEA documents, ECAs, and RCA conclusions are timeless engineering knowledge — they should not be subject to recency decay. CRs and WOs are time-bound operational observations — recency is appropriate. Applying recency decay to FMEA documents penalizes the most authoritative source in the corpus.
+**B2 — Document window undifferentiated by type** (MEDIUM — ✅ FIXED Sprint 7): The ±90-day document ranking window is applied uniformly to all document types. FMEA documents, ECAs, and RCA conclusions are timeless engineering knowledge — they should not be subject to recency decay. CRs and WOs are time-bound operational observations — recency is appropriate. Applying recency decay to FMEA documents penalizes the most authoritative source in the corpus. **Fix**: `kg_context_builder.py` Cypher query now exempts `ECA` and `RCA` from the date-window filter (added to the `doc_type IN [...]` bypass alongside `SOP`, `FMEA`, `MANUAL`, `BULLETIN`); recency-proximity bonus removed for ECA/RCA in the Python enrichment loop — authority is independent of temporal proximity.
 
 **B3 — KG document references include no `doc_type` filter at retrieval time** (LOW): `kg_context.documents[]` carries `doc_type` but all types are retrieved together. Downstream stages must filter by type themselves. A `doc_type_breakdown` count field would give Stage 5B a pre-fetch view of corpus composition.
 
@@ -500,9 +503,9 @@ Remaining gap: archive hook availability is backend-dependent; when no archive h
 
 ### 6.9 Stage J — Additional Gaps
 
-**J1 — Schema validation late-binding** (CRITICAL — ⚠️ PARTIALLY FIXED Sprint 1): `cmms_context` was the one artifact with a schema (`cmms_context.json`) that was saved without validation. Fixed: added `cmms_context` to `RCAArtifactValidator.CORE_ARTIFACTS` (`schema_validator.py`) and changed the bare `artifact_store.save` in `build_cmms_context()` to `_validate_and_persist(optional=True)`. Schema errors in `cmms_context` are now caught and logged at Stage 5B.
+**J1 — Schema validation late-binding** (CRITICAL — ✅ FIXED Sprint 1 + Sprint 5): `cmms_context` was the one artifact with a schema (`cmms_context.json`) that was saved without validation. Fixed: added `cmms_context` to `RCAArtifactValidator.CORE_ARTIFACTS` (`schema_validator.py`) and changed the bare `artifact_store.save` in `build_cmms_context()` to `_validate_and_persist(optional=True)`. Schema errors in `cmms_context` are now caught and logged at Stage 5B.
 
-The broader architectural issue remains: all other intermediate artifacts (`kg_context`, `tskr_patterns`, `causality_candidates`, `evidence_bundle`, `rca_card`) already go through `_validate_and_persist` — this was already correct. `run_context` and `run_manifest` still have no schemas; creating those schemas and wiring them in is tracked as Sprint 2 work.
+The broader architectural issue is now fully addressed: all intermediate artifacts (`kg_context`, `tskr_patterns`, `causality_candidates`, `evidence_bundle`, `rca_card`) already went through `_validate_and_persist` — this was already correct. `run_context.json` and `run_manifest.json` schemas were created and both artifact types wired into `CORE_ARTIFACTS` in Sprint 5 (NC5).
 
 **J2 — `run_complete` check absent** (MEDIUM — ✅ Fixed Sprint 4): `FileArtifactStore.is_run_complete(run_id)` reads `run_status.json` and returns `True` only for completed runs. `load(run_id, artifact_name)` provides safe external artifact access. External callers (notebooks, replay scripts) should call `is_run_complete()` before loading or re-validating artifacts.
 
@@ -635,6 +638,8 @@ Stage G (Ishikawa) is optional. When it is skipped, Stage H runs without the Ish
 
 **Recommendation**: Add `ishikawa_run: bool` and `ishikawa_skip_reason` to `run_manifest`. When `ishikawa_run == False`, add an `analyst_attention_flag`: "Ishikawa structuring was not performed — human performance and organizational factor branches were not systematically evaluated."
 
+**✅ FIXED Sprint 7**: `_apply_ishikawa_skip_attention_flag` static method added to orchestrator; called in `run()` after other `_apply_*` hooks. `pipeline_config.ishikawa_run: bool` and `pipeline_config.ishikawa_skip_reason: str|null` added to both the runtime manifest and `schemas/run_manifest.json`. Deduplication guard prevents double-injection. Tests: `test_ishikawa_skip_flag_injected_when_matrix_absent`, `test_ishikawa_skip_flag_not_injected_when_matrix_present`, `test_ishikawa_skip_flag_not_duplicated_on_double_call`, `test_manifest_pipeline_config_has_ishikawa_run_false_when_disabled`, `test_manifest_pipeline_config_has_ishikawa_run_true_when_matrix_present`.
+
 ### 9.6 OE Documents Require Fleet-Level Linkage Not Yet Supported
 
 Per `RCA_workflow_april_2.md` §OE section: OE documents (INPO OE, NRC Information Notices, EPRI Technical Reports) have fundamentally different semantics from plant-internal documents. Their linkage is through failure mode similarity and system type, not plant topology. Recency decay should not apply. None of these requirements are implemented — OE documents, if ingested, would go through the same pipeline as plant-internal documents, losing their distinct epistemic role.
@@ -647,12 +652,12 @@ Per `RCA_workflow_april_2.md` §OE section: OE documents (INPO OE, NRC Informati
 
 | ID | Finding | Section |
 |----|---------|---------|
-| NC1 | Strictly sequential pipeline — no recovery path | §3.1 |
-| NC2 | KG population silent prerequisite — no runtime governance | §3.3 |
+| NC1 | ✅ Strictly sequential pipeline — rank-inversion reentry hook + bounded auto re-entry loop (latest batch) | §3.1 |
+| NC2 | ✅ KG population silent prerequisite — `_compute_kg_governance` + hard-abort on red state (latest batch) | §3.3 |
 | NC3 | ✅ Evidence threshold applied pre-evidence (circular reference) | §4.1 |
 | NC4 | ✅ `writeback_ready` and `requires_human_review` permanently broken | §6.7 H5 |
 | NC5 | ✅ Schema validation late-binding — `cmms_context` fixed; `run_context.json` + `run_manifest.json` created; both wired into `CORE_ARTIFACTS` | §6.9 J1 |
-| NC6 | Contributing causes not representable (regulatory) | §8.1 |
+| NC6 | ✅ Contributing causes — `contributing_causes[]` added to rca_card schema + synthesis (Post–April 21 batch) | §8.1 |
 
 ### New High Findings (investigation quality and audit defensibility)
 
@@ -677,7 +682,7 @@ Per `RCA_workflow_april_2.md` §OE section: OE documents (INPO OE, NRC Informati
 |----|---------|---------|
 | NM1 | ⚠️ Input currency — **partial** (`run_context.input_guards` warnings) | §3.4 |
 | NM2 | ⚠️ Event scoping / overlap — **partial** (heuristic in `input_guards`) | §3.5 |
-| NM3 | Governance weight not failure-mode-category-specific | §4.3 |
+| NM3 | ✅ Governance weight now FM-category-specific via `_governance_weight_for_fm` (Sprint 6) | §4.3 |
 | NM4 | Scoring weights unempirical, no sum constraint | §4.4 |
 | NM5 | ✅ Symptom matching implemented and normalized (closed latest batch) | §4.6 |
 | NM6 | ⚠️ FM-to-CR matching quality telemetry + analyst flagging — partial | §5.4 |
@@ -729,14 +734,14 @@ The following sequencing minimizes dependency conflicts and maximizes early risk
 8. ✅ S1 (`confidence_label` case mismatch) — confirmed already fixed; no code change needed
 9. ✅ S2 (dual `kg_context` schema) — deleted orphaned `orchestrators/kg_context.json`; `schemas/kg_context.json` is sole canonical schema
 10. ✅ S3 (TSKR first-pattern-only) — confirmed already fixed via `setdefault + max(confidence)`; no code change needed
-*(NC6/C2 contributing causes and NH2 analyst touch-points deferred to Sprint 6)*
+*(NC6 contributing causes closed in Post–April 21 batch; NH2 analyst touch-points remain open)*
 
 **Sprint 3 — Traceability and persistence integrity:** ✅ COMPLETE (April 21, 2026)
 11. ✅ S10 regression test (`test_gate_whitespace_padded_support_role_passes`) — confirmed already fixed; test locks in `.strip().lower()` normalisation (H3 / S10)
 12. ✅ `scoring_evolution.json` persisted as dedicated named artifact in `run()` when pre-refine snapshot exists (H3)
 13. ✅ `run_status.json` sentinel written at run start (`run_complete: false`) and sealed at run end (`run_complete: true`) — Stage J can distinguish partial from complete runs (I1)
 14. ✅ `FileArtifactStore._write_atomic()` — `tempfile.mkstemp` + `Path.replace()` POSIX-atomic rename; readers never observe partial writes (I2)
-*(NC6/C2 contributing causes and NH2 analyst touch-points deferred to Sprint 6)*
+*(NC6 contributing causes closed in Post–April 21 batch; NH2 analyst touch-points remain open)*
 
 **Sprint 4 — Data quality and corpus integrity:** ✅ COMPLETE (April 21, 2026)
 15. ✅ `FileArtifactStore.is_run_complete(run_id)` + `load(run_id, artifact_name)` — safe external artifact access; callers check completion before loading (J2)
@@ -749,11 +754,22 @@ The following sequencing minimizes dependency conflicts and maximizes early risk
 17. ✅ Posture-aware recommended actions — `_POSTURE_WARNINGS` + `posture_warning` on every action row (H6)
 18. ✅ `run_context.json` + `run_manifest.json` schemas created; both added to `CORE_ARTIFACTS` (NC5)
 
-**Sprint 6 — Regulatory completeness (next):**
-19. ✅ Contributing causes (`contributing_causes[]` in rca_card schema) (NC6)
-20. ✅ Safety function propagation to rca_card (C5)
-21. ✅ Safety significance override on recommended action priority (C4)
-22. ✅ AP-913 completeness checklist in run_manifest (NM15)
+**Sprint 6 — Scoring quality:** ✅ COMPLETE (April 22, 2026)
+19. ✅ Severity-adjusted evidence floor — `_SEVERITY_SCORE_FLOORS` + `passed_severity_gate` in `_compute_review_hooks`; `event_severity` stored in `run_context.input_refs` (A2)
+20. ✅ FM-category governance weight — `_governance_weight_for_fm` + `weights_override` in `_combine_scores`; weight persisted in `scores["governance_weight"]` for Stage F re-compute (NM3)
+
+**Post–April 21 batch — Regulatory completeness:** ✅ COMPLETE (April 21, 2026)
+21. ✅ Contributing causes (`contributing_causes[]` in rca_card schema + synthesis) (NC6)
+22. ✅ Safety function propagation to rca_card (C5)
+23. ✅ Safety significance override on recommended action priority (C4)
+24. ✅ AP-913 completeness checklist in run_manifest (NM15)
+
+**Sprint 7 — Audit visibility ✅ COMPLETE April 21, 2026:**
+25. ✅ Stage G skip surfaced to analyst — `ishikawa_run: bool` + `ishikawa_skip_reason` in `run_manifest`; `analyst_attention_flag` when skipped (§9.5)
+26. ✅ ECA/RCA documents exempted from ±90-day recency window + recency bonus removed (B2)
+
+**Sprint 8 — Evidence quality (next):**
+27. Evidence excerpts passed through as source text, not summaries (April 20 H5)
 
 ### Post–April 21 implementation batch (code) — log and resolution status
 
@@ -804,4 +820,6 @@ The following sequencing minimizes dependency conflicts and maximizes early risk
 *Sprint 5 closed: H4 ✅ (analyst override primary_diff audit trail), H6 ✅ (posture_warning on all action rows), NC5 ✅ (run_context.json + run_manifest.json schemas + CORE_ARTIFACTS) — 3 fully closed. Remaining open: 32 findings (before Post–April 21 code batch).*
 
 *Post–April 21 SE code batch: **closed** in code/docs — S8 (LLM primary id), NH11 (top-k + `review_required`), NH12 (LLM gate / same as S8), D4 + F3 + NM10 (review alternative vs `contradicted`), A3 (output dir); **short-term / partial** — §3.1 rank-inversion flag only; NM1/NM2/A1 via `input_guards`.*
+*Sprint 6 closed: A2 ✅ (severity-adjusted evidence floor: `_SEVERITY_SCORE_FLOORS` + `passed_severity_gate`), NM3 ✅ (FM-category governance weight: `_governance_weight_for_fm` + `weights_override` in `_combine_scores`) — 2 fully closed. Remaining open: 28 findings.*
+*Sprint 7 closed: §9.5 ✅ (Ishikawa skip surfaced: `ishikawa_run`/`ishikawa_skip_reason` in manifest + `_apply_ishikawa_skip_attention_flag`), B2 ✅ (ECA/RCA exempted from ±90-day window filter + recency bonus removed in `kg_context_builder.py`) — 2 fully closed. Remaining open: 26 findings.*
 *Latest batch (this session): **closed/advanced** — NC6 (`contributing_causes[]`), NM15 (`ap913_completeness`), E3 (`out_of_boundary_anomalies` retrieval), remaining NH6/F2 gap (`best_source_tier` population), C5/C4 safety-function-to-rca_card propagation + priority mapping, **plus §3.1/§3.3 closure pass** (bounded automatic in-run re-entry loop + strict KG red-state hard-abort policy), **§3.2 policy-hook pass** (`stage_policy_hooks` + stage remediation playbooks + `stage_policy_violations` routing), **§5.2 closure pass** (candidate-scoped filtering + index-level `primary_component_id` Chroma filtering with legacy fallback mode), **§5.6 support-channel pass** (CMMS-derived `past_events` injection + canonical event graph/support-channel modeling in `seed_context`), **§8.4 risk-significance pass** (deterministic candidate risk scalar + Stage F governance adjustment + risk-aware action priority/rationale), and **§6.8 I3 archive-governance pass** (Stage I Chroma archive failure now feeds red/yellow health + remediation routing + strict abort policy). Informal roll-up: remaining open findings are now concentrated in PRA-calibrated risk modeling, backend-specific archive hook coverage, and deeper ontology-level barrier semantics.*

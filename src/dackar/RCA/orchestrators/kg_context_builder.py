@@ -646,7 +646,7 @@ class Neo4jKGContextBuilder:
           )
           AND
           (
-            d.doc_type IN ['SOP', 'FMEA', 'MANUAL', 'BULLETIN']
+            d.doc_type IN ['SOP', 'FMEA', 'MANUAL', 'BULLETIN', 'ECA', 'RCA']
             OR
             (
               d.created_at IS NOT NULL
@@ -688,7 +688,7 @@ class Neo4jKGContextBuilder:
                 score += 10
             if matched_components:
                 score += 8
-            if time_distance_days is not None and doc_type in {"CR", "WO", "ECA", "RCA", "ECR"}:
+            if time_distance_days is not None and doc_type in {"CR", "WO", "ECR"}:
                 score += max(0, 10 - min(time_distance_days, 10))
 
             enriched.append(

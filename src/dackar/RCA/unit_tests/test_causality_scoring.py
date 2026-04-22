@@ -351,6 +351,57 @@ def test_pre_evidence_threshold_allows_sparse_proxy():
     print("  PASS test_pre_evidence_threshold_allows_sparse_proxy")
 
 
+# ── NM3 — FM-category governance weight ──────────────────────────────────────
+
+def test_governance_weight_default_for_unknown_superclass():
+    """Unknown/None superclass → default governance weight 0.10."""
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm(None) == 0.10
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("") == 0.10
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("unclassified") == 0.10
+    print("  PASS test_governance_weight_default_for_unknown_superclass")
+
+
+def test_governance_weight_elevated_for_maintenance_superclass():
+    """Maintenance-preventable superclass → governance weight 0.20."""
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("bearing wear") == 0.20
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("lubrication failure") == 0.20
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("seal degradation") == 0.20
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("Inspection Gap") == 0.20
+    print("  PASS test_governance_weight_elevated_for_maintenance_superclass")
+
+
+def test_governance_weight_reduced_for_external_superclass():
+    """External-cause superclass with no maintenance keywords → governance weight 0.02.
+    Note: 'external corrosion' resolves to 0.20 because 'corrosion' is in the
+    maintenance-preventable set (corrosion is addressable by PM) — maintenance
+    classification takes precedence when both keyword sets match.
+    """
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("environmental stress") == 0.02
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("design deficiency") == 0.02
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("vendor manufacturing flaw") == 0.02
+    assert RuleBasedCausalityEngineV32._governance_weight_for_fm("flood damage") == 0.02
+    print("  PASS test_governance_weight_reduced_for_external_superclass")
+
+
+def test_combine_scores_uses_fm_governance_weight_override():
+    """weights_override={'governance': 0.20} shifts composite score vs default 0.10."""
+    e = make_engine()
+    scores = {"structural": 0.5, "temporal": 0.5, "telemetry": 0.5, "evidence": 0.5, "governance": 1.0}
+    default_composite = e._combine_scores(scores)
+    elevated_composite = e._combine_scores(scores, weights_override={"governance": 0.20})
+    assert elevated_composite > default_composite, "Higher governance weight with governance=1.0 should raise composite"
+    print("  PASS test_combine_scores_uses_fm_governance_weight_override")
+
+
+def test_combine_scores_no_override_uses_config_weight():
+    """No weights_override → _combine_scores uses config.weights unchanged."""
+    e = make_engine()
+    scores = {"structural": 0.5, "temporal": 0.5, "telemetry": 0.5, "evidence": 0.5, "governance": 0.5}
+    result = e._combine_scores(scores)
+    assert result == e._combine_scores(scores, weights_override=None)
+    print("  PASS test_combine_scores_no_override_uses_config_weight")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -383,6 +434,11 @@ ALL_TESTS = [
     test_risk_significance_critical_keywords_returns_one,
     test_risk_significance_high_keywords_returns_high_scalar,
     test_governance_adjusts_with_risk_significance,
+    test_governance_weight_default_for_unknown_superclass,
+    test_governance_weight_elevated_for_maintenance_superclass,
+    test_governance_weight_reduced_for_external_superclass,
+    test_combine_scores_uses_fm_governance_weight_override,
+    test_combine_scores_no_override_uses_config_weight,
 ]
 
 

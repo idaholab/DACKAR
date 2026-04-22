@@ -391,6 +391,91 @@ def test_stage_policy_hook_forces_validation_remediation():
     print("  PASS test_stage_policy_hook_forces_validation_remediation")
 
 
+# ── A2 — severity-adjusted evidence floor ────────────────────────────────────
+
+def make_card_with_composite(composite_score):
+    card = make_clean_card()
+    card["primary_hypothesis"] = {"candidate_id": "FM::CAND-A", "composite_score": composite_score}
+    return card
+
+
+def test_severity_gate_skipped_when_no_severity():
+    """event_severity=None → passed_severity_gate=True, writeback unaffected."""
+    o = make_orchestrator()
+    result = o._compute_review_hooks(
+        make_card_with_composite(0.40),
+        make_output_validation(ok=True),
+        pipeline_health={"status": "green", "issues": []},
+        reentry_hook={"should_reenter": False},
+        event_severity=None,
+    )
+    assert result["passed_severity_gate"] is True
+    assert result["writeback_ready"] is True
+    print("  PASS test_severity_gate_skipped_when_no_severity")
+
+
+def test_severity_1_low_floor_passes_at_031():
+    """severity=1 → floor=0.30; composite=0.31 → passes."""
+    o = make_orchestrator()
+    result = o._compute_review_hooks(
+        make_card_with_composite(0.31),
+        make_output_validation(ok=True),
+        pipeline_health={"status": "green", "issues": []},
+        reentry_hook={"should_reenter": False},
+        event_severity=1,
+    )
+    assert result["passed_severity_gate"] is True
+    assert result["severity_floor"] == 0.30
+    print("  PASS test_severity_1_low_floor_passes_at_031")
+
+
+def test_severity_4_high_floor_blocks_at_040():
+    """severity=4 → floor=0.45; composite=0.40 → blocks writeback."""
+    o = make_orchestrator()
+    result = o._compute_review_hooks(
+        make_card_with_composite(0.40),
+        make_output_validation(ok=True),
+        pipeline_health={"status": "green", "issues": []},
+        reentry_hook={"should_reenter": False},
+        event_severity=4,
+    )
+    assert result["passed_severity_gate"] is False
+    assert result["writeback_ready"] is False
+    assert result["requires_human_review"] is True
+    assert any("Severity-4" in r for r in result["degraded_reasons"])
+    print("  PASS test_severity_4_high_floor_blocks_at_040")
+
+
+def test_severity_5_critical_floor_blocks_at_050():
+    """severity=5 → floor=0.55; composite=0.50 → blocks writeback."""
+    o = make_orchestrator()
+    result = o._compute_review_hooks(
+        make_card_with_composite(0.50),
+        make_output_validation(ok=True),
+        pipeline_health={"status": "green", "issues": []},
+        reentry_hook={"should_reenter": False},
+        event_severity=5,
+    )
+    assert result["passed_severity_gate"] is False
+    assert result["writeback_ready"] is False
+    print("  PASS test_severity_5_critical_floor_blocks_at_050")
+
+
+def test_severity_5_passes_at_or_above_055():
+    """severity=5 → floor=0.55; composite=0.60 → passes."""
+    o = make_orchestrator()
+    result = o._compute_review_hooks(
+        make_card_with_composite(0.60),
+        make_output_validation(ok=True),
+        pipeline_health={"status": "green", "issues": []},
+        reentry_hook={"should_reenter": False},
+        event_severity=5,
+    )
+    assert result["passed_severity_gate"] is True
+    assert result["writeback_ready"] is True
+    print("  PASS test_severity_5_passes_at_or_above_055")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -413,6 +498,11 @@ ALL_TESTS = [
     test_non_strict_red_state_allows_analyst_review,
     test_strict_red_without_hard_abort_does_not_mark_abort_required,
     test_stage_policy_hook_forces_validation_remediation,
+    test_severity_gate_skipped_when_no_severity,
+    test_severity_1_low_floor_passes_at_031,
+    test_severity_4_high_floor_blocks_at_040,
+    test_severity_5_critical_floor_blocks_at_050,
+    test_severity_5_passes_at_or_above_055,
 ]
 
 

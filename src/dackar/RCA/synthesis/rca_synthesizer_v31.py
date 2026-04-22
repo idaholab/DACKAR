@@ -816,6 +816,18 @@ analyst_review = {
             "speculative. Re-run with updated evidence corpus before acting."
         ),
     }
+    # Minimum composite score required for writeback by event severity (1=minor … 5=critical).
+    # Higher-severity events demand a stronger evidence base before the card is writeback-ready.
+    _SEVERITY_SCORE_FLOORS: Dict[int, float] = {1: 0.30, 2: 0.32, 3: 0.35, 4: 0.45, 5: 0.55}
+
+    @staticmethod
+    def minimum_score_for_severity(severity) -> float:
+        try:
+            s = int(severity or 3)
+        except (TypeError, ValueError):
+            s = 3
+        return RuleValidatedRCASynthesizerV31._SEVERITY_SCORE_FLOORS.get(s, 0.35)
+
     _CRITICAL_SAFETY_KEYWORDS = (
         "reactor protection",
         "reactor trip",

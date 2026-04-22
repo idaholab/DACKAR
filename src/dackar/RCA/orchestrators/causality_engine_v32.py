@@ -325,6 +325,7 @@ class RuleBasedCausalityEngineV32:
                 governance_score=governance_base,
                 risk_significance_scalar=float(risk_ctx["scalar"]),
             )
+            fm_gov_weight = self._governance_weight_for_fm(fm.get("superclass"))
             scores = {
                 "structural": structural,
                 "temporal": temporal_parts["temporal"],
@@ -333,6 +334,7 @@ class RuleBasedCausalityEngineV32:
                 "governance": governance_adjusted,
                 "governance_base": round(governance_base, 6),
                 "governance_risk_delta": round(governance_risk_delta, 6),
+                "governance_weight": fm_gov_weight,
                 "risk_significance_scalar": round(float(risk_ctx["scalar"]), 4),
                 "risk_significance_tier": risk_ctx["tier"],
                 "tskr_pattern_match": temporal_parts["tskr_pattern_match"],
@@ -343,7 +345,7 @@ class RuleBasedCausalityEngineV32:
                 "rpn_prior": round(rpn_prior, 4),
                 "barrier_signal": round(barrier_signal, 4),
             }
-            composite = self._combine_scores(scores)
+            composite = self._combine_scores(scores, weights_override={"governance": fm_gov_weight})
             meets_evidence_threshold = evidence >= self.config.minimum_pre_evidence_threshold
             candidate = {
                 "candidate_id": f"FM::{fm_id}",
@@ -1025,6 +1027,30 @@ class RuleBasedCausalityEngineV32:
         "oe_iris":         0.40,
         "oe_adams":        0.30,
     }
+
+    # Governance dimension weight varies by FM category.  For failure modes where
+    # PM is a direct preventive control, governance carries more epistemic weight
+    # than for externally-caused failure modes where PM cannot prevent the failure.
+    _FM_MAINTENANCE_PREVENTABLE_KEYWORDS: frozenset = frozenset({
+        "maintenance", "lubrication", "seal", "bearing", "calibration",
+        "inspection", "wear", "fouling", "corrosion", "overhaul", "replacement",
+        "preventive", "pm", "service",
+    })
+    _FM_EXTERNAL_CAUSE_KEYWORDS: frozenset = frozenset({
+        "external", "environmental", "design", "vendor", "manufacturing",
+        "material", "procurement", "earthquake", "flood", "fire",
+    })
+
+    @staticmethod
+    def _governance_weight_for_fm(superclass: Optional[str]) -> float:
+        if not superclass:
+            return 0.10
+        tokens = set(re.split(r"[\s\-_/]+", superclass.lower()))
+        if tokens & RuleBasedCausalityEngineV32._FM_MAINTENANCE_PREVENTABLE_KEYWORDS:
+            return 0.20
+        if tokens & RuleBasedCausalityEngineV32._FM_EXTERNAL_CAUSE_KEYWORDS:
+            return 0.02
+        return 0.10
 
     def _structural_score_for_fm(self, component_id, components):
         if component_id and component_id in components:
@@ -1796,8 +1822,10 @@ class RuleBasedCausalityEngineV32:
             base = min(1.0, base + 0.05)
         return round(base, 6)
 
-    def _combine_scores(self, scores):
-        w = self.config.weights
+    def _combine_scores(self, scores, weights_override=None):
+        w = dict(self.config.weights)
+        if weights_override:
+            w.update(weights_override)
         total_weight = sum(w.values())
         if total_weight == 0.0:
             return 0.0
@@ -2499,7 +2527,9 @@ class RuleBasedCausalityEngineV32:
         return "speculative"
 
     def _refresh_candidate_confidence_and_thresholds(self, candidate: JsonDict) -> None:
-        candidate["composite_score"] = self._combine_scores(candidate.get("scores") or {})
+        stored_gov_weight = (candidate.get("scores") or {}).get("governance_weight")
+        gov_override = {"governance": stored_gov_weight} if stored_gov_weight is not None else None
+        candidate["composite_score"] = self._combine_scores(candidate.get("scores") or {}, weights_override=gov_override)
         candidate["confidence_label"] = self._normalized_confidence_label(
             float(candidate.get("composite_score", 0.0) or 0.0)
         )

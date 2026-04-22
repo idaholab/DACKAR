@@ -1,5 +1,5 @@
 # RCA Data Management Strategy — Real Plant Settings
-**Date**: April 20, 2026
+**Date**: April 20, 2026 · **Revision**: Sprint 7 complete (April 21, 2026)
 **Context**: How raw plant data translates into RCA pipeline inputs; how to manage data volume sustainably
 **Pipeline baseline**: Orchestrator v3.2, stages A–J as specified in `RCA_workflow_april_2.md`
 
@@ -33,8 +33,10 @@ Stage A — Input validation
         │
         ▼
 Stage B — KG context build
-  Queries Neo4j: resolves components, failure_modes, document IDs, past_events
+  Queries Neo4j: resolves components, failure_modes, document IDs
+                 past_events (KG-resident CAP conclusions only — currently empty)
   Output: kg_context (metadata only — document content not yet fetched)
+  Note: historical CR/WO recurrence history comes from Stage 5B (cmms_context), not from kg_context.past_events[]
         │
         ▼
 Stage 5B / B+ — Run-scoped data fetch  ← THIS DOCUMENT
@@ -183,14 +185,17 @@ Stage I: Archive run-scoped Chroma → {output_dir}/{run_id}/chroma/
 
 Each document in the run-scoped Chroma carries a `source_tier` metadata tag used for authority weighting in evidence scoring. **Note**: `source_tier` is a new field not currently in the `evidence_bundle` schema — it requires a schema update.
 
-| source_tier | document types | query path | authority weight |
-|-------------|---------------|------------|-----------------|
-| `plant_instance` | CR, WO, ECA, RCA for this equipment | instance-level CMMS + EDMS | highest |
-| `plant_procedure` | SOP, operating procedures | EDMS by equipment tag | high |
-| `plant_fmea` | FMEA document content for this component type | class-level FMEA fetch | high |
-| `plant_family` | CR, WO for similar equipment at this plant | class-level CMMS | medium-high |
-| `oe_iris` | INPO IRIS events and OE reports | IRIS LLM internet API | medium |
-| `oe_adams` | NRC ADAMS: INs, GLs, NUREGs, inspection reports | ADAMS LLM internet API | medium |
+| source_tier | document types | query path | authority weight | recency window |
+|-------------|---------------|------------|-----------------|----------------|
+| `plant_instance` | CR, WO — operational records for this equipment | instance-level CMMS | highest | 90 days before event, 7 days after |
+| `plant_instance` | ECA, RCA — analysis documents for this equipment | instance-level EDMS | highest | **None — timeless** (see note below) |
+| `plant_procedure` | SOP, operating procedures | EDMS by equipment tag | high | **None — timeless** |
+| `plant_fmea` | FMEA document content for this component type | class-level FMEA fetch | high | **None — timeless** |
+| `plant_family` | CR, WO for similar equipment at this plant | class-level CMMS | medium-high | Governed by recurrence lookback window |
+| `oe_iris` | INPO IRIS events and OE reports | IRIS LLM internet API | medium | **None — timeless** |
+| `oe_adams` | NRC ADAMS: INs, GLs, NUREGs, inspection reports | ADAMS LLM internet API | medium | **None — timeless** |
+
+> **Timeless vs operational document types**: CR and WO records are operational records whose relevance decays with time — a CR from 5 years ago is less likely to reflect current equipment condition than one from last month. The ±90-day window in Stage B's Neo4j query applies only to these types. ECA, RCA, FMEA, SOP, MANUAL, and BULLETIN documents are timeless engineering knowledge — their relevance to a failure mode does not decay. Stage B retrieves them regardless of creation date and does not apply a recency proximity bonus to their priority scores. Applying recency decay to FMEA documents would penalise the most authoritative source in the corpus by preferring a recent but shallow CR over a decades-old FMEA that directly addresses the failure mode. (B2 — implemented Sprint 7.)
 
 The `all_claims_cited` validation gate (Stage J) requires a valid `doc_id` for any primary hypothesis citation. Both OE LLM APIs must return source citations — ungrounded LLM output without a traceable `doc_id` is contextual only and cannot support a primary claim.
 
@@ -295,12 +300,18 @@ KG governance (update cadence, ECN process, FMEA taxonomy ownership) is a plant 
 
 ## 11. Integration Gap — Component Family Retrieval
 
-The `EquipmentSimilarityResolver` module (`equipment_similarity/`) resolves sister equipment by specification similarity. It is not wired into the main pipeline. Two integration points needed:
+The `EquipmentSimilarityResolver` module (`equipment_similarity/`) resolves sister equipment by specification similarity. It is not wired into the main pipeline.
 
-1. **Stage B**: expand `kg_context.past_events[]` to include events on all equipment of the same `component_type` at the plant, not just topologically-adjacent equipment
-2. **Stage 5B**: add the class-level CMMS query using the KG-resolved equipment_id list
+**Design clarification — where historical event data lives**: `kg_context.past_events[]` is not the source of recurrence history. That field is reserved exclusively for accepted RCA conclusions written back to the KG from closed CAP items; it is currently empty because CAP write-back is not yet implemented. All recurrence history — the historical CR/WO records that feed Stage C (TSKR recurrence profile) and Stage D (historical-event candidate pool) — comes from `cmms_context.cr_records[]`, assembled at Stage 5B from the live CMMS. This is an intentional design: CMMS is the system of record for plant events; the KG is the system of record for equipment topology and failure mode taxonomy.
 
-Without this, the recurrence model in Stage D only sees events on the specific asset and its KG neighbors. A bearing failure on a sister pump in a different system is invisible, even if it is the strongest recurrence signal.
+**Integration point for `EquipmentSimilarityResolver`**: Stage 5B, not Stage B. The resolver expands the set of sister equipment IDs passed to the CMMS query (class-level fetch type 2 in §5). Its output augments `cmms_context.sister_components[]` with Tier-2 (failure-mode overlap) and Tier-3 (spec similarity) results alongside the existing Tier-1 (topological) sisters.
+
+The single wiring change needed:
+1. **Stage 5B** (`cmms_context_builder.py`): call `EquipmentSimilarityResolver.by_failure_mode()` and `by_spec_embedding()` to obtain Tier-2 and Tier-3 sister IDs; merge into the `sister_ids` list before the CMMS query is issued.
+
+`kg_context.past_events[]` remains reserved for KG-resident CAP conclusions and requires no change.
+
+Without this, the recurrence model in Stage C/D only sees events on the specific asset and its Tier-1 KG neighbors. A bearing failure on a sister pump in a different system is invisible, even if it is the strongest recurrence signal.
 
 ---
 
@@ -387,7 +398,9 @@ If the calibration management system does not expose a queryable API, `instrumen
 
 ---
 
-## 15. Resolved Design Decisions (April 20, 2026)
+## 15. Resolved Design Decisions
+
+**April 20, 2026:**
 
 1. **Fleet data access**: Architecture leaves this open. Fleet-level CR/WO data across sister plants is an optional extension — when available it broadens the class-level CMMS query beyond this plant's boundary; when unavailable it degrades gracefully to plant-only recurrence.
 
@@ -396,6 +409,10 @@ If the calibration management system does not expose a queryable API, `instrumen
 3. **Run-scoped Chroma retention**: Archive indefinitely. The archived collection is part of the permanent audit record for that RCA run.
 
 4. **Class-level CMMS query pattern**: Resolved as KG-resolved equipment_id list → per-ID CMMS queries. Universally supported across all three CMMS systems.
+
+**April 21, 2026 (Sprint 7):**
+
+5. **Timeless vs operational document window policy** (B2): The ±90-day document date window applies to operational records only (CR, WO, ECR). Analysis documents — ECA, RCA, FMEA, SOP, MANUAL, BULLETIN — are timeless: Stage B retrieves them regardless of creation date, and the Python enrichment loop applies no recency-proximity bonus to their priority scores. Rationale: an FMEA or ECA written three years ago documenting a known failure mode is equally authoritative today; applying recency decay would penalise the most reliable sources in the corpus in favour of more recent but shallower operational records. The operational window (90 days) is appropriate for CR/WO because it reflects current equipment condition; it is not appropriate for engineering analysis documents whose validity is governed by their revision status, not their age.
 
 ---
 

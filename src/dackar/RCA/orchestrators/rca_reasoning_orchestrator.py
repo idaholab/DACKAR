@@ -406,6 +406,7 @@ class RCAReasoningOrchestrator:
         )
         self._apply_kg_governance_attention_flags(rca_card, kg_governance)
         self._apply_recurrence_match_quality_attention_flags(rca_card, tskr_patterns)
+        self._apply_ishikawa_skip_attention_flag(rca_card, ishikawa_matrix)
         rca_card["barrier_analysis"] = self._barrier_summary_for_card(barrier_analysis)
         self._validate_and_persist(run_id, "rca_card", rca_card)
 
@@ -1076,6 +1077,7 @@ class RCAReasoningOrchestrator:
                 "telemetry_asset_id": telemetry_summary.get("asset_id"),
                 "has_operational_context": operational_context is not None,
                 "has_pm_compliance": pm_compliance is not None,
+                "event_severity": event.get("severity"),
             },
             "validation": {
                 "inputs": input_validation,
@@ -1334,6 +1336,7 @@ class RCAReasoningOrchestrator:
             pipeline_health=pipeline_health,
             reentry_hook=reentry_hook,
             stage_health=stage_health,
+            event_severity=(run_context.get("input_refs") or {}).get("event_severity"),
         )
         ap913_completeness = self._compute_ap913_completeness(
             rca_card=rca_card,
@@ -1353,6 +1356,15 @@ class RCAReasoningOrchestrator:
                 "causality_pre_refine_persisted": causality_candidates_pre_refine is not None,
                 "scoring_evolution": scoring_evolution,
                 "enable_ishikawa": bool(self.config.enable_ishikawa),
+                "ishikawa_run": ishikawa_matrix is not None,
+                "ishikawa_skip_reason": (
+                    None if ishikawa_matrix is not None
+                    else (
+                        "Ishikawa evaluation not enabled in pipeline configuration."
+                        if not self.config.enable_ishikawa
+                        else "Ishikawa evaluator ran but produced no output."
+                    )
+                ),
                 "top_k_candidates": self.config.top_k_candidates,
                 "top_k_evidence": self.config.top_k_evidence,
                 "reentry_execution": reentry_execution or {
@@ -1629,6 +1641,7 @@ class RCAReasoningOrchestrator:
         pipeline_health: Optional[JsonDict] = None,
         reentry_hook: Optional[JsonDict] = None,
         stage_health: Optional[JsonDict] = None,
+        event_severity=None,
     ) -> JsonDict:
         rca_status = rca_card.get("validation_status") or {}
         analyst_review = rca_card.get("analyst_review") or {}
@@ -1664,11 +1677,25 @@ class RCAReasoningOrchestrator:
         if stage_hard_stop_required:
             degraded_reasons.append("Stage policy hard-stop triggered by configured stage_health rule.")
 
+        if event_severity is not None:
+            severity_floor = RuleValidatedRCASynthesizerV31.minimum_score_for_severity(event_severity)
+            primary_composite = float((rca_card.get("primary_hypothesis") or {}).get("composite_score") or 0.0)
+            passed_severity_gate = primary_composite >= severity_floor
+            if not passed_severity_gate:
+                degraded_reasons.append(
+                    f"Severity-{event_severity} event requires composite \u2265 {severity_floor:.2f}; "
+                    f"actual={primary_composite:.4f}."
+                )
+        else:
+            severity_floor = 0.35
+            passed_severity_gate = True
+
         writeback_ready = bool(
             outputs_ok
             and schema_valid
             and all_claims_cited
             and passed_minimum_evidence_gate
+            and passed_severity_gate
             and not decision_required
             and writeback_recommendation == "ready_if_accepted"
             and decision_status == "candidate_ready"
@@ -1679,6 +1706,7 @@ class RCAReasoningOrchestrator:
             decision_required
             or not all_claims_cited
             or not passed_minimum_evidence_gate
+            or not passed_severity_gate
             or not outputs_ok
             or decision_status not in ("candidate_ready",)
         )
@@ -1705,6 +1733,8 @@ class RCAReasoningOrchestrator:
             "all_claims_cited": all_claims_cited,
             "fallback_used": fallback_used,
             "passed_minimum_evidence_gate": passed_minimum_evidence_gate,
+            "passed_severity_gate": passed_severity_gate,
+            "severity_floor": severity_floor,
             "decision_required": decision_required,
             "decision_status": decision_status,
             "writeback_recommendation": writeback_recommendation,
@@ -2072,6 +2102,24 @@ class RCAReasoningOrchestrator:
         msg = (
             "High CR-to-failure-mode match failure rate in recurrence pool "
             f"({unmatched}/{total}, rate={round(rate, 3)}); recurrence ranking may be understated."
+        )
+        if msg not in flags:
+            flags.append(msg)
+
+    @staticmethod
+    def _apply_ishikawa_skip_attention_flag(
+        rca_card: JsonDict,
+        ishikawa_matrix: Optional[JsonDict],
+    ) -> None:
+        if ishikawa_matrix is not None:
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        msg = (
+            "Ishikawa structuring was not performed — human performance and "
+            "organizational factor branches were not systematically evaluated."
         )
         if msg not in flags:
             flags.append(msg)

@@ -418,3 +418,110 @@ def test_cmms_documents_are_injected_into_kg_context_scope():
     assert "CMMS::WO::WO-1" in doc_ids
     assert out["seed_context"]["cmms_documents_injected"] == 2
 
+
+# ---------------------------------------------------------------------------
+# §9.5 — Ishikawa skip surfaced to analyst
+# ---------------------------------------------------------------------------
+
+def test_ishikawa_skip_flag_injected_when_matrix_absent():
+    card = {"executive_summary": {"analyst_attention_flags": []}}
+    RCAReasoningOrchestrator._apply_ishikawa_skip_attention_flag(card, ishikawa_matrix=None)
+    flags = card["executive_summary"]["analyst_attention_flags"]
+    assert any("ishikawa" in f.lower() for f in flags)
+    assert any("not performed" in f.lower() for f in flags)
+
+
+def test_ishikawa_skip_flag_not_injected_when_matrix_present():
+    card = {"executive_summary": {"analyst_attention_flags": []}}
+    RCAReasoningOrchestrator._apply_ishikawa_skip_attention_flag(
+        card, ishikawa_matrix={"categories": []}
+    )
+    flags = card["executive_summary"]["analyst_attention_flags"]
+    assert not any("ishikawa" in f.lower() for f in flags)
+
+
+def test_ishikawa_skip_flag_not_duplicated_on_double_call():
+    card = {"executive_summary": {"analyst_attention_flags": []}}
+    RCAReasoningOrchestrator._apply_ishikawa_skip_attention_flag(card, ishikawa_matrix=None)
+    RCAReasoningOrchestrator._apply_ishikawa_skip_attention_flag(card, ishikawa_matrix=None)
+    flags = card["executive_summary"]["analyst_attention_flags"]
+    assert sum(1 for f in flags if "ishikawa" in f.lower()) == 1
+
+
+def test_manifest_pipeline_config_has_ishikawa_run_false_when_disabled():
+    o = RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
+        config=OrchestratorConfig(enable_ishikawa=False),
+    )
+    manifest = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-1", "input_refs": {"event_id": "EVT-1", "asset_id": "ASSET-1"}},
+        kg_context={"subgraph_id": "KGCTX::1", "components": [], "failure_modes": []},
+        tskr_patterns={"patterns": []},
+        causality_candidates={"candidates": [], "provenance": {}},
+        causality_candidates_pre_refine=None,
+        evidence_bundle={"results": []},
+        ishikawa_matrix=None,
+        cmms_context=None,
+        rca_card={
+            "validation_status": {"schema_valid": True, "all_claims_cited": True,
+                                  "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": False, "writeback_recommendation": "ready_if_accepted"},
+            "executive_summary": {"decision_status": "candidate_ready"},
+            "primary_hypothesis": {"candidate_id": "NONE"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        },
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 0, "min_failure_modes_required": 0},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green", "barrier_count": 0, "degraded_barrier_count": 0}},
+    )
+    assert manifest["pipeline_config"]["ishikawa_run"] is False
+    assert "not enabled" in (manifest["pipeline_config"]["ishikawa_skip_reason"] or "").lower()
+
+
+def test_manifest_pipeline_config_has_ishikawa_run_true_when_matrix_present():
+    o = RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
+        config=OrchestratorConfig(enable_ishikawa=True),
+    )
+    manifest = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-1", "input_refs": {"event_id": "EVT-1", "asset_id": "ASSET-1"}},
+        kg_context={"subgraph_id": "KGCTX::1", "components": [], "failure_modes": []},
+        tskr_patterns={"patterns": []},
+        causality_candidates={"candidates": [], "provenance": {}},
+        causality_candidates_pre_refine=None,
+        evidence_bundle={"results": []},
+        ishikawa_matrix={"categories": [{"category": "equipment"}]},
+        cmms_context=None,
+        rca_card={
+            "validation_status": {"schema_valid": True, "all_claims_cited": True,
+                                  "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": False, "writeback_recommendation": "ready_if_accepted"},
+            "executive_summary": {"decision_status": "candidate_ready"},
+            "primary_hypothesis": {"candidate_id": "NONE"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        },
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 0, "min_failure_modes_required": 0},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green", "barrier_count": 0, "degraded_barrier_count": 0}},
+    )
+    assert manifest["pipeline_config"]["ishikawa_run"] is True
+    assert manifest["pipeline_config"]["ishikawa_skip_reason"] is None
+
