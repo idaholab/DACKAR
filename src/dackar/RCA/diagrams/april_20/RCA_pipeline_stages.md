@@ -1,5 +1,6 @@
 # RCA Pipeline — Stage-by-Stage Reference
-**Date**: April 23, 2026 · **Revision**: Sprint 7 complete + Stage 0 added + alignment pass
+**Date**: April 23, 2026
+**Revision**: Sprint 7 complete + Stage 0 added + alignment pass
 **Baseline**: Orchestrator v3.2 · Schema set v3.2
 **Companion documents**: `RCA_pipeline_flowchart.md` (architecture) · `RCA_workflow_april_2.md` (formal spec) · `RCA_Data_Management_Strategy.md` (data layer) · `RCA_FMEA_handling_spec.md` (FMEA formats, normalization, enrichment) · `RCA_stage_B5_signal_evidence_spec.md` (topology anomaly fetch, propagation chains)
 
@@ -26,7 +27,7 @@ This document was drafted while multiple modules were still moving. The table be
 
 ## 1.1 What the Pipeline Does
 
-The RCA pipeline is an automated decision-support system for nuclear plant corrective action program (CAP) root cause analysis. Given an abnormal event — a protective trip, a component failure, a degraded performance condition — the pipeline reasons over plant-specific knowledge, live CMMS records, and historical documentation to produce a ranked list of root cause hypotheses and a structured RCA card. That card shoul not be submitted directly to the CAP system but forwarded to an analyst for review and override.
+The RCA pipeline is an automated decision-support system for troubleshooting and root cause analysis. Given an abnormal event — a protective trip, a component failure, a degraded performance condition — the pipeline reasons over plant-specific knowledge, live CMMS records, and historical documentation to produce a ranked list of root cause hypotheses and a structured RCA card. That card should not be submitted directly to the CAP system but forwarded to an analyst for review and override.
 
 The pipeline does not replace the analyst. It is a co-pilot: it assembles, scores, and structures evidence at a speed and consistency that manual RCA cannot match, and it surfaces uncertainty and gaps explicitly so the analyst can focus effort where it matters most. Every output is traceable — every score to its inputs, every hypothesis to its evidence, every recommendation to its rationale.
 
@@ -187,7 +188,7 @@ Neo4j graph database populated by Stage 0 before the pipeline runs. Contains the
 CMMS corrective action program records (CRs, WOs), Engineering Document Management System (EDMS) procedures and ECAs, and FMEA source documents. Queried fresh per run. Stage 5B assembles this content into the run-scoped Chroma collection and the `cmms_context` artifact. Stages 5B, C, D consume from this layer.
 
 **Layer 3 — Run-scoped Chroma collection (assembled at Stage 5B, queried at Stage E)**
-An ephemeral vector database collection keyed by `run_id`, containing embedded text from CR/WO narratives, EDMS documents, FMEA source text, and SOPs. Created at Stage 5B, queried at Stage E, archived to disk at Stage I. No content from this layer is shared across runs — each run builds its own corpus from the live plant systems.
+A vector database collection keyed by `run_id`, containing embedded text from CR/WO narratives, EDMS documents, FMEA source text, and SOPs. Created at Stage 5B, queried at Stage E, archived to disk at Stage I. No content from this layer is shared across runs — each run builds its own corpus from the live plant systems.
 
 ## 1.5 Scoring Architecture
 
@@ -217,7 +218,7 @@ The pipeline does not make final decisions. It routes every run to one of three 
 
 | Outcome | Condition | Analyst action |
 |---------|-----------|----------------|
-| `writeback` | All gates pass; no review flags | System submits RCA card to CAP system |
+| `writeback` | All gates pass; no review flags | Analyst perform last review of rca_card |
 | `analyst_review` | Near-tie, low evidence, or severity gate fail | Analyst reviews rca_card and overrides or confirms |
 | `remediation` | Schema validation fails or pipeline health red | Data or pipeline issue must be resolved before analysis can proceed |
 
@@ -462,7 +463,7 @@ def run_kg_initialization(mbse_model_path, sensor_map_path, fmea_paths,
 - **No sensor-to-component ingestion**: the five-tier alias resolution in Stage B (`_resolve_via_sensor_aliases`) and the proposed telemetry-driven neighborhood expansion both depend on `element_usage → monitored_variable` edges. No ingestion path for a sensor-to-component CSV currently exists in `kg/`.
 - **CMMS/EDMS metadata fetch is a Stage 5B responsibility today**: Stage 5B fetches document content (and implicitly metadata) at run time. Stage 0 should pre-index stable document metadata references into the KG so Stage B's document priority scoring has something to query — currently the KG document references are populated only by the NLP Stage 1–6 pipeline ingest, which requires pre-processed JSONL files.
 - **FMEA `component_type` ↔ `domain_category` alignment is manual**: the FMEA parser extracts `component_type` as a free-text field; `domain_category` in the MBSE model is also free text. Mismatches silently produce orphaned failure modes (no `APPLIES_TO` edge). A controlled vocabulary or normalization step is needed. See `RCA_FMEA_handling_spec.md` §3 for the full FMEA ingestion normalization layer design.
-- **FMEA format variability not handled**: the current `fmeaParser.py` handles column naming variations but not structural differences between FMEA formats (AIAG, MIL-STD-1629A, IEC 60812, nuclear-utility-specific). Fields critical to the pipeline — `expected_latency_min/max_hours`, `expected_anomaly_pattern` — are absent from all standard FMEA formats and require a dedicated enrichment workflow before they can be used. See `RCA_FMEA_handling_spec.md` for the full analysis, the normalization layer spec (§3), and the human-in-loop enrichment workflow spec (§4).
+- ✅ **FMEA parser implemented with multi-format support**: `parse_fmea_file()` / `parse_fmea_files()` in the FMEA parser module handle AIAG 4th/5th edition, MIL-STD-1629A, IEC 60812, and nuclear-generic formats with automatic or explicit profile selection. Column name variations are resolved via regex matching. Fields critical to the pipeline — `expected_latency_min_hours` / `expected_latency_max_hours` (converted from `min_days`/`max_days` × 24) and `expected_anomaly_pattern` (inferred from `local_effect` text keywords when not explicit) — are derived by the normalization layer. Derivation and NLP-inference are tracked per field in `_field_quality` and `_derivation_method` metadata. An `fmea_ingestion_report` with quality counts (`total_fms_ingested`, `critical_field_missing_count`, `enrichment_field_missing_count`, `derived_field_count`, `nlp_inferred_field_count`, `format_autodetect_confidence`) is produced alongside the records. **Still open**: (1) `component_type` ↔ KG `domain_category` vocabulary alignment remains manual — mismatches silently produce orphaned FMs; (2) cross-referenced FMEA rows (shared mechanisms, child/parent relationships) are not handled — each row is independent; (3) deduplication across multiple FMEA files relies on exact `component_type + failure_mode_name` match.
 - **No incremental update support**: the current design is full-rebuild. A partial update workflow (e.g., add one new component, refresh doc metadata for one asset) is not yet specified. For large plants this matters because a full KG rebuild may take tens of minutes.
 - **MBSE model format not finalized**: `mbseSchema.toml` defines the KG shape but does not specify an intermediate JSON exchange format. The `mbse_model.json` input format for Stage 0 needs a companion schema definition.
 - **Safety function nodes**: the MBSE schema supports safety function definitions, but the Stage 0 ingestor must explicitly map MBSE safety function associations to the `PERFORMS` / `SUPPORTED_BY` / `PROVIDES` edge types that Stage B queries. This mapping logic is not yet written.
@@ -491,7 +492,7 @@ Stage A does not query any external system and does not score anything. Its sole
 | `event.json` | `event_id`, `asset_id`, `severity`, `timestamp_start`, `symptom_signature` |
 | `telemetry_summary.json` | `event_id`, `asset_id`, `window`, `signals[].sensor_id` |
 | `operational_context.json` | `event_id`, `asset_id` |
-| `pm_compliance.json` | `asset_id`, `pm_checks[]` |
+| `pm_compliance.json` | `asset_id`, `checks[]` |
 
 ### Key logic
 
@@ -849,7 +850,7 @@ These are orthogonal concerns: a long time window can still produce a small numb
 ### Known gaps
 
 - **Stage 5B is partially implemented**: only Tier-1 (topology) instance-level CMMS fetch is production-ready. Class-level fetch, EDMS, and FMEA document ingestion are stubs.
-- **`EquipmentSimilarityResolver` exists** in `equipment_similarity/` but is not wired into `CMMSContextBuilder` by default.
+- ✅ **Wired (Sprint 7)**: `EquipmentSimilarityResolver` (`equipment_similarity/equipment_similarity_resolver.py`) is now optionally wired into `CMMSContextBuilder`. Tier 2 (failure-mode overlap from `kg_context`) and Tier 3 (spec embedding similarity via Chroma `equipment_specs` collection) sister resolution are available when `use_similarity_resolver=True` in `CMMSContextBuilder` config. Default is disabled until `EquipmentSpecStore` has been populated by `KGEquipmentPoller`.
 - No `TelemetryAdapter` protocol — `telemetry_summary.json` is assumed to arrive pre-formatted (see Data Management Strategy, gap L3).
 - OE LLM tier (`IRISLLMClient`, `ADAMSLLMClient`) is future; calls are not made at Stage 5B.
 
@@ -875,8 +876,9 @@ These are orthogonal concerns: a long time window can still produce a small numb
 
 ## Stage B.5 — Topology-Driven Anomaly Fetch
 
-**Class / entry-point**: *(not yet implemented — target: `orchestrators/signal_evidence_builder.py`)*
+**Class / entry-point**: `SignalEvidenceBuilder.build()` — `orchestrators/signal_evidence_builder.py` (delegates to `signal_evidence/builder.py::build_signal_evidence()`)
 **Runs**: independently of Stage 5B after Stage B; both can execute in parallel
+**Implementation status**: ✅ Implemented (Sprint 7). `HistorianAdapter` protocol + `NullHistorianAdapter` + `InfileHistorianAdapter` live in `signal_evidence/historian_adapter.py`. `is_upstream()` lives in `kg/kg_query_utils.py`. Runtime historian mode (`null` / `infile` / requested `osisoft` downgraded to null) is recorded in `run_manifest.pipeline_config.signal_evidence_runtime`.
 
 ### What this stage does
 
@@ -918,13 +920,20 @@ If no propagation chains are found (no anomaly pairs satisfy both the Allen and 
 - Resolves topology direction for each sensor pair using the KG: `neo4j.is_upstream(component_a, component_b)` — returns True if `component_a` reaches `component_b` via `has_part_usage` or `owns_port_usage → connects_port` traversal with direction preserved from Stage 0 MBSE ingest.
 - Computes pairwise Allen relation for every pair of anomaly windows in the augmented set using `allen_relation()` from `temporal_relations.py`.
 - Creates a directed edge `(anomaly_i → anomaly_j)` only when **both** hold: Allen relation ∈ {PRECEDES, OVERLAPS} AND `is_upstream(sensor_i.component, sensor_j.component) = True`.
-- Builds the propagation DAG from all directed edges.
-- Extracts all maximal paths in the DAG (paths that are not subpaths of any longer path) using depth-first traversal.
-- Scores each path: `path_score = mean(allen_base_scores) × topology_alignment_factor × lag_consistency_factor`.
-  - `topology_alignment_factor`: 1.0 if all edges follow containment hierarchy, 0.85 if mixed containment + connectivity, 0.70 if connectivity only.
-  - `lag_consistency_factor`: derived from std/mean of inter-anomaly lags along the path; lower variance → higher score.
-- Retains top-N paths (default N=5) ranked by `path_score`.
-- Computes `per_candidate_chain_score`: for each failure mode in `kg_context.failure_modes[]`, finds the highest-scoring chain where the FM's component appears, and returns the FM's position score (root = 1.0, intermediate = 0.5 × path_score, absent = 0.0).
+- Builds the propagation DAG. Cycle detection (bidirectional reachability check) is applied during DAG construction — back-edges are skipped with a `topology_cycle` warning rather than creating a loop. Feedback cascades that cannot be linearized are truncated at `max_chains` with a `feedback_cascade_truncated` warning.
+- Classifies each anomaly node by in/out degree: `isolated` (deg=0/0), `divergence` (out>1, in≤1), `convergence` (in>1, out≤1), `hub` (in>1, out>1), `linear` (otherwise). Node pattern types are stored per chain node and aggregated in `dag_topology_summary`.
+- Extracts all maximal paths from root nodes (in_degree=0) to leaves using depth-first traversal, up to `max_paths=20`.
+- Scores each path: `path_score = mean_allen_score × topology_alignment_factor × lag_consistency_factor + hub_boost` (clamped [0,1]).
+  - `topology_alignment_factor`: 1.0 if all edges follow containment hierarchy, 0.85 if mixed, 0.70 if connectivity only.
+  - `lag_consistency_factor`: `max(0, 1 − CV)` if ≥2 lags; 0.80 if exactly 1 lag; 0.0 if no lags.
+  - `hub_boost`: `min(0.15, 0.05 × max(0, out_degree − 1))` if the chain root is a divergence node (common-cause root); 0.0 otherwise.
+- Retains top-N paths (default N=10) ranked by `path_score`.
+- Computes `per_candidate_chain_score`: for each failure mode in `kg_context.failure_modes[]`, finds the best chain position and assigns `chain_position_score` by position type:
+  - `root` or `common_cause_root` (root is a divergence node): **1.0**
+  - `convergence_confluence` (component at a convergence/hub node): **0.3 × chain_score**
+  - `intermediate` (non-root, non-convergence): **max(0, chain_score × (1 − 0.3 × position_idx))**
+  - `absent` (component not in any chain): **0.0**
+  - Candidates at convergence nodes also receive `contributing_cause_role: "concurrent_cause_candidate"` to flag possible concurrent causes at Stage D.
 
 ### Output artifact — `signal_evidence`
 
@@ -932,9 +941,11 @@ If no propagation chains are found (no anomaly pairs satisfy both the Allen and 
 |-------|---------|
 | `augmented_anomaly_set[]` | Merged anomaly records from historian + telemetry_summary; each has `sensor_id`, `component_id`, `timestamp_start/end`, `pattern`, `severity`, `source` |
 | `propagation_chains[]` | Ranked list of chain objects; each has `chain_id`, `path_score`, `topology_alignment_factor`, `lag_consistency_factor`, `nodes[]` (ordered anomaly sequence with `allen_relation_to_next`, `edge_type`) |
-| `per_candidate_chain_score` | `{fm_id: {chain_position_score, best_chain_id, position_type}}` — consumed by Stage C and Stage F |
+| `per_candidate_chain_score` | `{fm_id: {chain_position_score, best_chain_id, position_type, contributing_cause_role, confluence_component_id}}` — consumed by Stage C and Stage F. `position_type` values: `root` (1.0), `common_cause_root` (1.0, root is a divergence node), `intermediate` (max(0, chain_score × (1 − 0.3 × position_idx))), `convergence_confluence` (0.3 × chain_score), `absent` (0.0). `contributing_cause_role: "concurrent_cause_candidate"` is set for non-root candidates at convergence nodes. |
 | `chain_coverage` | Float [0,1]: fraction of augmented anomaly set covered by at least one chain |
-| `fetch_gaps[]` | Sensors with no historian response: `{sensor_id, component_id, reason}` |
+| `dag_topology_summary` | `{divergence_node_count, convergence_node_count, hub_node_count, linear_node_count, isolated_node_count}` — node pattern counts across the full propagation DAG |
+| `fetch_gaps[]` | Sensors with no historian response: `{sensor_id, component_id, reason}`. Reason enum: `no_sensor_map_entry \| historian_unavailable \| no_anomalies_in_window \| api_error` |
+| `chain_warnings[]` | `{type, components, message}` — cycle detection and truncation events. `type` enum: `topology_cycle \| feedback_cascade_truncated` |
 | `augmented_anomaly_count` | Total anomaly count post-merge |
 | `historian_anomaly_count` | Anomalies contributed by historian (above telemetry_summary baseline) |
 
@@ -1004,19 +1015,22 @@ def build_signal_evidence(kg_context, telemetry_summary, event, run_context,
 | `fetch_lookback_hours` | 72 | How far before the event to query the historian |
 | `fetch_lookahead_hours` | 4 | Short forward window to capture post-event confirmation signals |
 | `dedup_tolerance_minutes` | 5 | Two anomaly records with same sensor_id within this window are considered duplicates |
-| `top_n_chains` | 5 | Maximum propagation chains retained in output |
-| Chain root position score | 1.0 | FM's component is the first node of the chain |
-| Chain intermediate score | 0.5 × path_score | FM's component is a non-root node |
+| `max_chains` (`top_n_chains`) | 10 | Maximum propagation chains retained in output |
+| `max_paths` | 20 | Maximum DFS paths explored before selecting top chains |
+| Chain root / common_cause_root score | 1.0 | FM's component is the first node; `common_cause_root` when root is divergence node |
+| Chain convergence_confluence score | 0.3 × chain_score | FM's component is at a convergence or hub node |
+| Chain intermediate score | max(0, chain_score × (1 − 0.3 × position_idx)) | FM's component is a non-root, non-convergence node |
 | Chain absent score | 0.0 | FM's component does not appear in any chain |
 | `topology_alignment_factor` | 1.0 / 0.85 / 0.70 | Containment-only / mixed / connectivity-only path |
+| `hub_boost` | min(0.15, 0.05 × (out_degree − 1)) | Applied to path_score when chain root is a divergence (common-cause) node |
 
 ### Known gaps
 
-- **Historian adapter not implemented**: no `HistorianAdapter` class exists in the codebase. The interface must be defined and at minimum one adapter written (OSIsoft PI is the most common in nuclear plants). The adapter must return structured anomaly records — if the historian returns only raw time series, a preprocessing step is needed upstream.
-- **`is_upstream()` KG query not implemented**: resolving topology direction between component pairs requires a directed path query in Neo4j. The Stage 0 MBSE ingest must preserve edge direction (parent→child for containment, signal-flow direction for connectivity). The current `kg_ingest_neo4j_workflow.py` does not guarantee directional consistency.
+- ✅ **Fixed (Sprint 7)**: `HistorianAdapter` Protocol is defined in `signal_evidence/historian_adapter.py`. `NullHistorianAdapter` (graceful empty fallback) and `InfileHistorianAdapter` (reads pre-flagged anomaly records from JSON/CSV) are implemented. Live OSIsoft PI adapter is still a future item — requests for `osisoft` mode are downgraded to null at runtime with a log warning.
+- ✅ **Fixed (Sprint 7)**: `is_upstream(component_a, component_b)` exists in `kg/kg_query_utils.py`. Traverses `has_part_usage | owns_port_usage | connects_port` up to 6 hops. Requires that Stage 0 MBSE ingest preserves edge directionality — current `kg_ingest_neo4j_workflow.py` does not guarantee this for MBSE-sourced edges (Stage 0 not yet implemented), but the query function is ready.
 - **Pairwise Allen computation scales quadratically**: for N anomalies in the augmented set, pairwise comparison is O(N²). For a large plant neighborhood with many sensors and a long lookback window, this may produce hundreds of anomalies and tens of thousands of comparisons. A pruning step (e.g., only compare anomalies within a maximum lag window) is needed for production use.
-- **Propagation DAG may contain cycles if topology has feedback loops**: the MBSE connectivity model can include recirculation paths (e.g., pump discharge feeding back to suction header). The `is_upstream` query must be cycle-aware — the current proposal assumes a strict DAG. If cycles exist, the longest-path algorithm is undefined; a cycle-detection step and a fallback (e.g., ignore feedback edges) are required.
-- **`per_candidate_chain_score` weights are not calibrated**: the root/intermediate/absent scoring (1.0 / 0.5×path_score / 0.0) is a reasonable prior but will require empirical calibration against historical RCA cases. This is explicitly flagged for near-term iteration.
+- ✅ **Cycle detection implemented**: bidirectional reachability check in DAG construction skips back-edges and emits `topology_cycle` warnings rather than entering an infinite loop. Feedback cascades that cannot be linearized are truncated with `feedback_cascade_truncated` warnings and reported in `chain_warnings[]`.
+- **`per_candidate_chain_score` position weights are not empirically calibrated**: the root/convergence/intermediate/absent scoring is a reasonable topological prior but has not been validated against historical RCA cases. The `convergence_confluence` weight (0.3 × chain_score) and the intermediate decay factor (0.3 × position_idx) are engineering estimates requiring calibration.
 - **No chain evidence for out-of-boundary anomalies**: anomalies from sensors not in the KG neighborhood (`out_of_boundary_anomalies` from Stage B) are not included in the propagation chain analysis. A sensor outside the neighborhood could be the actual root cause — the chain would be incomplete. A partial extension of the DAG to include out-of-boundary nodes (with a lower confidence weight) is a future enhancement.
 
 ---
@@ -1221,8 +1235,9 @@ def score(event, telemetry, kg_context, cmms_context, signal_evidence, oc, run_c
 
 ## Stage D — Candidate Generation (pre-evidence)
 
-**Class / entry-point**: `RuleBasedCausalityEngineV31.generate()` (also v32 in flowchart)
-**File**: `orchestrators/causality_engine_v31.py`
+**Class / entry-point**: `RuleBasedCausalityEngineV32.generate()` — `orchestrators/causality_engine_v32.py` (**production default**)
+**Baseline engine**: `RuleBasedCausalityEngineV31.generate()` — `orchestrators/causality_engine_v31.py` (retained for ablation / cross-validation; does **not** implement `refine_with_evidence()`, so Stage F is silently skipped when v31 is selected)
+> **Note**: `build_dev_orchestrator()` defaults to v32. The active engine class and version are recorded in `run_manifest.pipeline_config`. See §4.1 C-1 for the v31/v32 behavioral differences.
 
 ### What this stage does
 
@@ -1250,7 +1265,7 @@ The output — `causality_candidates v1` — is a pre-evidence snapshot. It repr
 | `tskr_patterns` | Indexed by `fm_id` for temporal sub-scores |
 | `telemetry_summary` | `signals[].anomalies[]` |
 | `operational_context` | `recent_alarms`, `operating_point` |
-| `pm_compliance` | `pm_checks[]`, `last_pm_date` |
+| `pm_compliance` | `checks[]` (status, component_id, applicable_fm_ids, overdue_by_days, check_type) |
 
 ### Key logic
 
@@ -1303,26 +1318,37 @@ def generate(event, telemetry, kg_context, tskr_patterns, oc, pm, run_context):
             + 0.15 * tskr.get("support", 0)
         )
 
-        # 3. Telemetry score
+        # 3. Telemetry score — 0.0 when no anomalies (no credit for absence of signal)
         n_anomalies = count_anomalies_for_component(comp, telemetry)
         severity_pts = sum_severity_points(comp, telemetry)
-        Tel = min(1.0, 0.35 + 0.12 * n_anomalies + 0.08 * severity_pts
-                  + (0.10 if comp["seed_match_type"] == "telemetry" else 0))
+        if n_anomalies == 0:
+            Tel = 0.0
+        else:
+            Tel = min(1.0, 0.35 + 0.12 * n_anomalies + 0.08 * severity_pts
+                      + (0.10 if comp["seed_match_type"] == "telemetry" else 0))
 
         # 4. Evidence score (KG document proxy — pre-Chroma)
         doc_types = get_doc_types_for_fm(fm, kg_context["documents"])
-        recency_cr_wo = max_recency_factor(doc_types, ["CR", "WO"])
+        recency_fmea    = max_recency_factor(doc_types, ["FMEA"])       # always 1.0 (timeless)
+        recency_cr_wo   = max_recency_factor(doc_types, ["CR", "WO"])
+        recency_eca_rca = max_recency_factor(doc_types, ["ECA", "RCA"]) # always 1.0 (timeless)
         E = min(1.0,
             0.30
-            + (0.25 * recency_fmea if "FMEA" in doc_types else 0)
-            + (0.20 * recency_cr_wo if doc_types & {"CR","WO"} else 0)
-            + (0.15 * recency_eca_rca if doc_types & {"ECA","RCA"} else 0)
+            + (0.12 * recency_fmea   if "FMEA" in doc_types else 0)
+            + (0.15 * recency_cr_wo  if doc_types & {"CR","WO"} else 0)
+            + (0.22 * recency_eca_rca if doc_types & {"ECA","RCA"} else 0)
+            + (0.08 if doc_types & {"SOP","MANUAL","SPEC"} else 0)
+            + (0.10 if "OE" in doc_types else 0)
         )
 
         # 5. Governance score (PM compliance)
         G = score_governance(fm, pm)
 
-        composite = 0.30*S + 0.20*T + 0.20*Tel + 0.20*E + 0.10*G
+        # Composite — governance weight is FM-category-specific (0.20 maintenance-preventable,
+        # 0.02 external, 0.10 default). _combine_scores() normalises by sum(weights) so the
+        # composite is always in [0, 1] regardless of which governance weight applies.
+        gw = governance_weight_for_fm(fm)   # 0.02–0.20
+        composite = (0.30*S + 0.20*T + 0.20*Tel + 0.20*E + gw*G) / (0.90 + gw)
 
         safety_sig = fm.get("safety_significant", False)
 
@@ -1392,7 +1418,7 @@ def generate(event, telemetry, kg_context, tskr_patterns, oc, pm, run_context):
 ## Stage E — Evidence Retrieval
 
 **Class / entry-point**: `ChromaEvidenceRetriever.retrieve()`
-**File**: `storage/chroma_evidence_retriever.py`
+**File**: `orchestrators/evidence_retriever.py`
 
 ### What this stage does
 
@@ -1443,8 +1469,8 @@ It is important to understand what Stage E can and cannot retrieve. Its entire c
 
 ## Stage F — Candidate Refinement (post-evidence)
 
-**Class / entry-point**: `RuleBasedCausalityEngineV31.refine_with_evidence()`
-**File**: `orchestrators/causality_engine_v31.py`
+**Class / entry-point**: `RuleBasedCausalityEngineV32.refine_with_evidence()` — `orchestrators/causality_engine_v32.py`
+> **Note**: `refine_with_evidence()` is only implemented in v32. When the orchestrator is configured with v31, Stage F is silently skipped and `causality_candidates v2 = causality_candidates v1`. This must be flagged in the run manifest — see §4.1 C-1.
 
 ### What this stage does
 
@@ -1452,7 +1478,7 @@ Stage F closes the loop between the candidate hypotheses generated at Stage D an
 
 For each candidate, Stage F updates the evidence sub-score using the supporting count, contradicting count, and best support score from the `evidence_bundle`. The updated score feeds back into the same 5-dimensional weighted composite, producing a revised ranking — `causality_candidates v2`. Candidates whose rank improves after the evidence update were undervalued by the KG proxy at Stage D; candidates whose rank drops were over-valued. This v1→v2 ranking delta is the primary diagnostic signal of the pipeline: if ranks do not change materially, the evidence corpus assembled at Stage 5B is not discriminating between hypotheses, which itself is a finding worth surfacing to the analyst.
 
-Stage F also classifies each candidate's evidence posture — `supported`, `contested`, `neutral`, or `missing` — and flags near-ties where the composite score gap between adjacent candidates falls within the `review_alternative_gap` threshold. These flags are the pipeline's way of telling the analyst: "the scoring cannot confidently choose between these two hypotheses; human judgement is required."
+Stage F also classifies each candidate's evidence posture — `supported`, `mixed`, `contextual_only`, `contradicted`, `weak`, or `no_data` — and flags near-ties where the composite score gap between adjacent candidates falls within the `review_alternative_gap` threshold. These flags are the pipeline's way of telling the analyst: "the scoring cannot confidently choose between these two hypotheses; human judgement is required."
 
 What Stage F does not do is go back and retrieve more evidence. The pipeline is strictly sequential — Stage E runs once, Stage F refines once. If contradicting evidence drops a previously top-ranked candidate, the pipeline cannot automatically seek additional targeted documentation to resolve the conflict. That follow-up is left to the analyst.
 
@@ -1468,7 +1494,7 @@ What Stage F does not do is go back and retrieve more evidence. The pipeline is 
 
 - Updates the evidence sub-score for each candidate by combining two independent evidence streams: document evidence from `evidence_bundle` (Chroma retrieval) and chain evidence from `signal_evidence` (propagation chain position). When `signal_evidence` is absent or empty, the chain term is zero and the formula reduces to the document-only behavior from Sprint 7.
 - Evidence sub-score formula: `E_new = clamp01(0.70 × E_doc + 0.30 × chain_score)`. Weights are initial estimates flagged for iteration.
-- Applies **evidence posture** classification: `supported | contested | neutral | missing`. Posture is derived from document evidence only (supporting/contradicting counts); chain evidence does not contribute to posture classification.
+- Applies **evidence posture** classification via `_evidence_posture()` in `causality_engine_v32.py`. Six values, in priority order: `no_data` (retrieval returned nothing) → `contradicted` (zero support + any contradiction, or strong contra dominates) → `supported` (strong support, no dominant contradiction) → `mixed` (both support ≥ 0.30 and contradiction ≥ 0.20) → `contextual_only` (contextual snippets only, support < 0.30) → `weak` (documents retrieved but no strong signal). Posture is derived from continuous support/contradiction/contextual scores and `retrieved_hit_count`; chain evidence does not contribute.
 - Flags candidates for analyst review when primary and top-alternative are within `review_alternative_gap = 0.10` of each other.
 - Recomputes composite score with updated evidence sub-score; re-ranks the candidate list.
 - The **v1 → v2 ranking delta** is the primary diagnostic signal: candidates that move up in rank after evidence retrieval were undervalued by the KG proxy; those that drop were over-valued. Large rank inversions driven primarily by `chain_score` (chain root candidates jumping in rank) indicate that the propagation chain is adding discriminating signal beyond document evidence alone.
@@ -1479,7 +1505,7 @@ Adds to v1 fields:
 
 | New field | Content |
 |-----------|---------|
-| `evidence_posture` | `supported \| contested \| neutral \| missing` (document evidence only) |
+| `evidence_posture` | `no_data \| contradicted \| supported \| mixed \| contextual_only \| weak` — see `causality_candidates.v3_2.schema.json` enum; document evidence only |
 | `v1_rank`, `v2_rank` | Rank position before and after evidence update |
 | `rank_delta` | `v1_rank − v2_rank` (positive = moved up) |
 | `review_required` | bool — set when rank gap to next candidate ≤ 0.10 |
@@ -1535,12 +1561,22 @@ def refine_with_evidence(candidates_v1, evidence_bundle, signal_evidence=None):
             + 0.10 * cand["scores"]["governance"]
         )
 
-        posture = (
-            "supported"  if n_support > 0 and n_contra == 0 else
-            "contested"  if n_support > 0 and n_contra > 0  else
-            "neutral"    if n_support == 0 and n_contra == 0 else
-            "missing"
+        # Posture computed by _evidence_posture() in causality_engine_v32.py
+        # using continuous scores + retrieved_hit_count, not raw snippet counts.
+        # Six values match the causality_candidates.v3_2.schema.json enum.
+        posture = _evidence_posture(
+            support_score=support_score,
+            contradiction_score=contradiction_score,
+            contextual_score=contextual_score,
+            retrieved_hit_count=retrieved_hit_count,
         )
+        # Priority order of returned values:
+        #   "no_data"         retrieved_hit_count == 0 and all scores zero
+        #   "contradicted"    support == 0 and any contra, OR strong contra dominates
+        #   "supported"       support >= 0.55 and no dominant contradiction
+        #   "mixed"           support >= 0.30 and contradiction >= 0.20
+        #   "contextual_only" contextual >= 0.25 and support < 0.30
+        #   "weak"            documents retrieved but no strong signal either way
 
         refined.append({**cand,
             "scores": {**cand["scores"], "evidence": E_new},
@@ -1579,8 +1615,8 @@ def refine_with_evidence(candidates_v1, evidence_bundle, signal_evidence=None):
 - `review_required` flag does not propagate to `rca_card.analyst_review.questions_to_resolve`; the analyst must check v2 candidates directly.
 - The v1→v2 delta is stored per-candidate but not surfaced as a named summary field in the artifact; visualization tools must compute it from `rank_delta`.
 - ✅ **Fixed (Apr 23, 2026)**: Stage F refinement now applies authority weighting using `candidate_evidence_summary.best_source_tier` via `_AUTHORITY_WEIGHTS` in `causality_engine_v32.py` (support term uses `best_support_score * authority_weight`). Score transparency now includes `scores.evidence_authority_weight`, optional `scores.evidence_authority_tier`, and rationale text showing the applied tier/weight.
-- **Evidence posture classification has a logical gap**: the four-way classification covers `n_support > 0 and n_contra == 0` (supported), `n_support > 0 and n_contra > 0` (contested), `n_support == 0 and n_contra == 0` (neutral), and falls to `missing` for the remaining case. The remaining case is `n_support == 0 and n_contra > 0` — contradicting evidence found with no supporting evidence. Labelling this `missing` is incorrect: evidence was found, it just argues against the hypothesis. This case should be a distinct posture, e.g., `contradicted`, to correctly signal to the analyst that this candidate has active evidence against it.
-- **`review_alternative_gap` applied on composite score alone**: the near-tie flag compares composite score differences. Two candidates 0.09 apart could have very different evidence postures — one strongly supported, one contested — yet both trigger `review_required`. Conversely, two candidates with identical evidence postures and scores of 0.51 and 0.40 do not trigger the flag even though neither is well-discriminated. The flag would be more operationally meaningful if it incorporated evidence posture: a near-tie between two `supported` candidates is more critical than a near-tie between two `neutral` ones.
+- ✅ **Fixed (v32 implementation)**: `_evidence_posture()` in `causality_engine_v32.py` returns 6 values — `no_data`, `contradicted`, `supported`, `mixed`, `contextual_only`, `weak` — fully resolving the old 4-way classification bug. `contradicted` is now a distinct posture for `support == 0 and contra > 0`; `no_data` distinguishes "retrieval returned nothing" from "evidence argues against." Schema enum in `causality_candidates.v3_2.schema.json` is up to date. The doc pseudo-code and all references above have been updated to match.
+- **`review_alternative_gap` applied on composite score alone**: the near-tie flag compares composite score differences. Two candidates 0.09 apart could have very different evidence postures — one `supported`, one `contradicted` — yet both trigger `review_required`. Conversely, two candidates with identical evidence postures and scores of 0.51 and 0.40 do not trigger the flag even though neither is well-discriminated. The flag would be more operationally meaningful if it incorporated evidence posture: a near-tie between two `supported` candidates is more critical than a near-tie between two `weak` ones.
 - **No iterative evidence loop**: if Stage F identifies a candidate that drops sharply in rank due to contradicting evidence, there is no mechanism to trigger targeted follow-up retrieval. An RCA engineer in this situation would seek additional documentation to resolve the conflict. The pipeline has no feedback path from Stage F to Stage E — the evidence corpus is fixed after Stage 5B and Stage E.
 
 ---
@@ -1588,7 +1624,7 @@ def refine_with_evidence(candidates_v1, evidence_bundle, signal_evidence=None):
 ## Stage G — Ishikawa Structuring (optional)
 
 **Class / entry-point**: `HeuristicIshikawaEvaluatorV1.evaluate()`
-**File**: `synthesis/ishikawa_evaluator_v1.py`
+**File**: `orchestrators/ishikawa_evaluator.py`
 
 ### What this stage does
 
@@ -1732,7 +1768,7 @@ Stage H is where the pipeline's outputs converge into a single deliverable: the 
 
 The synthesis has two paths. The intended path uses an LLM to write the executive summary, primary hypothesis narrative, alternative hypotheses, evidence linkages, and recommended actions. The LLM receives a structured prompt containing the top-5 candidates and top-10 evidence snippets, along with enough context to reason about recurrence, PM compliance, and operating state. Its output is validated against a JSON schema and a hallucination check — the primary hypothesis must reference a candidate that actually exists in the input. If the LLM output passes, it becomes the RCA card.
 
-The production path, however, is always the deterministic fallback. The LLM synthesis path (`OllamaLLMClient`) exists in the codebase but has not been validated end-to-end. `_fallback_card()` selects the highest-scoring v2 candidate as the primary hypothesis, fills the required fields with deterministic templates, and always caps confidence at "medium." This is the path every real run currently takes.
+The production path, however, is always the deterministic fallback. The LLM synthesis path (`OllamaLLMClient`) exists in the codebase but has not been validated end-to-end. `_fallback_card()` selects the highest-scoring v2 candidate as the primary hypothesis and fills the required fields with deterministic templates. Confidence is calibrated by `_calibrate_primary_confidence()` independently of whether the fallback was used — so a fallback run with strong direct support, clear separation, and supportive temporal posture can produce `"high"` confidence. However, `writeback_ready` is always `False` in the fallback path because `all_claims_cited` is `False` (no real citations in a template card) and `decision_required` defaults to `True` in `analyst_review`. This is the path every real run currently takes.
 
 Stage H is also where the pipeline communicates uncertainty back to the analyst. The `analyst_review` field in the `rca_card` is populated with `decision_required`, `questions_to_resolve`, and `writeback_recommendation`. This is the mechanism by which the pipeline co-pilots rather than automates: it presents its best assessment, flags what it cannot resolve, and defers the final judgement to the human.
 
@@ -1755,7 +1791,7 @@ Stage H is also where the pipeline communicates uncertainty back to the analyst.
 - Constructs a structured prompt with JSON schema constraints; the LLM must produce `executive_summary`, `primary_hypothesis`, `alternatives`, `evidence`, `recommended_actions`, and `analyst_review`.
 - **Primary validation gate**: `primary_hypothesis.candidate_id` must match an input candidate (hallucination check).
 - **All-claims-cited check**: every claim in the narrative must cite a source via `citations[]`.
-- If LLM output fails validation and `allow_fallback_template_fill: True`, runs `_fallback_card()` using the highest-scoring v2 candidate — deterministic, confidence always capped at `"medium"`.
+- If LLM output fails validation and `allow_fallback_template_fill: True`, runs `_fallback_card()` using the highest-scoring v2 candidate — deterministic template fill; confidence calibrated by `_calibrate_primary_confidence()` (can reach `"high"` under strong posture); `writeback_ready` always `False` in fallback path due to `all_claims_cited: False` and `decision_required: True`.
 - **Production path is always the fallback**: `OllamaLLMClient` path exists but is not validated end-to-end.
 
 ### Output artifact — `rca_card`
@@ -1863,7 +1899,7 @@ Stage I performs no transformation. If it receives a corrupted or incomplete art
 
 ### Known gaps
 
-- No atomic write (no temp-then-rename); a crash mid-write leaves a partial run directory that Stage J may treat as valid.
+- ✅ **Fixed (Sprint 7)**: `FileArtifactStore` (`orchestrators/artifact_store.py`) uses atomic temp-file + POSIX rename for all artifact writes. A crash mid-write leaves the previous artifact intact.
 - No compression or retention policy for the Chroma archive.
 - ✅ **Fixed (Apr 23, 2026)**: Stage I writes `run_status.json` at run start (`run_complete: false`) and seals it at run end (`run_complete: true`). Stage J and external callers can now distinguish partial vs complete runs using this sentinel.
 - ✅ **Addressed (Apr 23, 2026)**: Stage I now records `chroma_archive` runtime status in `run_manifest.pipeline_config` and propagates failures into pipeline health/remediation routing. Strict mode (`hard_fail_on_chroma_archive_error`) can hard-abort runs on archive failure.
@@ -1876,7 +1912,7 @@ Stage I performs no transformation. If it receives a corrupted or incomplete art
 ## Stage J — Validation & Run Manifest
 
 **Class / entry-point**: `RCAArtifactValidator.validate_run_bundle()`
-**File**: `validation/rca_artifact_validator.py`
+**File**: `validation/schema_validator.py`
 
 ### What this stage does
 
@@ -1930,6 +1966,53 @@ The correct model is progressive validation: each stage validates its own output
 
 ---
 
+---
+
+## Post-Pipeline Modules (Implemented, Sprint 7)
+
+The following modules are implemented in the codebase and operate after Stage J produces the `run_manifest`. They are not pipeline stages (they are not called by `RCAReasoningOrchestrator`) but are critical for the co-pilot and CAP integration workflows.
+
+### Analyst Override Processor
+
+**Class**: `AnalystOverrideProcessor` — `synthesis/analyst_override_processor.py`
+
+Validates and applies a structured analyst override to the `rca_card`. Six override types are supported:
+
+| Override type | Effect |
+|---------------|--------|
+| `accept` | Confirm pipeline primary hypothesis as-is; sets `writeback_decision: accept` |
+| `accept_with_caveats` | Accept with analyst-added uncertainty notes |
+| `primary_candidate_change` | Replace primary hypothesis with a specified alternative |
+| `alternative_rerank` | Reorder the alternative hypotheses list |
+| `evidence_role_change` | Reclassify one or more evidence items as supporting / contradicting |
+| `reject_all` | Reject all candidates; sets `writeback_decision: defer` |
+
+The processor produces a structured `AnalystOverride` artifact persisted alongside the `rca_card` for audit-history mining. `writeback_decision` values: `accept | reject | defer`.
+
+### CAP Export / Writeback
+
+**Classes**: `CAPExportSerializer`, `CAPAdapter`, `FileDropCAPAdapter`, `NoOpCAPAdapter`, `CAPExportConfig` — `cap_integration/`
+
+Maps an approved `rca_card` + `kg_context` to a `CAPExportPackage` formatted for the target CAP system (Maximo or SAP PM). FLOC resolution is KG-augmented (Option B: resolved from component properties at export time, no extra live query). `FileDropCAPAdapter` writes the export package as JSON to a watched drop-file directory; `NoOpCAPAdapter` is the default (no-op) until a live integration is configured.
+
+---
+
+## Auto Re-Entry Loop
+
+**Orchestrator config**: `enable_auto_reentry` (default: False), `auto_reentry_max_attempts` (default: 3)
+
+When enabled, the orchestrator detects a rank inversion between `causality_candidates v1` (pre-evidence) and `causality_candidates v2` (post-evidence) — specifically when the primary v2 candidate differs from the primary v1 candidate. On inversion, it re-enters the Stage B→F loop with the v2 primary as an additional seed hint, repeating up to `auto_reentry_max_attempts` times. A `reentry_hook` is emitted in `run_manifest.review_hooks` on every re-entry. The `reentry_execution` artifact is written to the run directory with per-iteration score snapshots. This was introduced to address the April 21 SE review finding about the strictly feedforward pipeline having no recovery paths.
+
+---
+
+## Analyst Review Application
+
+**Entry point**: `viz/app.py` (Streamlit)
+
+A load-only viewer (no pipeline execution) that reads a completed run directory and displays 7 tabs: Validation, KG Context, Telemetry & Temporal, Candidates, Evidence, Ishikawa & CMMS, RCA Card. Sidebar shows per-stage pipeline status checklist. Start with `streamlit run viz/app.py -- --run_dir {output_dir}/{run_id}`.
+
+---
+
 ## Scoring Weight Summary
 
 | Stage | Dimension | Weight | Baseline | Range |
@@ -1939,8 +2022,8 @@ The correct model is progressive validation: each stage validates its own output
 | D/F | Telemetry | 0.20 | 0.35 | by anomaly count |
 | D/F | Evidence | 0.20 | 0.30 (v1 proxy) | 0.0–1.0 (v2 actual) |
 | D/F | Governance | 0.10 | 0.50 | 0.50–0.95 |
-| C | TSKR confidence | — | Anomaly=0.55, Latency=0.30, History=0.15 | — |
-| C | TSKR support | — | History=0.35, Telemetry=0.35 | — |
+| C | TSKR confidence | — | Anomaly=0.45, Latency=0.30, Chain=0.10, History=0.10, Count=0.15, Lag=0.10 (non-convex; clamped) | — |
+| C | TSKR support | — | History=0.35, Telemetry=0.35, Count=0.15, Lag=0.15 | — |
 
 ---
 
@@ -1986,26 +2069,20 @@ The stage sequencing is sound. Separating KG population (Stage 0) from per-event
 
 These are errors in the document itself that will cause incorrect implementations:
 
-**IC-1 — Section 1.5 "Hard filters" not updated after Stage D A/B-series change.**
-Section 1.5 reads: *"Stage D enforces composite ≥ 0.30 AND evidence ≥ 0.10."* Stage D now uses A-series (composite ≥ 0.45 + evidence ≥ 0.35) and B-series (composite ≥ 0.25). Section 1.5 contradicts the implementation section.
+**IC-1 — ✅ Resolved in current doc.** Section 1.5 already correctly describes A-series (composite ≥ 0.45 AND evidence ≥ 0.35) and B-series (composite ≥ 0.25) tiering. No further action required.
 
-**IC-2 — Stage C pseudo-code uses old weights that contradict the key logic text.**
-Key logic text (updated): `0.45×anomaly + 0.30×latency + 0.10×chain + 0.10×history + 0.15×count + 0.10×lag`. Pseudo-code (not updated): `0.55×anomaly + 0.30×latency + 0.15×history + 0.20×count + 0.15×lag`. Neither version sums to 1.0; `clamp01` masks the issue but weights are non-convex in both. An implementer following the pseudo-code will build something different from what the text describes.
+**IC-2 — ✅ Resolved in current doc.** Stage C pseudo-code body now uses the correct weights: `0.45×anomaly + 0.30×latency + 0.10×chain + 0.10×history + 0.15×count + 0.10×lag`. The comment on the confidence line explicitly flags the non-convex sum (1.20) and notes it is bounded by `clamp01`. No further action required.
 
 **IC-3 — `latency_violation_type` enum mismatch.**
 ✅ **Resolved (Apr 23, 2026)**: Stage C now emits `not_available` for abstention cases (missing/non-parseable latency bounds) and schemas/validators accept this enum value.
 
-**IC-4 — Stage C pseudo-code signature missing `cmms_context` and `signal_evidence`.**
-Function signature: `def score(event, telemetry, kg_context, oc, run_context)`. The key logic section states Stage C consumes `cmms_context.cr_records[]` for recurrence and `signal_evidence.augmented_anomaly_set[]` as the primary anomaly source. Both are missing from the signature; the body references `cmms_context["cr_records"]` which would be a `NameError` at runtime.
+**IC-4 — ✅ Resolved in current doc.** Stage C pseudo-code signature now reads `def score(event, telemetry, kg_context, cmms_context, signal_evidence, oc, run_context)` — both `cmms_context` and `signal_evidence` are present. No further action required.
 
-**IC-5 — Stage D known gaps reference the old hard-threshold logic.**
-Two known-gap bullets still describe the old `E ≥ 0.35` hard filter as if it drops candidates entirely. With A/B-series tiering, zero-evidence candidates with composite ≥ 0.25 land in B-series and are not dropped. These gaps need rewriting.
+**IC-5 — ✅ Resolved in current doc.** Stage D known-gap bullets have been updated to reflect A/B-series tiering: zero-evidence candidates with composite ≥ 0.25 land in B-series (`requires_human_review: True`) rather than being silently dropped. No further action required.
 
-**IC-6 — Stage F pseudo-code references `signal_ev_index` which is never defined.**
-`chain_score = signal_ev_index.get(...)` — `signal_ev_index` does not appear in the function signature or body of `refine_with_evidence()`. The `signal_evidence` input is listed in the input table but never loaded in the pseudo-code.
+**IC-6 — ✅ Resolved in current doc.** Stage F pseudo-code now builds `signal_ev_index` from `signal_evidence.per_candidate_chain_score` (see `refine_with_evidence()` pseudo-code body). No further action required.
 
-**IC-7 — `writeback_ready` set at Stage D before evidence exists.**
-Stage D pseudo-code sets `c["writeback_ready"] = (series == "A") and not c.get("evidence_gap", False)`. This is set using the KG proxy evidence gap before Chroma retrieval. Stage F re-ranks candidates after evidence update. The `writeback_ready` field in v1 is misleading — it implies readiness for writeback before any evidence has been assessed. This field should only be finalized at Stage J after all gates pass. If it must exist at Stage D it should be named `writeback_eligible_v1` and explicitly flagged as preliminary.
+**IC-7 — ✅ Resolved in current doc.** Stage D pseudo-code now sets `c["writeback_eligible_v1"]` (explicitly named as preliminary) and the text clarifies that the final `writeback_ready` is only computed at Stage J after all gates pass.
 
 ---
 
@@ -2017,9 +2094,9 @@ Stage D pseudo-code sets `c["writeback_ready"] = (series == "A") and not c.get("
 |----------------|----------------|--------|
 | `mbse_model.json` | Stage 0 | No MBSE ingestor exists; exchange format spec incomplete |
 | `sensor_component_map.csv` | Stage 0 | No ingestion path exists |
-| FMEA `expected_latency_min/max_hours` | Stage 0 / Stage C | Non-standard field; absent from all standard FMEA formats; requires enrichment workflow |
-| `HistorianAdapter.get_anomalies()` | Stage B.5 | Interface not defined; no adapter written |
-| `is_upstream(comp_a, comp_b)` | Stage B.5 | KG query not implemented; edge directionality not guaranteed by Stage 0 ingest |
+| FMEA `expected_latency_min/max_hours` | Stage 0 / Stage C | ✅ Derivable — FMEA parser normalizes `min_days`/`max_days` × 24; `expected_anomaly_pattern` inferred from `local_effect` text keywords. Still requires human enrichment review for high-criticality FMs where NLP inference is insufficient. |
+| `HistorianAdapter.get_anomalies()` | Stage B.5 | ✅ Implemented — `HistorianAdapter` Protocol + `NullHistorianAdapter` + `InfileHistorianAdapter` in `signal_evidence/historian_adapter.py`; live PI adapter still future |
+| `is_upstream(comp_a, comp_b)` | Stage B.5 | ✅ Implemented — `kg/kg_query_utils.py`; edge directionality depends on Stage 0 MBSE ingest (not yet implemented) |
 | EDMS document content | Stage 5B | Stub only |
 | FMEA document text | Stage 5B | Stub only |
 | Class-level CMMS records | Stage 5B | Not implemented |
@@ -2034,7 +2111,7 @@ Stage D pseudo-code sets `c["writeback_ready"] = (series == "A") and not c.get("
 
 **`event.json` production is unspecified.** Who creates this and when? When a plant operator enters an abnormal event in the CMMS CAP, that is the trigger — but the schema fields required (`symptom_signature`, `timestamp_end`, `severity`) may not exist in the CAP entry. The transformation from CMMS CAP entry to `event.json` is a critical integration step with no design documentation.
 
-**`pm_compliance.json` has no documented source.** CMMS contains PM work orders with completion dates. The transformation to `pm_compliance.json` with `pm_checks[]` and `last_pm_date` is not described.
+**✅ `pm_compliance.json` is produced by `build_pm_compliance()`** (`pm_compliance/pm_compliance_builder.py`). The orchestrator auto-builds it from `operational_context` export rows when not externally provided (explicit-input override is preserved). The function normalizes PM task rows from CMMS export, verifies scheduled vs. completed dates, analyzes scope gaps via KG PM↔FM linkage (or export `applicable_fm_ids` as fallback), detects degradation trends from as-found condition history, and produces the full `pm_compliance.json` artifact. **Schema fields actually consumed by Stage D governance scoring**: `checks[]` (with `status`, `component_id`, `applicable_fm_ids`, `overdue_by_days`, `check_type`). **Schema fields produced but NOT currently consumed by any scoring stage**: `summary.scope_gaps[]`, `summary.maintenance_induced_risk`, `summary.compliance_rate`, `summary.last_pm_date`, `components[].degradation_trend`, `components[].pm_frequency_concern`. These are available for future analyst-mode extensions (see C-2 §4.1).
 
 **`operational_context.json` has no documented source.** This carries `operating_point` (power level, pressures, temperatures at event time), `recent_alarms`, and `nearby_maintenance` — DCS/SCADA data plus operator log data. No adapter or extraction process is defined.
 
@@ -2100,11 +2177,21 @@ Stage B.5 runs in parallel with Stage 5B after Stage B. Stage C requires both `c
 
 **Why it matters**: first-occurrence failures are precisely the events requiring the most careful RCA — they indicate either a new degradation mechanism or a previously undocumented one. The pipeline is weakest exactly here.
 
+**Schema gap**: `FailureMode` is Authoritative (static KG knowledge). When absent, no `CandidateHypothesis` is generated in Stage D. The schema has no `CausalRule` that synthesizes a novel FM from `Equipment` type + `AssetState` patterns without a KG FM entry.
+
+**Fix direction (P2)**: Add generic degradation FMs per equipment material class as KG fallback entries (e.g., `FM:generic_corrosion_degradation` on `equipment_type: heat_exchanger, material: stainless_steel`), scored with a structural penalty (`confidence_label: speculative`) to signal the open-world nature. The `out_of_boundary_anomalies` flag already surfaces this to the analyst; a fallback FM entry ensures it also surfaces as a scorable candidate rather than silence.
+
 ### S-2 — Instrument Fault as Root Cause (Self-Referential Anomaly)
 
 **Scenario**: A level transmitter fails high, producing a spurious high-level signal that trips a pump. The "anomaly" in `telemetry_summary.json` is the transmitter reading itself — the same signal that caused the trip.
 
 **Pipeline behavior**: Stage C assigns OVERLAPS or PRECEDES to the transmitter anomaly (it started before the trip), scoring it 0.90. The FM for "instrument spurious high" should score well if it exists in the KG. **But** there is no explicit check asking whether this anomaly *is* the triggering signal rather than an independent precursor. If the FM keyword is "level transmitter malfunction" and the event description says "high level trip on pump suction," keyword matching at Stage D may or may not connect them depending on vocabulary coverage. The pipeline can reach the right answer but relies entirely on FMEA keyword alignment.
+
+**Why it matters**: instrument failures are among the most common nuclear event initiators. Missing the self-referential anomaly distinction means the pipeline may generate false process-degradation candidates from what is purely a sensor fault.
+
+**Schema gap**: `SensorObservation` has no `observation_role` type field — there is no distinction between a process signal (evidence of process condition), an instrument health signal (evidence the instrument itself failed), and an actuation signal (the event trigger). The `InvestigatedEvent → SensorObservation` relationship cannot express "this sensor's anomaly IS the trip signal."
+
+**Fix direction (P2)**: Add `observation_role: process_symptom | instrument_health | actuation_signal` to `telemetry_summary.json` anomaly entries. Stage B.5 generates an `instrument_fault` candidate when an anomaly's `instrument_tag` matches the trip signal tag and `observation_role = instrument_health`. Requires the historian adapter to provide signal metadata.
 
 ### S-3 — Human Performance Root Cause (Maintenance Error)
 
@@ -2114,6 +2201,10 @@ Stage B.5 runs in parallel with Stage 5B after Stage B. Stage C requires both `c
 
 **Why it matters**: INPO AP-913 and 10 CFR 50 Appendix B explicitly require identifying whether human performance is a root cause or contributor. A pipeline that can only identify hardware failure modes when a human error is the root cause is not adequate for nuclear RCA.
 
+**Schema gap**: The schema's `CausalEvent` class can represent a human action, but there is no human error taxonomy in the KG. Stage D generates `CandidateHypothesis` objects from `FailureMode` nodes — there are no FM nodes for `procedure_error`, `wrong_reinstallation`, or `omission_during_work`. The Ishikawa `maintenance_human_factors` branch is the only human performance hook and it requires keyword evidence in documents.
+
+**Fix direction (P1)**: Add a `human_performance_candidate` generation path to Stage D: if a WO was closed within the event precursor window on any component in the Stage B neighborhood, generate a speculative `CandidateHypothesis` with `fm_id: human_performance_maintenance`, structural score derived from WO-to-neighborhood distance, and a `human_factors_flag` for Stage H to include in `analyst_review.questions_to_resolve[]`. This does not require new FM entries — it requires a WO-date proximity check against `cmms_context.work_orders[]`. The AP-913 human performance checklist fields should be pre-populated from the WO action type.
+
 ### S-4 — Common Cause Failure (CCF) Across Multiple Trains
 
 **Scenario**: Lube oil degradation occurs on all four trains of a safety-significant pump simultaneously, triggered by a contaminated oil batch from a vendor.
@@ -2122,11 +2213,21 @@ Stage B.5 runs in parallel with Stage 5B after Stage B. Stage C requires both `c
 
 **Why it matters**: CCF of safety-significant trains is one of the most critical failure patterns for nuclear RCA — it is the scenario that can simultaneously defeat redundancy and is specifically addressed in NUREG-0800 and generic letters.
 
+**Schema gap**: `SynthesizedConclusion` has cardinality exactly 1 `primary_hypothesis`. The schema's `CandidateHypothesis` has a `common_cause_features` field, but no class or relationship represents a group-level causal link (shared oil batch → multiple train failures). The reasoning traversal `SupportingSystem → supplies → Equipment[]` exists in the schema but has no corresponding output in Stage H.
+
+**Fix direction (P1)**: Add a `ccf_summary` block to `rca_card` (does not require changing `primary_hypothesis` cardinality): when two or more A-series candidates share the same FM across different trains and `common_cause_features.sister_components` overlap, Stage H emits a `ccf_summary` that identifies the shared root (inferred from KG `SupportingSystem` path or shared vendor/batch in CMMS data), lists all affected trains, and generates fleet-wide recommended actions. The `primary_hypothesis` remains Train A; `ccf_summary` is a parallel output block, not a replacement.
+
 ### S-5 — Long-Latency Degradation Outside Historian Window
 
 **Scenario**: Gradual heat exchanger fouling starts 3 weeks (504 hours) before the event. Subtle temperature differential anomalies appear at t-15 days, moderate at t-7 days, significant at t-24 hours. The protective trip occurs at t=0.
 
 **Pipeline behavior**: Stage B.5 historian lookback = 72 hours → only the last 3 days of anomalies are captured. If `telemetry_summary.json` also uses a 72-hour window, the full 2-week degradation signature is entirely absent. Stage C receives only the short-window anomaly. TSKR confidence is lower than it would be with the complete signature. A competing hypothesis with a strong short-latency signal may score higher. More critically, the RCA card lacks the trending information that an engineer would use to establish this as a latent degradation issue rather than a sudden failure.
+
+**Why it matters**: gradual fouling, slow corrosion, and fatigue crack propagation are common failure mechanisms in plant aging. These failure modes are characterized precisely by long precursor windows — the 72h window excludes the signature that distinguishes them from sudden failures.
+
+**Schema gap**: `TemporalPattern` is bounded by the `SignalEvidence` lookback window. The schema's `FailureMode` carries `expected_latency_hours` but there is no check comparing that value against the available historian window at Stage B.5. The mismatch is silent.
+
+**Fix direction (P2)**: Add a `window_adequacy_check` to Stage B.5: for each FM in the Stage B neighborhood, compare `FailureMode.expected_latency_hours_max` against the historian lookback window. If expected latency exceeds available window, emit `fetch_gaps[]: {fm_id, reason: "expected_latency_exceeds_window", required_hours, available_hours}` in `signal_evidence.json` and propagate a `window_insufficient_for_fm` flag to `rca_card.executive_summary.analyst_attention_flags[]`. This does not fix data availability but ensures the analyst knows the temporal assessment is incomplete.
 
 ### S-6 — Concurrent Unrelated Event Contaminating Telemetry
 
@@ -2134,17 +2235,35 @@ Stage B.5 runs in parallel with Stage 5B after Stage B. Stage C requires both `c
 
 **Pipeline behavior**: Stage C assigns PRECEDES (score 0.75) to the cooling water pump anomaly against the condenser event. Stage D generates a candidate for the cooling water pump FM with moderate structural + strong temporal scores. This is structurally correct — cooling water loss would cause vacuum loss — but if it was a truly independent coincidental event, the pipeline has no way to determine this. No access to the plant sequence-of-events log means the pipeline cannot verify whether the two events share a causal link.
 
+**Why it matters**: false causal candidates from concurrent unrelated events inflate the candidate set and can displace the actual root cause in the ranking. This is a systematic source of false-positive A-series candidates.
+
+**Schema gap**: `SensorObservation` and `SignalEvidence` do not carry an `event_origin` tag. The schema's `InvestigatedEvent` is separate from `CausalEvent`, but anomalies in `telemetry_summary.json` are not linked to their generating event — they are a flat list indexed only by time and component.
+
+**Fix direction (P3)**: Add an optional `unrelated_event_id` field to `telemetry_summary.json` anomaly entries (analyst-supplied or operator-log-sourced). Stage B.5 suppresses anomalies tagged with a different `unrelated_event_id` from the propagation chain. Without a sequence-of-events log interface, the realistic near-term mitigation is an `analyst_attention_flag` when two topologically unrelated anomaly clusters appear within the event window, prompting manual verification.
+
 ### S-7 — Fast Cascade Within Allen Epsilon Tolerance
 
 **Scenario**: An electrical fault causes a bus trip, simultaneously tripping 3 loads within 50 milliseconds. All 3 load anomalies appear within the 0.5h epsilon.
 
 **Pipeline behavior**: epsilon = 0.5h → all three load anomalies are classified as SIMULTANEOUS with the event (mapping to DURING, score 0.30). The pipeline treats them as consequences, not causes. If the upstream electrical bus anomaly (the actual cause) is not in the KG neighborhood and not in `telemetry_summary`, the root cause is missed entirely. Known gap H3 acknowledges epsilon is not configurable; for nuclear plants where fast transients (turbine trips, reactor trips, electrical faults) are common, epsilon = 0.5h is systematically wrong.
 
+**Why it matters**: fast electrical transients, turbine trips, and reactor protection system actuations are among the highest-frequency nuclear events. Treating all sub-epsilon anomalies as simultaneous consequences eliminates the primary causal signal for an entire class of initiating events.
+
+**Schema gap**: `TemporalPattern` uses a single global `simultaneous_epsilon_hours`. The schema's `SensorObservation` has no `signal_resolution` or `sample_interval_seconds` field. `causal_reasoning_notes.txt §8.1` explicitly flags that epsilon should be source-pair-specific.
+
+**Fix direction (P2)**: Add `sample_interval_seconds` to `telemetry_summary.json` signal metadata. Stage C computes per-pair epsilon as `max(sample_interval_A, sample_interval_B) × 3` (three-sample tolerance). For protection system actuation signals (identified by `observation_role: actuation_signal`), use a millisecond-scale epsilon floor. The global `simultaneous_epsilon_hours` remains a fallback for signals with no resolution metadata.
+
 ### S-8 — No Anomaly Evidence (Design Trip or Spurious Actuation)
 
 **Scenario**: A safety injection actuation occurs due to a design signal (high containment pressure). All sensors were functioning within normal bands. No anomaly exists in `telemetry_summary.json`.
 
 **Pipeline behavior**: Stage B.5 historian query returns nothing. Stage C falls back to `fallback_confidence = 0.25` for all FMs. Telemetry score = 0.35 baseline for all candidates (no differentiation). The pipeline's primary discriminators (temporal, telemetry) are both at their floor values. Scoring is driven entirely by structural topology and KG document density. The highest-ranking candidate will be the FM with the most KG document links on the closest component — irrespective of whether it has any relationship to the actuation. **The RCA card is noise dressed as analysis.** This scenario also applies to spurious trips (false signal, no real process condition) which are among the most common nuclear operational events.
+
+**Why it matters**: spurious actuations and design-signal trips are among the most common nuclear events. The pipeline cannot distinguish "no anomaly because nothing was wrong" from "no anomaly because the historian window was too short." Both produce the same zero-anomaly input state.
+
+**Schema gap**: The schema's `SynthesizedConclusion` has no `conclusion_type` field. There is no output state for "the search space was exhausted and no adequate hypothesis was found." The telemetry baseline of 0.35 for zero anomalies (T-1) makes the no-signal case indistinguishable from a weak-signal case at Stage D. The schema defines `InvestigatedEvent` but has no `actuation_type` field to distinguish design actuations from anomalous ones.
+
+**Fix direction (P1)**: Three changes required: (1) Set telemetry baseline to 0.0 for zero-anomaly candidates (T-1 fix — separates no-signal from weak-signal). (2) Add `rca_card.conclusion_type` enum: `hypothesis_supported | hypothesis_speculative | no_adequate_hypothesis`. Emit `no_adequate_hypothesis` when all candidates are B-series and `n_anomalies = 0` across all components. (3) Add `actuation_type: design_signal | anomalous | spurious_suspected` to `event.json`. When `actuation_type = design_signal`, Stage D flags the run as a design-actuation investigation and suppresses anomaly-based FM candidates in favour of design-basis verification queries.
 
 ### S-9 — Documentation Density Bias (Regulatory Commitment Advantage)
 
@@ -2153,6 +2272,10 @@ Stage B.5 runs in parallel with Stage 5B after Stage B. Stage C requires both `c
 **Pipeline behavior**: Stage D evidence sub-score for seal degradation: high (many CRs, ECA, WO linked in KG). Stage D evidence sub-score for actual cause: low (no documents). Seal degradation gets A-series; actual cause gets B-series. Stage E retrieves strong supporting snippets for seal degradation from Chroma (all those CRs and ECAs are embedded). Stage F reaffirms seal degradation as primary. The actual cause is a speculative B-series candidate that an analyst must notice and override.
 
 **The pipeline systematically favors well-documented failure modes over the actual cause when documentation density is not correlated with causal likelihood.** This is a fundamental evidence-quality bias, not an edge case.
+
+**Schema gap**: `EvidenceAssessment` accumulates raw `supporting_count` and `contradicting_count`. There is no normalization by FM-specific document availability. The Stage D evidence prior uses KG document links directly — a candidate with 18 linked CRs scores higher than one with 0 CRs regardless of causal relevance.
+
+**Fix direction (P2)**: Add a `document_density_adjustment` to Stage D evidence prior computation: divide raw document count by the estimated corpus density for that FM type (e.g., number of KG documents tagged with the same FM category). FMs with open NRC commitments receive a density discount factor so their evidence prior reflects "many documents about this FM exist" rather than "this FM is likely." The Stage E/F evidence retrieval should apply the same adjustment: `supporting_count / max(1, corpus_density_for_fm)` when computing `evidence_posture`.
 
 ---
 
@@ -2180,23 +2303,30 @@ Stage 5B embeds CR narratives and EDMS documents using a default embedding model
 
 ## 3.6 Priority Summary
 
-| Priority | Issue | Impact |
-|----------|-------|--------|
-| P1 | IC-2 Stage C pseudo-code weight inconsistency | Incorrect implementation |
-| P1 | IC-4 Stage C pseudo-code missing `cmms_context` / `signal_evidence` parameters | Incorrect implementation |
-| P1 | IC-6 Stage F `signal_ev_index` not defined in pseudo-code | Incorrect implementation |
-| P1 | IC-1 Section 1.5 not updated after A/B-series change | Reviewer confusion |
-| P1 | S-3 Human performance root cause systematically invisible to scoring | Nuclear RCA regulatory adequacy (AP-913, 10 CFR 50 App B) |
-| P1 | S-4 CCF not representable in single-primary-hypothesis architecture | Nuclear safety significance |
-| P1 | S-8 No-anomaly scenario produces noise-as-analysis output | Operational validity |
-| P2 | G-1 Operating state absent from all scoring | Missing discriminating dimension |
-| P2 | S-9 Documentation-density bias advantages well-documented FMs over actual cause | Systematic scoring bias |
-| P2 | G-4 No "no adequate hypothesis" output state | Pipeline output completeness |
-| P2 | §3.2 `event.json` / `telemetry_summary.json` production interface unspecified | Integration prerequisite |
-| P3 | S-5 Long-latency degradation outside 72h historian window | Completeness for slow failure modes |
-| P3 | G-3 Analyst override not fed back to KG/FMEA | Knowledge capture |
-| P3 | IC-5 Stage D known gaps reference obsolete hard-threshold logic | Document maintenance |
-| P3 | IC-7 `writeback_ready` set prematurely at Stage D | Semantic clarity |
+Updated April 23, 2026 — covers all S-1 through S-14 scenarios plus cross-cutting gaps. IC findings all resolved; see Part 3.1. Part 4 technical findings (T-1 through T-7, F-1 through F-6, C-1 through C-6) are tracked separately in §4.5.
+
+| Priority | Issue | Fix direction | Schema class(es) |
+|----------|-------|---------------|-----------------|
+| ✅ | IC-1 through IC-7 — all resolved | — | — |
+| P1 | **S-3** Human performance root cause invisible to scoring (AP-913, 10 CFR 50 App B) | WO-date proximity check → `human_performance_candidate` in Stage D | `CausalEvent`, `WorkOrder` |
+| P1 | **S-4** CCF not representable; single-primary-hypothesis architecture | Add `ccf_summary` block to `rca_card`; use `SupportingSystem` traversal | `SupportingSystem`, `CandidateHypothesis`, `SynthesizedConclusion` |
+| P1 | **S-8** No-anomaly scenario produces noise-as-analysis output | T-1 fix (0.0 baseline) + `conclusion_type` enum + `actuation_type` in `event.json` | `InvestigatedEvent`, `SynthesizedConclusion`, `TemporalPattern` |
+| P2 | **S-2** Instrument fault self-referential anomaly missed without vocabulary match | Add `observation_role` to telemetry anomalies; generate instrument-fault candidate | `SensorObservation`, `CandidateHypothesis` |
+| P2 | **S-5** Long-latency degradation outside 72h historian window silently incomplete | `window_adequacy_check` in Stage B.5 vs `FailureMode.expected_latency_hours_max` | `TemporalPattern`, `SignalEvidence`, `FailureMode` |
+| P2 | **S-7** Fast cascade within epsilon misclassified; global epsilon wrong for protection signals | Per-pair epsilon from `sample_interval_seconds`; actuation-signal epsilon floor | `TemporalPattern`, `SensorObservation` |
+| P2 | **S-9** Documentation-density bias; well-documented FMs systematically score higher | `document_density_adjustment` in Stage D prior and Stage F posture | `EvidenceAssessment`, `CandidateHypothesis` |
+| P2 | **S-12** Static latency bounds penalize correct FM at changed operating condition | Condition-dependent latency bounds using `operational_context.operating_point` | `OperatingCondition`, `FailureMode`, `TemporalPattern` |
+| P2 | **S-13** No corrective action effectiveness check on recurrence against closed CAP (10 CFR 50 App B XVI) | Add closed-CAP recurrence detection; flag `prior_ca_ineffective` in `rca_card` | `WorkOrder`, `EvidenceAssessment`, `SynthesizedConclusion` |
+| P2 | **G-1** Operating state absent from all scoring | Add `operating_point` dimension to structural score in Stage D | `OperatingCondition`, `CandidateHypothesis` |
+| P2 | **G-4** No "no adequate hypothesis" output state | `rca_card.conclusion_type` enum (part of S-8 fix) | `SynthesizedConclusion` |
+| P3 | **S-1** First-occurrence FM generates no candidate | Generic FM fallback entries per equipment/material class | `FailureMode`, `CandidateHypothesis` |
+| P3 | **S-6** Concurrent unrelated event contaminates telemetry | `unrelated_event_id` tag on anomalies; analyst-attention flag for unrelated clusters | `SensorObservation`, `SignalEvidence` |
+| P3 | **S-10** Multi-unit shared-system event outside Unit 1 two-hop neighborhood | Cross-unit topology expansion for `SupportingSystem` nodes | `SupportingSystem`, `Connection` |
+| P3 | **S-11** Programmatic/AMP root cause invisible to KG-based search space | Out-of-scope for current KG model; requires programmatic knowledge layer | — |
+| P3 | **S-14** Single point of failure outside two-hop neighborhood missed | Risk-informed hop expansion: SPF nodes for redundant trains promoted regardless of hop count | `Connection`, `SupportingSystem` |
+| P3 | **G-2** Physically impossible FMs not pre-filtered at Stage D | Operating-point plausibility filter using `OperatingCondition` constraints | `OperatingCondition`, `FailureMode` |
+| P3 | **G-3** Analyst override knowledge not fed back to KG | Override-to-KG writeback path in `AnalystOverrideProcessor` | `CandidateHypothesis`, `FailureMode` |
+| P3 | **§3.2** `event.json` / `telemetry_summary.json` production interface unspecified | Define CMMS/historian producer interface contract | `InvestigatedEvent`, `SensorObservation` |
 
 ---
 
@@ -2221,15 +2351,15 @@ Stage 5B embeds CR narratives and EDMS documents using a default embedding model
 | Temporal score fallback | 0.85 when anomalies exist but confidence=0 | 0.55 | Not documented |
 | `latency_alignment_score` usage | Not used | Used when present | Used |
 
-This document describes v32 behavior throughout. A run using v31 silently skips Stage F — the most important discriminating pass in the pipeline — with no flag in the run manifest. Either deprecate v31 or add explicit v31-specific behavior notes per affected stage section, and ensure `causality_engine_version` is always written to the run manifest.
+✅ **Partially addressed**: Stage D and F entry-point references now correctly cite v32 as the production default, with v31 noted as the ablation baseline. The Stage D/F section headers now explicitly call out that v31 silently skips Stage F. Open: `causality_engine_version` should be confirmed as always written to `run_manifest.pipeline_config` — verify in `rca_reasoning_orchestrator.py`.
 
 ### C-2 — Stage 5A exists in PM module spec but not in this document
 
-`PM_Compliance_Module_Architecture.md` §4 places the PM compliance module at **Stage 5A**, running alongside `cmms_context_builder`. This document has no Stage 5A — it treats `pm_compliance.json` as an external input provided before Stage A. These two documents give different answers about where `pm_compliance.json` comes from. Additionally, the PM module output schema is far richer than what Stage D's governance sub-score uses: `scope_gaps[]` (PM tasks not performed that could have detected this FM), `coverage_type`, `maintenance_induced_risk`, and `last_as_found` are produced by the module but flow into no scoring stage. Stage H is supposed to use `scope_gaps[]` to generate PM corrective actions — this integration is not described here.
+`PM_Compliance_Module_Architecture.md` §4 places the PM compliance module at **Stage 5A**, running alongside `cmms_context_builder`. This document has no Stage 5A. **Resolution in current implementation**: the orchestrator auto-builds `pm_compliance` from `operational_context` export rows when not externally provided; explicit-input override is preserved. This is documented in the Sprint 7 status table at the top of this document. **PM schema fields consumed by Stage D governance** (`_pm_candidate_governance_score()`): `checks[]` array, with per-check fields `status`, `component_id`, `applicable_fm_ids`, `overdue_by_days`, `check_type`. Three-priority match logic: structural (`check.component_id == candidate.component_id`) > FM-level (`fm_id in check.applicable_fm_ids`) > keyword fallback (`check_type` keywords vs. FM name). Governance score range: 0.5 (neutral — no data or all pass) to 0.95 (cap). **PM schema fields produced but NOT consumed by scoring**: `summary.scope_gaps[]`, `summary.maintenance_induced_risk`, `summary.compliance_rate`, `summary.last_pm_date`, `components[].degradation_trend`, `components[].pm_frequency_concern`. Open: (1) Stage H generating PM corrective actions from `scope_gaps[]` is not yet implemented; (2) `maintenance_induced_risk` and `compliance_rate` could be surfaced in `analyst_review.questions_to_resolve[]` as attention flags.
 
 ### C-3 — Flowchart does not show Stage B.5 or parallel execution
 
-`RCA_pipeline_flowchart.md` (April 21) shows Stage 5B as strictly sequential between B and C. Stage B.5 and the 5B/B.5 parallel execution path are absent from the flowchart. The flowchart is the most visible architectural reference and is materially out of date.
+`RCA_pipeline_flowchart.md` (April 21) shows Stage 5B as strictly sequential between B and C. Stage B.5 and the 5B/B.5 parallel execution path are absent from the flowchart. **Open**: `RCA_pipeline_flowchart.md` must be updated to add Stage B.5 and the parallel 5B ∥ B.5 execution path after Stage B, with the join before Stage C.
 
 ### C-4 — Recurrence OR logic not reflected here
 

@@ -584,6 +584,28 @@ class RCAArtifactValidator:
                     path=["summary", "anomaly_point_count"],
                 ))
 
+        if signal_evidence and kg_context:
+            kg_fm_ids_se = {
+                fm.get("fm_id")
+                for fm in (kg_context.get("failure_modes") or [])
+                if isinstance(fm, dict) and fm.get("fm_id")
+            }
+            chain_scores = signal_evidence.get("per_candidate_chain_score") or {}
+            if isinstance(chain_scores, dict):
+                for fm_id_key in chain_scores:
+                    if kg_fm_ids_se and fm_id_key not in kg_fm_ids_se:
+                        issues.append(self._issue(
+                            artifact="signal_evidence",
+                            severity=self._sev("warning"),
+                            code="signal_evidence_chain_score_fm_not_in_kg",
+                            message=(
+                                f"signal_evidence.per_candidate_chain_score key '{fm_id_key}' "
+                                "is not present in kg_context.failure_modes — chain score will "
+                                "silently map to nothing at Stage C and Stage F."
+                            ),
+                            path=["per_candidate_chain_score", fm_id_key],
+                        ))
+
         if tskr and kg_context:
             kg_fm_ids = {
                 fm.get("fm_id")

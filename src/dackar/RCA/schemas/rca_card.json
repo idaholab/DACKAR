@@ -126,6 +126,15 @@
           "items": {
             "type": "string"
           }
+        },
+        "conclusion_type": {
+          "type": "string",
+          "enum": [
+            "hypothesis_supported",
+            "hypothesis_speculative",
+            "no_adequate_hypothesis"
+          ],
+          "description": "Epistemic standing of the RCA conclusion. hypothesis_supported: primary candidate is A-series with non-trivial evidence posture. hypothesis_speculative: primary is B-series or all candidates have zero telemetry signal. no_adequate_hypothesis: no candidate met minimum requirements or all evidence is absent — treat the card as a review placeholder, not a conclusion."
         }
       },
       "additionalProperties": false
@@ -484,6 +493,42 @@
         }
       },
       "additionalProperties": false
+    },
+    "ccf_summary": {
+      "type": "object",
+      "description": "Common-cause failure summary block. Emitted when ≥2 candidates form a plausible common-cause cluster (suspected_ccf=true) or when any common-cause signal is present. Absence of this block means no common-cause signal was detected.",
+      "additionalProperties": false,
+      "required": ["suspected_ccf", "ccf_confidence", "shared_mechanism_ids", "affected_trains", "affected_candidate_ids", "rationale"],
+      "properties": {
+        "suspected_ccf": {
+          "type": "boolean",
+          "description": "True when ≥2 candidates with medium/high CCF confidence share a plausible common mechanism and the top CCF score ≥ 0.45."
+        },
+        "ccf_confidence": {
+          "type": "string",
+          "enum": ["none", "low", "medium", "high"],
+          "description": "Confidence derived from the highest common-cause score among clustered candidates."
+        },
+        "shared_mechanism_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "KG node IDs of shared dependency or upstream components driving the CCF signal."
+        },
+        "affected_trains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Train IDs that are out-of-service and linked to clustered CCF candidates, if known."
+        },
+        "affected_candidate_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Candidate IDs that form the common-cause cluster."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Analyst-facing narrative summarising the CCF signal and recommended scope of investigation."
+        }
+      }
     },
     "barrier_analysis": {
       "type": "object",

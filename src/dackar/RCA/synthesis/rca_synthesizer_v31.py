@@ -161,6 +161,16 @@ class RuleValidatedRCASynthesizerV31:
         # fallback cards so action priority reflects affected safety functions.
         self._apply_safety_significance_postprocessing(card, causality_candidates)
 
+        # Inject ccf_summary deterministically so both LLM and fallback cards carry it.
+        # The LLM is not prompted to generate this block; the schema marks it optional.
+        if "ccf_summary" not in card:
+            ccf_block = self._build_ccf_summary(
+                selected_candidates=selected_candidates,
+                causality_candidates=causality_candidates,
+            )
+            if ccf_block is not None:
+                card["ccf_summary"] = ccf_block
+
         card["validation_status"]["validation_errors"] = validation_errors
         card["validation_status"]["retry_count"] = retry_count
         card["validation_status"]["fallback_used"] = fallback_used
@@ -1830,6 +1840,108 @@ analyst_review = {
 
         return confidence
 
+    def _compute_conclusion_type(
+        self,
+        top: Optional[JsonDict],
+        selected_candidates: List[JsonDict],
+        calibrated_confidence_label: str,
+        actuation_type: Optional[str],
+    ) -> str:
+        """
+        Derives the epistemic standing of the RCA conclusion.
+
+        Mirrors Stage D A/B-series tiering thresholds (composite ≥ 0.45 AND evidence ≥ 0.35
+        = A-series) without requiring an explicit series label on the candidate object.
+
+        design_signal actuation: the pipeline is verifying a design-basis response, not
+        diagnosing a failure.  All anomaly-based FM candidates are speculative by definition,
+        so the minimum output is hypothesis_speculative regardless of scoring.
+        """
+        if top is None:
+            return "no_adequate_hypothesis"
+
+        def _is_a_series(c: JsonDict) -> bool:
+            composite = float(c.get("composite_score", 0.0) or 0.0)
+            ev = float((c.get("scores") or {}).get("evidence", 0.0) or 0.0)
+            return composite >= 0.45 and ev >= 0.35
+
+        all_zero_telemetry = all(
+            float((c.get("scores") or {}).get("telemetry", 0.0) or 0.0) == 0.0
+            for c in selected_candidates
+            if isinstance(c, dict)
+        )
+        any_a_series = any(_is_a_series(c) for c in selected_candidates if isinstance(c, dict))
+
+        if all_zero_telemetry and not any_a_series:
+            return "no_adequate_hypothesis"
+
+        if actuation_type == "design_signal":
+            return "hypothesis_speculative"
+
+        if not _is_a_series(top) or calibrated_confidence_label == "speculative":
+            return "hypothesis_speculative"
+
+        return "hypothesis_supported"
+
+    def _build_ccf_summary(
+        self,
+        selected_candidates: List[JsonDict],
+        causality_candidates: JsonDict,
+    ) -> Optional[JsonDict]:
+        """
+        Builds the rca_card ccf_summary block from the causality engine's
+        common_cause_summary.  Returns None when no common-cause signal was
+        detected (candidate_count_with_common_cause == 0).
+
+        affected_trains is assembled from per-candidate common_cause.train_id_in_oos
+        so that all OOS trains in the clustered set are surfaced — the engine's
+        common_cause_summary does not aggregate this.
+        """
+        cc_summary = (causality_candidates or {}).get("common_cause_summary") or {}
+        count = int(cc_summary.get("candidate_count_with_common_cause", 0) or 0)
+        if count == 0:
+            return None
+
+        suspected_ccf = bool(cc_summary.get("suspected_common_cause", False))
+        ccf_confidence: str = cc_summary.get("top_common_cause_confidence") or "none"
+        if ccf_confidence not in {"none", "low", "medium", "high"}:
+            ccf_confidence = "none"
+
+        shared_mechanism_ids: List[str] = list(cc_summary.get("shared_dependency_ids") or [])
+        affected_candidate_ids: List[str] = list(cc_summary.get("clustered_candidate_ids") or [])
+
+        # Collect train IDs that are out-of-service across all selected candidates.
+        affected_trains: List[str] = sorted({
+            str(c.get("common_cause", {}).get("train_id_in_oos") or
+                (c.get("common_cause") or {}).get("train_id_in_oos") or "")
+            for c in selected_candidates
+            if isinstance(c, dict) and (c.get("common_cause") or {}).get("train_id_in_oos")
+        })
+
+        notes: List[str] = list(cc_summary.get("notes") or [])
+        if suspected_ccf:
+            rationale = (
+                f"Common-cause failure is suspected (confidence: {ccf_confidence}). "
+                f"{len(affected_candidate_ids)} candidate(s) share a plausible common mechanism. "
+                "Recommended actions should address all affected trains and shared dependency nodes, "
+                "not only the primary hypothesis train."
+            )
+        else:
+            rationale = (
+                f"Common-cause signal present but below threshold for suspected CCF "
+                f"(confidence: {ccf_confidence}). "
+                + (" ".join(notes[-1:]) if notes else "")
+            )
+
+        return {
+            "suspected_ccf": suspected_ccf,
+            "ccf_confidence": ccf_confidence,
+            "shared_mechanism_ids": shared_mechanism_ids,
+            "affected_trains": affected_trains,
+            "affected_candidate_ids": affected_candidate_ids,
+            "rationale": rationale,
+        }
+
     def _fallback_card(
         self,
         rca_id: str,
@@ -1842,17 +1954,26 @@ analyst_review = {
         prior_errors: List[str],
     ) -> JsonDict:
         top = selected_candidates[0] if selected_candidates else None
+        actuation_type: Optional[str] = event.get("actuation_type")
 
         if top is None:
+            _no_top_flags = [
+                "No candidate met minimum grounded synthesis requirements.",
+                "Manual analyst review is required before any write-back.",
+                "Current RCA card should be treated as a review placeholder, not a supported conclusion.",
+            ]
+            if actuation_type == "design_signal":
+                _no_top_flags.insert(
+                    0,
+                    "Event actuation_type is design_signal — pipeline is verifying a design-basis response, "
+                    "not diagnosing a failure. Anomaly-based FM candidates are speculative by definition.",
+                )
             executive_summary = {
                 "decision_status": "insufficient_evidence",
                 "primary_conclusion": "No hypothesis met the minimum grounded synthesis requirements.",
                 "confidence_label": "speculative",
-                "analyst_attention_flags": [
-                    "No candidate met minimum grounded synthesis requirements.",
-                    "Manual analyst review is required before any write-back.",
-                    "Current RCA card should be treated as a review placeholder, not a supported conclusion.",
-                ],
+                "analyst_attention_flags": _no_top_flags,
+                "conclusion_type": "no_adequate_hypothesis",
             }
 
             primary = {
@@ -1987,6 +2108,13 @@ analyst_review = {
             )
             calibrated_confidence_label = self._calibrate_primary_confidence(pattern_posture)
 
+            conclusion_type = self._compute_conclusion_type(
+                top=top,
+                selected_candidates=selected_candidates,
+                calibrated_confidence_label=calibrated_confidence_label,
+                actuation_type=actuation_type,
+            )
+
             decision_status = self._fallback_decision_status_from_posture(
                 evidence_summary=evidence_summary,
                 pattern_posture=pattern_posture,
@@ -1997,6 +2125,12 @@ analyst_review = {
                 pattern_posture=pattern_posture,
                 passed_minimum_evidence_gate=passed_minimum_evidence_gate,
             )
+            if actuation_type == "design_signal":
+                analyst_attention_flags = [
+                    "Event actuation_type is design_signal — pipeline is verifying a design-basis response, "
+                    "not diagnosing a failure. Anomaly-based FM candidates are speculative by definition.",
+                    *analyst_attention_flags,
+                ]
             evidence_posture = evidence_summary.get("posture", "weak")
             temporal_posture = pattern_posture.get("temporal_posture", "unknown")
  
@@ -2151,6 +2285,7 @@ analyst_review = {
                 "primary_conclusion": f"{top.get('cause_label')} is the leading hypothesis.",
                 "confidence_label": calibrated_confidence_label,
                 "analyst_attention_flags": analyst_attention_flags,
+                "conclusion_type": conclusion_type,
             }
 
             analyst_review = {
@@ -2171,7 +2306,12 @@ analyst_review = {
             causality_candidates=causality_candidates,
         )
 
-        return {
+        ccf_summary = self._build_ccf_summary(
+            selected_candidates=selected_candidates,
+            causality_candidates=causality_candidates,
+        )
+
+        card: JsonDict = {
             "rca_id": rca_id,
             "event_id": event.get("event_id") or event["id"],
             "generated_at": utcnow_iso(),
@@ -2207,6 +2347,9 @@ analyst_review = {
                 "card_version": 1,
             },
         }
+        if ccf_summary is not None:
+            card["ccf_summary"] = ccf_summary
+        return card
 
     def _balanced_fallback_evidence(
         self,

@@ -1804,7 +1804,7 @@ class RuleBasedCausalityEngineV32:
     def _telemetry_score_for_fm(self, telemetry_summary, fm, component_id, components):
         signals = telemetry_summary.get("signals", []) or []
         if not signals:
-            return 0.20
+            return 0.0
         anomaly_count = 0
         severity_points = 0.0
         for sig in signals:
@@ -1823,7 +1823,7 @@ class RuleBasedCausalityEngineV32:
                 else:
                     severity_points += 0.5
         if anomaly_count == 0:
-            return 0.20
+            return 0.0
         base = min(1.0, 0.35 + 0.12 * anomaly_count + 0.08 * severity_points)
         seed_type = None
         if component_id and component_id in components:

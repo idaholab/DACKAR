@@ -692,12 +692,16 @@ class ChromaEvidenceRetriever:
         if contextual_cue_hit:
             context_score += 0.15
 
-        if query_type == "candidate":
-            support_score += 0.15
-        elif query_type == "candidate_contradiction":
-            contradiction_score += 0.15
-        else:
-            context_score += 0.10
+        # NOTE: query_type score boost intentionally removed.
+        # A +0.15 boost keyed on query_type ("candidate" → support, "candidate_contradiction"
+        # → contradiction) created circular role labeling: deduplication keeps the highest-
+        # retrieval-score hit per snippet::candidate pair, so which query won the dedup race
+        # determined the role, not the snippet content.  Neutral snippets in the
+        # 0.15–0.30 content-score gap were systematically mislabeled "supporting" when
+        # retrieved by the support query.  Content signals (semantic_relevance, cue
+        # detection, CA fields, spaCy hedge discount, causal attribution) are now the
+        # sole basis for role classification.  query_intent is preserved in output
+        # metadata for audit traceability.
 
         # Structural contradiction (E4): explicit alternate causal attribution
         # should weigh more than pure absence-of-evidence wording.
