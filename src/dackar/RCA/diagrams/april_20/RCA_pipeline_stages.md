@@ -2197,3 +2197,171 @@ Stage 5B embeds CR narratives and EDMS documents using a default embedding model
 | P3 | G-3 Analyst override not fed back to KG/FMEA | Knowledge capture |
 | P3 | IC-5 Stage D known gaps reference obsolete hard-threshold logic | Document maintenance |
 | P3 | IC-7 `writeback_ready` set prematurely at Stage D | Semantic clarity |
+
+---
+
+# Part 4 — SE Review II (April 22, 2026)
+
+**Reviewer role**: Systems engineer responsible for plant RCA
+**Scope**: `RCA_pipeline_stages.md` + all companion documents in `april_20/` (`RCA_pipeline_flowchart.md`, `RCA_workflow_april_2.md`, `RCA_Data_Management_Strategy.md`, `Architecture_Assessment.md`, `RCA Data Elements.md`, `RCA_SE_Review_April_21.md`, `RCA_Systems_Engineering_Review_April_20.md`, `RCA_TSKR_orchestrator_causality_deep_pass_april_20.md`, `RCA_dual_review_progress_tracker_april_20.md`, `PM_Compliance_Module_Architecture.md`, `RCA_Engineer_Needs_Requirements - 2.md`, `causal_reasoning_notes.txt`)
+
+---
+
+## 4.1 Cross-Document Consistency Failures
+
+### C-1 — Two causality engines, one pipeline description
+
+`RCA_pipeline_stages.md` describes a single pipeline. The codebase has two engines — `RuleBasedCausalityEngineV31` and `RuleBasedCausalityEngineV32` — both selectable per run. Per `RCA_TSKR_orchestrator_causality_deep_pass_april_20.md`, they differ in functionally significant ways not reflected in this document:
+
+| Behavior | v31 | v32 | This doc says |
+|----------|-----|-----|---------------|
+| `refine_with_evidence()` | Not implemented — Stage F silently skipped | Implemented | Always runs |
+| `temporal_contradiction` penalty | Absent | −0.25 | Applied |
+| Evidence prior doc-type weighting | Recency on all types; no timeless bucket | Timeless bucket for SOP/FMEA/OE | Timeless bucket used |
+| Temporal score fallback | 0.85 when anomalies exist but confidence=0 | 0.55 | Not documented |
+| `latency_alignment_score` usage | Not used | Used when present | Used |
+
+This document describes v32 behavior throughout. A run using v31 silently skips Stage F — the most important discriminating pass in the pipeline — with no flag in the run manifest. Either deprecate v31 or add explicit v31-specific behavior notes per affected stage section, and ensure `causality_engine_version` is always written to the run manifest.
+
+### C-2 — Stage 5A exists in PM module spec but not in this document
+
+`PM_Compliance_Module_Architecture.md` §4 places the PM compliance module at **Stage 5A**, running alongside `cmms_context_builder`. This document has no Stage 5A — it treats `pm_compliance.json` as an external input provided before Stage A. These two documents give different answers about where `pm_compliance.json` comes from. Additionally, the PM module output schema is far richer than what Stage D's governance sub-score uses: `scope_gaps[]` (PM tasks not performed that could have detected this FM), `coverage_type`, `maintenance_induced_risk`, and `last_as_found` are produced by the module but flow into no scoring stage. Stage H is supposed to use `scope_gaps[]` to generate PM corrective actions — this integration is not described here.
+
+### C-3 — Flowchart does not show Stage B.5 or parallel execution
+
+`RCA_pipeline_flowchart.md` (April 21) shows Stage 5B as strictly sequential between B and C. Stage B.5 and the 5B/B.5 parallel execution path are absent from the flowchart. The flowchart is the most visible architectural reference and is materially out of date.
+
+### C-4 — Recurrence OR logic not reflected here
+
+Per `RCA_TSKR_orchestrator_causality_deep_pass_april_20.md` §2, recurrence matching uses `fm_id OR component_id` — any CR on the component is counted toward recurrence for every FM on that component. This document presents recurrence as FM-specific. The actual implementation inflates recurrence for all FMs on high-maintenance equipment regardless of which FM is being evaluated. This is not listed as a known gap — it is presented as working correctly.
+
+### C-5 — Allen epsilon is global; companion notes require source-pair-specific
+
+`causal_reasoning_notes.txt` §8.1 explicitly flags that epsilon tolerance for coincidence detection should be **source-pair-specific**, not a global 0.5h constant. A millisecond-resolution protection system event paired with an hourly-sampled temperature sensor needs a completely different epsilon than two similar-resolution process sensors. The architectural note from the same team is not reflected here; epsilon=0.5h is documented as a single configurable scalar.
+
+### C-6 — Mixed temporal event types unaddressed
+
+`causal_reasoning_notes.txt` §6–7 defines three distinct temporal operator contexts:
+- **Interval × Interval** → full TSKR operators
+- **Interval × Point** → reduced subset (before/during/after)
+- **Point × Point** → temporal order + Δt only
+
+Protection system actuations, alarm firings, and operator actions are **point events**, not intervals. The pipeline forces all events into interval representation (when `timestamp_end` is missing, `end = start`). This changes Allen relation classification: a protection system actuation coinciding with event onset is classified differently as a zero-length interval versus a true point, and epsilon tolerance interacts badly with zero-length intervals. The design notes' action item — "event source registry as metadata layer in KG" — has not been incorporated into the pipeline design.
+
+---
+
+## 4.2 Functional Completeness Against Nuclear RCA Requirements
+
+### F-1 — Change analysis is absent; AP-913 boolean is a false positive
+
+INPO AP-913 explicitly requires identifying **what changed** before the event. Change analysis covers: procedure revisions, ECNs, personnel changes, vendor changes, and operating condition changes. The `ap913_completeness` block in the run manifest has a boolean for change analysis but no pipeline stage performs it. `operational_context.nearby_maintenance` is the closest proxy but captures only physical work in the vicinity — not procedure revisions, configuration document changes, or personnel turnover. Emitting `ap913_completeness.change_analysis: true` without having performed change analysis generates false confidence in regulatory documentation.
+
+### F-2 — Barrier analysis is passive and hypothesis-independent
+
+The pipeline generates a `barrier_analysis` artifact derived from `kg_context.safety_functions[]`. Barrier analysis in nuclear RCA requires asking: *which barriers were challenged, which held, which failed, and why?* The pipeline identifies that a safety function was involved but cannot answer whether the barrier failed due to design deficiency, maintenance degradation, or human performance failure. These are hypothesis-specific causal questions. The current implementation produces a single global barrier status field, not a per-candidate barrier failure analysis.
+
+### F-3 — Recurrence not normalized for failure frequency
+
+`RCA_Engineer_Needs_Requirements - 2.md` §3.5 identifies the low-frequency environment as critical. The recurrence score counts occurrences without normalizing by equipment age, fleet size, or operating hours. A failure mode that occurred 3 times on a component in service 30 years is very different from one that occurred 3 times in 2 years. For nuclear RCA where failure rates are measured in events per reactor-year, raw recurrence counts are nearly meaningless as evidence of causal likelihood.
+
+### F-4 — No sensitivity analysis on scoring weights
+
+The five scoring weights (S=0.30, T=0.20, Tel=0.20, E=0.20, G=0.10) are engineering judgments. If a regulatory reviewer asks "would your conclusion change if temporal evidence were weighted more heavily?" the pipeline has no answer. A sensitivity table showing rank stability under ±0.10 weight perturbations costs almost nothing to compute at Stage J and would substantially improve regulatory defensibility.
+
+### F-5 — No multi-disciplinary collaboration model
+
+Nuclear RCA involves mechanical, electrical, I&C, operations, chemistry, and human performance disciplines contributing independently. The pipeline produces a single RCA card with one `analyst_review` field accepting one override. There is no mechanism for a second analyst to annotate the hypothesis, add evidence, or record a dissenting opinion. Multi-discipline sign-off on an RCA card is a standard regulatory expectation under 10 CFR 50 Appendix B.
+
+### F-6 — Historical-event candidates are correlation, not causal hypotheses
+
+`RCA_Systems_Engineering_Review_April_20.md` §3.3 identifies this as a logic gap. Stage D's historical-event candidate pool produces hypotheses of the form: *"this is a recurrence of past event EVT-123."* This is a **correlation statement**, not a causal explanation. Knowing that a similar event occurred before does not constitute a root cause. Recurrence information should be evidence that strengthens a failure-mode candidate, not a standalone hypothesis competing for the primary hypothesis slot. Presenting a historical event as a root cause would not survive regulatory scrutiny.
+
+---
+
+## 4.3 New Technical Findings
+
+### T-1 — Telemetry baseline 0.35 for zero anomalies distorts scoring
+
+The telemetry sub-score has a floor of `Tel = 0.35` when `n_anomalies = 0`. Every zero-anomaly candidate receives `0.20 × 0.35 = 0.07` composite contribution identically — the telemetry dimension cannot discriminate between candidates when no anomalies exist. This artificially inflates composite scores in the no-signal case (S-8) and makes the telemetry dimension indistinguishable from a constant offset. The baseline should be 0.0 unless there is a deliberate design rationale for crediting zero-anomaly candidates.
+
+### T-2 — `recency_fmea` and `recency_eca_rca` undefined in Stage D evidence score — latent NameError
+
+Stage D evidence score pseudo-code references `recency_fmea` and `recency_eca_rca` but defines only `recency_cr_wo`. ECA and RCA documents are the highest-priority document types (priority-scored 90 and 85 in Stage B). A candidate with ECA or RCA documents linked in the KG — exactly the candidates most likely to have strong documentary support — will throw a `NameError` at runtime. This must be fixed before Stage D is tested on real data.
+
+### T-3 — `symptom_match()` is called but never specified
+
+Stage D structural score: `symptom_delta = 0.40 * (symptom_match(fm, event) - 0.5)`. `symptom_match()` is called but not defined in the pseudo-code or described anywhere in this document. `Architecture_Assessment.md` listed "symptom matching absent" as a critical issue; `RCA_SE_Review_April_21.md` §4.6 marks it "FIXED latest batch." If the fix exists only in the code, the design and implementation have diverged. The specification of what `symptom_match()` computes — input fields, matching algorithm, output range — belongs here.
+
+### T-4 — Variable governance weight breaks composite score comparability
+
+Section 1.5 states composite = `0.30·S + 0.20·T + 0.20·Tel + 0.20·E + 0.10·G`. The Open Issues table confirms `_governance_weight_for_fm` is fixed: maintenance-preventable FMs use G-weight 0.20; external FMs use 0.02. The composite formula therefore sums to between 0.92 and 1.10 depending on FM category. Two candidates' composite scores are not directly comparable if they have different governance weight categories. The formula in Section 1.5 is wrong as written — it must reflect the variable weight, and the composite must be normalized to a consistent denominator for cross-candidate comparison.
+
+### T-5 — Stage C confidence formula remains non-convex after IC-2 fix
+
+The IC-2 fix updated weights to `0.45+0.30+0.10+0.10+0.15+0.10 = 1.30`. This is still non-convex. The `clamp01` prevents out-of-range output but the effective contribution of each term depends on the magnitudes of all others — a high `chain_position_score` compresses the visible influence of `anomaly_score` inside a clamped sum. Either normalize weights to sum to 1.0, or document explicitly that this is a saturating linear combination and characterize when saturation occurs and what it implies for score interpretation.
+
+### T-6 — `signal_evidence` not validated at Stage J
+
+The artifact inventory lists `signal_evidence` consumed by Stage J but Stage J's cross-artifact checks do not include validating that `per_candidate_chain_score` keys (`fm_id`) exist in `kg_context.failure_modes[]`. If Stage B.5 produced chain scores against FM ids that were subsequently updated in the KG, those scores silently map to nothing at Stage C and Stage F with no validation error.
+
+### T-7 — Evergreen documents re-embedded on every run
+
+Every RCA run re-embeds the same FMEA documents, SOPs, and ECAs — content that changes at most annually. For a plant running 50 RCAs per year, this produces 50 identical embeddings of the same content at full cost per run. `RCA_Data_Management_Strategy.md` acknowledges this but the mitigation (pre-embedded evergreen layer) is marked future. This scalability issue will become acute once Stage 5B EDMS and FMEA ingestion are implemented.
+
+---
+
+## 4.4 Additional RCA Scenarios
+
+### S-10 — Multi-unit or shared-system event
+
+**Scenario**: Instrument air compressor failure affects both Unit 1 and Unit 2. The pipeline is invoked for the Unit 1 event. `event.json` points to a Unit 1 asset_id. The compressor is a common (Unit 0) asset.
+
+**Pipeline behavior**: Stage B expands from the Unit 1 seed. The instrument air compressor lives under a "common" parent node, likely outside the two-hop Unit 1 containment hierarchy. The root cause component is not reached. `out_of_boundary_anomalies` would only help if the compressor has a sensor in the Unit 1 `telemetry_summary` — which it may not. The pipeline has no concept of shared or common systems that support multiple units.
+
+### S-11 — Aging management program (AMP) gap as root cause
+
+**Scenario**: Root cause is that the plant's aging management program for a specific material was inadequate — the inspection interval was based on fleet experience not conservative for this plant's water chemistry.
+
+**Pipeline behavior**: The pipeline may correctly identify the failure mode (e.g., thermal sleeve wear) but cannot identify the root cause as the programmatic inadequacy of the AMP. Stage H generates "inspect thermal sleeves" but cannot generate "revise inspection interval in AMP-025 based on plant-specific water chemistry data." Programmatic and procedural root causes that reside in technical programs — not in equipment failure modes — are invisible to the KG-based search space.
+
+### S-12 — Latent design deficiency revealed by operating condition change
+
+**Scenario**: Following a power uprate to 102%, a flow-induced vibration failure occurs that was never observed at 100% power. The failure mode is in the FMEA but its latency bounds were characterized at 100% power. At 102%, vibration amplitudes are higher and degradation is faster — the FMEA bounds are wrong for the current operating condition.
+
+**Pipeline behavior**: Stage C applies latency alignment using FMEA bounds calibrated at 100% power. The observed lag at 102% power falls outside those bounds → `latency_violation_type: too_fast` → the actual cause is penalized. `operational_context.operating_point` contains the power level but is never used to contextualize latency bounds. FMEA latency bounds are static; the pipeline has no mechanism to condition them on operating state.
+
+### S-13 — Prior corrective action was ineffective (recurrence against closed CAP)
+
+**Scenario**: This failure is a recurrence of a 2-year-old event. The prior RCA recommended increasing PM frequency from 6 months to 3 months. The corrective action was implemented. The failure has recurred anyway — the prior root cause identification was wrong or the corrective action was insufficient.
+
+**Pipeline behavior**: Stage C counts 2 recurrences (high history score). Stage D scores this candidate highly. Stage H may generate a recommended action that duplicates the prior corrective action. There is no stage that detects: "this event is a recurrence of a closed CAP item with a previously implemented corrective action, and that corrective action did not prevent this event." Generating the same corrective action for a second occurrence without noting prior CA ineffectiveness is a regulatory concern under 10 CFR 50 Appendix B criterion XVI (corrective action effectiveness review).
+
+### S-14 — Single point of failure outside two-hop neighborhood
+
+**Scenario**: A shared DC bus powers both redundant trains of a safety system. DC bus degradation causes both trains to fail simultaneously. The DC bus has no sensor in `telemetry_summary` and sits more than 2 hops from the failed train in the containment hierarchy.
+
+**Pipeline behavior**: Stage B expansion from the failed train's `asset_id` does not reach the DC bus. Stage B.5 has no sensor to fetch historian anomalies for it. The root cause is entirely outside the search space. The two-hop hard limit is not risk-informed — shared infrastructure representing single points of failure for redundant systems is disproportionately likely to be the root cause and disproportionately likely to be excluded by a fixed hop count.
+
+---
+
+## 4.5 Priority Summary (Part 4 findings)
+
+| Priority | Issue | Type | Action needed |
+|----------|-------|------|---------------|
+| P1 | C-1 v31 silently skips Stage F; doc describes v32 behavior throughout | Cross-doc inconsistency | Document v31 behavior per stage or deprecate v31; ensure `causality_engine_version` in run manifest |
+| P1 | T-2 `recency_fmea` / `recency_eca_rca` undefined → NameError on authoritative documents | Code bug | Define both variables in Stage D evidence score computation |
+| P1 | T-3 `symptom_match()` called but never specified | Design/code gap | Add specification of inputs, algorithm, and output range |
+| P1 | F-6 Historical-event candidates are correlation, not causal hypotheses | Logic flaw | Remove historical-event pool as standalone hypothesis type; reframe recurrence as evidence within FM candidates |
+| P1 | S-13 No corrective action effectiveness check on recurrence against closed CAP | Regulatory gap (10 CFR 50 App B XVI) | Add closed-CAP recurrence detection; flag `prior_ca_ineffective` in rca_card |
+| P2 | C-4 Recurrence OR logic inflates scores for all FMs on high-maintenance equipment | Implementation defect | Change to FM-specific matching; degrade to component-level with explicit flag |
+| P2 | T-4 Variable governance weight breaks composite score comparability | Scoring consistency | Normalize composite to constant denominator; update formula in §1.5 |
+| P2 | T-5 Stage C confidence formula non-convex after IC-2 fix | Scoring design | Normalize weights to 1.0 or document saturation semantics explicitly |
+| P2 | F-1 Change analysis absent; AP-913 boolean is false positive | Regulatory gap (AP-913) | Design change analysis sub-step or mark `ap913_completeness.change_analysis: false` until implemented |
+| P2 | C-2 Stage 5A vs external input: `pm_compliance.json` origin ambiguous | Architecture inconsistency | Decide and document whether pm_compliance is pipeline-produced or pre-supplied |
+| P2 | S-14 Two-hop limit excludes shared-infrastructure single points of failure | Search space design | Add risk-informed extension: shared utilities serving the primary asset's safety function always in scope |
+| P3 | C-5 Global Allen epsilon wrong for mixed-resolution sensors | Temporal model quality | Implement source-pair-specific epsilon using sensor resolution metadata from KG |
+| P3 | C-6 Point events forced into interval representation | Temporal model | Classify event type (interval vs point) at ingestion; use reduced Allen subset for point events |
+| P3 | T-1 Tel baseline 0.35 for zero anomalies inflates scores uniformly in no-signal case | Scoring design | Change baseline to 0.0; add `no_telemetry_signal` flag |
+| P3 | F-4 No sensitivity analysis on scoring weights | Regulatory defensibility | Compute rank stability table under ±0.10 weight perturbations; include in run_manifest |
+| P3 | S-12 FMEA latency bounds not conditioned on operating state | Scoring accuracy | Tag FMEA latency bounds with rated operating condition; apply conditional bounds at Stage C |
+| P3 | T-7 Evergreen documents re-embedded on every run | Scalability | Design pre-embedded evergreen layer for FMEA/SOP/ECA documents |
