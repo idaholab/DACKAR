@@ -78,8 +78,10 @@ class EquipmentSpecBuilder:
         lines: List[str] = []
 
         # Equipment identity line
-        name_part = f" ({component_name})" if component_name else f" ({component_id})"
-        label = (component_name or component_id) + name_part if component_name and component_name != component_id else (component_name or component_id)
+        if component_name and component_name != component_id:
+            label = f"{component_name} ({component_id})"
+        else:
+            label = component_name or component_id
         lines.append(f"Equipment: {label}")
 
         # Structured definition properties

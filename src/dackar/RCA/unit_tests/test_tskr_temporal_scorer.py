@@ -284,6 +284,20 @@ def test_extract_anomaly_windows_interval_type_propagation():
     assert windows[0]["interval_type"] == "half_open_end"
 
 
+def test_extract_anomaly_windows_instrument_validity_propagation():
+    ts = {
+        "signals": [
+            {
+                "sensor_id": "S1",
+                "instrument_validity_flag": "out_of_calibration",
+                "anomalies": [anom(0, 2, "high")],
+            }
+        ]
+    }
+    windows = sc()._extract_anomaly_windows(ts)
+    assert windows[0]["instrument_validity_flag"] == "out_of_calibration"
+
+
 def test_extract_anomaly_windows_skips_missing_timestamp():
     ts = {"signals": [sig_block("S1", [{"severity": "medium"}])]}
     windows = sc()._extract_anomaly_windows(ts)
@@ -406,6 +420,16 @@ def test_severity_weight_unknown_defaults_to_medium():
     assert approx(sc()._severity_weight({"severity": "critical"}), 0.5)
 
 
+def test_severity_weight_penalized_for_invalid_instrument():
+    scorer = sc()
+    base = scorer._severity_weight({"severity": "high"})
+    penalized = scorer._severity_weight(
+        {"severity": "high", "instrument_validity_flag": "out_of_calibration"}
+    )
+    assert penalized < base
+    assert approx(penalized, 0.495)  # 0.9 * 0.55
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Count / consistency
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -477,6 +501,19 @@ def test_lag_consistency_loose():
 
 def test_lag_consistency_very_loose():
     assert approx(sc()._lag_consistency_score(5.0), 0.3)
+
+
+def test_normalized_weighted_sum_rescales_non_convex_weights():
+    scorer = sc()
+    val = scorer._normalized_weighted_sum([
+        (1.0, 0.45),
+        (0.0, 0.30),
+        (0.0, 0.10),
+        (0.0, 0.10),
+        (0.0, 0.15),
+        (0.0, 0.10),
+    ])
+    assert approx(val, 0.375, tol=1e-3)  # 0.45 / 1.20
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -840,7 +877,7 @@ def test_score_expected_latency_only_max_exceeded():
 
 def test_latency_alignment_details_no_lag():
     details = sc()._latency_alignment_details(mean_lag_hours=None, expected_min=3, expected_max=8)
-    assert details["latency_violation_type"] == "unknown"
+    assert details["latency_violation_type"] == "not_available"
     assert details["observed_lag_hours"] is None
     assert details["latency_alignment_score"] == sc().config.fallback_confidence
 

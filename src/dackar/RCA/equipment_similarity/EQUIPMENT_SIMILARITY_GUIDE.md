@@ -108,7 +108,7 @@ Failure modes: bearing wear, seal degradation, impeller erosion
 Failure mechanisms: fatigue, abrasion, corrosion
 ```
 
-Only non-null properties are emitted. No NLP, no LLM — pure deterministic string assembly. Missing KG properties are silently skipped; components with entirely empty spec text are skipped.
+Only non-null properties are emitted. No NLP, no LLM — pure deterministic string assembly. Missing KG properties are silently skipped; identity-only rows (no definition properties and no failure-mode/mechanism data) are skipped during poll-and-upsert.
 
 ### KG Requirements
 
@@ -142,7 +142,7 @@ Uses `kg_context.failure_modes[]` (already available from Stage 5A). No addition
   Set to 1 for more inclusive matching; raise to 3–4 for conservative matching.
 - `include_fm_overlap: bool = True` — disable to skip Tier 2 entirely.
 
-**Output:** `match_type="failure_mode_overlap"`, `shared_fm_count=N`.
+**Output:** `match_type="failure_mode_overlap"`, `shared_fm_count=N`, `embedding_score=1.0` (sentinel for non-embedding match).
 
 ---
 
@@ -187,6 +187,7 @@ A component found in multiple tiers gets a combined `match_type`:
 
 Results are sorted by `(embedding_score ASC, shared_fm_count DESC)`:
 - Lower Chroma distance → semantically closer → appears first.
+- Non-embedding candidates (topology-only / FM-overlap-only) use sentinel `embedding_score=1.0`, so true embedding matches rank ahead when present.
 - For same embedding score (e.g. two topology-only matches), higher FM overlap count wins.
 
 ---

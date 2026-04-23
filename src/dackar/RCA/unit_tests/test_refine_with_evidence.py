@@ -76,12 +76,14 @@ def make_summary(
     mean_conjecture_fraction=0.0,
     dominant_temporal_relation=None,
     best_lag_hours=None,
+    best_source_tier=None,
 ):
     return {
         "candidate_id": candidate_id,
         "best_support_score": best_support_score,
         "best_contradiction_score": best_contradiction_score,
         "best_context_score": best_context_score,
+        "best_source_tier": best_source_tier,
         "hit_count": hit_count,
         "mean_conjecture_fraction": mean_conjecture_fraction,
         "supporting_snippet_ids": [],
@@ -286,6 +288,25 @@ def test_refine_preserves_risk_adjusted_governance():
     print("  PASS test_refine_preserves_risk_adjusted_governance")
 
 
+def test_authority_tier_weights_evidence_support():
+    """Same support score should rank higher with higher source tier authority."""
+    e = make_engine()
+    result = e.refine_with_evidence(
+        make_candidates("CAND-HI", "CAND-LO", prior_evidence=0.40),
+        make_evidence_bundle([
+            make_summary("CAND-HI", best_support_score=0.80, best_source_tier="plant_instance"),
+            make_summary("CAND-LO", best_support_score=0.80, best_source_tier="oe_adams"),
+        ]),
+    )
+    hi = get_candidate(result, "CAND-HI")
+    lo = get_candidate(result, "CAND-LO")
+    assert hi is not None and lo is not None
+    assert float(hi["scores"]["evidence"]) > float(lo["scores"]["evidence"])
+    assert float(hi["scores"]["evidence_authority_weight"]) > float(lo["scores"]["evidence_authority_weight"])
+    assert "authority_tier=plant_instance" in (hi.get("score_rationale", {}).get("evidence") or "")
+    print("  PASS test_authority_tier_weights_evidence_support")
+
+
 # ── _evidence_posture classification tests ────────────────────────────────────
 
 def test_posture_no_data():
@@ -354,6 +375,7 @@ ALL_TESTS = [
     test_two_candidates_refined_independently,
     test_temporal_relation_backfill,
     test_refine_preserves_risk_adjusted_governance,
+    test_authority_tier_weights_evidence_support,
     test_posture_no_data,
     test_posture_contradicted,
     test_posture_supported,

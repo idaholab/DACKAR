@@ -151,6 +151,93 @@ def test_governance_engine_accepts_artifact_from_builder():
     assert g["score"] > 0.5
 
 
+def test_primary_scope_gap_marks_non_compliant_when_linkage_available():
+    kg = {
+        "components": [{"component_id": "COMP-1"}],
+        "failure_modes": [
+            {
+                "fm_id": "FM-1",
+                "pm_task_ids": ["PM-X"],  # explicit linkage present, but does not match executed task
+            }
+        ],
+    }
+    art = build_pm_compliance(
+        {
+            "asset_id": "ASSET-1",
+            "timestamp_start": "2024-08-10T00:00:00+00:00",
+        },
+        kg_context=kg,
+        export_rows=[
+            {
+                "check_id": "PM-1",
+                "check_type": "inspection",
+                "component_id": "COMP-1",
+                "compliance_status": "compliant",
+            }
+        ],
+        primary_fm_id="FM-1",
+    )
+    assert art["fmea_pm_linkage_available"] is True
+    assert art["summary"]["overall_compliance"] == "non_compliant"
+    assert art["summary"]["has_scope_gaps_for_primary_fm"] is True
+
+
+def test_not_applicable_preserved_in_pm_tasks_narrative_status():
+    art = build_pm_compliance(
+        {
+            "asset_id": "ASSET-1",
+            "timestamp_start": "2024-08-10T00:00:00+00:00",
+        },
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[
+            {
+                "check_id": "PM-CBM-1",
+                "check_type": "other",
+                "compliance_status": "not_applicable",
+            }
+        ],
+    )
+    assert art["checks"][0]["status"] == "pass"
+    assert art["components"][0]["pm_tasks"][0]["compliance_status"] == "not_applicable"
+
+
+def test_degradation_trend_uses_as_found_fields_from_rows():
+    art = build_pm_compliance(
+        {
+            "asset_id": "ASSET-1",
+            "timestamp_start": "2024-08-10T00:00:00+00:00",
+        },
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[
+            {
+                "check_id": "PM-1",
+                "check_type": "inspection",
+                "compliance_status": "compliant",
+                "as_found_last": "Found degraded bearing surface and increased wear",
+            }
+        ],
+    )
+    assert art["components"][0]["degradation_trend"] == "degrading"
+
+
+def test_loader_drops_rows_missing_required_identity_or_type_with_note():
+    art = build_pm_compliance(
+        {
+            "asset_id": "ASSET-1",
+            "timestamp_start": "2024-08-10T00:00:00+00:00",
+        },
+        export_rows=[
+            {
+                "check_id": "PM-1",
+                # missing check_type -> dropped
+                "compliance_status": "compliant",
+            }
+        ],
+    )
+    assert art["summary"]["total_checks"] == 0
+    assert any("Dropped PM export row missing required" in n for n in art["data_quality_notes"])
+
+
 if __name__ == "__main__":  # pragma: no cover
     test_build_minimal_compliant_artifact()
     test_build_with_overdue_inspection_fails_governance_relevance()
@@ -161,4 +248,8 @@ if __name__ == "__main__":  # pragma: no cover
     test_not_applicable_row_is_pass_for_governance()
     test_governance_engine_accepts_artifact_from_builder()
     test_verifier_unknown_when_no_dates()
+    test_primary_scope_gap_marks_non_compliant_when_linkage_available()
+    test_not_applicable_preserved_in_pm_tasks_narrative_status()
+    test_degradation_trend_uses_as_found_fields_from_rows()
+    test_loader_drops_rows_missing_required_identity_or_type_with_note()
     print("pm_compliance tests OK")

@@ -16,6 +16,7 @@ if str(_RCA_ROOT) not in sys.path:
 
 import pytest
 from equipment_similarity.equipment_similarity_resolver import (
+    NON_EMBEDDING_DISTANCE,
     EquipmentSimilarityConfig,
     EquipmentSimilarityResolver,
     SisterComponent,
@@ -110,7 +111,7 @@ class TestSisterComponent:
         assert s.component_label is None
         assert s.match_type == "spec_embedding"
         assert s.shared_fm_count == 0
-        assert s.embedding_score == 0.0
+        assert s.embedding_score == NON_EMBEDDING_DISTANCE
 
     def test_to_dict(self):
         s = SisterComponent(
@@ -125,7 +126,7 @@ class TestSisterComponent:
         assert d["component_label"] == "Feed pump A"
         assert d["match_type"] == "failure_mode_overlap"
         assert d["shared_fm_count"] == 3
-        assert d["embedding_score"] == 0.0
+        assert d["embedding_score"] == NON_EMBEDDING_DISTANCE
 
     def test_to_dict_has_all_keys(self):
         s = SisterComponent(component_id="X")
@@ -563,7 +564,7 @@ class TestSorting:
         assert scores == sorted(scores)
 
     def test_fm_tie_broken_by_shared_count_descending(self):
-        """When embedding scores are equal (0.0), higher shared_fm_count wins."""
+        """When embedding scores are equal, higher shared_fm_count wins."""
         resolver = EquipmentSimilarityResolver(
             spec_store=None,
             config=EquipmentSimilarityConfig(
@@ -586,6 +587,30 @@ class TestSorting:
         result = resolver.resolve_similar(["C-001"], kg)
         assert result[0].component_id == "C-003"
         assert result[1].component_id == "C-002"
+
+    def test_embedding_matches_rank_ahead_of_non_embedding_matches(self):
+        store = MockEquipmentSpecStore(fixtures=[("C-003", 0.2, "Emb-only pump")])
+        resolver = EquipmentSimilarityResolver(
+            spec_store=store,
+            config=EquipmentSimilarityConfig(
+                fm_overlap_min_shared=1,
+                include_fm_overlap=True,
+                include_spec_embedding=True,
+                embedding_min_score=0.8,
+            ),
+        )
+        kg = _minimal_kg_context(
+            components=[
+                {"component_id": "C-001", "component_label": "Target pump", "component_type": "pump"},
+            ],
+            failure_modes=[
+                _fm("C-001", "fm-1"),
+                _fm("C-002", "fm-1"),  # FM-overlap only -> NON_EMBEDDING_DISTANCE
+            ],
+        )
+        result = resolver.resolve_similar(["C-001"], kg)
+        assert [s.component_id for s in result] == ["C-003", "C-002"]
+        assert result[0].embedding_score < result[1].embedding_score
 
 
 # ---------------------------------------------------------------------------

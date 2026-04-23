@@ -47,6 +47,7 @@ CLI usage
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -140,6 +141,45 @@ def _resolve_component_type(
     return ids
 
 
+def _extract_fmea_ingestion_quality(
+    fmea_records: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Extract the shared normalization quality report attached by fmeaParser.
+    """
+    default = {
+        "total_fms_ingested": int(len(fmea_records)),
+        "critical_field_missing_count": 0,
+        "enrichment_field_missing_count": 0,
+        "derived_field_count": 0,
+        "nlp_inferred_field_count": 0,
+        "orphaned_fm_count": 0,
+        "profile_used": "auto",
+        "format_autodetect_confidence": 0.0,
+    }
+    if not fmea_records:
+        return default
+    orphaned = 0
+    for rec in fmea_records:
+        component_type = str(rec.get("component_type") or "").strip()
+        if not component_type:
+            continue
+        resolved = rec.get("_resolved_component_ids")
+        if isinstance(resolved, list):
+            if not resolved:
+                orphaned += 1
+
+    report = fmea_records[0].get("_fmea_ingestion_quality")
+    if isinstance(report, dict):
+        out = dict(default)
+        out.update(report)
+        out["total_fms_ingested"] = int(out.get("total_fms_ingested") or len(fmea_records))
+        if orphaned > 0 or any(isinstance(r.get("_resolved_component_ids"), list) for r in fmea_records):
+            out["orphaned_fm_count"] = orphaned
+        return out
+    return default
+
+
 # ---------------------------------------------------------------------------
 # Graph builder
 # ---------------------------------------------------------------------------
@@ -209,6 +249,8 @@ def build_fmea_graph(
 
         # ── failure_mode node ─────────────────────────────────────────────
         is_new_fm = fm_id not in seen_fms
+        derivation = rec.get("_derivation_method")
+        derivation_text = json.dumps(derivation, sort_keys=True) if isinstance(derivation, dict) else None
         g.add_node(
             fm_id,
             "failure_mode",
@@ -222,6 +264,12 @@ def build_fmea_graph(
                 "expected_anomaly_pattern": rec.get("expected_anomaly_pattern") or None,
                 "expected_latency_min_hours": rec.get("expected_latency_min_hours"),
                 "expected_latency_max_hours": rec.get("expected_latency_max_hours"),
+                "system_effect": rec.get("system_effect") or None,
+                "safety_effect": rec.get("end_effect") or rec.get("safety_function_impact") or None,
+                "detection_method": rec.get("detection_method") or None,
+                "potential_causes": "; ".join(rec.get("potential_causes") or []) or None,
+                "fmea_revision_date": rec.get("fmea_revision_date") or None,
+                "derivation_method": derivation_text,
                 "fmea_source_ref": source_ref,
             },
         )
@@ -264,12 +312,37 @@ def build_fmea_graph(
                 },
             )
             g.add_edge(fm_id, effect_id, "leads_to_effect", allow_untyped=True)
+        system_effect = rec.get("system_effect")
+        if system_effect:
+            effect_id = f"EFFSYS:{fm_id}"
+            g.add_node(
+                effect_id,
+                "effect",
+                {
+                    "level": "system",
+                    "description": system_effect,
+                },
+            )
+            g.add_edge(fm_id, effect_id, "leads_to_effect", allow_untyped=True)
+        end_effect = rec.get("end_effect") or rec.get("safety_function_impact")
+        if end_effect:
+            effect_id = f"EFFEND:{fm_id}"
+            g.add_node(
+                effect_id,
+                "effect",
+                {
+                    "level": "end",
+                    "description": end_effect,
+                },
+            )
+            g.add_edge(fm_id, effect_id, "leads_to_effect", allow_untyped=True)
 
         # ── APPLIES_TO → element_usage nodes ──────────────────────────────
         if client is not None and component_type:
             mbse_ids = _resolve_component_type(
                 client, component_type, database, component_type_cache
             )
+            rec["_resolved_component_ids"] = list(mbse_ids)
             for mbse_id in mbse_ids:
                 # element_usage nodes may already be in the KG; add stub here
                 # so GraphBatch can track the edge endpoint.  MERGE semantics
@@ -281,6 +354,24 @@ def build_fmea_graph(
                 except ValueError as exc:
                     # Schema endpoint mismatch — log and continue.
                     LOGGER.warning("applies_to edge skipped for %s → %s: %s", fm_id, mbse_id, exc)
+
+    # Provenance summary node for governance/readiness checks.
+    ingestion_quality = _extract_fmea_ingestion_quality(fmea_records)
+    g.add_node(
+        "kg_provenance_latest",
+        "kg_provenance",
+        {
+            "id": "kg_provenance_latest",
+            "fmea_ingestion_quality_total_fms_ingested": int(ingestion_quality.get("total_fms_ingested", 0) or 0),
+            "fmea_ingestion_quality_critical_field_missing_count": int(ingestion_quality.get("critical_field_missing_count", 0) or 0),
+            "fmea_ingestion_quality_enrichment_field_missing_count": int(ingestion_quality.get("enrichment_field_missing_count", 0) or 0),
+            "fmea_ingestion_quality_derived_field_count": int(ingestion_quality.get("derived_field_count", 0) or 0),
+            "fmea_ingestion_quality_nlp_inferred_field_count": int(ingestion_quality.get("nlp_inferred_field_count", 0) or 0),
+            "fmea_ingestion_quality_orphaned_fm_count": int(ingestion_quality.get("orphaned_fm_count", 0) or 0),
+            "fmea_ingestion_quality_profile_used": str(ingestion_quality.get("profile_used") or "auto"),
+            "fmea_ingestion_quality_format_autodetect_confidence": float(ingestion_quality.get("format_autodetect_confidence", 0.0) or 0.0),
+        },
+    )
 
     return g.as_lists()
 
@@ -363,6 +454,17 @@ def _parse_args() -> argparse.Namespace:
         metavar="SHEET_NAME",
         help="Only parse the named Excel sheet(s) (repeat for multiple; default: all)",
     )
+    parser.add_argument(
+        "--ingestion-report-out",
+        default="fmea_ingestion_report.json",
+        metavar="OUT_JSON",
+        help="Output path for fmea_ingestion_report.json payload (default: ./fmea_ingestion_report.json).",
+    )
+    parser.add_argument(
+        "--no-ingestion-report-out",
+        action="store_true",
+        help="Disable writing the fmea_ingestion_report.json artifact.",
+    )
     return parser.parse_args()
 
 
@@ -388,6 +490,12 @@ def main() -> None:
             create_constraints=not args.no_constraints,
         )
         LOGGER.info("Ingestion complete: %d nodes, %d edges", nodes, edges)
+        ingestion_quality = _extract_fmea_ingestion_quality(records)
+        if (not args.no_ingestion_report_out) and args.ingestion_report_out:
+            out_path = Path(args.ingestion_report_out)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(json.dumps(ingestion_quality, indent=2), encoding="utf-8")
+            LOGGER.info("Wrote FMEA ingestion quality report: %s", out_path)
     finally:
         client.close()
 

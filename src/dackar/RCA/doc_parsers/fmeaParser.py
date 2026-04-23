@@ -49,6 +49,11 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+try:
+    from doc_parsers.fmea_normalizer import normalize_fmea_records
+except ModuleNotFoundError:
+    from dackar.RCA.doc_parsers.fmea_normalizer import normalize_fmea_records  # type: ignore
+
 LOGGER = logging.getLogger("fmeaParser")
 if not LOGGER.handlers:
     _ch = logging.StreamHandler()
@@ -81,6 +86,11 @@ DEFAULT_COLUMN_MAP: Dict[str, List[str]] = {
         r"^fm$",
         r"^fm[\s_-]?name$",
     ],
+    "item_function": [
+        r"item[\s_-]?function",
+        r"function",
+        r"system[\s_-]?element",
+    ],
     "failure_mechanism": [
         r"failure[\s_-]?mechanism",
         r"mechanism",
@@ -94,7 +104,29 @@ DEFAULT_COLUMN_MAP: Dict[str, List[str]] = {
         r"effect",
         r"symptom",
         r"consequence",
+    ],
+    "system_effect": [
+        r"system[\s_-]?effect",
+        r"sub[\s_-]?system[\s_-]?effect",
+        r"next[\s_-]?higher[\s_-]?effect",
+        r"higher[\s_-]?effect",
+    ],
+    "end_effect": [
         r"end[\s_-]?effect",
+        r"mission[\s_-]?effect",
+        r"safety[\s_-]?effect",
+        r"effect[\s_-]?on[\s_-]?plant",
+    ],
+    "potential_causes": [
+        r"potential[\s_-]?causes?",
+        r"cause\(s\)",
+        r"root[\s_-]?causes?",
+        r"failure[\s_-]?causes?",
+    ],
+    "detection_method": [
+        r"detection[\s_-]?method",
+        r"current[\s_-]?controls?[\s_-]?\(detection\)",
+        r"how[\s_-]?detected",
     ],
     "severity": [
         r"^severity$",
@@ -117,6 +149,10 @@ DEFAULT_COLUMN_MAP: Dict[str, List[str]] = {
         r"^d$",
         r"detection[\s_-]?rating",
         r"detection[\s_-]?\(d\)",
+    ],
+    "detection_rating": [
+        r"detection[\s_-]?rating",
+        r"current[\s_-]?controls?[\s_-]?\(detection\)",
     ],
     "rpn": [
         r"^rpn$",
@@ -151,12 +187,100 @@ DEFAULT_COLUMN_MAP: Dict[str, List[str]] = {
         r"action[\s_-]?item",
         r"mitigation",
     ],
+    "safety_function_impact": [
+        r"safety[\s_-]?function[\s_-]?impact",
+        r"affected[\s_-]?safety[\s_-]?functions?",
+        r"safety[\s_-]?impact",
+    ],
+    "tech_spec_applicability": [
+        r"tech[\s_-]?spec[\s_-]?applicability",
+        r"lco[\s_-]?applicability",
+        r"technical[\s_-]?spec",
+    ],
+    "failure_rate": [
+        r"failure[\s_-]?rate",
+        r"lambda",
+        r"^λ$",
+    ],
+    "failure_mode_ratio": [
+        r"failure[\s_-]?mode[\s_-]?ratio",
+        r"alpha",
+        r"^α$",
+    ],
+    "mission_time_hours": [
+        r"mission[\s_-]?time",
+        r"operating[\s_-]?hours",
+        r"mission[\s_-]?hours",
+        r"\bt\b",
+    ],
+    "criticality": [
+        r"criticality",
+        r"criticality[\s_-]?rank",
+        r"class[\s_-]?[ivx]+",
+    ],
     "notes": [
         r"^notes?$",
         r"^comment",
         r"^remarks?$",
         r"additional[\s_-]?info",
     ],
+    "fmea_revision_date": [
+        r"fmea[\s_-]?revision[\s_-]?date",
+        r"revision[\s_-]?date",
+        r"last[\s_-]?updated",
+    ],
+}
+
+# Profile-specific header patterns (prepended before defaults).
+PROFILE_COLUMN_MAPS: Dict[str, Dict[str, List[str]]] = {
+    "mil_std_1629a": {
+        "component_type": [
+            r"item",
+            r"assembly",
+            r"line[\s_-]?replaceable[\s_-]?unit",
+            r"lru",
+        ],
+        "failure_mode_name": [
+            r"potential[\s_-]?failure[\s_-]?mode",
+            r"failure[\s_-]?mode[\s_-]?description",
+        ],
+        "failure_mechanism": [
+            r"cause[\s_-]?of[\s_-]?failure",
+            r"failure[\s_-]?cause",
+            r"mechanism[\s_-]?of[\s_-]?failure",
+        ],
+        "criticality": [
+            r"criticality[\s_-]?class",
+            r"class[\s_-]?[ivx]+",
+        ],
+        "failure_rate": [
+            r"failure[\s_-]?rate[\s_-]?\(λ\)",
+            r"lambda[\s_-]?\(λ\)",
+        ],
+        "mission_time_hours": [
+            r"mission[\s_-]?time[\s_-]?\(h(rs)?\)",
+            r"mission[\s_-]?duration",
+        ],
+    },
+    "aiag_5th": {
+        "detection_rating": [
+            r"detection[\s_-]?control[\s_-]?rating",
+            r"detection[\s_-]?ranking",
+        ],
+        "occurrence": [
+            r"occurrence[\s_-]?ranking",
+        ],
+    },
+    "nuclear_generic": {
+        "safety_function_impact": [
+            r"affected[\s_-]?safety[\s_-]?function",
+            r"safety[\s_-]?function",
+        ],
+        "tech_spec_applicability": [
+            r"technical[\s_-]?spec[\s_-]?applicability",
+            r"lco",
+        ],
+    },
 }
 
 # Allowed values for expected_anomaly_pattern (from kg_context failure_modes schema).
@@ -250,6 +374,34 @@ def _split_actions(raw: Optional[str]) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def _split_causes(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    parts = re.split(r"[;|/]|\band\b", str(raw), flags=re.IGNORECASE)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _build_column_map(
+    *,
+    profile_name: str,
+    column_map_override: Optional[Dict[str, List[str]]] = None,
+) -> Dict[str, List[str]]:
+    # Merge precedence: override > profile > defaults
+    merged_map: Dict[str, List[str]] = {}
+    profile_map = PROFILE_COLUMN_MAPS.get((profile_name or "").strip().lower(), {})
+    for canonical, patterns in DEFAULT_COLUMN_MAP.items():
+        extra = (column_map_override or {}).get(canonical, [])
+        profile_patterns = profile_map.get(canonical, [])
+        merged_map[canonical] = list(extra) + list(profile_patterns) + list(patterns)
+    for canonical, patterns in profile_map.items():
+        if canonical not in merged_map:
+            merged_map[canonical] = list(patterns)
+    for canonical, patterns in (column_map_override or {}).items():
+        if canonical not in merged_map:
+            merged_map[canonical] = list(patterns)
+    return merged_map
+
+
 # ---------------------------------------------------------------------------
 # Column resolver
 # ---------------------------------------------------------------------------
@@ -285,6 +437,7 @@ class FmeaColumnResolver:
             header = _norm(raw_header)
             if not header:
                 continue
+            matched = False
             for canonical, patterns in self._map.items():
                 for pat in patterns:
                     if re.fullmatch(pat, header, re.IGNORECASE):
@@ -296,7 +449,10 @@ class FmeaColumnResolver:
                             )
                         else:
                             resolved[canonical] = col_idx
+                        matched = True
                         break
+                if matched:
+                    break
         return resolved
 
     def validate_required(self, resolved: Dict[str, int], source: str) -> None:
@@ -310,7 +466,11 @@ class FmeaColumnResolver:
             ValueError: If ``component_type`` or ``failure_mode_name`` cannot
                 be resolved, with a list of all detected headers included.
         """
-        missing = [f for f in ("component_type", "failure_mode_name") if f not in resolved]
+        missing = [
+            f
+            for f in ("component_type", "failure_mode_name", "failure_mechanism")
+            if f not in resolved
+        ]
         if missing:
             raise ValueError(
                 f"FMEA parse error in '{source}': required column(s) {missing} could not be "
@@ -338,8 +498,15 @@ def _build_record(
     component_type = str(cells.get("component_type") or "").strip()
     fm_name = str(cells.get("failure_mode_name") or "").strip()
 
+    mechanism = str(cells.get("failure_mechanism") or "").strip()
+
     if not component_type or not fm_name:
         return None  # blank or header-repeat row
+    if not mechanism:
+        raise ValueError(
+            f"FMEA parse error in '{fmea_source_ref}' row {row_index}: "
+            "required field 'failure_mechanism' is empty."
+        )
 
     # Derive stable canonical ID.
     failure_mode_id = f"FM:{_slug(component_type)}:{_slug(fm_name)}"
@@ -361,6 +528,8 @@ def _build_record(
     lat_max_hours = round(lat_max_days * 24, 2) if lat_max_days is not None else None
 
     local_effect = str(cells.get("local_effect") or "").strip() or None
+    system_effect = str(cells.get("system_effect") or "").strip() or None
+    end_effect = str(cells.get("end_effect") or "").strip() or None
     expected_symptoms = _split_effect_to_symptoms(local_effect)
     anomaly_pattern = _resolve_anomaly_pattern(str(cells.get("expected_anomaly_pattern") or ""))
 
@@ -369,15 +538,28 @@ def _build_record(
         "component_type": component_type,
         "failure_mode_id": failure_mode_id,
         "failure_mode_name": fm_name,
-        "failure_mechanism": str(cells.get("failure_mechanism") or "").strip() or None,
+        "item_function": str(cells.get("item_function") or "").strip() or None,
+        "failure_mechanism": mechanism,
         "local_effect": local_effect,
+        "system_effect": system_effect,
+        "end_effect": end_effect,
+        "potential_causes": _split_causes(cells.get("potential_causes")),
+        "detection_method": str(cells.get("detection_method") or "").strip() or None,
         "severity": severity,
         "occurrence": occurrence,
-        "detection": detection,
+        "detection_rating": _to_int(cells.get("detection_rating")) or detection,
+        "detection": _to_int(cells.get("detection_rating")) or detection,
         "rpn": rpn,
+        "safety_function_impact": str(cells.get("safety_function_impact") or "").strip() or None,
+        "tech_spec_applicability": str(cells.get("tech_spec_applicability") or "").strip() or None,
+        "failure_rate": _to_float(cells.get("failure_rate")),
+        "failure_mode_ratio": _to_float(cells.get("failure_mode_ratio")),
+        "mission_time_hours": _to_float(cells.get("mission_time_hours")),
+        "criticality": str(cells.get("criticality") or "").strip() or None,
         "expected_latency_min_hours": lat_min_hours,
         "expected_latency_max_hours": lat_max_hours,
         "expected_anomaly_pattern": anomaly_pattern,
+        "fmea_revision_date": str(cells.get("fmea_revision_date") or "").strip() or None,
         "expected_symptoms": expected_symptoms,
         "corrective_actions": _split_actions(cells.get("corrective_actions")),
         "notes": str(cells.get("notes") or "").strip() or None,
@@ -455,6 +637,8 @@ def parse_fmea_file(
     *,
     column_map_override: Optional[Dict[str, List[str]]] = None,
     sheet_filter: Optional[Sequence[str]] = None,
+    profile_name: str = "auto",
+    include_normalization_metadata: bool = True,
 ) -> List[Dict[str, Any]]:
     """Parse a FMEA spreadsheet into a list of canonical FMEA record dicts.
 
@@ -484,15 +668,11 @@ def parse_fmea_file(
     if not path.exists():
         raise FileNotFoundError(f"FMEA file not found: {path}")
 
-    # Build merged column map (overrides prepended so they take priority).
-    merged_map: Dict[str, List[str]] = {}
-    for canonical, patterns in DEFAULT_COLUMN_MAP.items():
-        extra = (column_map_override or {}).get(canonical, [])
-        merged_map[canonical] = extra + patterns
-    # Add any entirely-new canonical fields from the override.
-    for canonical, patterns in (column_map_override or {}).items():
-        if canonical not in merged_map:
-            merged_map[canonical] = patterns
+    # Build merged column map (override > profile > defaults).
+    merged_map = _build_column_map(
+        profile_name=profile_name,
+        column_map_override=column_map_override,
+    )
 
     resolver = FmeaColumnResolver(merged_map)
     fmea_source_ref = path.name
@@ -566,7 +746,22 @@ def parse_fmea_file(
         "Total FMEA records from '%s': %d across %d sheet(s).",
         fmea_source_ref, len(records), len(sheets),
     )
-    return records
+    normalized, report = normalize_fmea_records(records, profile_name=profile_name)
+    LOGGER.info(
+        "FMEA normalization (%s): derived=%d, nlp_inferred=%d, critical_missing=%d",
+        report.get("profile_used"),
+        int(report.get("derived_field_count", 0) or 0),
+        int(report.get("nlp_inferred_field_count", 0) or 0),
+        int(report.get("critical_field_missing_count", 0) or 0),
+    )
+    if include_normalization_metadata:
+        for rec in normalized:
+            rec["_fmea_ingestion_quality"] = report
+    else:
+        for rec in normalized:
+            rec.pop("_field_quality", None)
+            rec.pop("_normalization_profile", None)
+    return normalized
 
 
 def parse_fmea_files(
@@ -583,6 +778,61 @@ def parse_fmea_files(
         Combined list of all records from all files.
     """
     all_records: List[Dict[str, Any]] = []
+    merged_report: Optional[Dict[str, Any]] = None
     for p in paths:
-        all_records.extend(parse_fmea_file(p, **kwargs))
+        records = parse_fmea_file(p, **kwargs)
+        all_records.extend(records)
+        file_report: Optional[Dict[str, Any]] = None
+        if records:
+            maybe = records[0].get("_fmea_ingestion_quality")
+            if isinstance(maybe, dict):
+                file_report = maybe
+        if file_report:
+            merged_report = _merge_ingestion_reports(merged_report, file_report)
+    if merged_report:
+        for rec in all_records:
+            rec["_fmea_ingestion_quality"] = merged_report
     return all_records
+
+
+def _merge_ingestion_reports(
+    current: Optional[Dict[str, Any]],
+    incoming: Dict[str, Any],
+) -> Dict[str, Any]:
+    if current is None:
+        return dict(incoming)
+
+    merged = dict(current)
+    merged["total_fms_ingested"] = int(current.get("total_fms_ingested", 0) or 0) + int(
+        incoming.get("total_fms_ingested", 0) or 0
+    )
+    merged["critical_field_missing_count"] = int(
+        current.get("critical_field_missing_count", 0) or 0
+    ) + int(incoming.get("critical_field_missing_count", 0) or 0)
+    merged["enrichment_field_missing_count"] = int(
+        current.get("enrichment_field_missing_count", 0) or 0
+    ) + int(incoming.get("enrichment_field_missing_count", 0) or 0)
+    merged["derived_field_count"] = int(current.get("derived_field_count", 0) or 0) + int(
+        incoming.get("derived_field_count", 0) or 0
+    )
+    merged["nlp_inferred_field_count"] = int(
+        current.get("nlp_inferred_field_count", 0) or 0
+    ) + int(incoming.get("nlp_inferred_field_count", 0) or 0)
+    merged["orphaned_fm_count"] = int(current.get("orphaned_fm_count", 0) or 0) + int(
+        incoming.get("orphaned_fm_count", 0) or 0
+    )
+
+    cur_profile = str(current.get("profile_used") or "auto")
+    in_profile = str(incoming.get("profile_used") or "auto")
+    merged["profile_used"] = cur_profile if cur_profile == in_profile else "mixed"
+
+    total = merged["total_fms_ingested"]
+    cur_weight = int(current.get("total_fms_ingested", 0) or 0)
+    in_weight = int(incoming.get("total_fms_ingested", 0) or 0)
+    cur_conf = float(current.get("format_autodetect_confidence", 0.0) or 0.0)
+    in_conf = float(incoming.get("format_autodetect_confidence", 0.0) or 0.0)
+    if total > 0:
+        merged["format_autodetect_confidence"] = ((cur_conf * cur_weight) + (in_conf * in_weight)) / total
+    else:
+        merged["format_autodetect_confidence"] = 0.0
+    return merged

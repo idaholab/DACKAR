@@ -32,3 +32,15 @@ def collect_as_found_from_checks(checks: List[JsonDict]) -> List[str]:
         if d:
             out.append(str(d))
     return out
+
+
+def collect_as_found_from_rows(rows: List[JsonDict]) -> List[str]:
+    """Prefer structured as-found columns from export rows."""
+    out: List[str] = []
+    for row in rows:
+        for key in ("as_found_last", "as_found_condition", "details"):
+            val = row.get(key)
+            if val is not None and str(val).strip():
+                out.append(str(val))
+                break
+    return out

@@ -40,6 +40,12 @@ from orchestrators.input_guards import assert_output_dir_writable, build_input_g
 from orchestrators.llm_clients import LLMClient, DummyLLMClient, OllamaLLMClient
 from orchestrators.ishikawa_evaluator import HeuristicIshikawaEvaluatorV1
 from orchestrators.kg_context_builder import KGContextBuilderConfig, Neo4jKGContextBuilder
+from orchestrators.signal_evidence_builder import SignalEvidenceBuilder
+from pm_compliance import PMComplianceConfig, build_pm_compliance
+from signal_evidence.historian_adapter import (
+    InfileHistorianAdapter,
+    NullHistorianAdapter,
+)
 
 JsonDict = Dict[str, Any]
 
@@ -78,6 +84,7 @@ class TSKRTemporalScorer(Protocol):
         kg_context: JsonDict,
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
+        signal_evidence: Optional[JsonDict] = None,
     ) -> JsonDict:
         ...
 
@@ -205,6 +212,7 @@ class RCAReasoningOrchestrator:
         operational_context: Optional[JsonDict] = None,
         pm_compliance: Optional[JsonDict] = None,
         kg_context: Optional[JsonDict] = None,
+        signal_evidence: Optional[JsonDict] = None,
         tskr_patterns: Optional[JsonDict] = None,
         causality_candidates: Optional[JsonDict] = None,
         evidence_bundle: Optional[JsonDict] = None,
@@ -218,6 +226,27 @@ class RCAReasoningOrchestrator:
         # Accumulates validation failures for optional artifacts.  Required
         # artifact failures still raise immediately (via _raise_if_invalid).
         optional_artifact_failures: List[JsonDict] = []
+
+        pm_compliance_build = {
+            "source": "provided" if pm_compliance is not None else "missing",
+            "build_attempted": False,
+            "build_succeeded": False,
+            "notes": [],
+        }
+        if pm_compliance is None:
+            pm_compliance, pm_compliance_build = self._build_pm_compliance_if_needed(
+                event=event,
+                operational_context=operational_context,
+                kg_context=kg_context,
+            )
+        if pm_compliance is not None:
+            self._validate_and_persist(
+                run_id,
+                "pm_compliance",
+                pm_compliance,
+                optional=True,
+                optional_failures=optional_artifact_failures,
+            )
 
         input_validation = self._validate_bundle(
             run_id=run_id,
@@ -241,6 +270,14 @@ class RCAReasoningOrchestrator:
             operational_context=operational_context,
             pm_compliance=pm_compliance,
             input_validation=input_validation,
+            input_guards=input_guards,
+        )
+        run_context.setdefault("pipeline_runtime", {})
+        run_context["pipeline_runtime"]["pm_compliance"] = pm_compliance_build
+        self.artifact_store.save(run_id, "run_context", run_context)
+        self._enforce_input_guard_policy(
+            run_id=run_id,
+            run_context=run_context,
             input_guards=input_guards,
         )
 
@@ -282,6 +319,15 @@ class RCAReasoningOrchestrator:
                     "Error: %s", exc,
                 )
 
+        if signal_evidence is None:
+            signal_evidence = self._build_signal_evidence(
+                run_id=run_id,
+                event=event,
+                telemetry_summary=telemetry_summary,
+                kg_context=kg_context,
+            )
+        self._validate_and_persist(run_id, "signal_evidence", signal_evidence)
+
         if tskr_patterns is None:
             tskr_patterns = self._build_tskr_patterns(
                 event=event,
@@ -289,6 +335,7 @@ class RCAReasoningOrchestrator:
                 kg_context=kg_context,
                 operational_context=operational_context,
                 run_context=run_context,
+                signal_evidence=signal_evidence,
             )
         self._validate_and_persist(run_id, "tskr_patterns", tskr_patterns)
 
@@ -334,6 +381,7 @@ class RCAReasoningOrchestrator:
             causality_candidates = self.causality_engine.refine_with_evidence(
                 causality_candidates=causality_candidates,
                 evidence_bundle=evidence_bundle,
+                signal_evidence=signal_evidence,
             )
             self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
 
@@ -345,12 +393,14 @@ class RCAReasoningOrchestrator:
             pm_compliance=pm_compliance,
             run_context=run_context,
             kg_context=kg_context,
+            signal_evidence=signal_evidence,
             tskr_patterns=tskr_patterns,
             causality_candidates_pre_refine=causality_candidates_pre_refine,
             causality_candidates=causality_candidates,
             evidence_bundle=evidence_bundle,
         )
         kg_context = reentry_execution["kg_context"]
+        signal_evidence = reentry_execution["signal_evidence"]
         tskr_patterns = reentry_execution["tskr_patterns"]
         causality_candidates_pre_refine = reentry_execution["causality_candidates_pre_refine"]
         causality_candidates = reentry_execution["causality_candidates"]
@@ -406,6 +456,8 @@ class RCAReasoningOrchestrator:
         )
         self._apply_kg_governance_attention_flags(rca_card, kg_governance)
         self._apply_recurrence_match_quality_attention_flags(rca_card, tskr_patterns)
+        self._apply_signal_evidence_attention_flags(rca_card, signal_evidence)
+        self._apply_out_of_boundary_attention_flags(rca_card, kg_context)
         self._apply_ishikawa_skip_attention_flag(rca_card, ishikawa_matrix)
         rca_card["barrier_analysis"] = self._barrier_summary_for_card(barrier_analysis)
         self._validate_and_persist(run_id, "rca_card", rca_card)
@@ -416,13 +468,16 @@ class RCAReasoningOrchestrator:
             event=event,
             telemetry_summary=telemetry_summary,
             kg_context=kg_context,
+            signal_evidence=signal_evidence,
             tskr_patterns=tskr_patterns,
             causality_candidates=causality_candidates,
             evidence_bundle=evidence_bundle,
             ishikawa_matrix=ishikawa_matrix,
+            barrier_analysis=barrier_analysis,
             rca_card=rca_card,
             operational_context=operational_context,
             pm_compliance=pm_compliance,
+            cmms_context=cmms_context,
         )
         chroma_archive = self._stage_i_archive_chroma(
             run_id=run_id,
@@ -432,6 +487,7 @@ class RCAReasoningOrchestrator:
         run_manifest = self._stage_g_finalize_manifest(
             run_context=run_context,
             kg_context=kg_context,
+            signal_evidence=signal_evidence,
             tskr_patterns=tskr_patterns,
             causality_candidates=causality_candidates,
             causality_candidates_pre_refine=causality_candidates_pre_refine,
@@ -503,7 +559,9 @@ class RCAReasoningOrchestrator:
 
         return {
             "run_context": run_context,
+            "pm_compliance": pm_compliance,
             "kg_context": kg_context,
+            "signal_evidence": signal_evidence,
             "tskr_patterns": tskr_patterns,
             "causality_candidates": causality_candidates,
             "causality_candidates_pre_refine": causality_candidates_pre_refine,
@@ -526,14 +584,17 @@ class RCAReasoningOrchestrator:
         kg_context: JsonDict,
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
+        signal_evidence: Optional[JsonDict] = None,
     ) -> JsonDict:
         if self.tskr_temporal_scorer is not None:
+            self._apply_tskr_runtime_overrides()
             return self.tskr_temporal_scorer.score(
                 event=event,
                 telemetry_summary=telemetry_summary,
                 kg_context=kg_context,
                 operational_context=operational_context,
                 run_context=run_context,
+                signal_evidence=signal_evidence,
             )
         return {
             "event_id": event.get("event_id") or event.get("id"),
@@ -549,6 +610,327 @@ class RCAReasoningOrchestrator:
                 "generated_at": utcnow_iso(),
             },
         }
+
+    def _apply_tskr_runtime_overrides(self) -> None:
+        scorer = self.tskr_temporal_scorer
+        if scorer is None:
+            return
+        cfg = getattr(scorer, "config", None)
+        if cfg is None:
+            return
+        extra = self.config.extra or {}
+        override = extra.get("tskr_simultaneous_epsilon_hours")
+        if override is None:
+            return
+        try:
+            value = float(override)
+        except Exception:
+            return
+        if value < 0.0:
+            return
+        if hasattr(cfg, "simultaneous_epsilon_hours"):
+            setattr(cfg, "simultaneous_epsilon_hours", value)
+
+    def _tskr_runtime_snapshot(self) -> JsonDict:
+        scorer = self.tskr_temporal_scorer
+        cfg = getattr(scorer, "config", None) if scorer is not None else None
+        if cfg is None:
+            return {}
+        return {
+            "simultaneous_epsilon_hours": getattr(cfg, "simultaneous_epsilon_hours", None),
+            "min_confidence_for_support": getattr(cfg, "min_confidence_for_support", None),
+        }
+
+    def _build_signal_evidence(
+        self,
+        *,
+        run_id: str,
+        event: JsonDict,
+        telemetry_summary: JsonDict,
+        kg_context: JsonDict,
+    ) -> JsonDict:
+        policy = self._resolve_signal_evidence_historian_policy()
+        neo4j_client = getattr(self.kg_context_builder, "client", None)
+        neo4j_db = getattr(self.kg_context_builder, "database", None)
+        builder = SignalEvidenceBuilder(
+            historian_adapter=policy.get("adapter"),
+            neo4j_client=neo4j_client,
+            neo4j_database=neo4j_db,
+        )
+        try:
+            artifact = builder.build(
+                run_id=run_id,
+                event=event,
+                telemetry_summary=telemetry_summary,
+                kg_context=kg_context,
+            )
+            artifact.setdefault("runtime", {})
+            artifact["runtime"].update({
+                "historian_mode_requested": policy.get("requested_mode"),
+                "historian_mode_effective": policy.get("effective_mode"),
+                "historian_adapter": policy.get("adapter_name"),
+                "historian_note": policy.get("note"),
+                "fallback_used": False,
+            })
+            return artifact
+        except Exception as exc:
+            LOGGER.error("Stage B.5 signal_evidence build failed; using graceful empty fallback. Error: %s", exc)
+            try:
+                fallback = SignalEvidenceBuilder(
+                    historian_adapter=NullHistorianAdapter(),
+                    neo4j_client=None,
+                    neo4j_database=None,
+                )
+                artifact = fallback.build(
+                    run_id=run_id,
+                    event=event,
+                    telemetry_summary=telemetry_summary,
+                    kg_context=kg_context,
+                )
+                artifact.setdefault("runtime", {})
+                artifact["runtime"].update({
+                    "historian_mode_requested": policy.get("requested_mode"),
+                    "historian_mode_effective": "null",
+                    "historian_adapter": "NullHistorianAdapter",
+                    "historian_note": f"Primary Stage B.5 build failed: {exc}",
+                    "fallback_used": True,
+                })
+                return artifact
+            except Exception as fallback_exc:
+                LOGGER.error("Stage B.5 fallback build failed; emitting minimal artifact. Error: %s", fallback_exc)
+                return {
+                    "run_id": run_id,
+                    "generated_at": utcnow_iso(),
+                    "augmented_anomaly_set": [],
+                    "propagation_chains": [],
+                    "per_candidate_chain_score": {},
+                    "chain_coverage": 0.0,
+                    "augmented_anomaly_count": 0,
+                    "historian_anomaly_count": 0,
+                    "fetch_gaps": [],
+                    "chain_warnings": [],
+                    "runtime": {
+                        "historian_mode_requested": policy.get("requested_mode"),
+                        "historian_mode_effective": "none",
+                        "historian_adapter": "none",
+                        "historian_note": f"Primary+fallback build failed: {fallback_exc}",
+                        "fallback_used": True,
+                    },
+                }
+
+    def _build_pm_compliance_if_needed(
+        self,
+        *,
+        event: JsonDict,
+        operational_context: Optional[JsonDict],
+        kg_context: Optional[JsonDict],
+    ) -> Tuple[Optional[JsonDict], JsonDict]:
+        mode = str((self.config.extra or {}).get("pm_compliance_build_mode", "auto")).strip().lower()
+        if mode in {"off", "disabled", "none"}:
+            return None, {
+                "source": "disabled",
+                "build_attempted": False,
+                "build_succeeded": False,
+                "notes": [f"pm_compliance build disabled by config mode '{mode}'."],
+            }
+
+        export_rows = self._extract_pm_export_rows(operational_context)
+        force_build = mode == "force"
+        if not export_rows and not force_build:
+            return None, {
+                "source": "missing",
+                "build_attempted": False,
+                "build_succeeded": False,
+                "notes": ["No PM export rows provided; skipping pm_compliance build."],
+            }
+
+        lookback_days = int((self.config.extra or {}).get("pm_compliance_look_back_window_days", 730) or 730)
+        lookback_days = max(1, lookback_days)
+        cfg = PMComplianceConfig(look_back_window_days=lookback_days)
+        primary_fm_id = (self.config.extra or {}).get("pm_compliance_primary_fm_id")
+        try:
+            artifact = build_pm_compliance(
+                event=event,
+                kg_context=kg_context,
+                export_rows=export_rows,
+                config=cfg,
+                primary_fm_id=(str(primary_fm_id) if primary_fm_id else None),
+            )
+            notes = [f"pm_compliance built from {len(export_rows)} export row(s)."]
+            if not export_rows and force_build:
+                notes.append("Build forced with empty export rows.")
+            return artifact, {
+                "source": "auto_built",
+                "build_attempted": True,
+                "build_succeeded": True,
+                "notes": notes,
+            }
+        except Exception as exc:
+            LOGGER.error("PM compliance auto-build failed; continuing without pm_compliance. Error: %s", exc)
+            return None, {
+                "source": "build_failed",
+                "build_attempted": True,
+                "build_succeeded": False,
+                "notes": [f"Auto-build failed: {exc}"],
+            }
+
+    @staticmethod
+    def _extract_pm_export_rows(operational_context: Optional[JsonDict]) -> List[JsonDict]:
+        if not isinstance(operational_context, dict):
+            return []
+        keys = (
+            "pm_export_rows",
+            "pm_rows",
+            "export_rows",
+            "pm_compliance_export_rows",
+        )
+        for key in keys:
+            rows = operational_context.get(key)
+            if isinstance(rows, list):
+                return [dict(r) for r in rows if isinstance(r, dict)]
+        return []
+
+    def _resolve_signal_evidence_historian_policy(self) -> Dict[str, Any]:
+        cfg = self.config.extra or {}
+        requested_mode = str(cfg.get("signal_evidence_historian_mode", "null")).strip().lower()
+        if requested_mode in {"off", "disabled", "none", ""}:
+            requested_mode = "null"
+
+        if requested_mode == "infile":
+            infile_path = cfg.get("signal_evidence_historian_infile_path")
+            if infile_path:
+                return {
+                    "requested_mode": "infile",
+                    "effective_mode": "infile",
+                    "adapter_name": "InfileHistorianAdapter",
+                    "adapter": InfileHistorianAdapter(str(infile_path)),
+                    "note": f"infile source configured at {infile_path}",
+                }
+            return {
+                "requested_mode": "infile",
+                "effective_mode": "null",
+                "adapter_name": "NullHistorianAdapter",
+                "adapter": NullHistorianAdapter(),
+                "note": "infile mode requested but no signal_evidence_historian_infile_path configured",
+            }
+
+        if requested_mode == "osisoft":
+            return {
+                "requested_mode": "osisoft",
+                "effective_mode": "null",
+                "adapter_name": "NullHistorianAdapter",
+                "adapter": NullHistorianAdapter(),
+                "note": "OSIsoftPIHistorianAdapter is placeholder-only in this phase; using null adapter",
+            }
+
+        if requested_mode != "null":
+            return {
+                "requested_mode": requested_mode,
+                "effective_mode": "null",
+                "adapter_name": "NullHistorianAdapter",
+                "adapter": NullHistorianAdapter(),
+                "note": f"unrecognized historian mode '{requested_mode}', defaulting to null adapter",
+            }
+
+        return {
+            "requested_mode": "null",
+            "effective_mode": "null",
+            "adapter_name": "NullHistorianAdapter",
+            "adapter": NullHistorianAdapter(),
+            "note": "graceful degradation mode",
+        }
+
+    @staticmethod
+    def _evaluate_input_guard_policy(
+        *,
+        input_guards: Optional[JsonDict],
+        strict_enabled: bool,
+        blocking_flags: Optional[List[str]] = None,
+        hard_stop_on_any_flag: bool = False,
+    ) -> JsonDict:
+        default_blocking_flags = {
+            "telemetry_window_end_before_event",
+            "telemetry_window_starts_after_event",
+            "pm_compliance_assessment_after_event",
+        }
+        configured_flags = set()
+        for f in (blocking_flags or []):
+            txt = str(f).strip()
+            if txt:
+                configured_flags.add(txt)
+        if not configured_flags:
+            configured_flags = set(default_blocking_flags)
+
+        observed_flags = [
+            str(x).strip()
+            for x in ((input_guards or {}).get("flags") or [])
+            if str(x).strip()
+        ]
+        observed_set = set(observed_flags)
+        triggered_blocking_flags = sorted(observed_set.intersection(configured_flags))
+        hard_abort_required = bool(
+            strict_enabled
+            and (
+                (hard_stop_on_any_flag and bool(observed_set))
+                or bool(triggered_blocking_flags)
+            )
+        )
+        if hard_abort_required:
+            if hard_stop_on_any_flag and observed_set and not triggered_blocking_flags:
+                reason = (
+                    "Strict input-guard policy active (hard-stop on any flag): "
+                    f"{', '.join(sorted(observed_set))}."
+                )
+            else:
+                reason = (
+                    "Strict input-guard policy active: blocking Stage A input-guard flags detected: "
+                    f"{', '.join(triggered_blocking_flags)}."
+                )
+        else:
+            reason = "Input guards warning-only; no strict Stage A abort."
+        return {
+            "strict_enabled": bool(strict_enabled),
+            "hard_stop_on_any_flag": bool(hard_stop_on_any_flag),
+            "blocking_flags": sorted(configured_flags),
+            "observed_flags": sorted(observed_set),
+            "triggered_blocking_flags": triggered_blocking_flags,
+            "hard_abort_required": hard_abort_required,
+            "reason": reason,
+        }
+
+    def _enforce_input_guard_policy(
+        self,
+        *,
+        run_id: str,
+        run_context: JsonDict,
+        input_guards: Optional[JsonDict],
+    ) -> None:
+        strict_enabled = bool((self.config.extra or {}).get("strict_input_guard_enforcement", False))
+        blocking_flags_cfg = (self.config.extra or {}).get("input_guard_blocking_flags")
+        blocking_flags = blocking_flags_cfg if isinstance(blocking_flags_cfg, list) else None
+        hard_stop_on_any_flag = bool((self.config.extra or {}).get("input_guard_hard_stop_on_any_flag", False))
+        policy = self._evaluate_input_guard_policy(
+            input_guards=input_guards,
+            strict_enabled=strict_enabled,
+            blocking_flags=blocking_flags,
+            hard_stop_on_any_flag=hard_stop_on_any_flag,
+        )
+        run_context.setdefault("input_guards", {})
+        run_context["input_guards"]["policy"] = policy
+        self.artifact_store.save(run_id, "run_context", run_context)
+        if not policy.get("hard_abort_required"):
+            return
+        reason = str(policy.get("reason") or "Strict input-guard policy requested abort.")
+        self.artifact_store.save(run_id, "run_status", {
+            "run_id": run_id,
+            "run_complete": False,
+            "aborted": True,
+            "aborted_at": utcnow_iso(),
+            "abort_reason": reason,
+            "input_guards": input_guards or {},
+            "input_guard_policy": policy,
+        })
+        raise RuntimeError(reason)
 
     def _should_hard_abort_for_kg_governance(self, kg_governance: Optional[JsonDict]) -> bool:
         strict_red_state = bool((self.config.extra or {}).get("strict_red_state_governance", True))
@@ -669,6 +1051,7 @@ class RCAReasoningOrchestrator:
         pm_compliance: Optional[JsonDict],
         run_context: JsonDict,
         kg_context: JsonDict,
+        signal_evidence: Optional[JsonDict],
         tskr_patterns: JsonDict,
         causality_candidates_pre_refine: Optional[JsonDict],
         causality_candidates: JsonDict,
@@ -696,6 +1079,7 @@ class RCAReasoningOrchestrator:
                 "attempts": attempts,
                 "reentry_hook": hook,
                 "kg_context": kg_context,
+                "signal_evidence": signal_evidence,
                 "tskr_patterns": tskr_patterns,
                 "causality_candidates_pre_refine": causality_candidates_pre_refine,
                 "causality_candidates": causality_candidates,
@@ -729,6 +1113,13 @@ class RCAReasoningOrchestrator:
             self._validate_and_persist(run_id, "kg_context", kg_context)
             kg_governance = self._compute_kg_governance(event=event, kg_context=kg_context)
             self._enforce_kg_governance_policy(run_id=run_id, kg_governance=kg_governance)
+            signal_evidence = self._build_signal_evidence(
+                run_id=run_id,
+                event=event,
+                telemetry_summary=telemetry_summary,
+                kg_context=kg_context,
+            )
+            self._validate_and_persist(run_id, "signal_evidence", signal_evidence)
 
             tskr_patterns = self._build_tskr_patterns(
                 event=event,
@@ -736,6 +1127,7 @@ class RCAReasoningOrchestrator:
                 kg_context=kg_context,
                 operational_context=operational_context,
                 run_context=run_context,
+                signal_evidence=signal_evidence,
             )
             self._validate_and_persist(run_id, "tskr_patterns", tskr_patterns)
             causality_candidates = self.causality_engine.generate(
@@ -774,6 +1166,7 @@ class RCAReasoningOrchestrator:
             causality_candidates = self.causality_engine.refine_with_evidence(
                 causality_candidates=causality_candidates,
                 evidence_bundle=evidence_bundle,
+                signal_evidence=signal_evidence,
             )
             self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
             hook = self._compute_reentry_hook(
@@ -798,6 +1191,7 @@ class RCAReasoningOrchestrator:
             "attempts": attempts,
             "reentry_hook": hook,
             "kg_context": kg_context,
+            "signal_evidence": signal_evidence,
             "tskr_patterns": tskr_patterns,
             "causality_candidates_pre_refine": causality_candidates_pre_refine,
             "causality_candidates": causality_candidates,
@@ -1289,6 +1683,7 @@ class RCAReasoningOrchestrator:
         reentry_execution: Optional[JsonDict] = None,
         reentry_hook: Optional[JsonDict] = None,
         chroma_archive: Optional[JsonDict] = None,
+        signal_evidence: Optional[JsonDict] = None,
     ) -> JsonDict:
         reentry_hook = reentry_hook or self._compute_reentry_hook(
             causality_candidates_pre_refine=causality_candidates_pre_refine,
@@ -1349,7 +1744,10 @@ class RCAReasoningOrchestrator:
             "completed_at": utcnow_iso(),
             "input_refs": run_context["input_refs"],
             "pipeline_config": {
-                "causality_engine_version": (self.config.extra or {}).get("causality_engine_version", "v31"),
+                "causality_engine_version": (self.config.extra or {}).get("causality_engine_version", "v32"),
+                "causality_engine_runtime_class": type(self.causality_engine).__name__,
+                "pm_compliance": (run_context.get("pipeline_runtime") or {}).get("pm_compliance"),
+                "signal_evidence_runtime": (signal_evidence or {}).get("runtime") or {},
                 "evidence_refinement_applied": bool(
                     ((causality_candidates.get("provenance") or {}).get("evidence_refinement_applied", False))
                 ),
@@ -1367,6 +1765,17 @@ class RCAReasoningOrchestrator:
                 ),
                 "top_k_candidates": self.config.top_k_candidates,
                 "top_k_evidence": self.config.top_k_evidence,
+                "tskr_runtime": self._tskr_runtime_snapshot(),
+                "strict_input_guard_enforcement": bool((self.config.extra or {}).get("strict_input_guard_enforcement", False)),
+                "input_guard_hard_stop_on_any_flag": bool((self.config.extra or {}).get("input_guard_hard_stop_on_any_flag", False)),
+                "input_guard_blocking_flags": (
+                    [str(x) for x in ((self.config.extra or {}).get("input_guard_blocking_flags") or []) if str(x).strip()]
+                    or [
+                        "telemetry_window_end_before_event",
+                        "telemetry_window_starts_after_event",
+                        "pm_compliance_assessment_after_event",
+                    ]
+                ),
                 "reentry_execution": reentry_execution or {
                     "auto_reentry_enabled": bool((self.config.extra or {}).get("enable_auto_reentry", True)),
                     "attempt_count": 0,
@@ -1382,6 +1791,13 @@ class RCAReasoningOrchestrator:
             },
             "artifacts": {
                 "kg_context": {"present": True},
+                "signal_evidence": {
+                    "present": signal_evidence is not None,
+                    "augmented_anomaly_count": int((signal_evidence or {}).get("augmented_anomaly_count", 0) or 0),
+                    "historian_anomaly_count": int((signal_evidence or {}).get("historian_anomaly_count", 0) or 0),
+                    "propagation_chain_count": len((signal_evidence or {}).get("propagation_chains", [])),
+                    "chain_warning_count": len((signal_evidence or {}).get("chain_warnings", [])),
+                },
                 "historical_support_channels": {
                     "present": bool(seed_support),
                     "mode": seed_support.get("mode"),
@@ -1428,6 +1844,10 @@ class RCAReasoningOrchestrator:
                     "sister_count": len((cmms_context or {}).get("sister_components", [])),
                     "adapter": (cmms_context or {}).get("adapter"),
                 },
+                "pm_compliance": {
+                    "present": bool((run_context.get("input_refs") or {}).get("has_pm_compliance", False)),
+                    "source": ((run_context.get("pipeline_runtime") or {}).get("pm_compliance") or {}).get("source"),
+                },
                 "rca_card": {
                     "present": True,
                     "decision_status": summary.get("decision_status"),
@@ -1455,6 +1875,9 @@ class RCAReasoningOrchestrator:
                 **candidate_posture,
                 **primary_evidence,
             },
+            "analyst_attention_flags": list(
+                ((rca_card.get("executive_summary") or {}).get("analyst_attention_flags") or [])
+            ),
             "pipeline_health": pipeline_health,
             "stage_health": stage_health,
             "kg_governance": kg_governance or {},
@@ -2124,6 +2547,70 @@ class RCAReasoningOrchestrator:
         if msg not in flags:
             flags.append(msg)
 
+    @staticmethod
+    def _apply_signal_evidence_attention_flags(
+        rca_card: JsonDict,
+        signal_evidence: Optional[JsonDict],
+    ) -> None:
+        warnings = (signal_evidence or {}).get("chain_warnings") or []
+        if not warnings:
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        feedback_count = sum(
+            1
+            for w in warnings
+            if isinstance(w, dict) and str(w.get("type") or "").strip() == "feedback_cascade_truncated"
+        )
+        if feedback_count <= 0:
+            return
+        msg = (
+            "Signal propagation feedback cascade detected and truncated in Stage B.5 "
+            f"({feedback_count} path(s)); review topology loops and concurrent-cause interpretation."
+        )
+        if msg not in flags:
+            flags.append(msg)
+
+    @staticmethod
+    def _apply_out_of_boundary_attention_flags(
+        rca_card: JsonDict,
+        kg_context: Optional[JsonDict],
+    ) -> None:
+        rows = [
+            row
+            for row in ((kg_context or {}).get("out_of_boundary_anomalies") or [])
+            if isinstance(row, dict)
+        ]
+        if not rows:
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        total = len(rows)
+        msg = (
+            f"Detected {total} out-of-boundary anomaly signal(s) outside the Stage B causal neighborhood; "
+            "review excluded components for potential upstream causes."
+        )
+        if msg not in flags:
+            flags.append(msg)
+
+        not_in_kg = [
+            row for row in rows
+            if bool(row.get("not_in_kg", False))
+        ]
+        if not not_in_kg:
+            return
+        unresolved = len(not_in_kg)
+        msg2 = (
+            f"{unresolved} out-of-boundary anomaly signal(s) are unresolved in KG (not_in_kg=true); "
+            "verify KG coverage before write-back."
+        )
+        if msg2 not in flags:
+            flags.append(msg2)
+
     def _build_workflow_dispatch(
         self,
         *,
@@ -2267,13 +2754,16 @@ class RCAReasoningOrchestrator:
         event: Optional[JsonDict] = None,
         telemetry_summary: Optional[JsonDict] = None,
         kg_context: Optional[JsonDict] = None,
+        signal_evidence: Optional[JsonDict] = None,
         tskr_patterns: Optional[JsonDict] = None,
         causality_candidates: Optional[JsonDict] = None,
         evidence_bundle: Optional[JsonDict] = None,
         ishikawa_matrix: Optional[JsonDict] = None,
+        barrier_analysis: Optional[JsonDict] = None,
         rca_card: Optional[JsonDict] = None,
         operational_context: Optional[JsonDict] = None,
         pm_compliance: Optional[JsonDict] = None,
+        cmms_context: Optional[JsonDict] = None,
     ) -> Optional[JsonDict]:
         """
         Cross-artifact validation for an RCA run stage.
@@ -2283,13 +2773,16 @@ class RCAReasoningOrchestrator:
                 event=event,
                 telemetry_summary=telemetry_summary,
                 kg_context=kg_context,
+                signal_evidence=signal_evidence,
                 tskr_patterns=tskr_patterns,
                 causality_candidates=causality_candidates,
                 evidence_bundle=evidence_bundle,
                 ishikawa_matrix=ishikawa_matrix,
+                barrier_analysis=barrier_analysis,
                 rca_card=rca_card,
                 operational_context=operational_context,
                 pm_compliance=pm_compliance,
+                cmms_context=cmms_context,
             )
             normalized = self._normalize_validation_report(
                 report,
@@ -2306,13 +2799,16 @@ class RCAReasoningOrchestrator:
             ("event", event),
             ("telemetry_summary", telemetry_summary),
             ("kg_context", kg_context),
+            ("signal_evidence", signal_evidence),
             ("tskr_patterns", tskr_patterns),
             ("causality_candidates", causality_candidates),
             ("evidence_bundle", evidence_bundle),
             ("ishikawa_matrix", ishikawa_matrix),
+            ("barrier_analysis", barrier_analysis),
             ("rca_card", rca_card),
             ("operational_context", operational_context),
             ("pm_compliance", pm_compliance),
+            ("cmms_context", cmms_context),
         ]:
             if payload is None:
                 continue
@@ -2585,7 +3081,7 @@ def build_dev_orchestrator(
     schema_dir: str | Path | None = None,
     validator_mode: str = "compat",
     stop_on_validation_error: bool = True,
-    causality_engine_version: str = "v31",
+    causality_engine_version: str = "v32",
     cap_adapter=None,
     cap_config=None,
     cmms_adapter=None,

@@ -399,8 +399,28 @@ class Neo4jKGContextBuilder:
                         }
                     )
 
+        component_ids = [cid for cid in components_by_id.keys() if cid]
+        monitored_map: Dict[str, List[str]] = {}
+        if component_ids:
+            mv_query = """
+            MATCH (mv:monitored_variable)-[:MONITORS|MEASURES]->(c:element_usage)
+            WHERE c.id IN $component_ids
+            WITH c.id AS component_id, collect(DISTINCT coalesce(mv.sensor_id, mv.tag_id, mv.ID)) AS raw_ids
+            RETURN component_id,
+                   [x IN raw_ids WHERE x IS NOT NULL AND trim(toString(x)) <> ""] AS monitored_variable_ids
+            """
+            for row in [dict(r) for r in self.client.query(mv_query, {"component_ids": component_ids}, db=self.database)]:
+                monitored_map[str(row.get("component_id") or "")] = sorted(
+                    [str(x).strip() for x in (row.get("monitored_variable_ids") or []) if str(x).strip()]
+                )
+
+        components = sorted(components_by_id.values(), key=lambda x: x["component_id"])
+        for comp in components:
+            cid = str(comp.get("component_id") or "")
+            comp["monitored_variable_ids"] = monitored_map.get(cid, [])
+
         return {
-            "components": sorted(components_by_id.values(), key=lambda x: x["component_id"]),
+            "components": components,
             "paths": paths,
         }
 

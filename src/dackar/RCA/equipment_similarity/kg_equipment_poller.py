@@ -126,6 +126,13 @@ class KGEquipmentPoller:
             fm_names   = [n for n in (row.get("failure_mode_names") or []) if n]
             mechanisms = [m for m in (row.get("failure_mechanisms") or []) if m]
 
+            if not self._has_substantive_spec_data(definition_props, fm_names, mechanisms):
+                logger.debug(
+                    "KGEquipmentPoller: skipping %s — no definition/failure-mode data for embedding.",
+                    comp_id,
+                )
+                continue
+
             spec_text = self._builder.build_spec_text(
                 component_id=comp_id,
                 component_name=comp_name,
@@ -198,3 +205,18 @@ class KGEquipmentPoller:
         except Exception as exc:
             logger.error("KGEquipmentPoller: KG query failed: %s", exc)
             raise
+
+    @staticmethod
+    def _has_substantive_spec_data(
+        definition_props: JsonDict,
+        failure_mode_names: List[str],
+        failure_mechanisms: List[str],
+    ) -> bool:
+        for value in definition_props.values():
+            if value is not None and str(value).strip():
+                return True
+        if any(str(v).strip() for v in failure_mode_names):
+            return True
+        if any(str(v).strip() for v in failure_mechanisms):
+            return True
+        return False

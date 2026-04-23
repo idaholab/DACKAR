@@ -747,11 +747,13 @@ class RuleBasedCausalityEngineV32:
         causality_candidates: JsonDict,
         evidence_bundle: JsonDict,
         kg_context: Optional[JsonDict] = None,
+        signal_evidence: Optional[JsonDict] = None,
         entity_normalizer_cfg: Optional[Dict[str, Any]] = None,
     ) -> JsonDict:
         payload = dict(causality_candidates)
         candidates = [dict(c) for c in (payload.get("candidates") or [])]
         summary_lookup = self._candidate_summary_lookup(evidence_bundle)
+        signal_ev_index = (signal_evidence or {}).get("per_candidate_chain_score") or {}
 
         # Build entity normalizer if KG context provides failure modes
         failure_modes = (kg_context or {}).get("failure_modes") or []
@@ -790,10 +792,8 @@ class RuleBasedCausalityEngineV32:
             # Treat existing evidence score as prior/doc-availability prior
             prior_evidence_score = float((candidate.get("scores") or {}).get("evidence", 0.0) or 0.0)
 
-            # Authority weight: 1.0 until evidence retriever populates best_source_tier.
-            authority_weight = self._AUTHORITY_WEIGHTS.get(
-                ev.get("best_source_tier"), 1.0
-            )
+            authority_tier = ev.get("best_source_tier")
+            authority_weight = self._AUTHORITY_WEIGHTS.get(authority_tier, 1.0)
             refined_evidence_score = max(
                 0.0,
                 min(
@@ -806,10 +806,38 @@ class RuleBasedCausalityEngineV32:
             )
 
             candidate.setdefault("scores", {})
+            evidence_doc = refined_evidence_score
+            chain_meta = {}
+            if isinstance(signal_ev_index, dict):
+                candidate_fm_key = (
+                    candidate.get("failure_mode_id")
+                    or candidate.get("fm_id")
+                    or (candidate.get("cause_node_id") if candidate.get("hypothesis_type") == "failure_mode" else "")
+                    or ""
+                )
+                if isinstance(candidate_fm_key, str) and candidate_fm_key:
+                    chain_meta = signal_ev_index.get(candidate_fm_key, {}) or {}
+                if not chain_meta:
+                    chain_meta = signal_ev_index.get(str(candidate_id), {}) or {}
+            evidence_chain = float(chain_meta.get("chain_position_score", 0.0) or 0.0)
+            if str(chain_meta.get("position_type") or "absent") == "convergence_confluence":
+                evidence_chain = 0.0
+            if chain_meta:
+                refined_evidence_score = max(
+                    0.0,
+                    min(1.0, 0.70 * evidence_doc + 0.30 * evidence_chain),
+                )
+            else:
+                refined_evidence_score = evidence_doc
             candidate["scores"]["evidence_prior"] = round(prior_evidence_score, 6)
             candidate["scores"]["evidence_support"] = round(support_score, 6)
             candidate["scores"]["evidence_contradiction"] = round(contradiction_score, 6)
             candidate["scores"]["evidence_context"] = round(contextual_score, 6)
+            candidate["scores"]["evidence_authority_weight"] = round(float(authority_weight), 6)
+            if authority_tier:
+                candidate["scores"]["evidence_authority_tier"] = str(authority_tier)
+            candidate["scores"]["evidence_doc"] = round(evidence_doc, 6)
+            candidate["scores"]["evidence_chain"] = round(evidence_chain, 6)
             candidate["scores"]["evidence"] = round(refined_evidence_score, 6)
             risk_scalar = float((candidate.get("scores") or {}).get("risk_significance_scalar", 0.0) or 0.0)
             governance_base = float((candidate.get("scores") or {}).get("governance_base", (candidate.get("scores") or {}).get("governance", 0.0)) or 0.0)
@@ -834,6 +862,16 @@ class RuleBasedCausalityEngineV32:
                 contradiction_score=contradiction_score,
                 contextual_score=contextual_score,
                 retrieved_hit_count=retrieved_hit_count,
+            )
+            candidate["is_contributing_cause_candidate"] = (
+                chain_meta.get("contributing_cause_role") == "concurrent_cause_candidate"
+                if isinstance(chain_meta, dict)
+                else False
+            )
+            candidate["confluence_component_id"] = (
+                chain_meta.get("confluence_component_id")
+                if isinstance(chain_meta, dict)
+                else None
             )
 
             # Back-fill temporal_evidence with spaCy-extracted signals where the
@@ -878,7 +916,7 @@ class RuleBasedCausalityEngineV32:
                     support_score = min(1.0, support_score + boost)
                     candidate["scores"]["evidence_entity_boost"] = round(boost, 4)
                     # Recompute refined_evidence_score with boosted support (same authority weight)
-                    refined_evidence_score = max(
+                    evidence_doc = max(
                         0.0,
                         min(
                             1.0,
@@ -888,6 +926,14 @@ class RuleBasedCausalityEngineV32:
                             - 0.45 * contradiction_score,
                         ),
                     )
+                    if chain_meta:
+                        refined_evidence_score = max(
+                            0.0,
+                            min(1.0, 0.70 * evidence_doc + 0.30 * evidence_chain),
+                        )
+                    else:
+                        refined_evidence_score = evidence_doc
+                    candidate["scores"]["evidence_doc"] = round(evidence_doc, 6)
                     candidate["scores"]["evidence"] = round(refined_evidence_score, 6)
 
                 candidate["resolved_entity_matches"] = resolved_matches
@@ -898,7 +944,10 @@ class RuleBasedCausalityEngineV32:
                 support_score=support_score,
                 contradiction_score=contradiction_score,
                 contextual_score=contextual_score,
-                prior_evidence_score=prior_evidence_score,)
+                prior_evidence_score=prior_evidence_score,
+                authority_tier=authority_tier,
+                authority_weight=authority_weight,
+            )
 
         candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
 
@@ -2546,6 +2595,8 @@ class RuleBasedCausalityEngineV32:
         contradiction_score: float,
         contextual_score: float,
         prior_evidence_score: float,
+        authority_tier: Optional[str],
+        authority_weight: float,
     ) -> None:
         rationale = candidate.setdefault("score_rationale", {})
         if candidate.get("evidence_gap"):
@@ -2559,7 +2610,8 @@ class RuleBasedCausalityEngineV32:
             rationale["evidence"] = (
                 f"Evidence refined after retrieval ({candidate.get('retrieved_hit_count', 0)} hits): "
                 f"support={support_score:.3f}, contradiction={contradiction_score:.3f}, "
-                f"context={contextual_score:.3f}, prior={prior_evidence_score:.3f}."
+                f"context={contextual_score:.3f}, prior={prior_evidence_score:.3f}, "
+                f"authority_tier={authority_tier or 'none'} (weight={authority_weight:.2f})."
             )
         risk_scalar = float(((candidate.get("scores") or {}).get("risk_significance_scalar", 0.0) or 0.0))
         governance_base = float(((candidate.get("scores") or {}).get("governance_base", 0.0) or 0.0))

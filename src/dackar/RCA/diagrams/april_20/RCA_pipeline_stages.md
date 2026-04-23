@@ -1,9 +1,24 @@
 # RCA Pipeline — Stage-by-Stage Reference
-**Date**: April 22, 2026 · **Revision**: Sprint 7 complete + Stage 0 added
+**Date**: April 23, 2026 · **Revision**: Sprint 7 complete + Stage 0 added + alignment pass
 **Baseline**: Orchestrator v3.2 · Schema set v3.2
 **Companion documents**: `RCA_pipeline_flowchart.md` (architecture) · `RCA_workflow_april_2.md` (formal spec) · `RCA_Data_Management_Strategy.md` (data layer) · `RCA_FMEA_handling_spec.md` (FMEA formats, normalization, enrichment) · `RCA_stage_B5_signal_evidence_spec.md` (topology anomaly fetch, propagation chains)
 
 **Target audience**: Systems engineers and RCA practitioners using or evaluating the pipeline. This document explains what each stage does, why, what data it transforms, and where the current implementation has known limitations.
+
+---
+
+## Implementation Status Reconciliation (Apr 23, 2026)
+
+This document was drafted while multiple modules were still moving. The table below reflects the current implementation state after the pipeline alignment pass.
+
+| Area | Status | Notes |
+|------|--------|-------|
+| PM Compliance stage feed into orchestrator | Implemented | Orchestrator now supports auto-building `pm_compliance` from operational-context export rows when not provided, while preserving explicit-input override behavior. |
+| Stage B.5 runtime historian mode | Implemented (policy + graceful fallback) | Runtime policy is explicit (`null` / `infile` / requested `osisoft` downgraded to null until live adapter is implemented). Runtime mode is surfaced in `run_manifest.pipeline_config.signal_evidence_runtime`. |
+| Default causality engine baseline | Implemented (v32 default) | `build_dev_orchestrator()` now defaults to `v32` to match current baseline expectations. Runtime class/version are recorded in manifest config. |
+| Bundle validation coverage for newer artifacts | Implemented | Bundle validator now accepts and semantically checks `signal_evidence`, `barrier_analysis`, and `cmms_context` alongside existing artifacts. |
+| Stage B.5 / Stage C / Stage F contract tests | Expanded | Additional tests now cover Stage B.5 topology edge-cases, Stage C contract fallback/use paths, and Stage F chain-evidence plus contributing-cause passthrough. |
+| Live OSIsoft PI adapter | Partial | Contract class exists, but live PI API integration remains a future implementation item; current runtime treats it as inactive and falls back to null-mode behavior. |
 
 ---
 
@@ -1194,9 +1209,9 @@ def score(event, telemetry, kg_context, cmms_context, signal_evidence, oc, run_c
 
 ### Known gaps
 
-- **H3 (April 20 review)**: `simultaneous_epsilon_hours = 0.5` is not documented as a user-configurable parameter; inappropriate for slow-developing failures (thermal degradation, leaks) where 0.5 hours may be far too tight.
-- Weight coefficients in the confidence composite sum to > 1.0 (0.55 + 0.30 + 0.15 + 0.20 + 0.15 = 1.35), making the formula non-convex. The `clamp01` prevents out-of-range output but the relative contribution of each term depends on the others' magnitude.
-- `instrument_validity_flag` is referenced in the telemetry schema but not checked in TSKR; a degraded sensor could produce spurious anomaly windows that inflate confidence.
+- ✅ **Fixed (Apr 23, 2026)**: `simultaneous_epsilon_hours` is now runtime-configurable via orchestrator extra config (`tskr_simultaneous_epsilon_hours`) and surfaced in `run_manifest.pipeline_config.tskr_runtime` for auditability.
+- ✅ **Fixed (Apr 23, 2026)**: Stage C confidence now uses runtime-normalized weighted averaging across configured dimensions before contradiction penalties are applied. This keeps the composite convex even if configured weights do not sum exactly to 1.0.
+- ✅ **Fixed (Apr 23, 2026)**: Stage C now consumes `signals[].instrument_validity_flag` and applies validity multipliers to anomaly severity weighting. Out-of-calibration/degraded sensors now down-weight anomaly influence, reducing inflated temporal confidence from unreliable instrumentation.
 - **FM-to-CR matching depends on NER quality**: the recurrence profile (`build_recurrence_profile`) matches CR records to failure modes via `failure_mode_keywords[]` extracted by NER at Stage 5B. If NER is partial or imprecise — which the current implementation status confirms — Stage C silently degrades to recurrence-by-asset rather than recurrence-by-failure-mode. A high-maintenance equipment item will show inflated recurrence scores regardless of which specific failure mode is being evaluated. This is a data quality dependency that is not visible in Stage C's output.
 - **Allen relation classification requires clean anomaly interval endpoints**: Stage C assumes each anomaly has a reliable `timestamp_end`. In plant data, anomaly detection systems typically provide a precise `timestamp_start` but a fuzzy or missing `timestamp_end`. A missing endpoint forces a point-event fallback that can misclassify OVERLAPS as PRECEDES or SIMULTANEOUS as PRECEDES, producing incorrect Allen relation scores. The same uncertainty applies to the event interval from the CR — `timestamp_end` is often recorded when the condition was restored, not when the causal process ended. Neither case is currently handled.
 - **Potential relation inconsistency between Stage B pre-filter and Stage C scoring**: Stage B admits components into the neighborhood using a lightweight Allen relation computed on raw timestamps. Stage C re-scores the same anomalies with the full TSKR machinery including epsilon tolerance and severity weighting. It is possible for a component admitted at Stage B with relation OVERLAPS to be reclassified at Stage C as FOLLOWS, triggering a temporal contradiction flag. This does not break the pipeline — Stage D would score that candidate low and Stage F would refine — but the discrepancy between Stage B's admission decision and Stage C's scoring will be visible to analysts and requires explanation.
@@ -1563,7 +1578,7 @@ def refine_with_evidence(candidates_v1, evidence_bundle, signal_evidence=None):
 - Evidence score update formula uses `n_support` and `n_contra` counts, but snippet count is a weak proxy — three low-quality snippets outweigh one mandatory procedure citation.
 - `review_required` flag does not propagate to `rca_card.analyst_review.questions_to_resolve`; the analyst must check v2 candidates directly.
 - The v1→v2 delta is stored per-candidate but not surfaced as a named summary field in the artifact; visualization tools must compute it from `rank_delta`.
-- **Evidence update formula ignores authority tier**: the formula uses `best_support_score` (cosine similarity) and `n_support` (raw count) but does not weight by `source_tier`. Three OE internet snippets of medium similarity outweigh one mandatory plant procedure with high similarity. The update formula should incorporate `authority_score` from the evidence_bundle snippets — e.g., weighting `best_support_score` by the authority of its source. This requires `source_tier` to be resolved (see Stage 5B code change 6).
+- ✅ **Fixed (Apr 23, 2026)**: Stage F refinement now applies authority weighting using `candidate_evidence_summary.best_source_tier` via `_AUTHORITY_WEIGHTS` in `causality_engine_v32.py` (support term uses `best_support_score * authority_weight`). Score transparency now includes `scores.evidence_authority_weight`, optional `scores.evidence_authority_tier`, and rationale text showing the applied tier/weight.
 - **Evidence posture classification has a logical gap**: the four-way classification covers `n_support > 0 and n_contra == 0` (supported), `n_support > 0 and n_contra > 0` (contested), `n_support == 0 and n_contra == 0` (neutral), and falls to `missing` for the remaining case. The remaining case is `n_support == 0 and n_contra > 0` — contradicting evidence found with no supporting evidence. Labelling this `missing` is incorrect: evidence was found, it just argues against the hypothesis. This case should be a distinct posture, e.g., `contradicted`, to correctly signal to the analyst that this candidate has active evidence against it.
 - **`review_alternative_gap` applied on composite score alone**: the near-tie flag compares composite score differences. Two candidates 0.09 apart could have very different evidence postures — one strongly supported, one contested — yet both trigger `review_required`. Conversely, two candidates with identical evidence postures and scores of 0.51 and 0.40 do not trigger the flag even though neither is well-discriminated. The flag would be more operationally meaningful if it incorporated evidence posture: a near-tie between two `supported` candidates is more critical than a near-tie between two `neutral` ones.
 - **No iterative evidence loop**: if Stage F identifies a candidate that drops sharply in rank due to contradicting evidence, there is no mechanism to trigger targeted follow-up retrieval. An RCA engineer in this situation would seek additional documentation to resolve the conflict. The pipeline has no feedback path from Stage F to Stage E — the evidence corpus is fixed after Stage 5B and Stage E.
@@ -1807,20 +1822,20 @@ def synthesize(event, telemetry, kg_context, tskr, candidates_v2, evidence,
 | `max_evidence_in_prompt` | 10 | Token budget cap |
 | `temperature` | 0.1 | Near-deterministic LLM output |
 | `minimum_primary_score` | 0.35 | Readiness threshold for `decision_status: candidate_ready` |
-| Minimum evidence gate | 2 snippets | `passed_minimum_evidence_gate` requires ≥2 evidence items |
+| Minimum evidence gate | 2 supporting snippets | `passed_minimum_evidence_gate` requires ≥2 `support_role: supporting` rows linked to the primary candidate |
 
 ### Known gaps
 
-- **C3 (April 20 review)**: Fallback card always caps confidence at `"medium"`. There is no path to `"high"` confidence output in the current production configuration.
+- ✅ **Fixed (Apr 23, 2026)**: Fallback synthesis can emit `"high"` confidence when posture is strongly supported (strong direct evidence, clear candidate separation, reinforced recurrence/common-cause context, and supportive temporal posture). This is now covered by fallback confidence calibration and fallback-card regression tests.
 - **C5 (April 20 review)**: `kg_context.safety_functions[]` is available in the prompt context but the schema and prompt do not require the LLM to map recommended actions against safety function impact. A recommended action can have `priority: low` on a component that supports a safety function.
 - **C2 (April 20 review)**: Single primary hypothesis architecture — Stage H outputs exactly one `primary_hypothesis`. Scenarios with two co-equal root causes (common cause failure, coupled degradation) are not representable.
 - **C4 (April 20 review)**: Recommended action `priority` is LLM-inferred from cause severity; it is not cross-referenced to safety significance, corrective action program (CAP) priority codes, or regulatory significance.
-- `rca_card.analyst_review.questions_to_resolve[]` is populated by the LLM or fallback, but Stage F's `review_required` flag is not automatically injected into this list.
-- **Top-5 candidate truncation ignores `review_required` flags**: candidates are selected for the prompt by composite score descending. If a near-tie pair identified at Stage F straddles the top-5 cut — e.g., rank 5 and rank 6 both have `review_required: true` — the second candidate is dropped from the prompt entirely. The LLM or fallback then reasons over an incomplete hypothesis set, and the analyst never sees the near-tie in the RCA card. Top-5 selection should ensure all `review_required` candidates are included, even if the prompt cap must be raised or a different candidate displaced.
-- **Top-10 evidence selected by cosine similarity, not by authority tier**: the prompt selects the 10 highest-similarity snippets globally. A mandatory plant procedure with slightly lower cosine similarity than an OE internet snippet is excluded. For nuclear RCA, authority rank should govern evidence selection first, similarity second. A lower-similarity snippet from a plant FMEA is more authoritative than a higher-similarity snippet from an OE database.
-- **Evidence not balanced across candidates**: the top-10 selection is global — all snippets compete regardless of which candidate they support. In practice, the top candidate's evidence may fill all 10 slots, leaving the LLM with nothing about the second or third candidate. The prompt should guarantee a minimum number of evidence snippets per candidate (e.g., at least 2 per top-5 candidate) before filling remaining slots by authority/similarity.
-- **`minimum_evidence_gate` counts all snippets including contextual and contradicting**: `passed_minimum_evidence_gate` requires `len(rca_card["evidence"]) >= 2`. A card with 2 contradicting snippets and 0 supporting snippets passes the gate. The check should require at least 2 snippets with `support_role = "supporting"` to be meaningful as an evidence quality gate.
-- **`out_of_boundary_anomalies` absent from prompt**: Stage B's proposed `out_of_boundary_anomalies` field — components with preceding anomalies outside the KG neighborhood, including those not in the KG at all — is not included in the Stage H prompt. The analyst receives an RCA card with no visibility of potential causal signals that the pipeline explicitly excluded from its search space. At minimum, the `analyst_attention_flags[]` in `executive_summary` should list any `out_of_boundary_anomalies` with `not_in_kg: true`.
+- ✅ **Fixed (Apr 23, 2026)**: Stage F `review_required` candidates are now deterministically injected into `rca_card.analyst_review.questions_to_resolve[]` during both LLM normalization and fallback synthesis, so analyst-facing questions explicitly include near-tie / contested candidates.
+- ✅ **Fixed (Apr 23, 2026)**: Stage H candidate selection already appends `review_required` rows after top-N truncation (bounded by `max_synthesis_extra_review_candidates`), so near-tie/contested candidates are retained for synthesis even when they fall below the base top-k cutoff.
+- ✅ **Fixed (Apr 23, 2026)**: Stage H evidence selection now prioritizes `authority_level` first (`mandatory > guidance > informational > unknown`) and then relevance score within each authority tier before prompt truncation.
+- ✅ **Fixed (Apr 23, 2026)**: Stage H evidence selection now enforces per-candidate prompt balancing by reserving a minimum evidence quota per selected candidate (configurable) before filling remaining prompt slots by authority and relevance rank.
+- ✅ **Fixed (Apr 23, 2026)**: `passed_minimum_evidence_gate` now requires at least **two** `support_role: supporting` evidence rows linked to the selected primary candidate (not merely total snippet count).
+- ✅ **Fixed (Apr 23, 2026)**: Out-of-boundary anomalies are now surfaced to analysts via `rca_card.executive_summary.analyst_attention_flags[]`, including explicit `not_in_kg=true` coverage-gap warnings.
 
 ---
 
@@ -1850,8 +1865,8 @@ Stage I performs no transformation. If it receives a corrupted or incomplete art
 
 - No atomic write (no temp-then-rename); a crash mid-write leaves a partial run directory that Stage J may treat as valid.
 - No compression or retention policy for the Chroma archive.
-- **No "run complete" marker**: artifacts are written one by one with no sentinel file written as the final act. Stage J cannot distinguish a fully written run from an interrupted one — a partial run directory produces a `run_manifest` that reflects only what was written, silently omitting the rest. A `run_complete.json` or equivalent marker should be the last write of Stage I; Stage J should refuse to validate any run directory that lacks it.
-- **Chroma archive failure breaks the audit trail**: JSON artifacts and the Chroma collection are written independently. If Stage I writes all JSON files successfully but then fails during the Chroma archive step — storage quota, network filesystem timeout — the `rca_card` will cite evidence snippets (`doc_id`, `snippet_id`) that no longer exist anywhere on disk. For nuclear plant RCA, where regulatory traceability requires every cited piece of evidence to be recoverable, this is a critical integrity failure. A `chroma_archived: bool` flag should be written to the run manifest so Stage J can detect and reject incomplete runs.
+- ✅ **Fixed (Apr 23, 2026)**: Stage I writes `run_status.json` at run start (`run_complete: false`) and seals it at run end (`run_complete: true`). Stage J and external callers can now distinguish partial vs complete runs using this sentinel.
+- ✅ **Addressed (Apr 23, 2026)**: Stage I now records `chroma_archive` runtime status in `run_manifest.pipeline_config` and propagates failures into pipeline health/remediation routing. Strict mode (`hard_fail_on_chroma_archive_error`) can hard-abort runs on archive failure.
 - **Validation sidecar role is ambiguous relative to Stage J**: Stage I writes `*__validation.json` sidecars alongside each artifact; Stage J runs `RCAArtifactValidator.validate_run_bundle()` over the same artifacts. If both use the same validator, validation runs twice with no additional value. If they use different validators, results may be inconsistent. The relationship between sidecar generation and Stage J validation must be explicitly defined — sidecars should either be the input Stage J reads (avoiding re-validation) or be deprecated in favour of a single authoritative validation pass at Stage J.
 - **No pre-write completeness check**: Stage I writes what it receives without verifying that all nine expected artifacts are present and non-null. A missing or empty `rca_card` caused by a fallback edge case is written to disk without complaint and forwarded to Stage J as if complete. Stage I should verify artifact presence and non-emptiness before writing, and abort with a clear error rather than producing a silent gap.
 - **`output_dir` writability not checked at pipeline entry**: if `output_dir` is non-existent or read-only, Stage I fails after all of Stages A–H have successfully executed and their results are lost. The writability of `output_dir` should be verified at Stage A as a pre-flight check — it is a precondition for the entire run, not just for Stage I.
@@ -1894,7 +1909,7 @@ The correct model is progressive validation: each stage validates its own output
 ### Known gaps
 
 - `writeback_ready: true` does not check whether recommended actions already exist as open WOs in CMMS — duplicates would be created on CAP writeback.
-- Layer 2 cross-checks do not verify that `rca_card.recommended_actions[].target_component_id` values are valid `element_usage` IDs in the KG.
+- ✅ **Fixed (Apr 23, 2026)**: Layer 2 now cross-checks `rca_card.recommended_actions[].target_component_id` against `kg_context.components[].component_id` and emits `recommended_action_target_component_not_in_kg_context` when unresolved.
 - All schema validation is late-binding: Layer 1 schema checks run at Stage J, after every upstream stage has already consumed the artifacts being validated. A schema error in `kg_context` is not caught until after Stages 5B, C, D, E, F, G, and H have all executed on invalid data. The correct model is progressive validation — each stage validates its own output schema before passing it downstream; Stage J retains only cross-artifact consistency checks.
 - `next_step: writeback | analyst_review | remediation` is computed and written to the manifest but has no downstream routing implementation beyond the analyst manually reading the manifest. A co-pilot deployment requires the `analyst_review` and `writeback` paths to have active handoffs (notification, queue dispatch, CAP integration).
 - No re-run capability for `remediation` runs — only full re-runs from Stage A are supported.
@@ -1904,6 +1919,7 @@ The correct model is progressive validation: each stage validates its own output
 - `review_hooks.passed_severity_gate`, `review_hooks.severity_floor` — severity-adjusted floor enforcement
 - `pipeline_config.ishikawa_run`, `pipeline_config.ishikawa_skip_reason` — Stage G skip tracking
 - `pipeline_config.enable_ishikawa`, `pipeline_config.reentry_execution` — pipeline configuration record
+- `pipeline_config.tskr_runtime.simultaneous_epsilon_hours` — Stage C temporal epsilon runtime value used for Allen relation classification
 - `stage_health` — per-stage green/yellow/red status with issue lists
 - `pipeline_health` — overall health aggregated from stage health + validation
 - `kg_governance` — failure mode coverage and KG snapshot age
@@ -1933,12 +1949,15 @@ The correct model is progressive validation: each stage validates its own output
 | Issue | Stage | Ref | Status |
 |-------|-------|-----|--------|
 | Safety significance not a scoring dimension | D, F, H | April 20 C4 | ⚠️ Partial — safety function now propagates to rca_card flags and action priority; not a scoring dimension |
-| Confidence always capped at "medium" (fallback path) | H | April 20 C3 | Open |
+| Confidence always capped at "medium" (fallback path) | H | April 20 C3 | ✅ Fixed Apr 23 — fallback calibration and fallback-card path can emit `"high"` under strong posture |
 | Single primary hypothesis — no co-equal causes | H | April 20 C2 | Open |
 | KG closed-world assumption | B | April 20 C1 | Open — by design |
-| `instrument_validity_flag` not consumed | C | April 20 H3 | Open |
-| `review_required` not injected into analyst_review | F, H | — | Open |
-| Evidence score uses snippet count, not authority | F | — | Open |
+| Stage C confidence composite non-convex | C | Part 3 IC-2 | ✅ Fixed Apr 23 — runtime-normalized weighted confidence in `TSKRTemporalScorerV1` |
+| `simultaneous_epsilon_hours` not runtime-configurable/visible | C | April 20 H3 (epsilon) | ✅ Fixed Apr 23 — orchestrator runtime override + manifest snapshot (`pipeline_config.tskr_runtime`) |
+| `instrument_validity_flag` not consumed | C | April 20 H3 | ✅ Fixed Apr 23 — Stage C down-weights anomaly severity using `instrument_validity_flag` |
+| `review_required` not injected into analyst_review | F, H | — | ✅ Fixed Apr 23 — synthesizer injects Stage F `review_required` candidates into analyst questions |
+| Evidence score uses snippet count, not authority | F | — | ✅ Fixed Apr 23 — Stage F uses `best_source_tier` authority weighting; regression-tested in `test_refine_with_evidence.py` |
+| Out-of-boundary anomalies not visible to analyst | B, H | Stage H known gap | ✅ Fixed Apr 23 — orchestrator injects out-of-boundary + `not_in_kg=true` attention flags into `rca_card` |
 | EDMS / FMEA ingestion stubs | 5B | — | Open |
 | OE LLM tier | 5B | — | Future |
 | Severity-adjusted evidence floor | A, J | April 21 A2 | ✅ Fixed Sprint 6 — `_SEVERITY_SCORE_FLOORS` in synthesizer; `passed_severity_gate` in review_hooks |
@@ -1974,7 +1993,7 @@ Section 1.5 reads: *"Stage D enforces composite ≥ 0.30 AND evidence ≥ 0.10."
 Key logic text (updated): `0.45×anomaly + 0.30×latency + 0.10×chain + 0.10×history + 0.15×count + 0.10×lag`. Pseudo-code (not updated): `0.55×anomaly + 0.30×latency + 0.15×history + 0.20×count + 0.15×lag`. Neither version sums to 1.0; `clamp01` masks the issue but weights are non-convex in both. An implementer following the pseudo-code will build something different from what the text describes.
 
 **IC-3 — `latency_violation_type` enum mismatch.**
-The `tskr_patterns` output artifact table says `none | too_fast | too_slow | unknown`. The key logic text and `RCA_FMEA_handling_spec.md` §5 say it should be `not_available` (replacing `unknown`).
+✅ **Resolved (Apr 23, 2026)**: Stage C now emits `not_available` for abstention cases (missing/non-parseable latency bounds) and schemas/validators accept this enum value.
 
 **IC-4 — Stage C pseudo-code signature missing `cmms_context` and `signal_evidence`.**
 Function signature: `def score(event, telemetry, kg_context, oc, run_context)`. The key logic section states Stage C consumes `cmms_context.cr_records[]` for recurrence and `signal_evidence.augmented_anomaly_set[]` as the primary anomaly source. Both are missing from the signature; the body references `cmms_context["cr_records"]` which would be a `NameError` at runtime.

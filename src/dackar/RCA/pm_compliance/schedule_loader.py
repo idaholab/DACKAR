@@ -19,14 +19,23 @@ class PMScheduleLoader:
         self._component_ids = set(component_ids) if component_ids else set()
 
     def load_from_export_rows(self, rows: Optional[Sequence[JsonDict]]) -> List[JsonDict]:
-        """Filter and return rows for this asset scope.
+        """Filter and return rows for this asset scope."""
+        loaded, _ = self.load_from_export_rows_with_notes(rows)
+        return loaded
 
-        Rows missing ``check_id`` or ``check_type`` are dropped with a note that
-        the caller can surface via ``data_quality_notes`` on the artifact.
+    def load_from_export_rows_with_notes(
+        self,
+        rows: Optional[Sequence[JsonDict]],
+    ) -> tuple[List[JsonDict], List[str]]:
+        """Filter rows for scope and return ``(rows, data_quality_notes)``.
+
+        Rows missing ``check_id`` (or fallback ``task_code``) or ``check_type``
+        are dropped to avoid ambiguous downstream governance interpretation.
         """
         if not rows:
-            return []
+            return [], []
         out: List[JsonDict] = []
+        notes: List[str] = []
         for r in rows:
             aid = r.get("asset_id")
             if aid is not None and aid != self._asset_id:
@@ -34,5 +43,12 @@ class PMScheduleLoader:
             cid = r.get("component_id")
             if self._component_ids and cid and cid not in self._component_ids:
                 continue
+            check_id = str(r.get("check_id") or r.get("task_code") or "").strip()
+            check_type = str(r.get("check_type") or "").strip()
+            if not check_id or not check_type:
+                notes.append(
+                    "Dropped PM export row missing required check_id/task_code or check_type."
+                )
+                continue
             out.append(dict(r))
-        return out
+        return out, notes

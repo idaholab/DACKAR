@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from orchestrators.causality_engine_v32 import parse_dt, utcnow_iso
 from .config import PMComplianceConfig
 from .currency_checker import frequency_concern, mean_interval_from_tskr
-from .effectiveness_analyzer import analyze_degradation, collect_as_found_from_checks
+from .effectiveness_analyzer import analyze_degradation, collect_as_found_from_rows
 from .execution_verifier import PMExecutionVerifier
 from .scope_analyzer import analyze_scope
 from .types import JsonDict
@@ -89,7 +89,7 @@ def _rollup_risk(
 
     if not has_fail and not all_gap and not has_overdue:
         overall: str = "compliant"
-    elif primary_fm_id and primary_in_gap and (has_fail or has_overdue):
+    elif primary_fm_id and primary_in_gap:
         overall = "non_compliant"
     elif has_fail or all_gap or has_overdue:
         overall = "partial"
@@ -99,8 +99,16 @@ def _rollup_risk(
     return overall, risk, has_scope_primary
 
 
-def _compliance_status_md(overdue_days: float, st: str, missed_cycles: int) -> str:
+def _compliance_status_md(
+    overdue_days: float,
+    st: str,
+    missed_cycles: int,
+    raw_compliance_status: Optional[str] = None,
+) -> str:
     """Narrative labels for ``pm_tasks[].compliance_status`` (architecture §5)."""
+    raw = str(raw_compliance_status or "").strip().lower()
+    if raw in {"not_applicable", "n_a"}:
+        return "not_applicable"
     if st == "pass":
         return "compliant"
     if st == "unknown":
@@ -134,7 +142,12 @@ def _build_pm_tasks_per_component(
             "last_pm_date": r.get("last_pm_date") or r.get("completed_date"),
             "next_due_date": r.get("next_due_date") or r.get("next_due"),
             "overdue_days": overdue,
-            "compliance_status": _compliance_status_md(overdue, st, mcy),
+            "compliance_status": _compliance_status_md(
+                overdue,
+                st,
+                mcy,
+                raw_compliance_status=r.get("compliance_status"),
+            ),
             "missed_cycles": mcy,
             "last_as_found": r.get("as_found_last") or r.get("as_found_condition"),
             "coverage_type": r.get("coverage_type") or "none",
@@ -206,7 +219,7 @@ def build_pm_compliance(
         comp_ids = [str(c.get("component_id")) for c in (kg_context.get("components") or []) if c.get("component_id")]
 
     loader = PMScheduleLoader(asset, component_ids=comp_ids)
-    raw_rows = list(loader.load_from_export_rows(export_rows or ()))
+    raw_rows, loader_notes = loader.load_from_export_rows_with_notes(export_rows or ())
     extra_notes: List[str] = []
     for r in raw_rows:
         ft = (r.get("frequency_type") or "").lower()
@@ -222,7 +235,7 @@ def build_pm_compliance(
 
     verifier = PMExecutionVerifier(event_timestamp_iso=event_ts)
     checks, dq_notes = verifier.verify_rows(raw_rows)
-    dq_notes = list(dq_notes) + extra_notes
+    dq_notes = list(loader_notes) + list(dq_notes) + extra_notes
 
     comp_views, fmea_kg, covered_fms, all_fms = analyze_scope(kg_context, checks)
     if raw_rows and kg_context and not fmea_kg:
@@ -231,7 +244,7 @@ def build_pm_compliance(
                 "PM-to-FM coverage from export `applicable_fm_ids` only; no KG FMEA/PM task linkage (advisory, §3.3)"
             )
 
-    asf = collect_as_found_from_checks(checks)
+    asf = collect_as_found_from_rows(raw_rows)
     dqtrend = analyze_degradation(asf) if asf else "unknown"
     for view in comp_views:
         view.setdefault("degradation_trend", dqtrend)
@@ -257,7 +270,7 @@ def build_pm_compliance(
     has_overdue = any((c.get("overdue_by_days") or 0) > 0.0 for c in checks)
     has_fail = any(c.get("status") == "fail" for c in checks)
     all_gap: Set[str] = set()
-    if all_fms:
+    if all_fms and (fmea_kg or covered_fms):
         all_gap = set(all_fms) - set(covered_fms)
 
     overall, risk, has_scope_gaps = _rollup_risk(

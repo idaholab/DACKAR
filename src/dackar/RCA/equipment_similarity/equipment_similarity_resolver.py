@@ -20,12 +20,13 @@ SisterComponent objects.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
+NON_EMBEDDING_DISTANCE = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +51,8 @@ class SisterComponent:
     shared_fm_count:
         Number of shared failure modes (Tier 2).  0 for Tier 3-only matches.
     embedding_score:
-        Chroma similarity score (Tier 3).  0.0 for Tier 2-only matches.
+        Chroma similarity score (Tier 3). ``NON_EMBEDDING_DISTANCE`` for
+        Tier 2-only matches.
         Lower score = more similar (Chroma uses distance by default).
     """
 
@@ -58,7 +60,7 @@ class SisterComponent:
     component_label: Optional[str] = None
     match_type: str = "spec_embedding"
     shared_fm_count: int = 0
-    embedding_score: float = 0.0
+    embedding_score: float = NON_EMBEDDING_DISTANCE
 
     def to_dict(self) -> JsonDict:
         return {
@@ -236,7 +238,7 @@ class EquipmentSimilarityResolver:
                     component_label=label_map.get(comp_id),
                     match_type="failure_mode_overlap",
                     shared_fm_count=len(shared),
-                    embedding_score=0.0,
+                    embedding_score=NON_EMBEDDING_DISTANCE,
                 ))
 
         return sorted(sisters, key=lambda s: -s.shared_fm_count)

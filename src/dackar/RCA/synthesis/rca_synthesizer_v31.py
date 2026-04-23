@@ -28,6 +28,7 @@ class RCASynthesizerConfig:
     max_candidates_in_prompt: int = 5
     max_synthesis_extra_review_candidates: int = 8
     max_evidence_in_prompt: int = 10
+    min_evidence_per_candidate_in_prompt: int = 1
     allow_fallback_template_fill: bool = True
     minimum_primary_score: float = 0.35
 
@@ -67,7 +68,10 @@ class RuleValidatedRCASynthesizerV31:
         rca_id = f"RCA::{event_id}::{uuid.uuid4()}"
 
         selected_candidates = self._select_candidates(causality_candidates)
-        selected_evidence = self._select_evidence(evidence_bundle)
+        selected_evidence = self._select_evidence(
+            evidence_bundle,
+            selected_candidates=selected_candidates,
+        )
 
         prompt = self._build_prompt(
             event=event,
@@ -192,10 +196,90 @@ class RuleValidatedRCASynthesizerV31:
                 seen.add(cid)
         return out
 
-    def _select_evidence(self, evidence_bundle: JsonDict) -> List[JsonDict]:
-        evidence = evidence_bundle.get("results", [])
-        evidence = sorted(evidence, key=lambda x: x.get("score", 0.0), reverse=True)
-        return evidence[: self.config.max_evidence_in_prompt]
+    def _select_evidence(
+        self,
+        evidence_bundle: JsonDict,
+        selected_candidates: Optional[List[JsonDict]] = None,
+    ) -> List[JsonDict]:
+        evidence = [row for row in (evidence_bundle.get("results", []) or []) if isinstance(row, dict)]
+        evidence = sorted(
+            evidence,
+            key=lambda x: (
+                self._authority_level_rank((x.get("metadata") or {}).get("authority_level")),
+                float(x.get("score", 0.0) or 0.0),
+            ),
+            reverse=True,
+        )
+        max_rows = int(self.config.max_evidence_in_prompt)
+        if max_rows <= 0 or not evidence:
+            return []
+
+        out: List[JsonDict] = []
+        seen_keys: set = set()
+
+        def _pick_row(row: JsonDict) -> bool:
+            key = self._evidence_row_key(row)
+            if key in seen_keys:
+                return False
+            out.append(row)
+            seen_keys.add(key)
+            return True
+
+        candidate_ids = [
+            str(c.get("candidate_id"))
+            for c in (selected_candidates or [])
+            if isinstance(c, dict) and c.get("candidate_id")
+        ]
+        min_per_candidate = max(0, int(self.config.min_evidence_per_candidate_in_prompt))
+        if candidate_ids and min_per_candidate > 0:
+            for candidate_id in candidate_ids:
+                picked = 0
+                for row in evidence:
+                    if len(out) >= max_rows or picked >= min_per_candidate:
+                        break
+                    if self._evidence_linked_candidate_id(row) != candidate_id:
+                        continue
+                    if _pick_row(row):
+                        picked += 1
+
+        for row in evidence:
+            if len(out) >= max_rows:
+                break
+            _pick_row(row)
+
+        return out[:max_rows]
+
+    @staticmethod
+    def _evidence_row_key(row: JsonDict) -> str:
+        return str(
+            row.get("snippet_id")
+            or row.get("source_id")
+            or row.get("doc_id")
+            or id(row)
+        )
+
+    @staticmethod
+    def _evidence_linked_candidate_id(row: JsonDict) -> Optional[str]:
+        meta = row.get("metadata") or {}
+        linked = (
+            row.get("linked_candidate_id")
+            or meta.get("linked_candidate_id")
+            or meta.get("candidate_id")
+        )
+        if not linked:
+            return None
+        return str(linked)
+
+    @staticmethod
+    def _authority_level_rank(authority_level: Any) -> int:
+        level = str(authority_level or "").strip().lower()
+        order = {
+            "mandatory": 3,
+            "guidance": 2,
+            "informational": 1,
+            "unknown": 0,
+        }
+        return order.get(level, 0)
 
     # ------------------------------------------------------------------
     # Prompt construction
@@ -415,6 +499,8 @@ analyst_review = {
         if primary_candidate_full is None:
             primary_candidate_full = primary_candidate
 
+        evidence_excerpt_index = self._build_evidence_excerpt_index(evidence_bundle.get("results") or [])
+
         return {
             "rca_id": rca_id,
             "event_id": event.get("event_id") or event["id"],
@@ -446,12 +532,16 @@ analyst_review = {
             "evidence": self._normalize_evidence_rows(
                 raw_output.get("evidence", []),
                 primary_candidate=primary_candidate,
+                excerpt_index=evidence_excerpt_index,
             ),
             "recommended_actions": self._normalize_recommended_actions(
                 raw_output.get("recommended_actions", []),
                 primary_candidate=primary_candidate_full,
             ),
-            "analyst_review": raw_output.get("analyst_review", {}),
+            "analyst_review": self._inject_review_required_questions(
+                raw_output.get("analyst_review", {}),
+                causality_candidates=causality_candidates,
+            ),
             "provenance": {
                 "source_bundle_id": evidence_bundle.get("bundle_id"),
                 "pipeline_version": "rca_orchestrator_v3_1",
@@ -459,6 +549,60 @@ analyst_review = {
                 "card_version": 1,
             },
         }
+
+    def _inject_review_required_questions(
+        self,
+        analyst_review: Any,
+        *,
+        causality_candidates: JsonDict,
+        max_candidates: int = 3,
+    ) -> JsonDict:
+        """
+        Ensure Stage F review_required candidates are visible to analysts in
+        analyst_review.questions_to_resolve.
+        """
+        review = dict(analyst_review) if isinstance(analyst_review, dict) else {}
+        questions = review.get("questions_to_resolve")
+        if isinstance(questions, list):
+            normalized_questions = [
+                str(q).strip()
+                for q in questions
+                if isinstance(q, str) and q.strip()
+            ]
+        else:
+            normalized_questions = []
+        normalized_lower = {q.lower() for q in normalized_questions}
+
+        review_candidates: List[JsonDict] = []
+        for row in (causality_candidates.get("candidates") or []):
+            if not isinstance(row, dict):
+                continue
+            if not row.get("review_required"):
+                continue
+            candidate_id = row.get("candidate_id")
+            if not candidate_id or candidate_id == "NONE":
+                continue
+            review_candidates.append(row)
+
+        review_candidates = sorted(
+            review_candidates,
+            key=lambda x: float(x.get("composite_score", 0.0) or 0.0),
+            reverse=True,
+        )[:max_candidates]
+
+        for row in review_candidates:
+            candidate_id = str(row.get("candidate_id"))
+            candidate_label = str(row.get("cause_label") or candidate_id)
+            token = candidate_id.lower()
+            if any(token in q for q in normalized_lower):
+                continue
+            normalized_questions.append(
+                f"Stage F flagged '{candidate_label}' ({candidate_id}) as review_required; what evidence resolves it against the selected primary hypothesis?"
+            )
+            normalized_lower.add(normalized_questions[-1].lower())
+
+        review["questions_to_resolve"] = normalized_questions
+        return review
 
     # ------------------------------------------------------------------
     # Deterministic fallback
@@ -725,6 +869,7 @@ analyst_review = {
         self,
         evidence_rows: List[JsonDict],
         primary_candidate: Optional[JsonDict],
+        excerpt_index: Optional[JsonDict] = None,
     ) -> List[JsonDict]:
         normalized: List[JsonDict] = []
         primary_candidate_id = (primary_candidate or {}).get("candidate_id")
@@ -799,11 +944,100 @@ analyst_review = {
             normalized_row["summary"] = normalized_row.get("summary") or default_summary
 
             if support_role != "missing":
-                normalized_row["excerpt"] = normalized_row.get("excerpt") or ""
+                normalized_row["excerpt"] = self._resolve_evidence_excerpt(
+                    row=normalized_row,
+                    excerpt_index=excerpt_index,
+                )
 
             normalized.append(normalized_row)
 
         return normalized
+
+    @staticmethod
+    def _build_evidence_excerpt_index(evidence_rows: List[JsonDict]) -> JsonDict:
+        """
+        Build a lookup index so card evidence rows can recover raw snippet excerpts.
+        """
+        index: JsonDict = {}
+        for row in (evidence_rows or []):
+            if not isinstance(row, dict):
+                continue
+            snippet_text = str(row.get("snippet") or "").strip()
+            if not snippet_text:
+                continue
+            keys = [
+                row.get("source_id"),
+                row.get("snippet_id"),
+                row.get("doc_id"),
+            ]
+            meta = row.get("metadata") or {}
+            keys.extend(
+                [
+                    meta.get("source_id"),
+                    meta.get("snippet_id"),
+                    meta.get("doc_id"),
+                    meta.get("record_id"),
+                ]
+            )
+            for key in keys:
+                k = str(key or "").strip()
+                if k and k not in index:
+                    index[k] = snippet_text
+        return index
+
+    @staticmethod
+    def _looks_like_placeholder_excerpt(text: str) -> bool:
+        t = str(text or "").strip().lower()
+        if not t:
+            return True
+        if t.startswith("referenced evidence id:"):
+            return True
+        if t.startswith("referenced contradicting evidence id:"):
+            return True
+        return False
+
+    def _resolve_evidence_excerpt(
+        self,
+        *,
+        row: JsonDict,
+        excerpt_index: Optional[JsonDict],
+    ) -> str:
+        """
+        Ensure evidence excerpt is source text when available.
+        """
+        direct_snippet = str(row.get("snippet") or "").strip()
+        if direct_snippet:
+            return direct_snippet
+
+        excerpt = str(row.get("excerpt") or "")
+        summary = str(row.get("summary") or "")
+        should_backfill = (
+            self._looks_like_placeholder_excerpt(excerpt)
+            or (summary and excerpt.strip() == summary.strip())
+        )
+        if not should_backfill:
+            return excerpt
+
+        lookup_keys = [
+            row.get("source_id"),
+            row.get("snippet_id"),
+            row.get("doc_id"),
+        ]
+        meta = row.get("metadata") or {}
+        lookup_keys.extend(
+            [
+                meta.get("source_id"),
+                meta.get("snippet_id"),
+                meta.get("doc_id"),
+                meta.get("record_id"),
+            ]
+        )
+        for key in lookup_keys:
+            k = str(key or "").strip()
+            if k and isinstance(excerpt_index, dict) and excerpt_index.get(k):
+                return str(excerpt_index.get(k))
+
+        return excerpt
 
     # Postured that warrant a visible warning on recommended actions.
     _POSTURE_WARNINGS: Dict[str, str] = {
@@ -1574,7 +1808,7 @@ analyst_review = {
 
         temporal_reinforced = (
             temporal_posture == "supported"
-            and latency_violation_type in {"none", "unknown"}
+            and latency_violation_type in {"none", "unknown", "not_available"}
         ) or temporal_posture == "partial"
 
         if contextual_only and not temporal_reinforced:
@@ -1932,6 +2166,11 @@ analyst_review = {
                 "writeback_recommendation": "hold_until_review",
             }
 
+        analyst_review = self._inject_review_required_questions(
+            analyst_review,
+            causality_candidates=causality_candidates,
+        )
+
         return {
             "rca_id": rca_id,
             "event_id": event.get("event_id") or event["id"],
@@ -2278,15 +2517,18 @@ analyst_review = {
             return False
 
         evidence_rows = card.get("evidence", []) or []
-        has_primary_supporting_evidence = any(
-            isinstance(ev, dict)
-            and (ev.get("support_role") or "").strip().lower() == "supporting"
-            and ev.get("linked_candidate_id") == primary_candidate_id
-            and bool(ev.get("source_id"))
+        primary_supporting_count = sum(
+            1
             for ev in evidence_rows
+            if (
+                isinstance(ev, dict)
+                and (ev.get("support_role") or "").strip().lower() == "supporting"
+                and ev.get("linked_candidate_id") == primary_candidate_id
+                and bool(ev.get("source_id"))
+            )
         )
 
-        return has_primary_supporting_evidence
+        return primary_supporting_count >= 2
 
     def _normalize_confidence_label(self, label: Optional[str]) -> str:
         if not label:

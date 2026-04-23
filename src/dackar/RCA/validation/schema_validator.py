@@ -85,9 +85,11 @@ class RCAArtifactValidator:
         "operational_context",
         "pm_compliance",
         "cmms_context",
+        "signal_evidence",
         "run_context",
         "run_manifest",
         "reentry_execution",
+        "fmea_ingestion_report",
         "document",
         "processed_text_record",
     }
@@ -146,13 +148,16 @@ class RCAArtifactValidator:
         event: Optional[Dict[str, Any]] = None,
         telemetry_summary: Optional[Dict[str, Any]] = None,
         kg_context: Optional[Dict[str, Any]] = None,
+        signal_evidence: Optional[Dict[str, Any]] = None,
         tskr_patterns: Optional[Dict[str, Any]] = None,
         causality_candidates: Optional[Dict[str, Any]] = None,
         evidence_bundle: Optional[Dict[str, Any]] = None,
         ishikawa_matrix: Optional[Dict[str, Any]] = None,
+        barrier_analysis: Optional[Dict[str, Any]] = None,
         rca_card: Optional[Dict[str, Any]] = None,
         operational_context: Optional[Dict[str, Any]] = None,
         pm_compliance: Optional[Dict[str, Any]] = None,
+        cmms_context: Optional[Dict[str, Any]] = None,
     ) -> ValidationReport:
         report = ValidationReport(ok=True)
 
@@ -160,13 +165,16 @@ class RCAArtifactValidator:
             "event": event,
             "telemetry_summary": telemetry_summary,
             "kg_context": kg_context,
+            "signal_evidence": signal_evidence,
             "tskr_patterns": tskr_patterns,
             "causality_candidates": causality_candidates,
             "evidence_bundle": evidence_bundle,
             "ishikawa_matrix": ishikawa_matrix,
+            "barrier_analysis": barrier_analysis,
             "rca_card": rca_card,
             "operational_context": operational_context,
             "pm_compliance": pm_compliance,
+            "cmms_context": cmms_context,
         }
 
         normalized_bundle: Dict[str, Optional[Dict[str, Any]]] = {}
@@ -333,7 +341,7 @@ class RCAArtifactValidator:
                     ))
 
                 violation = p.get("latency_violation_type")
-                if violation is not None and violation not in {"none", "too_fast", "too_slow", "unknown"}:
+                if violation is not None and violation not in {"none", "too_fast", "too_slow", "unknown", "not_available"}:
                     issues.append(self._issue(
                         artifact="tskr_patterns",
                         severity=self._sev("error"),
@@ -419,6 +427,65 @@ class RCAArtifactValidator:
                     path=["summary", "row_count"],
                 ))
 
+        elif artifact_type == "signal_evidence":
+            augmented = payload.get("augmented_anomaly_set") or []
+            if isinstance(augmented, list):
+                declared_count = payload.get("augmented_anomaly_count")
+                if isinstance(declared_count, int) and declared_count != len(augmented):
+                    issues.append(self._issue(
+                        artifact="signal_evidence",
+                        severity=self._sev("error"),
+                        code="augmented_anomaly_count_mismatch",
+                        message=(
+                            f"signal_evidence.augmented_anomaly_count={declared_count} "
+                            f"but augmented_anomaly_set has {len(augmented)} row(s)."
+                        ),
+                        path=["augmented_anomaly_count"],
+                    ))
+            hist_count = payload.get("historian_anomaly_count")
+            aug_count = payload.get("augmented_anomaly_count")
+            if isinstance(hist_count, int) and isinstance(aug_count, int) and hist_count > aug_count:
+                issues.append(self._issue(
+                    artifact="signal_evidence",
+                    severity=self._sev("error"),
+                    code="historian_count_exceeds_augmented",
+                    message=(
+                        f"signal_evidence.historian_anomaly_count={hist_count} "
+                        f"cannot exceed augmented_anomaly_count={aug_count}."
+                    ),
+                    path=["historian_anomaly_count"],
+                ))
+
+        elif artifact_type == "barrier_analysis":
+            barriers = payload.get("barriers") or []
+            summary = payload.get("summary") or {}
+            barrier_count = summary.get("barrier_count")
+            if isinstance(barrier_count, int) and isinstance(barriers, list) and barrier_count != len(barriers):
+                issues.append(self._issue(
+                    artifact="barrier_analysis",
+                    severity=self._sev("warning"),
+                    code="barrier_count_mismatch",
+                    message=f"barrier_analysis.summary.barrier_count={barrier_count} but barriers has {len(barriers)} row(s).",
+                    path=["summary", "barrier_count"],
+                ))
+            degraded_expected = sum(
+                1
+                for row in barriers
+                if isinstance(row, dict) and str(row.get("status") or "").strip().lower() in {"degraded", "failed"}
+            )
+            degraded_declared = summary.get("degraded_barrier_count")
+            if isinstance(degraded_declared, int) and degraded_declared != degraded_expected:
+                issues.append(self._issue(
+                    artifact="barrier_analysis",
+                    severity=self._sev("warning"),
+                    code="degraded_barrier_count_mismatch",
+                    message=(
+                        "barrier_analysis.summary.degraded_barrier_count="
+                        f"{degraded_declared} but counted {degraded_expected} degraded/failed barrier(s)."
+                    ),
+                    path=["summary", "degraded_barrier_count"],
+                ))
+
         return issues
 
     # ------------------------------------------------------------------
@@ -438,9 +505,12 @@ class RCAArtifactValidator:
         candidates = bundle.get("causality_candidates") or {}
         evidence = bundle.get("evidence_bundle") or {}
         ishikawa = bundle.get("ishikawa_matrix") or {}
+        signal_evidence = bundle.get("signal_evidence") or {}
+        barrier_analysis = bundle.get("barrier_analysis") or {}
         rca_card = bundle.get("rca_card") or {}
         op_ctx = bundle.get("operational_context") or {}
         pm = bundle.get("pm_compliance") or {}
+        cmms = bundle.get("cmms_context") or {}
 
         event_id = event.get("event_id")
         asset_id = event.get("asset_id")
@@ -463,6 +533,8 @@ class RCAArtifactValidator:
 
         _check_equal("causality_candidates", candidates.get("event_id"), event_id, "event_id_mismatch", "causality_candidates.event_id")
         _check_equal("ishikawa_matrix", ishikawa.get("event_id"), event_id, "event_id_mismatch", "ishikawa_matrix.event_id")
+        _check_equal("barrier_analysis", barrier_analysis.get("event_id"), event_id, "event_id_mismatch", "barrier_analysis.event_id")
+        _check_equal("cmms_context", cmms.get("event_id"), event_id, "event_id_mismatch", "cmms_context.event_id")
         _check_equal("rca_card", rca_card.get("event_id"), event_id, "event_id_mismatch", "rca_card.event_id")
 
         _check_equal("telemetry_summary", telemetry.get("asset_id"), asset_id, "asset_id_mismatch", "telemetry_summary.asset_id")
@@ -471,6 +543,7 @@ class RCAArtifactValidator:
         _check_equal("ishikawa_matrix", ishikawa.get("asset_id"), asset_id, "asset_id_mismatch", "ishikawa_matrix.asset_id")
         _check_equal("operational_context", op_ctx.get("asset_id"), asset_id, "asset_id_mismatch", "operational_context.asset_id")
         _check_equal("pm_compliance", pm.get("asset_id"), asset_id, "asset_id_mismatch", "pm_compliance.asset_id")
+        _check_equal("cmms_context", cmms.get("asset_id"), asset_id, "asset_id_mismatch", "cmms_context.asset_id")
 
         evidence_scope = (evidence.get("retrieval_scope") or {})
         _check_equal(
@@ -489,6 +562,27 @@ class RCAArtifactValidator:
                 "subgraph_id_mismatch",
                 "causality_candidates.subgraph_id",
             )
+
+        if signal_evidence and tskr:
+            tskr_summary = tskr.get("summary") or {}
+            se_anomaly_count = signal_evidence.get("augmented_anomaly_count")
+            tskr_anomaly_points = tskr_summary.get("anomaly_point_count")
+            if (
+                isinstance(se_anomaly_count, int)
+                and se_anomaly_count > 0
+                and isinstance(tskr_anomaly_points, int)
+                and tskr_anomaly_points != se_anomaly_count
+            ):
+                issues.append(self._issue(
+                    artifact="tskr_patterns",
+                    severity=self._sev("warning"),
+                    code="signal_evidence_anomaly_count_mismatch",
+                    message=(
+                        "signal_evidence.augmented_anomaly_count and "
+                        "tskr_patterns.summary.anomaly_point_count are inconsistent."
+                    ),
+                    path=["summary", "anomaly_point_count"],
+                ))
 
         if tskr and kg_context:
             kg_fm_ids = {
@@ -557,6 +651,7 @@ class RCAArtifactValidator:
                 rca_card=rca_card,
                 evidence=evidence,
                 candidates=candidates,
+                kg_context=kg_context,
             ))
 
         return issues
@@ -1225,6 +1320,7 @@ class RCAArtifactValidator:
         rca_card: JsonDict,
         evidence: Optional[JsonDict],
         candidates: Optional[JsonDict],
+        kg_context: Optional[JsonDict] = None,
     ) -> List[ValidationIssue]:
         issues: List[ValidationIssue] = []
 
@@ -1396,5 +1492,28 @@ class RCAArtifactValidator:
                         ),
                         path=["evidence", str(idx), "source_id"],
                     ))
+
+        if kg_context:
+            component_ids = {
+                c.get("component_id")
+                for c in (kg_context.get("components") or [])
+                if isinstance(c, dict) and c.get("component_id")
+            }
+            if component_ids:
+                for idx, action in enumerate(rca_card.get("recommended_actions") or []):
+                    if not isinstance(action, dict):
+                        continue
+                    target_component_id = action.get("target_component_id")
+                    if target_component_id and target_component_id not in component_ids:
+                        issues.append(self._issue(
+                            artifact="rca_card",
+                            severity=self._sev("warning"),
+                            code="recommended_action_target_component_not_in_kg_context",
+                            message=(
+                                f"recommended_actions[{idx}].target_component_id '{target_component_id}' "
+                                "is not present in kg_context.components[].component_id."
+                            ),
+                            path=["recommended_actions", str(idx), "target_component_id"],
+                        ))
 
         return issues

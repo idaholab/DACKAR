@@ -222,6 +222,14 @@ The **original** pipeline and `causality_engine_v32` read **`checks[]`** (with `
 - **PMScopeAnalyzer** sets `fmea_pm_linkage_available` when the KG exposes PM↔FM fields on failure modes (see `preventing_pm_task_ids` / `detecting_pm_task_ids` / `pm_task_ids`); otherwise scope gap lists are **advisory/empty** until linkage exists.
 - **Not yet done:** live CMMS API in this package (reuse / extend `cmms_integration` adapters), orchestrator `run()` hook to call `build_pm_compliance` as “Stage 5A”, NER for as-found vocabulary, Stage H `pm_corrective` action synthesis from `scope_gaps` (orchestrator/synthesizer change).
 
+### 9.3.1 Post-review fixes (Apr 22, 2026)
+
+- **Rollup alignment fix:** `overall_compliance` now marks `non_compliant` when `primary_fm_id` is in scope gaps (per §3.6), without requiring an additional overdue/fail condition.  
+- **Advisory gap guard:** primary/scope gap rollups are now applied only when KG linkage is available (or some coverage exists), preserving §3.3 advisory behavior when linkage is absent.  
+- **Narrative status fix:** `components[].pm_tasks[].compliance_status` now preserves `not_applicable` (instead of collapsing to `compliant`).  
+- **Effectiveness signal fix:** degradation trend now sources from export as-found fields (`as_found_last` / `as_found_condition`) before free-text fallback.  
+- **Loader validation fix:** export rows missing required identity/type (`check_id`/`task_code` and `check_type`) are dropped early and surfaced via `data_quality_notes`.
+
 ### 9.4 Dependencies still external
 
 - **CMMS export column mapping** — implement a dedicated parser that produces `export_rows` for `build_pm_compliance`.
@@ -238,7 +246,7 @@ The **original** pipeline and `causality_engine_v32` read **`checks[]`** (with `
 | **§3.3** `coverage_type` per task | **Partial** | Pass-through on each `pm_tasks[]` row if `export_rows` set `coverage_type`; else `none`. |
 | **§3.4** `pm_found_defect_rate`, `last_as_found` | **Partial** | `last_as_found` in `pm_tasks` from `as_found_last` / `as_found_condition` on the export row. Defect **rate** not yet in `summary` (add when controlled vocabulary exists). |
 | **§3.5** `pm_frequency_concern` | **Yes** | Uses `PMCurrencyChecker.frequency_concern` with `kg_context.failure_modes[].mean_time_between_events_days` and `export_rows[*].frequency_days` + `applicable_fm_ids`. |
-| **§3.5–3.6** `maintenance_induced_risk` / `has_scope_gaps_for_primary_fm` | **Partial** | Matches §3.6 when **`primary_fm_id=`** is passed to `build_pm_compliance` (e.g. from the eventual primary candidate after a first pass, or a second run). **Without** `primary_fm_id`, heuristics use only gap + overdue. |
+| **§3.5–3.6** `maintenance_induced_risk` / `has_scope_gaps_for_primary_fm` | **Aligned (with `primary_fm_id`)** | Matches §3.6 when **`primary_fm_id=`** is passed to `build_pm_compliance`; primary scope gap now drives `overall_compliance=non_compliant` and risk rollups per spec. Without `primary_fm_id`, heuristics use gap + overdue. |
 | **§5** `components[].pm_tasks` + `summary` roll-ups | **Yes** | `pm_tasks` populated from export rows; pipeline **`checks[]`** + optional **`components[]`**; JSON Schema remains canonical for validation. |
 | **§4 / Stage H** `pm_corrective` + priority | **Not in module** | Still requires synthesizer / orchestrator to consume `summary` + `components`. |
 
@@ -250,7 +258,11 @@ The **original** pipeline and `causality_engine_v32` read **`checks[]`** (with `
 - Overdue / fail paths and `overdue_items`.
 - **`fmea_pm_linkage_available` is False** when only export `applicable_fm_ids` is present (no KG tags).
 - **`not_applicable`** → `checks[].status=pass` (governance-neutral).
+- **`not_applicable` preserved** in `components[].pm_tasks[].compliance_status`.
 - **`_rollup_risk`** primary + gap + overdue → `high` / `medium`.
+- **Primary scope gap** with linkage marks `summary.overall_compliance=non_compliant`.
+- **As-found trend source** from export `as_found_last` / `as_found_condition`.
+- **Loader drops invalid rows** (missing `check_id`/`task_code` or `check_type`) with `data_quality_notes`.
 - **`RuleBasedCausalityEngineV32._governance_details`** accepts the built `pm` dict (Stage D path).
 
 ---

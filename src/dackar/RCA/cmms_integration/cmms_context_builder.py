@@ -445,7 +445,7 @@ class CMMSContextBuilder:
                             "component_label": comp.get("component_label"),
                             "match_type":      "topology",
                             "shared_fm_count": 0,
-                            "embedding_score": 0.0,
+                            "embedding_score": 1.0,
                         }
 
         # Tier 2/3: failure mode overlap + spec embedding

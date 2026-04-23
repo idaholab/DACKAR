@@ -22,6 +22,7 @@ if str(_RCA_ROOT) not in sys.path:
     sys.path.insert(0, str(_RCA_ROOT))
 
 from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
+from synthesis.rca_synthesizer_v31 import RCASynthesizerConfig
 
 
 # ── Stub LLM client ───────────────────────────────────────────────────────────
@@ -33,8 +34,8 @@ class _StubLLM:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def make_synthesizer():
-    return RuleValidatedRCASynthesizerV31(llm_client=_StubLLM())
+def make_synthesizer(config=None):
+    return RuleValidatedRCASynthesizerV31(llm_client=_StubLLM(), config=config)
 
 
 def make_candidate(candidate_id, cause_label, composite_score=0.70):
@@ -323,6 +324,40 @@ def test_risk_postprocessing_adds_visibility_to_summary_and_primary():
     print("  PASS test_risk_postprocessing_adds_visibility_to_summary_and_primary")
 
 
+def test_fallback_card_can_emit_high_confidence_when_strongly_supported():
+    """C3 closure: fallback path can produce high confidence when posture is strong."""
+    s = make_synthesizer()
+    primary = make_candidate("FM::PRIMARY", "Primary cause", 0.82)
+    primary["temporal_posture"] = "supported"
+    primary["temporal_evidence"] = {"latency_violation_type": "none", "temporal_contradiction": False}
+    primary["recurrence"] = {
+        "recurrence_score": 0.55,
+        "recurrence_confidence": "medium",
+        "matched_past_event_ids": ["EVT-P1"],
+        "same_component_event_count": 1,
+        "same_asset_event_count": 1,
+        "same_failure_mode_event_count": 1,
+    }
+    alt = make_candidate("FM::ALT-1", "Alt cause", 0.60)
+    evidence_items = [
+        make_evidence_item("SNIP-1", "DOC-1", linked_candidate_id="FM::PRIMARY", support_role="supporting"),
+        make_evidence_item("SNIP-2", "DOC-2", linked_candidate_id="FM::PRIMARY", support_role="supporting"),
+        make_evidence_item("SNIP-3", "DOC-3", linked_candidate_id="FM::PRIMARY", support_role="supporting"),
+    ]
+    card = s._fallback_card(
+        rca_id="RCA-001",
+        event=make_event(),
+        selected_candidates=[primary, alt],
+        selected_evidence=evidence_items,
+        causality_candidates=make_causality_candidates(primary, alt),
+        evidence_bundle=make_evidence_bundle(),
+        run_context=make_run_context(),
+        prior_errors=[],
+    )
+    assert card["executive_summary"]["confidence_label"] == "high"
+    print("  PASS test_fallback_card_can_emit_high_confidence_when_strongly_supported")
+
+
 def test_enforce_balanced_card_evidence_adds_missing_alternative_row():
     s = make_synthesizer()
     card = {
@@ -358,6 +393,244 @@ def test_enforce_balanced_card_evidence_adds_missing_alternative_row():
     assert "FM::ALT-1" in linked_ids
     print("  PASS test_enforce_balanced_card_evidence_adds_missing_alternative_row")
 
+def test_llm_evidence_excerpt_backfilled_from_bundle_snippet():
+    """H5: LLM placeholder excerpt should be replaced with raw snippet text when available."""
+    s = make_synthesizer()
+    raw = {
+        "executive_summary": {
+            "decision_status": "candidate_ready",
+            "primary_conclusion": "Air in-leakage is leading.",
+            "analyst_attention_flags": [],
+        },
+        "primary_hypothesis": {
+            "candidate_id": "FM::CAND-A",
+            "cause_label": "Air in-leakage",
+            "hypothesis_type": "failure_mode",
+            "narrative": "n",
+            "why_primary": ["w"],
+            "uncertainties": ["u"],
+            "composite_score": 0.8,
+            "citations": [{"claim_summary": "x", "source_type": "evidence_snippet", "source_id": "SNIP-1", "excerpt": "x"}],
+        },
+        "alternatives": [],
+        "contributing_causes": [],
+        "recommended_actions": [],
+        "analyst_review": {"decision_required": True, "questions_to_resolve": [], "writeback_recommendation": "hold_until_review"},
+        "evidence": [
+            {
+                "evidence_id": "EV-001",
+                "source_type": "evidence_snippet",
+                "source_id": "SNIP-1",
+                "doc_id": "DOC-1",
+                "support_role": "supporting",
+                "summary": "Supporting evidence for candidate FM::CAND-A.",
+                "excerpt": "Referenced evidence id: SNIP-1",
+                "linked_candidate_id": "FM::CAND-A",
+            }
+        ],
+    }
+    evidence_bundle = {
+        "bundle_id": "B-1",
+        "results": [
+            {"snippet_id": "SNIP-1", "doc_id": "DOC-1", "snippet": "Raw source snippet from WO log."}
+        ],
+    }
+    card = s._normalize_llm_output(
+        raw_output=raw,
+        rca_id="RCA-1",
+        event=make_event(),
+        evidence_bundle=evidence_bundle,
+        run_context=make_run_context(),
+        causality_candidates=make_causality_candidates(make_candidate("FM::CAND-A", "Air in-leakage", 0.8)),
+    )
+    assert card["evidence"][0]["excerpt"] == "Raw source snippet from WO log."
+    print("  PASS test_llm_evidence_excerpt_backfilled_from_bundle_snippet")
+
+
+def test_llm_evidence_excerpt_preserved_when_not_placeholder():
+    """Non-placeholder LLM excerpt should be preserved as-is."""
+    s = make_synthesizer()
+    raw = {
+        "executive_summary": {
+            "decision_status": "candidate_ready",
+            "primary_conclusion": "Air in-leakage is leading.",
+            "analyst_attention_flags": [],
+        },
+        "primary_hypothesis": {
+            "candidate_id": "FM::CAND-A",
+            "cause_label": "Air in-leakage",
+            "hypothesis_type": "failure_mode",
+            "narrative": "n",
+            "why_primary": ["w"],
+            "uncertainties": ["u"],
+            "composite_score": 0.8,
+            "citations": [{"claim_summary": "x", "source_type": "evidence_snippet", "source_id": "SNIP-1", "excerpt": "x"}],
+        },
+        "alternatives": [],
+        "contributing_causes": [],
+        "recommended_actions": [],
+        "analyst_review": {"decision_required": True, "questions_to_resolve": [], "writeback_recommendation": "hold_until_review"},
+        "evidence": [
+            {
+                "evidence_id": "EV-001",
+                "source_type": "evidence_snippet",
+                "source_id": "SNIP-1",
+                "doc_id": "DOC-1",
+                "support_role": "supporting",
+                "summary": "Supporting evidence for candidate FM::CAND-A.",
+                "excerpt": "Operator noted active leakage at flange seam.",
+                "linked_candidate_id": "FM::CAND-A",
+            }
+        ],
+    }
+    evidence_bundle = {
+        "bundle_id": "B-1",
+        "results": [
+            {"snippet_id": "SNIP-1", "doc_id": "DOC-1", "snippet": "Different raw snippet that should not overwrite."}
+        ],
+    }
+    card = s._normalize_llm_output(
+        raw_output=raw,
+        rca_id="RCA-1",
+        event=make_event(),
+        evidence_bundle=evidence_bundle,
+        run_context=make_run_context(),
+        causality_candidates=make_causality_candidates(make_candidate("FM::CAND-A", "Air in-leakage", 0.8)),
+    )
+    assert card["evidence"][0]["excerpt"] == "Operator noted active leakage at flange seam."
+    print("  PASS test_llm_evidence_excerpt_preserved_when_not_placeholder")
+
+
+def test_select_evidence_prioritizes_authority_tier():
+    s = make_synthesizer()
+    evidence_bundle = {
+        "results": [
+            {"snippet_id": "S-LOW", "score": 0.95, "metadata": {"authority_level": "informational"}},
+            {"snippet_id": "S-HIGH", "score": 0.70, "metadata": {"authority_level": "mandatory"}},
+        ]
+    }
+    selected = s._select_evidence(evidence_bundle)
+    assert selected[0]["snippet_id"] == "S-HIGH"
+    print("  PASS test_select_evidence_prioritizes_authority_tier")
+
+
+def test_select_evidence_balances_across_selected_candidates():
+    cfg = RCASynthesizerConfig(
+        max_evidence_in_prompt=2,
+        min_evidence_per_candidate_in_prompt=1,
+    )
+    s = make_synthesizer(config=cfg)
+    selected_candidates = [
+        {"candidate_id": "FM::A"},
+        {"candidate_id": "FM::B"},
+    ]
+    evidence_bundle = {
+        "results": [
+            {"snippet_id": "A-1", "score": 0.95, "metadata": {"linked_candidate_id": "FM::A", "authority_level": "mandatory"}},
+            {"snippet_id": "A-2", "score": 0.90, "metadata": {"linked_candidate_id": "FM::A", "authority_level": "mandatory"}},
+            {"snippet_id": "B-1", "score": 0.60, "metadata": {"linked_candidate_id": "FM::B", "authority_level": "mandatory"}},
+        ]
+    }
+    selected = s._select_evidence(evidence_bundle, selected_candidates=selected_candidates)
+    snippet_ids = [row["snippet_id"] for row in selected]
+    assert "A-1" in snippet_ids
+    assert "B-1" in snippet_ids
+    print("  PASS test_select_evidence_balances_across_selected_candidates")
+
+
+def test_minimum_evidence_gate_requires_two_supporting_primary_rows():
+    s = make_synthesizer()
+    card = {
+        "primary_hypothesis": {
+            "candidate_id": "FM::PRIMARY",
+            "composite_score": 0.80,
+            "citations": [{"source_id": "SNIP-1"}],
+        },
+        "evidence": [
+            {
+                "source_id": "SNIP-1",
+                "support_role": "supporting",
+                "linked_candidate_id": "FM::PRIMARY",
+            }
+        ],
+    }
+    assert s._passes_minimum_evidence_gate(card) is False
+    card["evidence"].append(
+        {
+            "source_id": "SNIP-2",
+            "support_role": "supporting",
+            "linked_candidate_id": "FM::PRIMARY",
+        }
+    )
+    assert s._passes_minimum_evidence_gate(card) is True
+    print("  PASS test_minimum_evidence_gate_requires_two_supporting_primary_rows")
+
+
+def test_llm_output_injects_review_required_question():
+    """review_required candidates should be reflected in analyst_review questions."""
+    s = make_synthesizer()
+    primary = make_candidate("FM::CAND-A", "Air in-leakage", 0.81)
+    alt = make_candidate("FM::CAND-B", "Tube fouling", 0.78)
+    alt["review_required"] = True
+    raw = {
+        "executive_summary": {
+            "decision_status": "review_required",
+            "primary_conclusion": "Air in-leakage is leading.",
+            "analyst_attention_flags": [],
+        },
+        "primary_hypothesis": {
+            "candidate_id": "FM::CAND-A",
+            "cause_label": "Air in-leakage",
+            "hypothesis_type": "failure_mode",
+            "narrative": "n",
+            "why_primary": ["w"],
+            "uncertainties": ["u"],
+            "composite_score": 0.81,
+            "citations": [],
+        },
+        "alternatives": [],
+        "contributing_causes": [],
+        "recommended_actions": [],
+        "analyst_review": {
+            "decision_required": True,
+            "questions_to_resolve": ["Base question"],
+            "writeback_recommendation": "hold_until_review",
+        },
+        "evidence": [],
+    }
+    card = s._normalize_llm_output(
+        raw_output=raw,
+        rca_id="RCA-1",
+        event=make_event(),
+        evidence_bundle={"bundle_id": "B-1", "results": []},
+        run_context=make_run_context(),
+        causality_candidates=make_causality_candidates(primary, alt),
+    )
+    questions = card["analyst_review"]["questions_to_resolve"]
+    assert any("FM::CAND-B" in q for q in questions)
+    print("  PASS test_llm_output_injects_review_required_question")
+
+
+def test_fallback_injects_review_required_question():
+    """Fallback analyst questions should include Stage F review_required candidates."""
+    s = make_synthesizer()
+    primary = make_candidate("FM::PRIMARY", "Primary cause", 0.82)
+    alt = make_candidate("FM::ALT-1", "Alt cause", 0.78)
+    alt["review_required"] = True
+    card = s._fallback_card(
+        rca_id="RCA-001",
+        event=make_event(),
+        selected_candidates=[primary, alt],
+        selected_evidence=[],
+        causality_candidates=make_causality_candidates(primary, alt),
+        evidence_bundle=make_evidence_bundle(),
+        run_context=make_run_context(),
+        prior_errors=[],
+    )
+    questions = (card.get("analyst_review") or {}).get("questions_to_resolve") or []
+    assert any("FM::ALT-1" in q for q in questions)
+    print("  PASS test_fallback_injects_review_required_question")
+
 
 # ── Main runner ───────────────────────────────────────────────────────────────
 
@@ -372,7 +645,15 @@ ALL_TESTS = [
     test_fallback_evidence_balances_primary_and_alternative,
     test_safety_postprocessing_adds_flag_and_escalates_priority,
     test_risk_postprocessing_adds_visibility_to_summary_and_primary,
+    test_fallback_card_can_emit_high_confidence_when_strongly_supported,
     test_enforce_balanced_card_evidence_adds_missing_alternative_row,
+    test_llm_evidence_excerpt_backfilled_from_bundle_snippet,
+    test_llm_evidence_excerpt_preserved_when_not_placeholder,
+    test_select_evidence_prioritizes_authority_tier,
+    test_select_evidence_balances_across_selected_candidates,
+    test_minimum_evidence_gate_requires_two_supporting_primary_rows,
+    test_llm_output_injects_review_required_question,
+    test_fallback_injects_review_required_question,
 ]
 
 

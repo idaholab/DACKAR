@@ -39,12 +39,13 @@ class TSKRTemporalScorerConfig:
     simultaneous_epsilon_hours: float = 0.5
     default_precedes_lag_hours: float = 1.0
     fallback_confidence: float = 0.25
-    anomaly_weight: float = 0.55
+    anomaly_weight: float = 0.45
     latency_weight: float = 0.30
-    history_weight: float = 0.15
+    history_weight: float = 0.10
+    chain_weight: float = 0.10
     min_confidence_for_support: float = 0.35
-    anomaly_count_weight: float = 0.20
-    lag_consistency_weight: float = 0.15
+    anomaly_count_weight: float = 0.15
+    lag_consistency_weight: float = 0.10
     telemetry_support_floor: float = 0.35
     tone_vocabulary_version: str = "npp_tone_v1"
     tone_transient_max_minutes: float = 5.0
@@ -66,6 +67,26 @@ class RecurrenceProfile:
 
 
 class TSKRTemporalScorerV1:
+    _INSTRUMENT_VALIDITY_MULTIPLIER: Dict[str, float] = {
+        "calibrated": 1.00,
+        "valid": 1.00,
+        "in_calibration": 1.00,
+        "in_cal": 1.00,
+        "ok": 1.00,
+        "pass": 1.00,
+        "unknown": 0.85,
+        "under_investigation": 0.80,
+        "unchecked": 0.80,
+        "not_available": 0.80,
+        "out_of_calibration": 0.55,
+        "out_of_cal": 0.55,
+        "degraded": 0.65,
+        "invalid": 0.55,
+        "failed": 0.50,
+        "faulted": 0.50,
+        "suspect": 0.60,
+    }
+
     """Deterministic temporal scorer using interval-based Allen relations.
 
     Inputs:
@@ -92,13 +113,18 @@ class TSKRTemporalScorerV1:
         kg_context: JsonDict,
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
+        signal_evidence: Optional[JsonDict] = None,
     ) -> JsonDict:
         event_id = event.get("event_id") or event.get("id")
         asset_id = event.get("asset_id")
         event_start = parse_dt(event.get("timestamp_start"))
         event_end   = parse_dt(event.get("timestamp_end")) or event_start
 
-        anomaly_windows      = self._extract_anomaly_windows(telemetry_summary)
+        anomaly_windows = (
+            self._extract_anomaly_windows_from_signal_evidence(signal_evidence)
+            if signal_evidence and int(signal_evidence.get("augmented_anomaly_count", 0) or 0) > 0
+            else self._extract_anomaly_windows(telemetry_summary)
+        )
         anomaly_window_summary = self._summarize_anomaly_windows(anomaly_windows)
         signal_ids           = self._extract_signal_ids(telemetry_summary)
         telemetry_support    = self._telemetry_support_score(anomaly_windows)
@@ -107,9 +133,11 @@ class TSKRTemporalScorerV1:
 
         past_events = kg_context.get("past_events") or []
         stage_b_allen_by_component = self._stage_b_allen_relation_by_component(kg_context)
+        chain_scores = (signal_evidence or {}).get("per_candidate_chain_score") or {}
         patterns: List[JsonDict] = []
         for fm in kg_context.get("failure_modes", []) or []:
             fm_component_id = fm.get("component_id") or fm.get("applies_to_component_id")
+            fm_chain = chain_scores.get(str(fm.get("fm_id") or ""), {}) if isinstance(chain_scores, dict) else {}
             pattern = self._score_failure_mode_pattern(
                 event_id=event_id,
                 asset_id=asset_id,
@@ -123,6 +151,10 @@ class TSKRTemporalScorerV1:
                 fm=fm,
                 past_events=past_events,
                 stage_b_allen_relation=stage_b_allen_by_component.get(str(fm_component_id or "")),
+                chain_position_score=float(fm_chain.get("chain_position_score", 0.0) or 0.0),
+                chain_position_type=str(fm_chain.get("position_type") or "absent"),
+                contributing_cause_role=fm_chain.get("contributing_cause_role"),
+                confluence_component_id=fm_chain.get("confluence_component_id"),
             )
             patterns.append(pattern)
 
@@ -178,6 +210,7 @@ class TSKRTemporalScorerV1:
         windows: List[Dict[str, Any]] = []
         for sig in telemetry_summary.get("signals", []) or []:
             sensor_id = sig.get("sensor_id")
+            instrument_validity_flag = sig.get("instrument_validity_flag")
             for a in sig.get("anomalies", []) or []:
                 start = parse_dt(a.get("timestamp_start"))
                 end   = parse_dt(a.get("timestamp_end")) or start
@@ -190,6 +223,7 @@ class TSKRTemporalScorerV1:
                     "pattern":       a.get("pattern"),
                     "interval_type": self._normalize_interval_type(a.get("interval_type")),
                     "severity":      a.get("severity"),
+                    "instrument_validity_flag": instrument_validity_flag,
                     "severity_score": (
                         a.get("severity_score")
                         if isinstance(a.get("severity_score"), (int, float))
@@ -202,6 +236,39 @@ class TSKRTemporalScorerV1:
                         severity_score=(a.get("severity_score") if isinstance(a.get("severity_score"), (int, float)) else a.get("score")),
                     ),
                 })
+        windows.sort(key=lambda x: x["start"])
+        return windows
+
+    def _extract_anomaly_windows_from_signal_evidence(
+        self,
+        signal_evidence: Optional[JsonDict],
+    ) -> List[Dict[str, Any]]:
+        windows: List[Dict[str, Any]] = []
+        for row in (signal_evidence or {}).get("augmented_anomaly_set", []) or []:
+            if not isinstance(row, dict):
+                continue
+            start = parse_dt(row.get("timestamp_start"))
+            end = parse_dt(row.get("timestamp_end")) or start
+            if start is None:
+                continue
+            windows.append(
+                {
+                    "sensor_id": row.get("sensor_id"),
+                    "start": start,
+                    "end": end,
+                    "pattern": row.get("pattern"),
+                    "interval_type": self._normalize_interval_type(row.get("interval_type")),
+                    "severity": row.get("severity"),
+                    "instrument_validity_flag": row.get("instrument_validity_flag"),
+                    "severity_score": row.get("severity"),
+                    "tone": self._classify_tone(
+                        start=start,
+                        end=end,
+                        severity=row.get("severity"),
+                        severity_score=row.get("severity"),
+                    ),
+                }
+            )
         windows.sort(key=lambda x: x["start"])
         return windows
 
@@ -384,9 +451,18 @@ class TSKRTemporalScorerV1:
         """
         raw = window.get("severity_score")
         if isinstance(raw, (int, float)):
-            return max(0.1, float(raw))
-        sev = str(window.get("severity") or "").lower()
-        return {"high": 0.9, "medium": 0.7, "low": 0.5}.get(sev, 0.5)
+            base = max(0.1, float(raw))
+        else:
+            sev = str(window.get("severity") or "").lower()
+            base = {"high": 0.9, "medium": 0.7, "low": 0.5}.get(sev, 0.5)
+        validity_mult = self._instrument_validity_multiplier(window.get("instrument_validity_flag"))
+        return max(0.1, base * validity_mult)
+
+    def _instrument_validity_multiplier(self, value: Any) -> float:
+        key = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if not key:
+            return 1.0
+        return float(self._INSTRUMENT_VALIDITY_MULTIPLIER.get(key, 0.85))
 
     def _effective_anomaly_count(self, windows: List[Dict[str, Any]]) -> float:
         """Severity-weighted effective anomaly count (sum of per-window severity weights).
@@ -426,6 +502,26 @@ class TSKRTemporalScorerV1:
         if std_lag_hours <= 4.0:
             return 0.55
         return 0.3
+
+    @staticmethod
+    def _normalized_weighted_sum(components: List[Tuple[float, float]]) -> float:
+        """Return normalized weighted average in [0, 1].
+
+        This keeps confidence convex even when configured weights do not sum to 1.
+        """
+        if not components:
+            return 0.0
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for score, weight in components:
+            w = max(0.0, float(weight))
+            if w <= 0.0:
+                continue
+            weighted_sum += clamp01(score) * w
+            total_weight += w
+        if total_weight <= 0.0:
+            return 0.0
+        return clamp01(weighted_sum / total_weight)
 
     def _infer_operator_family(
         self,
@@ -674,6 +770,10 @@ class TSKRTemporalScorerV1:
         fm: JsonDict,
         past_events: List[JsonDict],
         stage_b_allen_relation: Optional[str] = None,
+        chain_position_score: float = 0.0,
+        chain_position_type: str = "absent",
+        contributing_cause_role: Optional[str] = None,
+        confluence_component_id: Optional[str] = None,
     ) -> JsonDict:
 
         fm_id        = fm.get("fm_id")
@@ -709,14 +809,19 @@ class TSKRTemporalScorerV1:
             past_events=past_events,
         )
 
-        confidence = clamp01(
-              self.config.anomaly_weight   * max(anomaly_score, telemetry_support)
-            + self.config.latency_weight   * latency_score
-            + self.config.history_weight   * history_score
-            + self.config.anomaly_count_weight  * anomaly_count_score
-            + self.config.lag_consistency_weight * lag_consistency_score
-            - (0.20 if temporal_contradiction else 0.0)
-        )
+        chain_pos = float(chain_position_score or 0.0)
+        if str(chain_position_type or "absent") == "convergence_confluence":
+            chain_pos = 0.0
+
+        confidence_base = self._normalized_weighted_sum([
+            (max(anomaly_score, telemetry_support), self.config.anomaly_weight),
+            (latency_score, self.config.latency_weight),
+            (chain_pos, self.config.chain_weight),
+            (history_score, self.config.history_weight),
+            (anomaly_count_score, self.config.anomaly_count_weight),
+            (lag_consistency_score, self.config.lag_consistency_weight),
+        ])
+        confidence = clamp01(confidence_base - (0.20 if temporal_contradiction else 0.0))
 
         support = clamp01(
               0.35 * history_score
@@ -757,6 +862,10 @@ class TSKRTemporalScorerV1:
             "observed_lag_hours":         latency_details["observed_lag_hours"],
             "latency_alignment_score":    latency_details["latency_alignment_score"],
             "latency_violation_type":     latency_details["latency_violation_type"],
+            "chain_position_score":       round(chain_pos, 4),
+            "chain_position_type":        chain_position_type,
+            "contributing_cause_role":    contributing_cause_role,
+            "confluence_component_id":    confluence_component_id,
             "temporal_contradiction": temporal_contradiction,
             "stage_b_allen_relation": stage_b_allen_relation,
             "stage_b_temporal_contradiction": stage_b_temporal_contradiction,
@@ -813,7 +922,7 @@ class TSKRTemporalScorerV1:
                 "expected_max_hours": expected_max,
                 "observed_lag_hours": None,
                 "latency_alignment_score": self.config.fallback_confidence,
-                "latency_violation_type": "unknown",
+                "latency_violation_type": "not_available",
             }
         try:
             mn = float(expected_min) if expected_min is not None else None
@@ -824,7 +933,7 @@ class TSKRTemporalScorerV1:
                 "expected_max_hours": expected_max,
                 "observed_lag_hours": round(float(mean_lag_hours), 4),
                 "latency_alignment_score": 0.4,
-                "latency_violation_type": "unknown",
+                "latency_violation_type": "not_available",
             }
 
         lag   = abs(float(mean_lag_hours))

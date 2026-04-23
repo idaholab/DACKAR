@@ -2,8 +2,43 @@
 ## Specification and Design Notes
 
 **Date**: April 22, 2026
-**Status**: Design — not yet implemented
+**Status**: In progress — Phase 1 implemented with post-review spec-alignment fixes
 **Companion documents**: `RCA_pipeline_stages.md` · `RCA_stage_B5_signal_evidence_spec.md` · `RCA_Data_Management_Strategy.md`
+
+---
+
+## Implementation Update (Current Branch)
+
+The following items from this spec are now implemented in code:
+
+- Added normalization module: `doc_parsers/fmea_normalizer.py`
+  - Profile classes: `AiagFmeaProfile`, `Aiag5thFmeaProfile`, `MilStd1629aProfile`, `Iec60812Profile`, `NuclearGenericProfile`, `AutoDetectProfile`
+  - Auto-detect profile selection with confidence score
+  - Derivations: `rpn`, MIL-STD `occurrence` from `lambda * mission_time`, criticality→severity mapping, effect fallback, potential cause splitting, NLP anomaly pattern inference
+  - Field quality tagging: `present_native`, `derived`, `nlp_inferred`, `missing_critical`, `missing_optional`, `missing_enrichment`
+  - Heuristic cause/effect split with explicit NLP-inferred tagging
+- Expanded parser: `doc_parsers/fmeaParser.py`
+  - Added canonical field coverage from this spec (multi-level effects, detection method/rating, safety impact, tech spec, MIL-STD fields, revision date)
+  - Added profile-aware header resolution (`profile_name`)
+  - Parser now runs normalization by default and attaches ingestion-quality metadata
+- Updated ingestion: `kg/kg_ingest_fmea_workflow.py`
+  - Emits/uses ingestion quality report
+  - Writes FMEA ingestion quality fields into `kg_provenance_latest`
+  - Writes `fmea_ingestion_report.json` by default (configurable)
+- Post-review alignment fixes (Apr 22):
+  - Enforced `failure_mechanism` as required during parsing (missing header or blank value hard-fails parsing)
+  - Fixed column resolver to true first-match-wins behavior (single header cannot map to multiple canonical fields)
+  - Removed `end_effect` overlap from `local_effect` header patterns to avoid ambiguous mapping
+  - Added multi-file ingestion report aggregation in parser (`parse_fmea_files`)
+  - Moved `orphaned_fm_count` calculation to post-APPLIES_TO resolution during ingestion (accurate orphan counting)
+  - Persisted normalization `derivation_method` traceability into `failure_mode` KG node properties
+- Added schema: `schemas/fmea_ingestion_report.json`
+- Registered schema in validator core artifacts: `validation/schema_validator.py`
+- Added tests:
+  - `unit_tests/test_fmea_normalizer.py`
+  - `unit_tests/test_fmea_parser_normalization.py`
+
+Remaining work is concentrated in enrichment workflow (Phase 2), Stage C latency abstention update (Phase 3), and additional coverage tests.
 
 ---
 
@@ -372,19 +407,24 @@ def score_latency(
 ## 6. Implementation Checklist
 
 ### Phase 1 — Normalization layer (`doc_parsers/fmea_normalizer.py`)
-- [ ] Define `FmeaFormatProfile` base class and `column_map`, `derived_fields`, `required_fields` interface
-- [ ] Implement `AiagFmeaProfile` (4th and 5th edition)
-- [ ] Implement `MilStd1629aProfile` — criticality → severity derivation, λ → occurrence derivation
-- [ ] Implement `Iec60812Profile`
-- [ ] Implement `NuclearGenericProfile`
-- [ ] Implement `AutoDetectProfile` — column header matching with confidence score
-- [ ] Implement derivation rules (§3.4): RPN, occurrence from λ, effect splitting, NLP pattern inference
-- [ ] Implement field quality classification (§3.5): `present_native` / `derived` / `nlp_inferred` / `missing_*`
-- [ ] Implement multi-level effect handler (§3.6): local / system / safety effect separation
-- [ ] Implement cause-consequence separator (§3.7): heuristic + NLP with confidence flag
-- [ ] Write ingestion quality report to `kg_provenance.fmea_ingestion_quality`
-- [ ] Update `kg_ingest_fmea_workflow.py` to use normalizer as pre-processing step
-- [ ] Update `schemas/fmea_ingestion_report.json` — new schema for quality report artifact
+- [x] Define `FmeaFormatProfile` base class and `column_map`, `derived_fields`, `required_fields` interface
+- [x] Implement `AiagFmeaProfile` (4th and 5th edition)
+- [x] Implement `MilStd1629aProfile` — criticality → severity derivation, λ → occurrence derivation
+- [x] Implement `Iec60812Profile`
+- [x] Implement `NuclearGenericProfile`
+- [x] Implement `AutoDetectProfile` — column header matching with confidence score
+- [x] Implement derivation rules (§3.4): RPN, occurrence from λ, effect splitting, NLP pattern inference
+- [x] Implement field quality classification (§3.5): `present_native` / `derived` / `nlp_inferred` / `missing_*`
+- [x] Implement multi-level effect handler (§3.6): local / system / safety effect separation
+- [x] Implement cause-consequence separator (§3.7): heuristic + NLP with confidence flag
+- [x] Write ingestion quality report to `kg_provenance.fmea_ingestion_quality`
+- [x] Update `kg_ingest_fmea_workflow.py` to use normalizer as pre-processing step
+- [x] Update `schemas/fmea_ingestion_report.json` — new schema for quality report artifact
+- [x] Enforce `failure_mechanism` as required in parser-level validation and row parsing
+- [x] Resolve header ambiguity with first-match-wins and de-overlap `local_effect`/`end_effect` patterns
+- [x] Aggregate ingestion quality metrics across multi-file parsing runs
+- [x] Compute `orphaned_fm_count` after live APPLIES_TO resolution, not during normalization
+- [x] Persist field-level derivation trace (`derivation_method`) onto ingested `failure_mode` nodes
 
 ### Phase 2 — Enrichment workflow (`RCA/fmea_enrichment/`)
 - [ ] `enrichment_trigger.py` — `should_trigger_enrichment()` logic (§4.3)
@@ -401,23 +441,27 @@ def score_latency(
 - [ ] Add test: `test_latency_abstention` — absent bounds → score = 0.50, not floor
 
 ### Phase 4 — Tests
-- [ ] `unit_tests/test_fmea_normalizer.py`:
-  - [ ] `test_aiag_column_mapping` — standard AIAG columns map correctly
-  - [ ] `test_milstd_criticality_to_severity_derivation` — criticality → severity computed
-  - [ ] `test_milstd_lambda_to_occurrence_derivation` — λ × t → occurrence computed
-  - [ ] `test_rpn_derivation` — S × O × D computed when RPN absent
-  - [ ] `test_multi_level_effect_separation` — local / system / safety stored separately
-  - [ ] `test_cause_consequence_separation` — compound string split correctly
-  - [ ] `test_nlp_pattern_inference_flagged` — inferred pattern has `nlp_inferred` status
-  - [ ] `test_missing_critical_field_governance_warning` — missing component_type → red governance
-  - [ ] `test_missing_enrichment_field_no_warning` — missing latency → yellow, not red
-  - [ ] `test_autodetect_profile` — column headers match correct profile
+- [x] `unit_tests/test_fmea_normalizer.py`:
+  - [ ] `test_aiag_column_mapping` — standard AIAG columns map correctly *(not yet added as a named test)*
+  - [x] `test_milstd_criticality_to_severity_derivation` — criticality → severity computed
+  - [x] `test_milstd_lambda_to_occurrence_derivation` — λ × t → occurrence computed
+  - [x] `test_rpn_derivation` — S × O × D computed when RPN absent
+  - [x] `test_multi_level_effect_separation` — local / system / safety stored separately
+  - [x] `test_cause_consequence_separation` — compound string split correctly
+  - [x] `test_nlp_pattern_inference_flagged` — inferred pattern has `nlp_inferred` status
+  - [ ] `test_missing_critical_field_governance_warning` — missing component_type → red governance *(governance threshold wiring pending)*
+  - [x] `test_missing_enrichment_field_no_warning` — missing latency → yellow, not red
+  - [x] `test_autodetect_profile` — column headers match correct profile
 - [ ] `unit_tests/test_fmea_enrichment.py`:
   - [ ] `test_trigger_condition_pattern_missing` — > 50% FMs missing pattern → trigger
   - [ ] `test_trigger_condition_safety_gap` — safety function linked but no safety_effect → trigger
   - [ ] `test_enrichment_provenance_written` — reviewer_id, timestamp, basis stored in KG
   - [ ] `test_neighborhood_first_scope` — enrichment query returns only neighborhood FMs
   - [ ] `test_enrichment_coverage_tracking` — coverage_pct updates correctly after session
+- [x] `unit_tests/test_fmea_parser_normalization.py`:
+  - [x] `test_missing_failure_mechanism_column_hard_fails` — parser rejects missing required mechanism column
+  - [x] `test_end_effect_header_not_mapped_to_local_effect` — end-effect headers do not collide with local-effect mapping
+  - [x] `test_parse_multiple_files_aggregates_ingestion_report` — multi-file parse reports are merged
 
 ---
 
