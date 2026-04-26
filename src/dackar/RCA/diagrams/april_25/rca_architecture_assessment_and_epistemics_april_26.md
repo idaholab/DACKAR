@@ -1,6 +1,6 @@
 # RCA architecture assessment and epistemics module notes
 
-**Date:** 2026-04-26 (updated: epistemics extended to all data elements)  
+**Date:** 2026-04-26 (updated: epistemics extended to all data elements; doc cross-refs; §4.14 final check)  
 **Scope:** `src/dackar/RCA` (assessment), expansion on a proposed **data / evidence epistemics** module (documents, signals, events, and structured context — not only text artifacts).  
 **Context:** Framed in module / interface / depth / seam / adapter / leverage / locality language (improve-codebase-architecture). No `CONTEXT.md` or `docs/adr/` at DACKAR repo root at time of writing.
 
@@ -146,6 +146,8 @@ A practical shape is: **one deep module** with a small outward **interface** use
 
 This preserves **seams:** retrieval and engine **adapters** do not get deleted; they call into epistemics as a **leaf policy** or pass artifacts through a thin function that returns adjusted scores. **Two consumers** of the same policy (retriever and engine) make the “real **seam**” test: if you only add a third consumer (e.g. future explanation / audit trail) without a central **module**, you copy policy again.
 
+**Normative run order** for *when* each seam is invoked is **§4.8** (multi-phase **A–E**), not the bullet order above — Chroma hits do not exist until after the first **`generate`**.
+
 ### 3.4 Benefits (locality, leverage, tests)
 
 - **Locality:** Product and safety conversations (“CRs are preliminary,” “SOPs are not observations,” “alarms are **effects** not **mechanisms**,” “FMEA in KG is plausibility not new observation”) **live in one** **module**; engineering changes don’t require a scavenger hunt.  
@@ -167,6 +169,23 @@ This preserves **seams:** retrieval and engine **adapters** do not get deleted; 
 
 [Architecture_Assessment.md](../april_20/Architecture_Assessment.md) already lists many **open** document-type items (SOP as discriminating logic, FMEA double-counting, ECA/RCA structured arrays, CR temporal discounting). The same **epistemics** **module** (now scoped to *all* **data element** types per §3.0) is the **architectural** place to implement those *and* to align **signal/telemetry/alarm** treatment with the same **role** vocabulary, so “Stage 4 document philosophy” and “TSKR / symptom philosophy” are not two unrelated stories in code.
 
+### 3.7 Document cross-references: `doc_ref_extractor` vs `related_docs` vs epistemics
+
+**What exists today**
+
+- **`ner/doc_ref_extractor.py`** — profile-driven (JSON **plant profile**) regex extraction of **document ID cross-references** from free text: CR, WO, ECA, SOP, LER, GL, IN, BUL, NCR, etc. Returns `DocRef` / `extract_doc_ref_ids`.
+- **NER wiring** — `ner/ner_adapter.py` calls `extract_doc_ref_ids` on each chunk and stores results on **`NERSeed.doc_refs`**.
+- **Indexing** — `ner/augment_chunks.py` / processed-text pipeline flows those into **Chroma** (and store metadata) as **`doc_refs`** on indexed chunks (`storage/chroma_store.py` flattens `enrichment.extracted_entities.doc_refs` into metadata lists).
+- **Graph ingest (structured)** — `kg/kg_schema_builder_workflow.py` builds **`linked_to_report`** edges when the **ingest document dict** has **`related_docs`**: `for rel_doc in doc.get("related_docs") or []` → edge to target `doc_id`. That path does **not** re-run the regex; it expects **structured** related-doc rows.
+
+**Gap (not “extraction missing”)**
+
+- Cross-refs are **extracted** at **chunk/NER** time and appear on **retrieved hit metadata** as `doc_refs` when the index was built with NER. They are **not** automatically **rolled up** into **`kg_context.documents[]` / `related_docs`** for every plant pipeline unless a separate **ingest** step does that aggregation.
+- **`causality_engine`’s** `_supporting_doc_refs` (v31/v32) lists **`doc_id`s from `kg_context.documents`**, not in-text mentions from all chunks.
+- The **epistemics** **module** (§4) is **not** a substitute for `doc_ref_extractor` — it is **post-materialization policy**. For **retrieval hits**, it should **prefer** `doc_refs` (and `doc_id`) **already on the hit** over re-parsing full text, and use those ids for **supersession** / **redundancy_group** *when* product rules tie “cited WO” to “same fact as retrieved WO row.”
+
+**Implication for §4 `DataElement`:** a **`document` / Chroma hit** payload can include **`metadata.doc_refs`** (list) from the index; **`source_type` might remain `document`** with an extended optional field **`cited_doc_ids`** copied from metadata for **resolve_supersession** and digest.
+
 ---
 
 ## 4. Draft specification: data / evidence epistemics module
@@ -184,7 +203,7 @@ Provide a **single policy module** that, for each **classified data element** in
 | In scope | Out of scope |
 |----------|----------------|
 | Classification and policy over **already materialized** records (doc hits, alarm rows, anomaly windows, PM rows, similar-event items, pointers into `kg_context`) | Vector search, Chroma/Neo4j I/O, embedding, BM25 |
-| **Supersession / redundancy** decisions *given* timestamps, ids, and explicit linkage fields | Building or repairing the KG; fixing ingest edge types |
+| **Supersession / redundancy** decisions *given* timestamps, ids, explicit linkage fields, and (when present) **`doc_refs` on Chroma hit metadata** or structured **`related_docs`** | Building or repairing the KG; fixing ingest edge types; **re-implementing** `doc_ref_extractor` (ingest-time extraction stays in **NER**; epistemics **consumes** ids) |
 | Deterministic **multipliers / caps / flags** consumed by existing scorers | Replacing TSKR math, Allen evaluation, or symptom-matching algorithms |
 | Optional **serialization** of annotations into `run_manifest` or artifacts for audit | LLM prompt text (synthesizer still builds prompts; may **consume** digest) |
 
@@ -210,7 +229,7 @@ Provide a **single policy module** that, for each **classified data element** in
 | `flags` | e.g. `discriminating_rule`, `downstream_response`, `supersedes_preliminary`, `redundant_with_kg`, `comparator_only`. |
 | `supersedes` / `superseded_by` | List of `{source_type, source_id}` when policy resolves dominance (may be empty). |
 | `redundancy_group` | Opaque string id: same group → apply **reinforcement / discount** policy. |
-| `policy` | See §4.5. |
+| `policy` | `EpistemicPolicyOutput` (table immediately below in §4.4). |
 
 **`EpistemicRunContext`** (input bundle, not stored per element):
 
@@ -218,6 +237,7 @@ Provide a **single policy module** that, for each **classified data element** in
 |-------|---------|
 | `event_id`, `run_id` | Correlation. |
 | `event_time` / window | For temporal dominance. |
+| `pipeline_phase` | Which integration pass (see **§4.8**): e.g. `pre_generate` \| `post_retrieve` \| `pre_refine` \| `pre_synthesize` — so `interpret` is not given elements that do not exist yet. |
 | `artifact pointers` | Handles to `kg_context` slice, `telemetry_summary`, optional doc index by time. |
 | `policy_version` | Epistemics config version string. |
 
@@ -226,7 +246,7 @@ Provide a **single policy module** that, for each **classified data element** in
 | Field | Meaning |
 |-------|---------|
 | `retrieval_score_multiplier` | Float in documented range (default 1.0). |
-| `evidence_prior_bias` | Additive or multiplicative hint for engine **prior** path (engine maps to existing hooks). |
+| `evidence_prior_bias` | Additive or multiplicative hint for the engine’s **evidence** dimension where applicable — see **§4.13** (first `generate` has no Chroma hits; this applies to **refine** and to any kg-embedded “document” features in `generate`, not to absent data). |
 | `refinement_bias` | Hint for `refine_with_evidence` blending (engine maps). |
 | `synthesis_weight` | Relative emphasis in digest (0–1 scale). |
 | `exclude_from_direct_support` | Bool — e.g. alarm as effect without KG chain. |
@@ -270,13 +290,19 @@ resolve_supersession(annotations: list[EpistemicAnnotation], ctx: EpistemicRunCo
 - **Cross-stream:** CR vs ECA vs telemetry on same claim — dominance rules live in **config tables**, not scattered in engine.  
 - **Alarms vs root cause:** never mark alarm as **superseding** mechanistic analysis; may mark as **downstream** via `flags`.
 
-### 4.8 Integration points (pipeline order)
+### 4.8 Integration points (aligned with `RCAReasoningOrchestrator.run`)
 
-1. After **kg_context** (and optional CMMS augment) stable — `ctx` can include pointers.  
-2. **Per retrieval hit** before or after merge into `evidence_bundle` (implementation choice: enrich hit dict in place with `epistemic` sub-object).  
-3. **Signal / TSKR / alarm** features: annotate each contributing **element** before composite scoring.  
-4. **Before or inside** `refine_with_evidence`: ensure annotations present on evidence items used in refinement.  
-5. **Synthesis:** pass **digest** (list of `{snippet_id, primary_role, flags, policy.synthesis_weight}`) or attach to `run_context`.
+**Normative order** matches [rca_workflow_reference_guide_april_25.md](rca_workflow_reference_guide_april_25.md) **§2.2** (and `orchestrators/rca_reasoning_orchestrator.py`). The epistemics module is **not** a single linear pass: **Chroma / `evidence_bundle` exists only after** `causality_engine.generate`, so **retrieved** document epistemics cannot affect the **first** `generate` pass.
+
+| Phase | `pipeline_phase` (suggested) | When in `run` | What to annotate | Consumers |
+|-------|------------------------------|--------------|------------------|-----------|
+| **A** | `pre_generate` | After `kg_context`, `signal_evidence`, `tskr_patterns`; **before** `generate` + scope filter | **Non-Chroma** elements: `telemetry_summary` features, TSKR window rows, PM checks (governance), `kg_context` nodes/edges and **past events** in the engine pool, optional **similar** precursors in KG — *not* vector hits. | `causality_engine.generate` (and anything reading the same features before evidence exists). |
+| **B** | `post_retrieve` | After `evidence_retriever.retrieve` (or caller-supplied `evidence_bundle`) | Each **retrieval hit**; enrich in place, e.g. `hit["epistemic"] = {…}` | `refine_with_evidence` inputs, **Ishikawa** / **barrier** (read `evidence_bundle` later). |
+| **C** | `pre_refine` | After **`_build_allen_relation_map`**; **before** `refine_with_evidence` | Optional **`resolve_supersession`** over **(B) + (A)** if cross-stream dominance needs Allen / coverage context; or merge policy outputs into evidence items | `refine_with_evidence` (`evidence_bundle`, `signal_evidence`, optional `allen_relation_map` / `coverage_summary`). |
+| **D** | `pre_synthesize` | After **reentry**; **after** `similar_event_list` is built; **before** `rca_synthesizer.synthesize` | **`similar_event_list`** items (plant / fleet / industry rows) with roles such as `fleet_analogy` | Synthesizer + manifest embedding. |
+| **E** | (same or attach) | With synthesis input | **Digest** for LLM: snippet ids, roles, `synthesis_weight` | `synthesize` **or** `run_context` extension. |
+
+**Reentry** (`_run_auto_reentry_if_needed`) may **replace** `causality_candidates` / `evidence_bundle` / `tskr_patterns` / `signal_evidence` — epistemics should **re-run (B)–(C)** on the post-reentry artifacts or define **idempotent** merge rules. **Ingested** `causality_candidates` / `evidence_bundle` (caller pre-filled) require **(A)–(B)** on the supplied objects when those stages are skipped.
 
 ### 4.9 Configuration
 
@@ -298,8 +324,44 @@ resolve_supersession(annotations: list[EpistemicAnnotation], ctx: EpistemicRunCo
 ### 4.12 Open decisions (to close before implementation)
 
 - **Secondary roles:** parallel independent contributions vs weighted blend for scoring.  
-- **Where** `resolve_supersession` runs (orchestrator vs engine) when evidence order differs.  
-- **JSON** shape for stored annotation (snake_case, nested under `epistemic` on each hit).
+- **Where** `resolve_supersession` runs (orchestrator vs engine) when evidence order differs — **§4.8** places the natural hook **in the orchestrator** after Allen + `evidence_bundle` and before `refine`, unless the engine ingests a single merged list (see **§4.13**).  
+- **JSON** shape for stored annotation (snake_case, nested under `epistemic` on each hit).  
+- **Phase D** placement: if similar-event rows are needed inside **refine** in a future design, the table in **§4.8** would move; **today** they are only **pre-synthesis** (matches `_build_similar_event_list` at `orchestrators/rca_reasoning_orchestrator.py` **~543** after refine/reentry).
+
+### 4.13 Workflow alignment review (logic check vs current RCA `run`)
+
+**Source of truth:** [rca_workflow_reference_guide_april_25.md](rca_workflow_reference_guide_april_25.md) **§2.2**; code `RCAReasoningOrchestrator.run`.
+
+**What was wrong in the original §4.8 (pre-correction).** The earlier bullet list implied **“annotate retrieval hits” before** **“signal / TSKR before composite scoring.”** In the real **run** order, **retrieval (Chroma) happens *after* the first** `causality_engine.generate`. So **document** epistemics for **retrieved** snippets **cannot** feed the **first** candidate ranking; only **pre-generate** sources (KG, telemetry, TSKR, PM, `signal_evidence` assembly, alarm/SOE as fed into TSKR/Allen/coverage) can. The revised **§4.8** table fixes that by splitting **Phase A** vs **B**.
+
+**What holds with the rest of the workflow.**
+
+- **Dual path is mandatory:** (1) **pre_generate** for anything available **before** `evidence_bundle`; (2) **post_retrieve** + **pre_refine** for Chroma hits and optional cross-stream **resolve_supersession** once **Allen** exists. This matches the product split: **structural + temporal + telemetry** in `generate`, **retrieved text** in `refine` and synthesis.  
+- **`_build_allen_relation_map` runs *after* retrieve, *before* refine** (orchestrator **~429–434**). Epistemics that needs **event-wide** signal order for dominance should run in **pre_refine (C)**, not before evidence exists, unless the rule is expressible without Allen (then (A) or (B) only).  
+- **Similar events** are built **after** `refine` and **reentry**, **immediately before** `synthesize` (orchestrator **~541–546**). Phase **D** in **§4.8** matches that.  
+- **`refine_with_evidence`** already receives `evidence_bundle`, `signal_evidence`, and optionally `allen_relation_map` and `coverage_summary` — the spec’s `refinement_bias` and enriched hits remain consistent with that **interface** if the engine reads optional `epistemic` metadata on evidence items.  
+- **Ishikawa / barrier** run **after** reentry, **consuming** the same `evidence_bundle` the spec enriches in (B) — no extra **phase** required if hits carry `epistemic` sub-objects.  
+- **Optional inputs** (`evidence_bundle` or `causality_candidates` pre-injected) are acknowledged in **§4.8**; `EpistemicRunContext.pipeline_phase` prevents calling **(B)** when no hits exist, or allows **(A)**+**(C)**-lite when evidence is pre-built.
+
+**Residual risks (spec vs implementation).**
+
+- **Engine contract:** today `RuleBasedCausalityEngineV32` does not take an `epistemic` object — **mapping** of `evidence_prior_bias` / `refinement_bias` to actual score deltas is an **integration** change, not only a new module.  
+- **`generate` path** may still apply **doc_type**-like weighting to **kg_context**-embedded text if present; epistemics **(A)** must cover those **DataElement** shapes so behavior does not **fork** between KG text and Chroma text.  
+- **Manifest** `epistemics_summary` (§4.10) is filled after **(E)** or at finalize — specify whether counts aggregate **(A)–(D)** for audit.
+
+### 4.14 Final check — data / evidence epistemics module (consistency)
+
+| Check | Result |
+|-------|--------|
+| **Order vs `run()`** | **§4.8** phases **A→B→C→(D→E)** match [rca_workflow_reference_guide_april_25.md](rca_workflow_reference_guide_april_25.md) **§2.2** — pre-generate **before** Chroma; post-retrieve **after** `evidence_retriever.retrieve`; **pre_refine** after Allen map, **before** `refine_with_evidence`; **pre_synthesize** for similar-event rows **after** `_build_similar_event_list`, **before** `synthesize`. |
+| **Single-pass fallacy** | None: spec explicitly splits **(A)** non-Chroma vs **(B)** retrieved hits; first **`generate`** cannot use **(B)**-only data. |
+| **Relationship to NER / `doc_ref_extractor`** | **No overlap of responsibility** if epistemics **reads** `metadata.doc_refs` / structured links (§3.7) and does not ship duplicate regex. Optional **late** re-extract on snippet text is a **separate** product decision (cost vs index parity). |
+| **Relationship to `related_docs` / KG** | Epistemics does **not** require graph edges to run; **supersession** is stronger when ingest provides **`related_docs`** or when **cited** ids in metadata resolve to other indexed docs. |
+| **`EpistemicPolicyOutput` application** | **§4.4** and **§4.13** agree: **`evidence_prior_bias`** applies where the engine has an evidence **dimension** (notably **refine**; **generate** may use **(A)**-only hints on kg-embedded material). **Mapping** to engine score math remains an **integration** task. |
+| **`pipeline_phase` + `interpret`** | Prevents calling **(B)** when no `evidence_bundle` hits; prevents **(C)** before Allen when rules need it — **coherent** with **§4.6–4.7**. |
+| **Phase D timing** | Table says `pre_synthesize` **after** reentry; **`similar_event_list`** is built in `run` **after** reentry, **immediately** before `synthesize` — **consistent** (orchestrator **~543**). |
+| **Open items** | **§4.12** still governs: secondary-role math, `resolve_supersession` **host** (orchestrator vs engine), JSON shape, and whether **similar** rows ever move **earlier** than synthesis. **None** of these contradict **§4.8**; they are **implementation** choices. |
+| **Contradiction scan** | **§3.3** listed **seams** without **run** order; **§4.8** is normative for order. A forward pointer was added at the end of **§3.3** so the two sections do not conflict. |
 
 ---
 
