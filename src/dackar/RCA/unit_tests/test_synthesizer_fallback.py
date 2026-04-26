@@ -632,6 +632,36 @@ def test_fallback_injects_review_required_question():
     print("  PASS test_fallback_injects_review_required_question")
 
 
+def test_fallback_card_includes_depth_gaps_and_monitoring_plan():
+    s = make_synthesizer()
+    primary = make_candidate("FM::PRIMARY", "Primary cause", 0.82)
+    primary["primary_causal_category"] = "A"
+    primary["supporting_evidence_refs"] = ["SNIP-1"]
+    contributing = make_candidate("FM::CONTRIB", "Contributing cause", 0.70)
+    contributing["primary_causal_category"] = "G"
+    root = make_candidate("FM::ROOT", "Systemic weakness", 0.62)
+    root["primary_causal_category"] = "L"
+    card = s._fallback_card(
+        rca_id="RCA-DEPTH-001",
+        event=make_event(),
+        selected_candidates=[primary, contributing, root],
+        selected_evidence=[make_evidence_item("SNIP-1", "DOC-1", linked_candidate_id="FM::PRIMARY", support_role="supporting")],
+        causality_candidates=make_causality_candidates(primary, contributing, root),
+        evidence_bundle=make_evidence_bundle(),
+        run_context=make_run_context(),
+        prior_errors=[],
+    )
+    summary = card.get("executive_summary") or {}
+    depth = summary.get("causal_depth_summary") or {}
+    assert depth.get("proximate_cause")
+    assert isinstance(depth.get("contributing_causes"), list)
+    assert depth.get("root_cause")
+    assert isinstance(summary.get("unresolved_gaps"), list)
+    assert isinstance(summary.get("effectiveness_monitoring_plan"), list)
+    assert len(summary.get("effectiveness_monitoring_plan") or []) >= 1
+    print("  PASS test_fallback_card_includes_depth_gaps_and_monitoring_plan")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -654,6 +684,7 @@ ALL_TESTS = [
     test_minimum_evidence_gate_requires_two_supporting_primary_rows,
     test_llm_output_injects_review_required_question,
     test_fallback_injects_review_required_question,
+    test_fallback_card_includes_depth_gaps_and_monitoring_plan,
 ]
 
 

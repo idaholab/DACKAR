@@ -100,7 +100,7 @@ class _EvidenceRetriever:
 
 
 class _Synthesizer:
-    def synthesize(self, event, telemetry_summary, kg_context, tskr_patterns, causality_candidates, evidence_bundle, operational_context, pm_compliance, ishikawa_matrix, cmms_context, run_context):
+    def synthesize(self, event, telemetry_summary, kg_context, tskr_patterns, causality_candidates, evidence_bundle, operational_context, pm_compliance, ishikawa_matrix, cmms_context, run_context, **kwargs):
         return {
             "event_id": event.get("event_id"),
             "asset_id": event.get("asset_id"),
@@ -431,6 +431,201 @@ def test_tskr_epsilon_runtime_override_and_manifest_snapshot():
     print("  PASS test_tskr_epsilon_runtime_override_and_manifest_snapshot")
 
 
+def test_run_context_initializes_scope_revision_lifecycle():
+    event = {
+        "event_id": "EVT-S0-1",
+        "asset_id": "ASSET-S0-1",
+        "component_id": "CMP-S0-1",
+        "timestamp_start": "2026-01-01T12:00:00+00:00",
+        "timestamp_end": "2026-01-01T12:10:00+00:00",
+        "severity": "HIGH",
+        "event_type": "FAILURE",
+        "actuation_type": "anomalous",
+        "trigger_source": "alarm",
+    }
+    telemetry = {"asset_id": "ASSET-S0-1", "signals": []}
+    operational_context = {
+        "asset_id": "ASSET-S0-1",
+        "mode": "steady",
+        "percent_rated_power": 98.5,
+        "train_configuration": {"train_id": "Train-A", "in_service": True},
+        "recent_alarms": [
+            {"alarm_id": "A-1", "system_affected": "RCS", "timestamp": "2026-01-01T12:00:00+00:00", "priority": "high"},
+            {"alarm_id": "A-2", "system_affected": "AuxFeedwater", "timestamp": "2026-01-01T12:01:00+00:00", "priority": "medium"},
+        ]
+    }
+    o = _make_orchestrator()
+    result = o.run(
+        event=event,
+        telemetry_summary=telemetry,
+        operational_context=operational_context,
+    )
+    scope = (result.get("run_context") or {}).get("scope_management") or {}
+    input_refs = (result.get("run_context") or {}).get("input_refs") or {}
+    assert scope.get("active_scope_version") == 0
+    assert input_refs.get("active_scope_version") == 0
+    # event fields surfaced in input_refs
+    assert input_refs.get("event_severity") == "HIGH"
+    assert input_refs.get("event_type") == "FAILURE"
+    assert input_refs.get("actuation_type") == "anomalous"
+    assert input_refs.get("trigger_source") == "alarm"
+    assert input_refs.get("has_operational_context") is True
+    assert input_refs.get("has_soe_log") is False
+    assert input_refs.get("has_alarm_log") is False
+    assert input_refs.get("has_protection_logic_context") is False
+    revisions = scope.get("scope_revisions") or []
+    assert len(revisions) == 1
+    first = revisions[0]
+    assert first.get("trigger") == "initial_intake"
+    assert first.get("analyst_decision") == "accepted"
+    snapshot = first.get("scope_snapshot") or {}
+    assert snapshot.get("asset_ids") == ["ASSET-S0-1"]
+    assert "CMP-S0-1" in (snapshot.get("component_ids") or [])
+    assert "RCS" in (snapshot.get("system_boundary") or [])
+    # operating context captured
+    op_ctx = snapshot.get("operating_context") or {}
+    assert op_ctx.get("mode") == "steady"
+    assert abs(float(op_ctx.get("percent_rated_power") or 0) - 98.5) < 0.01
+    assert op_ctx.get("train_id") == "Train-A"
+    assert op_ctx.get("train_in_service") is True
+    # event context captured
+    ev_ctx = snapshot.get("event_context") or {}
+    assert ev_ctx.get("severity") == "HIGH"
+    assert ev_ctx.get("event_type") == "FAILURE"
+    assert ev_ctx.get("actuation_type") == "anomalous"
+    # data availability flags
+    da = snapshot.get("data_availability") or {}
+    assert da.get("has_operational_context") is True
+    assert da.get("has_soe_log") is False
+    manifest_scope = ((result.get("run_manifest") or {}).get("scope_revision_summary") or {})
+    assert manifest_scope.get("active_scope_version") == 0
+    assert manifest_scope.get("revision_count") == 1
+    assert manifest_scope.get("latest_analyst_decision") == "accepted"
+    print("  PASS test_run_context_initializes_scope_revision_lifecycle")
+
+
+def test_run_context_captures_alarm_log_and_soe_system_boundary():
+    event = {
+        "event_id": "EVT-S0-3",
+        "asset_id": "ASSET-S0-3",
+        "timestamp_start": "2026-01-01T12:00:00+00:00",
+        "severity": "CRITICAL",
+        "event_type": "FAILURE",
+    }
+    telemetry = {"asset_id": "ASSET-S0-3", "signals": []}
+    alarm_log = {
+        "alarm_log_id": "ALM-1",
+        "event_id": "EVT-S0-3",
+        "asset_id": "ASSET-S0-3",
+        "generated_at": "2026-01-01T12:00:00+00:00",
+        "window": {"start": "2026-01-01T11:50:00+00:00", "end": "2026-01-01T12:00:00+00:00"},
+        "alarms": [
+            {"alarm_id": "ALM-001", "timestamp": "2026-01-01T11:55:00+00:00",
+             "priority": "critical", "state": "active", "system": "ECCS"},
+            {"alarm_id": "ALM-002", "timestamp": "2026-01-01T11:57:00+00:00",
+             "priority": "high", "state": "active", "system": "ReactorCoolant"},
+        ],
+        "provenance": {"generated_by": "test"},
+    }
+    soe_log = {
+        "soe_id": "SOE-1",
+        "event_id": "EVT-S0-3",
+        "asset_id": "ASSET-S0-3",
+        "generated_at": "2026-01-01T12:00:00+00:00",
+        "window": {"start": "2026-01-01T11:50:00+00:00", "end": "2026-01-01T12:00:00+00:00"},
+        "records": [
+            {"record_id": "R1", "timestamp": "2026-01-01T11:55:00+00:00",
+             "signal_id": "SIG-1", "transition": "trip", "component_id": "CMP-RCP-1"},
+            {"record_id": "R2", "timestamp": "2026-01-01T11:56:00+00:00",
+             "signal_id": "SIG-2", "transition": "assert", "component_id": "CMP-HIS-1"},
+        ],
+        "provenance": {"generated_by": "test"},
+    }
+    o = _make_orchestrator()
+    # Call _stage_a_build_run_context directly (not run()) to test the new params
+    import uuid
+    run_id = str(uuid.uuid4())
+    rc = o._stage_a_build_run_context(
+        run_id=run_id,
+        event=event,
+        telemetry_summary=telemetry,
+        operational_context=None,
+        pm_compliance=None,
+        alarm_log=alarm_log,
+        soe_log=soe_log,
+    )
+    snapshot = rc["scope_management"]["scope_revisions"][0]["scope_snapshot"]
+    assert "ECCS" in snapshot["system_boundary"]
+    assert "ReactorCoolant" in snapshot["system_boundary"]
+    assert "CMP-RCP-1" in snapshot["component_ids"]
+    assert "CMP-HIS-1" in snapshot["component_ids"]
+    assert rc["input_refs"]["has_alarm_log"] is True
+    assert rc["input_refs"]["has_soe_log"] is True
+    assert rc["input_refs"]["has_protection_logic_context"] is False
+    da = snapshot["data_availability"]
+    assert da["has_alarm_log"] is True
+    assert da["has_soe_log"] is True
+    assert da["has_protection_logic_context"] is False
+    print("  PASS test_run_context_captures_alarm_log_and_soe_system_boundary")
+
+
+def test_apply_scope_revision_tracks_accepted_and_rejected_revisions():
+    o = _make_orchestrator()
+    run_id = "RUN-S0-2"
+    run_context = {
+        "run_id": run_id,
+        "input_refs": {"event_id": "EVT-S0-2"},
+        "scope_management": {
+            "active_scope_version": 0,
+            "latest_approved_revision_id": "SCOPE::EVT-S0-2::0",
+            "scope_revisions": [
+                {
+                    "revision_id": "SCOPE::EVT-S0-2::0",
+                    "scope_version": 0,
+                    "trigger": "initial_intake",
+                    "changed_boundary": {"window_delta": "initial"},
+                    "analyst_decision": "accepted",
+                    "decision_timestamp": "2026-01-01T00:00:00+00:00",
+                    "scope_snapshot": {"asset_ids": ["ASSET-S0-2"]},
+                }
+            ],
+        },
+    }
+    accepted = o.apply_scope_revision(
+        run_id=run_id,
+        run_context=run_context,
+        revision_input={
+            "trigger": "candidate_coverage_gap",
+            "analyst_decision": "accepted",
+            "changed_boundary": {"added_component_ids": ["CMP-2"]},
+            "scope_snapshot": {"asset_ids": ["ASSET-S0-2"], "component_ids": ["CMP-2"]},
+        },
+        persist=False,
+    )
+    scope1 = accepted["scope_management"]
+    refs1 = accepted["input_refs"]
+    assert scope1["active_scope_version"] == 1
+    assert refs1["active_scope_version"] == 1
+    assert len(scope1["scope_revisions"]) == 2
+    assert scope1["scope_revisions"][-1]["analyst_decision"] == "accepted"
+
+    rejected = o.apply_scope_revision(
+        run_id=run_id,
+        run_context=accepted,
+        revision_input={
+            "trigger": "analyst_override",
+            "analyst_decision": "rejected",
+            "changed_boundary": {"removed_component_ids": ["CMP-2"]},
+        },
+        persist=False,
+    )
+    scope2 = rejected["scope_management"]
+    assert scope2["active_scope_version"] == 1
+    assert len(scope2["scope_revisions"]) == 3
+    assert scope2["scope_revisions"][-1]["analyst_decision"] == "rejected"
+    print("  PASS test_apply_scope_revision_tracks_accepted_and_rejected_revisions")
+
+
 ALL_TESTS = [
     test_pm_auto_build_path_and_override,
     test_build_dev_orchestrator_defaults_to_v32,
@@ -438,6 +633,9 @@ ALL_TESTS = [
     test_validator_flags_unknown_recommended_action_target_component,
     test_out_of_boundary_anomalies_surface_analyst_attention_flags,
     test_tskr_epsilon_runtime_override_and_manifest_snapshot,
+    test_run_context_initializes_scope_revision_lifecycle,
+    test_run_context_captures_alarm_log_and_soe_system_boundary,
+    test_apply_scope_revision_tracks_accepted_and_rejected_revisions,
 ]
 
 

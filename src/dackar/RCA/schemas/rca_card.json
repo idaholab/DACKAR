@@ -127,6 +127,15 @@
             "type": "string"
           }
         },
+        "category_coverage_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "external_oe_unavailable": {
+          "type": "boolean"
+        },
         "conclusion_type": {
           "type": "string",
           "enum": [
@@ -135,6 +144,47 @@
             "no_adequate_hypothesis"
           ],
           "description": "Epistemic standing of the RCA conclusion. hypothesis_supported: primary candidate is A-series with non-trivial evidence posture. hypothesis_speculative: primary is B-series or all candidates have zero telemetry signal. no_adequate_hypothesis: no candidate met minimum requirements or all evidence is absent — treat the card as a review placeholder, not a conclusion."
+        },
+        "causal_depth_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proximate_cause": { "type": "string" },
+            "contributing_causes": { "type": "array", "items": { "type": "string" } },
+            "root_cause": { "type": "string" },
+            "depth_complete": { "type": "boolean" },
+            "depth_incomplete_reason": {
+              "type": "string",
+              "description": "Present when depth_complete=false. Explains which depth layer is unresolved and what data or causal evidence would complete it."
+            }
+          }
+        },
+        "unresolved_gaps": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "effectiveness_monitoring_plan": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["linked_action_id", "indicator", "threshold", "review_horizon"],
+            "properties": {
+              "linked_action_id":   { "type": "string" },
+              "causal_depth_level": {
+                "type": "string",
+                "enum": ["proximate", "contributing", "root"],
+                "description": "Which causal depth layer this monitoring item addresses."
+              },
+              "indicator":          { "type": "string" },
+              "threshold":          { "type": "string" },
+              "review_horizon":     { "type": "string" },
+              "success_criteria":   {
+                "type": "string",
+                "description": "Measurable criterion that closes this monitoring item when met."
+              }
+            }
+          }
         }
       },
       "additionalProperties": false
@@ -451,6 +501,11 @@
           "linked_candidate_id": {
             "type": "string"
           },
+          "target_causal_depth": {
+            "type": "string",
+            "enum": ["proximate", "contributing", "root"],
+            "description": "Which causal-depth layer this action primarily addresses."
+          },
           "rationale": {
             "type": "string",
             "description": "Why this action is recommended."
@@ -549,6 +604,62 @@
               "barrier_type": { "type": "string" }
             }
           }
+        }
+      }
+    },
+    "human_performance_assessment": {
+      "type": "object",
+      "description": "Step 6 human and organizational performance assessment. Populated when any H/I/J/K category candidate is retained.",
+      "additionalProperties": false,
+      "required": ["applicable", "category_flags", "findings", "provenance_note"],
+      "properties": {
+        "applicable": {
+          "type": "boolean",
+          "description": "True when at least one H/I/J/K candidate is retained in the card."
+        },
+        "category_flags": {
+          "type": "object",
+          "description": "Which human/org causal categories (H, I, J, K) are present among retained candidates.",
+          "additionalProperties": false,
+          "properties": {
+            "H": { "type": "boolean", "description": "Maintenance / work-practice error" },
+            "I": { "type": "boolean", "description": "Procedure inadequacy" },
+            "J": { "type": "boolean", "description": "Training / qualification gap" },
+            "K": { "type": "boolean", "description": "Supervision / organisational factor" }
+          }
+        },
+        "findings": {
+          "type": "array",
+          "description": "One structured finding per retained H/I/J/K candidate.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidate_id", "causal_category", "cause_label", "confidence_label", "performance_mode"],
+            "properties": {
+              "candidate_id":      { "type": "string" },
+              "causal_category":   { "type": "string", "enum": ["H", "I", "J", "K"] },
+              "cause_label":       { "type": "string" },
+              "confidence_label":  { "type": "string" },
+              "performance_mode":  {
+                "type": "string",
+                "description": "Human performance mode inferred from category (e.g. execution_error, knowledge_gap, procedure_gap, supervisory_gap).",
+                "enum": ["execution_error", "procedure_gap", "knowledge_gap", "supervisory_gap", "unknown"]
+              },
+              "corrective_action_ids": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "IDs of recommended_actions[] that address this finding."
+              },
+              "regulatory_reference": {
+                "type": "string",
+                "description": "Optional AP-913 / 10 CFR reference relevant to this human performance category."
+              }
+            }
+          }
+        },
+        "provenance_note": {
+          "type": "string",
+          "description": "Explanation when applicable=false or when human-performance data is limited."
         }
       }
     },

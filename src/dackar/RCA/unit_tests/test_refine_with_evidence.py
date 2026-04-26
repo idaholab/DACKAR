@@ -307,6 +307,318 @@ def test_authority_tier_weights_evidence_support():
     print("  PASS test_authority_tier_weights_evidence_support")
 
 
+def test_physical_plausibility_gate_eliminates_candidate_with_binary_rationale():
+    e = make_engine()
+    candidates = {
+        "candidates": [
+            {
+                "candidate_id": "CAND-OK",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-1",
+                "failure_mode_id": "FM-1",
+                "cause_node_id": "FM-1",
+                "cause_label": "plausible",
+                "composite_score": 0.70,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.70, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+            },
+            {
+                "candidate_id": "CAND-BAD",
+                "hypothesis_type": "failure_mode",
+                "component_id": "unknown_component",
+                "failure_mode_id": "unknown_failure_mode",
+                "cause_node_id": "FM-X",
+                "cause_label": "implausible",
+                "composite_score": 0.95,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.10, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+            },
+        ]
+    }
+    result = e.refine_with_evidence(
+        candidates,
+        make_evidence_bundle(
+            [
+                make_summary("CAND-OK", best_support_score=0.90, hit_count=3),
+                make_summary("CAND-BAD", best_support_score=0.90, hit_count=3),
+            ]
+        ),
+    )
+    ok = get_candidate(result, "CAND-OK")
+    bad = get_candidate(result, "CAND-BAD")
+    assert ok is not None and bad is not None
+    assert ok in (result.get("candidates") or [])
+    assert bad in (result.get("filtered_out_candidates") or [])
+    gate_bad = ((bad.get("hard_gates") or {}).get("physical_plausibility") or {})
+    gate_ok = ((ok.get("hard_gates") or {}).get("physical_plausibility") or {})
+    assert gate_bad.get("passed") is False
+    assert isinstance(gate_bad.get("rationale"), str) and gate_bad.get("rationale").startswith("FAIL:")
+    assert gate_ok.get("passed") is True
+    assert isinstance(gate_ok.get("rationale"), str) and gate_ok.get("rationale").startswith("PASS:")
+    assert ((bad.get("ruleout") or {}).get("reason_code")) == "physically_impossible"
+    print("  PASS test_physical_plausibility_gate_eliminates_candidate_with_binary_rationale")
+
+
+def test_timeline_consistency_gate_supports_normal_and_degraded_modes():
+    e = make_engine()
+    candidates = {
+        "candidates": [
+            {
+                "candidate_id": "CAND-NORMAL",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-1",
+                "failure_mode_id": "FM-1",
+                "cause_node_id": "FM-1",
+                "cause_label": "normal timeline",
+                "composite_score": 0.70,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.70, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+                "temporal_evidence": {
+                    "latency_violation_type": "none",
+                    "observed_lag_hours": 1.0,
+                    "expected_latency_min_hours": 0.5,
+                    "expected_latency_max_hours": 2.0,
+                    "temporal_contradiction": False,
+                },
+            },
+            {
+                "candidate_id": "CAND-DEGRADED",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-2",
+                "failure_mode_id": "FM-2",
+                "cause_node_id": "FM-2",
+                "cause_label": "degraded timeline",
+                "composite_score": 0.69,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.70, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+                "temporal_evidence": {
+                    "latency_violation_type": "unknown",
+                    "observed_lag_hours": None,
+                    "expected_latency_min_hours": None,
+                    "expected_latency_max_hours": None,
+                    "temporal_contradiction": False,
+                },
+            },
+            {
+                "candidate_id": "CAND-FAIL",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-3",
+                "failure_mode_id": "FM-3",
+                "cause_node_id": "FM-3",
+                "cause_label": "bad timeline",
+                "composite_score": 0.95,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.70, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+                "temporal_evidence": {
+                    "latency_violation_type": "too_fast",
+                    "observed_lag_hours": 0.1,
+                    "expected_latency_min_hours": 1.0,
+                    "expected_latency_max_hours": 4.0,
+                    "temporal_contradiction": True,
+                },
+                "temporal_posture": "contradicted",
+            },
+        ]
+    }
+    result = e.refine_with_evidence(
+        candidates,
+        make_evidence_bundle(
+            [
+                make_summary("CAND-NORMAL", best_support_score=0.90, hit_count=3),
+                make_summary("CAND-DEGRADED", best_support_score=0.90, hit_count=3),
+                make_summary("CAND-FAIL", best_support_score=0.90, hit_count=3),
+            ]
+        ),
+    )
+    normal = get_candidate(result, "CAND-NORMAL")
+    degraded = get_candidate(result, "CAND-DEGRADED")
+    failed = get_candidate(result, "CAND-FAIL")
+    assert normal is not None and degraded is not None and failed is not None
+    g_normal = ((normal.get("hard_gates") or {}).get("timeline_consistency") or {})
+    g_degraded = ((degraded.get("hard_gates") or {}).get("timeline_consistency") or {})
+    g_failed = ((failed.get("hard_gates") or {}).get("timeline_consistency") or {})
+    assert g_normal.get("passed") is True and g_normal.get("degraded_mode") is False
+    assert g_degraded.get("passed") is True and g_degraded.get("degraded_mode") is True
+    assert g_failed.get("passed") is False
+    assert ((failed.get("ruleout") or {}).get("reason_code")) == "timeline_inconsistent"
+    print("  PASS test_timeline_consistency_gate_supports_normal_and_degraded_modes")
+
+
+def test_barrier_logic_gate_supports_normal_and_degraded_modes():
+    e = make_engine()
+    candidates = {
+        "candidates": [
+            {
+                "candidate_id": "CAND-BARRIER-NORMAL",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-1",
+                "failure_mode_id": "FM-1",
+                "cause_node_id": "FM-1",
+                "cause_label": "barrier normal",
+                "composite_score": 0.70,
+                "meets_evidence_threshold": True,
+                "scores": {
+                    "structural": 0.70, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50,
+                    "barrier_signal": 0.8,
+                },
+                "affected_safety_functions": [{"sf_id": "SF-1", "sf_name": "RPS", "impact_type": "direct"}],
+            },
+            {
+                "candidate_id": "CAND-BARRIER-DEGRADED",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-2",
+                "failure_mode_id": "FM-2",
+                "cause_node_id": "FM-2",
+                "cause_label": "barrier degraded",
+                "composite_score": 0.69,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.70, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+            },
+            {
+                "candidate_id": "CAND-BARRIER-FAIL",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-3",
+                "failure_mode_id": "FM-3",
+                "cause_node_id": "FM-3",
+                "cause_label": "barrier fail",
+                "composite_score": 0.95,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.70, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+                "ruleout": {"reason_code": "barrier_held"},
+            },
+        ]
+    }
+    result = e.refine_with_evidence(
+        candidates,
+        make_evidence_bundle(
+            [
+                make_summary("CAND-BARRIER-NORMAL", best_support_score=0.90, hit_count=3),
+                make_summary("CAND-BARRIER-DEGRADED", best_support_score=0.90, hit_count=3),
+                make_summary("CAND-BARRIER-FAIL", best_support_score=0.90, hit_count=3),
+            ]
+        ),
+    )
+    normal = get_candidate(result, "CAND-BARRIER-NORMAL")
+    degraded = get_candidate(result, "CAND-BARRIER-DEGRADED")
+    failed = get_candidate(result, "CAND-BARRIER-FAIL")
+    assert normal is not None and degraded is not None and failed is not None
+    g_normal = ((normal.get("hard_gates") or {}).get("barrier_logic") or {})
+    g_degraded = ((degraded.get("hard_gates") or {}).get("barrier_logic") or {})
+    g_failed = ((failed.get("hard_gates") or {}).get("barrier_logic") or {})
+    assert g_normal.get("passed") is True and g_normal.get("degraded_mode") is False
+    assert g_degraded.get("passed") is True and g_degraded.get("degraded_mode") is True
+    assert g_failed.get("passed") is False
+    assert ((failed.get("ruleout") or {}).get("reason_code")) == "barrier_held"
+    print("  PASS test_barrier_logic_gate_supports_normal_and_degraded_modes")
+
+
+def test_hard_gate_ordering_preserves_first_failure_reason_and_logs_rationales():
+    e = make_engine()
+    candidates = {
+        "candidates": [
+            {
+                "candidate_id": "CAND-ORDER",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-ORD",
+                "failure_mode_id": "FM-ORD",
+                "cause_node_id": "FM-ORD",
+                "cause_label": "ordering candidate",
+                "composite_score": 0.92,
+                "meets_evidence_threshold": True,
+                "scores": {"structural": 0.10, "temporal": 0.50, "telemetry": 0.50, "evidence": 0.40, "governance": 0.50},
+                "temporal_evidence": {
+                    "latency_violation_type": "too_fast",
+                    "observed_lag_hours": 0.1,
+                    "expected_latency_min_hours": 1.0,
+                    "expected_latency_max_hours": 3.0,
+                    "temporal_contradiction": True,
+                },
+                "temporal_posture": "contradicted",
+            }
+        ]
+    }
+    result = e.refine_with_evidence(
+        candidates,
+        make_evidence_bundle([make_summary("CAND-ORDER", best_support_score=0.90, hit_count=3)]),
+    )
+    c = get_candidate(result, "CAND-ORDER")
+    assert c is not None
+    hard_gates = c.get("hard_gates") or {}
+    g_phys = hard_gates.get("physical_plausibility") or {}
+    g_time = hard_gates.get("timeline_consistency") or {}
+    g_bar = hard_gates.get("barrier_logic") or {}
+    assert g_phys.get("passed") is False and g_phys.get("gate_order") == 1
+    assert g_time.get("passed") is False and g_time.get("gate_order") == 2
+    assert g_bar.get("gate_order") == 3
+    assert isinstance(g_phys.get("rationale"), str) and g_phys.get("rationale").startswith("FAIL:")
+    assert isinstance(g_time.get("rationale"), str) and g_time.get("rationale").startswith("FAIL:")
+    assert isinstance(g_bar.get("rationale"), str) and len(g_bar.get("rationale")) > 0
+    ruleout = c.get("ruleout") or {}
+    assert ruleout.get("reason_code") == "physically_impossible"
+    assert ruleout.get("reason_detail") == g_phys.get("rationale")
+    print("  PASS test_hard_gate_ordering_preserves_first_failure_reason_and_logs_rationales")
+
+
+def test_coverage_quality_flags_reduce_quality_multiplier_and_surface_in_uncertainty_summary():
+    e = RuleBasedCausalityEngineV32(
+        CausalityEngineConfigV32(
+            minimum_evidence_threshold=0.0,
+            minimum_pre_evidence_threshold=0.0,
+            minimum_composite_threshold=0.0,
+            top_k_candidates=5,
+        )
+    )
+    candidates = {
+        "candidates": [
+            {
+                "candidate_id": "CAND-COV",
+                "cause_label": "coverage sensitive",
+                "hypothesis_type": "failure_mode",
+                "component_id": "CMP-1",
+                "failure_mode_id": "FM-1",
+                "cause_node_id": "FM-1",
+                "composite_score": 0.80,
+                "meets_evidence_threshold": True,
+                "scores": {
+                    "structural": 0.80,
+                    "temporal": 0.80,
+                    "telemetry": 0.70,
+                    "evidence": 0.80,
+                    "governance": 0.60,
+                },
+            }
+        ]
+    }
+    evidence = make_evidence_bundle([make_summary("CAND-COV", best_support_score=0.90, hit_count=3)])
+
+    baseline = e.refine_with_evidence(
+        causality_candidates=candidates,
+        evidence_bundle=evidence,
+    )
+    degraded = e.refine_with_evidence(
+        causality_candidates=candidates,
+        evidence_bundle=evidence,
+        coverage_summary={
+            "overall_status": "partial",
+            "source_families": {
+                "kg_context": {"status": "partial"},
+                "chroma_corpus": {"status": "complete"},
+                "upstream_anomaly_inputs": {"status": "missing"},
+            },
+        },
+    )
+    c_base = get_candidate(baseline, "CAND-COV")
+    c_deg = get_candidate(degraded, "CAND-COV")
+    assert c_base is not None and c_deg is not None
+    assert float(c_deg.get("quality_multiplier", 1.0)) < float(c_base.get("quality_multiplier", 1.0))
+    assert float((c_deg.get("scores") or {}).get("coverage_quality_factor", 1.0)) < 1.0
+    assert "upstream_anomaly_inputs" in ((c_deg.get("scores") or {}).get("coverage_quality_flags") or [])
+    us = degraded.get("uncertainty_summary") or {}
+    assert float(us.get("average_coverage_quality_factor", 1.0)) < 1.0
+    assert int(us.get("coverage_degraded_candidate_count", 0)) >= 1
+    print("  PASS test_coverage_quality_flags_reduce_quality_multiplier_and_surface_in_uncertainty_summary")
+
+
 # ── _evidence_posture classification tests ────────────────────────────────────
 
 def test_posture_no_data():
@@ -376,6 +688,11 @@ ALL_TESTS = [
     test_temporal_relation_backfill,
     test_refine_preserves_risk_adjusted_governance,
     test_authority_tier_weights_evidence_support,
+    test_physical_plausibility_gate_eliminates_candidate_with_binary_rationale,
+    test_timeline_consistency_gate_supports_normal_and_degraded_modes,
+    test_barrier_logic_gate_supports_normal_and_degraded_modes,
+    test_hard_gate_ordering_preserves_first_failure_reason_and_logs_rationales,
+    test_coverage_quality_flags_reduce_quality_multiplier_and_surface_in_uncertainty_summary,
     test_posture_no_data,
     test_posture_contradicted,
     test_posture_supported,

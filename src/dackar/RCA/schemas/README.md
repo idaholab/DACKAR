@@ -7,6 +7,13 @@ Current core orchestrator artifacts:
   event
   telemetry_summary
   kg_context
+  soe_log
+  alarm_log
+  environmental_monitoring
+  protection_logic_context
+  configuration_change_records
+  vendor_supply_chain_records
+  training_records
   causality_candidates
   evidence_bundle
   rca_card

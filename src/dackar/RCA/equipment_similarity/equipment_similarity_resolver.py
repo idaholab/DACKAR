@@ -63,12 +63,15 @@ class SisterComponent:
     embedding_score: float = NON_EMBEDDING_DISTANCE
 
     def to_dict(self) -> JsonDict:
+        embedding_score = self.embedding_score
+        if self.match_type == "failure_mode_overlap":
+            embedding_score = NON_EMBEDDING_DISTANCE
         return {
             "component_id":    self.component_id,
             "component_label": self.component_label,
             "match_type":      self.match_type,
             "shared_fm_count": self.shared_fm_count,
-            "embedding_score": self.embedding_score,
+            "embedding_score": embedding_score,
         }
 
 

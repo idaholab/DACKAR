@@ -67,7 +67,8 @@ def make_orchestrator(strict_red_state_governance=True, hard_abort_on_kg_red_sta
 def make_clean_card(decision_required=False, writeback_recommendation="ready_if_accepted",
                     decision_status="candidate_ready", fallback_used=False,
                     schema_valid=True, all_claims_cited=True,
-                    passed_minimum_evidence_gate=True):
+                    passed_minimum_evidence_gate=True,
+                    coverage_degraded_acknowledged=False):
     return {
         "validation_status": {
             "schema_valid": schema_valid,
@@ -78,6 +79,7 @@ def make_clean_card(decision_required=False, writeback_recommendation="ready_if_
         "analyst_review": {
             "decision_required": decision_required,
             "writeback_recommendation": writeback_recommendation,
+            "coverage_degraded_acknowledged": coverage_degraded_acknowledged,
         },
         "executive_summary": {
             "decision_status": decision_status,
@@ -103,6 +105,40 @@ def test_writeback_ready_when_all_conditions_met():
     assert result["writeback_ready"] is True
     assert result["next_step"] == "writeback"
     print("  PASS test_writeback_ready_when_all_conditions_met")
+
+
+def test_coverage_degraded_requires_analyst_acknowledgement():
+    o = make_orchestrator()
+    result = o._compute_review_hooks(
+        make_clean_card(coverage_degraded_acknowledged=False),
+        make_output_validation(ok=True),
+        pipeline_health={"status": "green", "issues": []},
+        coverage_summary={"overall_status": "partial"},
+        reentry_hook={"should_reenter": False},
+    )
+    assert result["coverage_degraded"] is True
+    assert result["coverage_acknowledgement_required"] is True
+    assert result["writeback_ready"] is False
+    assert result["next_step"] == "analyst_review"
+    assert any("Coverage degraded" in r for r in (result.get("degraded_reasons") or []))
+    print("  PASS test_coverage_degraded_requires_analyst_acknowledgement")
+
+
+def test_coverage_degraded_acknowledged_allows_progression():
+    o = make_orchestrator()
+    result = o._compute_review_hooks(
+        make_clean_card(coverage_degraded_acknowledged=True),
+        make_output_validation(ok=True),
+        pipeline_health={"status": "green", "issues": []},
+        coverage_summary={"overall_status": "partial"},
+        reentry_hook={"should_reenter": False},
+    )
+    assert result["coverage_degraded"] is True
+    assert result["coverage_acknowledged"] is True
+    assert result["coverage_acknowledgement_required"] is False
+    assert result["writeback_ready"] is True
+    assert result["next_step"] == "writeback"
+    print("  PASS test_coverage_degraded_acknowledged_allows_progression")
 
 
 def test_writeback_blocked_when_outputs_not_ok():
@@ -480,6 +516,8 @@ def test_severity_5_passes_at_or_above_055():
 
 ALL_TESTS = [
     test_writeback_ready_when_all_conditions_met,
+    test_coverage_degraded_requires_analyst_acknowledgement,
+    test_coverage_degraded_acknowledged_allows_progression,
     test_writeback_blocked_when_outputs_not_ok,
     test_writeback_blocked_when_output_validation_missing,
     test_writeback_blocked_when_schema_invalid,

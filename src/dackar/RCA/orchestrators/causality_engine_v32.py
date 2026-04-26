@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ner.entity_normalizer import EntityNormalizer
 
@@ -99,6 +99,8 @@ class CausalityEngineConfigV32:
     review_alternative_gap: float = 0.10
     tskr_enabled: bool = True
     retention_mode: str = "threshold_then_top_k"
+    metamodel_compliance_level: str = "full"
+    metamodel_wave_label: str = "wave4"
 
     def __post_init__(self) -> None:
         if self.weights is None:
@@ -115,10 +117,52 @@ class CausalityEngineConfigV32:
                 f"CausalityEngineConfigV32.weights must sum to 1.0 (got {total:.4f}). "
                 f"Current weights: {self.weights}"
             )
+        if self.metamodel_compliance_level not in {"partial", "full"}:
+            raise ValueError(
+                "CausalityEngineConfigV32.metamodel_compliance_level must be 'partial' or 'full'."
+            )
 
 
 class RuleBasedCausalityEngineV32:
     """TSKR-aware deterministic causality engine with explicit screening metadata."""
+    _CAUSAL_CATEGORIES: List[str] = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
+    _RULEOUT_REASON_CODES: List[str] = [
+        "physically_impossible",
+        "timeline_inconsistent",
+        "barrier_held",
+        "no_supporting_data",
+        "category_not_applicable",
+        "outside_investigation_scope",
+        "superseded_by_higher_fidelity_evidence",
+        "analyst_excluded",
+    ]
+    _CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+        "B": ["power", "cool", "lubric", "seal", "instrument air", "control signal", "communication", "support"],
+        "C": ["inlet", "suction", "feed", "upstream", "flow starvation", "entrained", "quality"],
+        "D": ["backpressure", "discharge", "downstream", "recirculation", "blocked path"],
+        "E": ["overload", "off-design", "transient", "cycling", "start-stop", "standby", "runout"],
+        "F": ["seismic", "flood", "fire", "emi", "environment", "ambient", "disturbance"],
+        "G": ["operator", "maintenance error", "calibration error", "procedure not followed", "human"],
+        "H": ["undersized", "margin", "design", "specification", "material incompat", "thermal expansion"],
+        "I": ["configuration", "setpoint", "change control", "unauthorized", "temporary modification", "firmware"],
+        "J": ["surveillance", "inspection", "acceptance criteria", "interval", "test methodology"],
+        "K": ["vendor", "lot", "certification", "traceability", "counterfeit", "manufacturing defect"],
+        "L": ["systemic", "latent", "training", "safety culture", "resource", "corrective action program", "recurrence"],
+    }
+    _CATEGORY_REQUIRED_STREAMS: Dict[str, List[str]] = {
+        "A": ["temporal", "logical", "documentary"],
+        "B": ["temporal", "logical"],
+        "C": ["temporal", "logical"],
+        "D": ["temporal", "logical"],
+        "E": ["temporal", "logical"],
+        "F": ["temporal", "documentary"],
+        "G": ["documentary"],
+        "H": ["logical", "documentary"],
+        "I": ["documentary"],
+        "J": ["documentary"],
+        "K": ["documentary", "oe"],
+        "L": ["documentary", "oe"],
+    }
 
     def __init__(self, config: Optional[CausalityEngineConfigV32] = None):
         self.config = config or CausalityEngineConfigV32()
@@ -229,10 +273,33 @@ class RuleBasedCausalityEngineV32:
             retained_candidates=retained_candidates,
             filtered_out_candidates=filtered_out_candidates + event_analogs,
         )
+        category_coverage, applicability = self._build_metamodel_scaffolds(
+            retained_candidates=retained_candidates,
+            filtered_out_candidates=filtered_out_candidates,
+            event_analogs=event_analogs,
+            kg_context=kg_context,
+            operational_context=operational_context,
+            external_oe_unavailable=True,
+        )
+        self._apply_applicability_labels(retained_candidates, applicability)
+        self._apply_applicability_labels(filtered_out_candidates, applicability)
+        self._apply_applicability_labels(event_analogs, applicability)
+        applicability_summary = self._summarize_applicability(applicability)
+        uncertainty_summary = self._summarize_uncertainty(retained_candidates)
 
         return {
             "event_id": event.get("event_id") or event["id"],
             "subgraph_id": subgraph_id,
+            "metamodel_compliance": {
+                "level": self.config.metamodel_compliance_level,
+                "version": self.config.metamodel_wave_label,
+            },
+            "category_coverage": category_coverage,
+            "applicability_assessment": applicability,
+            "applicability_summary": applicability_summary,
+            "uncertainty_summary": uncertainty_summary,
+            "decision_posture": self._summarize_decision_posture(retained_candidates),
+            "external_oe_unavailable": True,
             "generated_at": utcnow_iso(),
             "scoring_config": {
                 "weights": self.config.weights,
@@ -283,6 +350,42 @@ class RuleBasedCausalityEngineV32:
             if not fm_id:
                 continue
             component_id = fm.get("component_id")
+
+            # Finding H: infer category before structural assembly so that
+            # _operating_point_score can use it for the Category E power modifier.
+            primary_causal_category, category_alternatives = self._infer_primary_category_for_failure_mode(
+                fm=fm,
+                event=event,
+            )
+
+            # Item 3: Pre-compute CCF features for Category C structural delta.
+            # Uses only cause_node_id and kg_path from the candidate — both are
+            # derivable before the structural score assembly.
+            CCF_DELTA_CAP = 0.10
+            _pre_cand = {
+                "cause_node_id": fm_id,
+                "kg_path": self._fm_path_nodes(
+                    component_id, fm_id,
+                    event.get("event_id") or event["id"], components,
+                ),
+            }
+            pre_ccf = self._common_cause_features_for_candidate(
+                candidate=_pre_cand,
+                kg_context=kg_context,
+                telemetry_summary=telemetry_summary,
+                pm_compliance=pm_compliance,
+                common_cause_index=common_cause_index,
+                candidate_component_id=component_id,
+                operational_context=operational_context,
+            )
+            ccf_score_pre = float(pre_ccf.get("common_cause_score") or 0.0)
+            ccf_delta = CCF_DELTA_CAP * ccf_score_pre if primary_causal_category == "C" else 0.0
+            ccf_note = (
+                f"ccf: score={ccf_score_pre:.3f} cat=C delta={ccf_delta:.4f}"
+                if primary_causal_category == "C" and ccf_score_pre > 0
+                else "not_applied"
+            )
+
             topology = self._structural_score_for_fm(component_id, components)
             affected_safety_functions = self._affected_safety_functions_for_candidate(
                 component_id=component_id,
@@ -304,7 +407,16 @@ class RuleBasedCausalityEngineV32:
             rpn_raw = fm.get("rpn")
             rpn_prior = min(1.0, float(rpn_raw) / 1000.0) if rpn_raw else 0.0
             rpn_delta = 0.08 * rpn_prior                    # [0.0, +0.08]
-            structural = max(0.0, min(1.0, topology + symptom_delta + alarm_delta + rpn_delta + barrier_delta))
+            # Finding H: operating-point score — max +0.12 additive delta on structural
+            OP_DELTA_CAP = 0.12
+            op_score, op_note = self._operating_point_score(
+                operational_context=operational_context,
+                primary_causal_category=primary_causal_category,
+                fm_superclass=fm.get("superclass"),
+                fm_name=fm.get("name"),
+            )
+            op_delta = OP_DELTA_CAP * op_score              # [0.0, +0.12]
+            structural = max(0.0, min(1.0, topology + symptom_delta + alarm_delta + rpn_delta + barrier_delta + op_delta + ccf_delta))
             temporal_parts = self._temporal_score_for_fm(fm, telemetry_summary, event_time, tskr_index)
             telemetry = self._telemetry_score_for_fm(telemetry_summary, fm, component_id, components)
             evidence = self._evidence_score_for_fm(documents)
@@ -344,11 +456,52 @@ class RuleBasedCausalityEngineV32:
                 "alarm_signal": round(alarm_signal, 4),
                 "rpn_prior": round(rpn_prior, 4),
                 "barrier_signal": round(barrier_signal, 4),
+                "operating_point_score": round(op_score, 6),
+                "operating_point_note": op_note,
+                "ccf_score": round(ccf_score_pre, 6),
+                "ccf_note": ccf_note,
             }
             composite = self._combine_scores(scores, weights_override={"governance": fm_gov_weight})
             meets_evidence_threshold = evidence >= self.config.minimum_pre_evidence_threshold
+            # primary_causal_category already inferred above (Finding H reorder)
+            chain_position, chain_reason = self._chain_position_for_candidate(
+                relation=temporal_parts.get("relation"),
+                temporal_precedence=float(temporal_parts.get("temporal_precedence", 0.0) or 0.0),
+                temporal_contradiction=bool(temporal_parts.get("temporal_contradiction", False)),
+            )
+            canonical_tuple = self._canonical_tuple(
+                component_id=component_id,
+                mechanism_id=fm_id,
+                category=primary_causal_category,
+                chain_position=chain_position,
+            )
             candidate = {
                 "candidate_id": f"FM::{fm_id}",
+                "canonical_tuple": canonical_tuple,
+                "canonical_candidate_key": self._canonical_candidate_key(
+                    component_id=canonical_tuple.get("component"),
+                    mechanism_id=canonical_tuple.get("failure_mode"),
+                    category=canonical_tuple.get("causal_category"),
+                    chain_position=canonical_tuple.get("chain_position"),
+                    event_scope_id=event.get("event_id") or event["id"],
+                ),
+                "component_id": canonical_tuple.get("component"),
+                "failure_mode_id": canonical_tuple.get("failure_mode"),
+                "primary_causal_category": primary_causal_category,
+                "chain_position": chain_position,
+                "chain_position_confidence": 0.6,
+                "event_scope_id": event.get("event_id") or event["id"],
+                "category_assignment_method": "deterministic",
+                "category_assignment_confidence": 0.75,
+                "category_assignment_rationale": "Deterministic FM mapping based on mechanism/superclass keywords.",
+                "category_alternatives": category_alternatives,
+                "category_applicability": "applicable",
+                "chain_position_rationale": chain_reason,
+                "primary_eligibility": "eligible",
+                "primary_block_reasons": [],
+                "review_required_contradiction": False,
+                "near_tie_with": [],
+                "reinstatement_status": "none",
                 "hypothesis_type": "failure_mode",
                 "cause_node_id": fm_id,
                 "cause_label": fm.get("name") or fm_id,
@@ -365,6 +518,8 @@ class RuleBasedCausalityEngineV32:
                         f"alarm signal {round(alarm_signal, 4)} → delta {round(alarm_delta, 4)}; "
                         + (f"barrier signal {round(barrier_signal, 4)} → delta {round(barrier_delta, 4)}; " if barrier_signal > 0 else "")
                         + (f"RPN {rpn_raw} → prior {round(rpn_prior, 4)} → delta {round(rpn_delta, 4)}; " if rpn_raw else "")
+                        + (f"op_point {op_note} → delta {round(op_delta, 4)}; " if op_score > 0.0 else "")
+                        + (f"{ccf_note}; " if ccf_delta > 0.0 else "")
                         + f"structural = {round(structural, 4)}."
                     ),
                     "temporal": "Temporal score derived from anomalies plus TSKR-style signal/latency checks.",
@@ -439,15 +594,8 @@ class RuleBasedCausalityEngineV32:
                 hypothesis_failure_mode_id=fm_id,
             )
             candidate = self._apply_recurrence_to_candidate(candidate, recurrence)
-            candidate["common_cause"] = self._common_cause_features_for_candidate(
-                candidate=candidate,
-                kg_context=kg_context,
-                telemetry_summary=telemetry_summary,
-                pm_compliance=pm_compliance,
-                common_cause_index=common_cause_index,
-                candidate_component_id=component_id,
-                operational_context=operational_context,
-            )
+            # Reuse the pre-computed CCF features (avoids a second call).
+            candidate["common_cause"] = pre_ccf
             candidate["affected_safety_functions"] = affected_safety_functions
             out.append(candidate)
         return out
@@ -535,8 +683,50 @@ class RuleBasedCausalityEngineV32:
 
             composite = self._combine_scores(scores)
             meets_evidence_threshold = evidence >= self.config.minimum_pre_evidence_threshold
+            primary_causal_category, category_alternatives = self._infer_primary_category_for_past_event(pe=pe)
+            chain_position, chain_reason = self._chain_position_for_candidate(
+                relation=temporal_parts.get("relation"),
+                temporal_precedence=float(temporal_parts.get("temporal_precedence", 0.0) or 0.0),
+                temporal_contradiction=bool(temporal_parts.get("temporal_contradiction", False)),
+            )
+            canonical_mechanism_id = (
+                pe.get("fm_id")
+                or next((x for x in (pe.get("matched_failure_mode_ids") or []) if x), None)
+                or event_id
+            )
+            canonical_tuple = self._canonical_tuple(
+                component_id=pe_component_id,
+                mechanism_id=canonical_mechanism_id,
+                category=primary_causal_category,
+                chain_position=chain_position,
+            )
             candidate = {
                 "candidate_id": f"EVENT::{event_id}",
+                "canonical_tuple": canonical_tuple,
+                "canonical_candidate_key": self._canonical_candidate_key(
+                    component_id=canonical_tuple.get("component"),
+                    mechanism_id=canonical_tuple.get("failure_mode"),
+                    category=canonical_tuple.get("causal_category"),
+                    chain_position=canonical_tuple.get("chain_position"),
+                    event_scope_id=event.get("event_id") or event["id"],
+                ),
+                "component_id": canonical_tuple.get("component"),
+                "failure_mode_id": canonical_tuple.get("failure_mode"),
+                "primary_causal_category": primary_causal_category,
+                "chain_position": chain_position,
+                "chain_position_confidence": 0.4,
+                "event_scope_id": event.get("event_id") or event["id"],
+                "category_assignment_method": "deterministic",
+                "category_assignment_confidence": 0.25,
+                "category_assignment_rationale": "Historical analog mapped from event metadata and label keywords.",
+                "category_alternatives": category_alternatives,
+                "category_applicability": "unknown",
+                "chain_position_rationale": chain_reason,
+                "primary_eligibility": "eligible",
+                "primary_block_reasons": [],
+                "review_required_contradiction": False,
+                "near_tie_with": [],
+                "reinstatement_status": "none",
                 "hypothesis_type": "historical_event",
                 "cause_node_id": event_id,
                 "cause_label": f"Historical analog {event_id}",
@@ -647,6 +837,15 @@ class RuleBasedCausalityEngineV32:
         recurrence = candidate.get("recurrence") or {}
         return {
             "candidate_id": candidate.get("candidate_id"),
+            "hard_gates": candidate.get("hard_gates"),
+            "ruleout": candidate.get("ruleout"),
+            "canonical_tuple": candidate.get("canonical_tuple"),
+            "canonical_candidate_key": candidate.get("canonical_candidate_key"),
+            "component_id": candidate.get("component_id"),
+            "failure_mode_id": candidate.get("failure_mode_id"),
+            "primary_causal_category": candidate.get("primary_causal_category"),
+            "chain_position": candidate.get("chain_position"),
+            "category_applicability": candidate.get("category_applicability"),
             "hypothesis_type": candidate.get("hypothesis_type"),
             "cause_label": candidate.get("cause_label"),
             "composite_score": float(candidate.get("composite_score", 0.0)),
@@ -749,11 +948,24 @@ class RuleBasedCausalityEngineV32:
         kg_context: Optional[JsonDict] = None,
         signal_evidence: Optional[JsonDict] = None,
         entity_normalizer_cfg: Optional[Dict[str, Any]] = None,
+        coverage_summary: Optional[JsonDict] = None,
+        allen_relation_map: Optional[JsonDict] = None,
+        protection_logic_context: Optional[JsonDict] = None,
     ) -> JsonDict:
         payload = dict(causality_candidates)
         candidates = [dict(c) for c in (payload.get("candidates") or [])]
         summary_lookup = self._candidate_summary_lookup(evidence_bundle)
         signal_ev_index = (signal_evidence or {}).get("per_candidate_chain_score") or {}
+        has_external_oe = self._has_external_oe_signal(summary_lookup)
+        coverage_factor, coverage_flags = self._coverage_quality_profile(coverage_summary)
+
+        # Finding G — build Allen component index once for the whole refine pass
+        allen_causal_scores, allen_causal_relation, allen_follow_ids = \
+            self._build_allen_component_index(allen_relation_map)
+
+        # Finding I — build PLC barrier index once for the whole refine pass
+        plc_sf_state, plc_logic_signal_ids = \
+            self._build_plc_barrier_index(protection_logic_context)
 
         # Build entity normalizer if KG context provides failure modes
         failure_modes = (kg_context or {}).get("failure_modes") or []
@@ -863,6 +1075,7 @@ class RuleBasedCausalityEngineV32:
                 contextual_score=contextual_score,
                 retrieved_hit_count=retrieved_hit_count,
             )
+            self._apply_category_minimum_evidence_gate(candidate)
             candidate["is_contributing_cause_candidate"] = (
                 chain_meta.get("contributing_cause_role") == "concurrent_cause_candidate"
                 if isinstance(chain_meta, dict)
@@ -939,6 +1152,20 @@ class RuleBasedCausalityEngineV32:
                 candidate["resolved_entity_matches"] = resolved_matches
 
             self._refresh_candidate_confidence_and_thresholds(candidate)
+            self._apply_uncertainty_propagation(candidate)
+            # Finding G — blend Allen interval-algebra temporal score
+            self._apply_allen_temporal_blend(
+                candidate,
+                causal_scores=allen_causal_scores,
+                causal_relation=allen_causal_relation,
+                follow_ids=allen_follow_ids,
+                weights=dict(self.config.weights),
+            )
+            self._apply_coverage_quality_adjustment(
+                candidate,
+                coverage_factor=coverage_factor,
+                coverage_flags=coverage_flags,
+            )
             self._update_score_rationale_for_refinement(
                 candidate,
                 support_score=support_score,
@@ -947,6 +1174,18 @@ class RuleBasedCausalityEngineV32:
                 prior_evidence_score=prior_evidence_score,
                 authority_tier=authority_tier,
                 authority_weight=authority_weight,
+            )
+
+        for candidate in candidates:
+            self._apply_physical_plausibility_gate(
+                candidate,
+                plc_logic_signal_ids=plc_logic_signal_ids,
+                plc_sf_state=plc_sf_state,
+            )
+            self._apply_timeline_consistency_gate(candidate)
+            self._apply_barrier_logic_gate(
+                candidate,
+                plc_sf_state=plc_sf_state,
             )
 
         candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
@@ -958,13 +1197,32 @@ class RuleBasedCausalityEngineV32:
             if s0 - s1 <= gap:
                 candidates[i]["review_required"] = True
                 candidates[i + 1]["review_required"] = True
+                candidates[i].setdefault("near_tie_with", [])
+                candidates[i + 1].setdefault("near_tie_with", [])
+                cid0 = str(candidates[i].get("candidate_id") or "")
+                cid1 = str(candidates[i + 1].get("candidate_id") or "")
+                if cid1 and cid1 not in candidates[i]["near_tie_with"]:
+                    candidates[i]["near_tie_with"].append(cid1)
+                if cid0 and cid0 not in candidates[i + 1]["near_tie_with"]:
+                    candidates[i + 1]["near_tie_with"].append(cid0)
         for c in candidates:
+            c.setdefault("primary_eligibility", "eligible")
+            c.setdefault("primary_block_reasons", [])
+            c.setdefault("review_required_contradiction", False)
             if c.get("evidence_posture") == "contradicted":
                 c["review_required"] = True
+                c["primary_eligibility"] = "blocked"
+                c["review_required_contradiction"] = True
+                if "documentary_contradiction" not in c["primary_block_reasons"]:
+                    c["primary_block_reasons"].append("documentary_contradiction")
             tp = str(c.get("temporal_posture", "") or "").lower()
             tev = c.get("temporal_evidence") or {}
             if tp == "contradicted" or bool(tev.get("temporal_contradiction", False)):
                 c["review_required"] = True
+                c["primary_eligibility"] = "blocked"
+                c["review_required_contradiction"] = True
+                if "temporal_contradiction" not in c["primary_block_reasons"]:
+                    c["primary_block_reasons"].append("temporal_contradiction")
 
         passed_threshold = []
         failed_threshold = []
@@ -1024,8 +1282,1071 @@ class RuleBasedCausalityEngineV32:
 
         provenance = payload.setdefault("provenance", {})
         provenance["evidence_refinement_applied"] = True
+        payload.setdefault(
+            "metamodel_compliance",
+            {
+                "level": self.config.metamodel_compliance_level,
+                "version": self.config.metamodel_wave_label,
+            },
+        )
+        category_coverage, applicability = self._build_metamodel_scaffolds(
+            retained_candidates=retained_candidates,
+            filtered_out_candidates=filtered_out_candidates,
+            event_analogs=[],
+            kg_context=kg_context or {},
+            operational_context={},
+            external_oe_unavailable=(not has_external_oe),
+        )
+        payload["category_coverage"] = category_coverage
+        payload["applicability_assessment"] = applicability
+        self._apply_applicability_labels(retained_candidates, applicability)
+        self._apply_applicability_labels(filtered_out_candidates, applicability)
+        payload["applicability_summary"] = self._summarize_applicability(applicability)
+        payload["uncertainty_summary"] = self._summarize_uncertainty(retained_candidates)
+        payload["decision_posture"] = self._summarize_decision_posture(retained_candidates)
+        payload["external_oe_unavailable"] = (not has_external_oe)
+
+        # Step 5 — sensitivity table
+        payload["sensitivity_table"] = self._build_sensitivity_table(
+            candidates=retained_candidates,
+            coverage_summary=coverage_summary,
+        )
 
         return payload
+
+    @classmethod
+    def _canonical_candidate_key(
+        cls,
+        *,
+        component_id: Optional[str],
+        mechanism_id: Optional[str],
+        category: Optional[str],
+        chain_position: Optional[str],
+        event_scope_id: Optional[str],
+    ) -> str:
+        return "::".join(
+            [
+                str(component_id or "unknown_component"),
+                str(mechanism_id or "unknown_mechanism"),
+                str(category or "uncategorized"),
+                str(chain_position or "unknown_chain_position"),
+                str(event_scope_id or "unknown_scope"),
+            ]
+        )
+
+    @staticmethod
+    def _canonical_tuple(
+        *,
+        component_id: Optional[str],
+        mechanism_id: Optional[str],
+        category: Optional[str],
+        chain_position: Optional[str],
+    ) -> JsonDict:
+        return {
+            "component": str(component_id or "unknown_component"),
+            "failure_mode": str(mechanism_id or "unknown_failure_mode"),
+            "causal_category": str(category or "A"),
+            "chain_position": str(chain_position or "contributing"),
+        }
+
+    @staticmethod
+    def _chain_position_from_relation(relation: Optional[str]) -> str:
+        rel = str(relation or "").strip().lower()
+        if rel == "follows":
+            return "consequence"
+        if rel in {"precedes", "simultaneous", "overlaps"}:
+            return "initiating"
+        return "contributing"
+
+    def _chain_position_for_candidate(
+        self,
+        *,
+        relation: Optional[str],
+        temporal_precedence: float,
+        temporal_contradiction: bool,
+    ) -> Tuple[str, str]:
+        if temporal_contradiction:
+            return "consequence", "Temporal contradiction detected; candidate treated as likely downstream consequence."
+        rel = str(relation or "").strip().lower()
+        if rel in {"precedes", "overlaps"} and temporal_precedence >= 0.60:
+            return "initiating", "Temporal precedence indicates candidate likely initiates observed sequence."
+        if rel == "follows":
+            return "consequence", "Observed relation follows event trigger; treated as consequence."
+        return "contributing", "Candidate contributes to event progression but is not earliest decisive mechanism."
+
+    @classmethod
+    def _infer_category_from_text(cls, text: str, default: str = "A") -> Tuple[str, List[str]]:
+        low = str(text or "").lower()
+        matches: List[Tuple[str, int]] = []
+        for cat, keywords in cls._CATEGORY_KEYWORDS.items():
+            score = sum(1 for kw in keywords if kw in low)
+            if score > 0:
+                matches.append((cat, score))
+        if not matches:
+            return default, []
+        matches.sort(key=lambda x: (-x[1], x[0]))
+        primary = matches[0][0]
+        alternatives = [cat for cat, _ in matches[1:3]]
+        return primary, alternatives
+
+    @classmethod
+    def _infer_primary_category_for_failure_mode(cls, *, fm: JsonDict, event: JsonDict) -> Tuple[str, List[str]]:
+        text = " ".join(
+            [
+                str(fm.get("name") or ""),
+                str(fm.get("superclass") or ""),
+                str(fm.get("failure_mechanism") or ""),
+                str(event.get("event_type") or ""),
+            ]
+        )
+        return cls._infer_category_from_text(text, default="A")
+
+    @classmethod
+    def _infer_primary_category_for_past_event(cls, *, pe: JsonDict) -> Tuple[str, List[str]]:
+        text = " ".join(
+            [
+                str(pe.get("event_type") or ""),
+                str(pe.get("description") or ""),
+                str(pe.get("event_id") or ""),
+            ]
+        )
+        primary, alts = cls._infer_category_from_text(text, default="L")
+        return primary, alts
+
+    @classmethod
+    def _assess_category_applicability(
+        cls,
+        *,
+        kg_context: JsonDict,
+        operational_context: Optional[JsonDict],
+        external_oe_unavailable: bool,
+    ) -> JsonDict:
+        docs = kg_context.get("documents") or []
+        doc_text = " ".join(str(d.get("doc_type") or "") for d in docs if isinstance(d, dict)).lower()
+        has_failure_modes = bool(kg_context.get("failure_modes"))
+        has_components = bool(kg_context.get("components"))
+        has_alarms = bool((operational_context or {}).get("recent_alarms"))
+        has_env = bool((operational_context or {}).get("environmental_conditions"))
+        has_ops = bool((operational_context or {}).get("operating_point")) or has_alarms
+        applicability: JsonDict = {}
+        applicability["A"] = {"status": "applicable" if has_failure_modes else "unknown", "rationale": "Failure-mode inventory drives equipment-internal assessment."}
+        applicability["B"] = {"status": "applicable" if has_components else "unknown", "rationale": "Support dependencies require modeled components and links."}
+        applicability["C"] = {"status": "unknown", "rationale": "Upstream influence requires directional process-path evidence."}
+        applicability["D"] = {"status": "unknown", "rationale": "Downstream influence requires outlet-demand and backpressure evidence."}
+        applicability["E"] = {"status": "applicable" if has_ops else "unknown", "rationale": "Operating context requires operating point or alarm context."}
+        applicability["F"] = {"status": "applicable" if has_env else "unknown", "rationale": "External disturbance requires environmental/grid/seismic signals."}
+        applicability["G"] = {"status": "applicable" if ("procedure" in doc_text or "wo" in doc_text) else "unknown", "rationale": "Human contributors need procedure/work-execution evidence."}
+        applicability["H"] = {"status": "applicable" if ("fmea" in doc_text or has_failure_modes) else "unknown", "rationale": "Design/spec deficiency uses FMEA/design-basis records."}
+        applicability["I"] = {"status": "applicable" if ("config" in doc_text or "setpoint" in doc_text or "ecn" in doc_text) else "unknown", "rationale": "Configuration/change-control requires baseline-change evidence."}
+        applicability["J"] = {"status": "applicable" if ("surveillance" in doc_text or "calibration" in doc_text or "inspection" in doc_text) else "unknown", "rationale": "Inspection/testing adequacy needs surveillance/test records."}
+        applicability["K"] = {"status": "unknown" if external_oe_unavailable else "applicable", "rationale": "Vendor/supply-chain assessment depends on traceability/vendor evidence."}
+        applicability["L"] = {"status": "applicable", "rationale": "Systemic latent causes are always considered in nuclear RCA depth."}
+        return applicability
+
+    @classmethod
+    def _build_metamodel_scaffolds(
+        cls,
+        *,
+        retained_candidates: List[JsonDict],
+        filtered_out_candidates: List[JsonDict],
+        event_analogs: List[JsonDict],
+        kg_context: JsonDict,
+        operational_context: Optional[JsonDict],
+        external_oe_unavailable: bool,
+    ) -> Tuple[JsonDict, JsonDict]:
+        coverage: JsonDict = {}
+        applicability = cls._assess_category_applicability(
+            kg_context=kg_context,
+            operational_context=operational_context,
+            external_oe_unavailable=external_oe_unavailable,
+        )
+        all_candidates = list(retained_candidates or []) + list(filtered_out_candidates or []) + list(event_analogs or [])
+        counts: Dict[str, int] = {cat: 0 for cat in cls._CAUSAL_CATEGORIES}
+        for row in all_candidates:
+            if not isinstance(row, dict):
+                continue
+            cat = str(row.get("primary_causal_category") or "").strip().upper()
+            if cat in counts:
+                counts[cat] += 1
+
+        for cat in cls._CAUSAL_CATEGORIES:
+            count = counts.get(cat, 0)
+            app_row = applicability.get(cat) or {}
+            app_status = str(app_row.get("status") or "unknown")
+            if count > 0:
+                coverage[cat] = {
+                    "status": "candidate_scored",
+                    "candidate_count": count,
+                    "rationale": "Category represented by at least one candidate.",
+                }
+            elif app_status == "not_applicable":
+                coverage[cat] = {
+                    "status": "not_applicable",
+                    "candidate_count": 0,
+                    "rationale": str(app_row.get("rationale") or "Category marked not applicable by applicability pass."),
+                    "reason_code": "category_not_applicable",
+                }
+            else:
+                coverage[cat] = {
+                    "status": "ruled_out",
+                    "candidate_count": 0,
+                    "rationale": "No candidates generated for applicable/unknown category; ruled out pending additional evidence.",
+                    "reason_code": "no_supporting_data",
+                }
+                if app_status == "unknown":
+                    coverage[cat]["rationale"] += " Applicability remained unknown."
+        return coverage, applicability
+
+    @classmethod
+    def _summarize_applicability(cls, applicability: JsonDict) -> JsonDict:
+        out = {"applicable": 0, "not_applicable": 0, "unknown": 0}
+        for cat in cls._CAUSAL_CATEGORIES:
+            status = str(((applicability.get(cat) or {}).get("status") or "unknown")).strip().lower()
+            if status not in out:
+                status = "unknown"
+            out[status] += 1
+        return out
+
+    @staticmethod
+    def _summarize_uncertainty(candidates: List[JsonDict]) -> JsonDict:
+        if not candidates:
+            return {
+                "candidate_count": 0,
+                "average_quality_multiplier": None,
+                "data_limited_candidate_count": 0,
+                "average_coverage_quality_factor": None,
+                "coverage_degraded_candidate_count": 0,
+                "coverage_flagged_source_families": [],
+                "critical_stream_floor": 0.30,
+            }
+        mults: List[float] = []
+        data_limited = 0
+        coverage_mults: List[float] = []
+        coverage_degraded = 0
+        flagged_families = set()
+        for c in candidates:
+            q = c.get("quality_multiplier")
+            if isinstance(q, (int, float)):
+                mults.append(float(q))
+            if bool(c.get("data_limited_conclusion", False)):
+                data_limited += 1
+            scores = c.get("scores") or {}
+            cov = scores.get("coverage_quality_factor")
+            if isinstance(cov, (int, float)):
+                coverage_mults.append(float(cov))
+                if float(cov) < 0.999999:
+                    coverage_degraded += 1
+            cov_flags = scores.get("coverage_quality_flags")
+            if isinstance(cov_flags, list):
+                for flag in cov_flags:
+                    txt = str(flag).strip()
+                    if txt:
+                        flagged_families.add(txt)
+        avg_mult = (sum(mults) / len(mults)) if mults else None
+        avg_cov = (sum(coverage_mults) / len(coverage_mults)) if coverage_mults else None
+        return {
+            "candidate_count": len(candidates),
+            "average_quality_multiplier": round(avg_mult, 6) if avg_mult is not None else None,
+            "data_limited_candidate_count": data_limited,
+            "average_coverage_quality_factor": round(avg_cov, 6) if avg_cov is not None else None,
+            "coverage_degraded_candidate_count": coverage_degraded,
+            "coverage_flagged_source_families": sorted(flagged_families),
+            "critical_stream_floor": 0.30,
+        }
+
+    @staticmethod
+    def _summarize_decision_posture(candidates: List[JsonDict]) -> JsonDict:
+        if not candidates:
+            return {
+                "recommended_decision_status": "insufficient_evidence",
+                "near_tie": False,
+                "contradiction_blocked_count": 0,
+                "eligible_primary_candidate_ids": [],
+                "blocked_candidate_ids": [],
+            }
+        blocked = []
+        eligible = []
+        near_tie = False
+        for c in candidates:
+            cid = str(c.get("candidate_id") or "")
+            if bool(c.get("near_tie_with")):
+                near_tie = True
+            if str(c.get("primary_eligibility") or "eligible") == "blocked":
+                if cid:
+                    blocked.append(cid)
+            else:
+                if cid:
+                    eligible.append(cid)
+        recommended = "candidate_ready"
+        if near_tie or blocked:
+            recommended = "review_required"
+        if not eligible:
+            recommended = "review_required"
+        return {
+            "recommended_decision_status": recommended,
+            "near_tie": near_tie,
+            "contradiction_blocked_count": len(blocked),
+            "eligible_primary_candidate_ids": eligible,
+            "blocked_candidate_ids": blocked,
+        }
+
+    @staticmethod
+    def _apply_applicability_labels(candidates: List[JsonDict], applicability: JsonDict) -> None:
+        for row in (candidates or []):
+            if not isinstance(row, dict):
+                continue
+            category = str(row.get("primary_causal_category") or "").strip().upper()
+            if not category:
+                continue
+            app = applicability.get(category) if isinstance(applicability, dict) else None
+            if isinstance(app, dict):
+                row["category_applicability"] = str(app.get("status") or row.get("category_applicability") or "unknown")
+
+    @staticmethod
+    def _has_external_oe_signal(summary_lookup: Dict[str, JsonDict]) -> bool:
+        for row in summary_lookup.values():
+            tier = str((row or {}).get("best_source_tier") or "").lower()
+            if tier in {"oe_iris", "oe_adams", "fleet"}:
+                return True
+        return False
+
+    def _stream_quality_for_candidate(self, candidate: JsonDict) -> JsonDict:
+        scores = candidate.get("scores") or {}
+        temporal = max(0.0, min(1.0, float(scores.get("temporal", 0.0) or 0.0)))
+        logical = max(0.0, min(1.0, float(scores.get("structural", 0.0) or 0.0)))
+        documentary = max(0.0, min(1.0, float(scores.get("evidence_doc", scores.get("evidence", 0.0)) or 0.0)))
+        oe = max(0.0, min(1.0, float((candidate.get("recurrence") or {}).get("recurrence_score", 0.0) or 0.0)))
+        if oe == 0.0:
+            oe = 0.35
+        return {
+            "temporal": round(temporal, 6),
+            "logical": round(logical, 6),
+            "documentary": round(documentary, 6),
+            "oe": round(oe, 6),
+        }
+
+    def _apply_uncertainty_propagation(self, candidate: JsonDict) -> None:
+        stream_quality = self._stream_quality_for_candidate(candidate)
+        weights = {"temporal": 0.30, "logical": 0.25, "documentary": 0.30, "oe": 0.15}
+        q = sum(stream_quality[k] * weights[k] for k in weights)
+        q = max(0.70, q)
+        floor = 0.30
+        category = str(candidate.get("primary_causal_category") or "A").strip().upper()
+        required = self._CATEGORY_REQUIRED_STREAMS.get(category, ["temporal", "logical", "documentary"])
+        below = [k for k in required if float(stream_quality.get(k, 1.0)) < floor]
+        candidate["stream_quality"] = stream_quality
+        candidate["quality_multiplier"] = round(max(0.0, min(1.0, q)), 6)
+        candidate["data_limited_conclusion"] = bool(below)
+        candidate["critical_streams_below_floor"] = below
+        candidate.setdefault("scores", {})
+        candidate["scores"]["quality_multiplier"] = candidate["quality_multiplier"]
+        candidate["scores"]["composite_raw"] = float(candidate.get("composite_score", 0.0) or 0.0)
+        candidate["composite_score"] = round(
+            min(1.0, max(0.0, float(candidate["scores"]["composite_raw"]) * float(candidate["quality_multiplier"]))),
+            6,
+        )
+        candidate["confidence_label"] = self._normalized_confidence_label(float(candidate.get("composite_score", 0.0) or 0.0))
+
+    @staticmethod
+    def _coverage_quality_profile(coverage_summary: Optional[JsonDict]) -> Tuple[float, List[str]]:
+        if not isinstance(coverage_summary, dict):
+            return 1.0, []
+        source_families = coverage_summary.get("source_families")
+        if not isinstance(source_families, dict):
+            return 1.0, []
+        status_factor = {"complete": 1.0, "partial": 0.93, "missing": 0.85, "not_assessed": 1.0}
+        # Weights: core families dominate; optional artifact families contribute only when assessed.
+        # Core families (always assessed)
+        CORE_FAMILIES = {
+            "kg_context": 0.40,
+            "upstream_anomaly_inputs": 0.20,
+            "chroma_corpus": 0.15,
+            "telemetry_detail": 0.10,
+        }
+        # Optional artifact families (contribute when assessed, split remaining 0.15 budget)
+        OPTIONAL_FAMILIES = ["soe_log", "alarm_log", "protection_logic_context", "configuration_change_records"]
+
+        weighted_sum = 0.0
+        total_weight = 0.0
+        flags: List[str] = []
+
+        for family, weight in CORE_FAMILIES.items():
+            row = source_families.get(family)
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("status") or "missing").strip().lower()
+            factor = float(status_factor.get(status, 0.85))
+            weighted_sum += factor * weight
+            total_weight += weight
+            if status in {"partial", "missing"}:
+                flags.append(family)
+
+        assessed_optional = [
+            f for f in OPTIONAL_FAMILIES
+            if isinstance(source_families.get(f), dict)
+            and str((source_families[f]).get("status") or "not_assessed").strip().lower() != "not_assessed"
+        ]
+        if assessed_optional:
+            per_opt_weight = 0.15 / len(assessed_optional)
+            for family in assessed_optional:
+                row = source_families[family]
+                status = str(row.get("status") or "missing").strip().lower()
+                factor = float(status_factor.get(status, 0.85))
+                weighted_sum += factor * per_opt_weight
+                total_weight += per_opt_weight
+                if status in {"partial", "missing"}:
+                    flags.append(family)
+
+        if total_weight <= 0:
+            return 1.0, []
+        coverage_factor = max(0.50, min(1.0, weighted_sum / total_weight))
+        return coverage_factor, flags
+
+    # ------------------------------------------------------------------
+    # Finding G — Allen interval-algebra blend helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_allen_component_index(
+        allen_relation_map: Optional[JsonDict],
+    ) -> Tuple[Dict[str, float], Dict[str, str], "set[str]"]:
+        """Index Allen relation map nodes by component_id for fast per-candidate lookup.
+
+        Returns:
+            causal_scores   {component_id → best allen_base_score among causal nodes}
+            causal_relation {component_id → allen_relation_to_event of the best node}
+            follow_ids      set of component_ids that have at least one 'follows' node
+        """
+        causal_scores: Dict[str, float] = {}
+        causal_relation: Dict[str, str] = {}
+        follow_ids: set = set()
+
+        if not isinstance(allen_relation_map, dict):
+            return causal_scores, causal_relation, follow_ids
+
+        nodes = allen_relation_map.get("nodes") or []
+        quality = allen_relation_map.get("quality_flags") or {}
+        soe_clock_ok = bool(quality.get("soe_clock_sync_ok", True))
+        # alarm_clock_degraded flag not used for scoring — alarm timestamps are less
+        # safety-critical for the blend, only SOE clock sync affects nuclear I&C data.
+        SOE_CLOCK_DISCOUNT = 0.80
+
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            cid = node.get("component_id")
+            if not cid:
+                continue
+            cid = str(cid)
+            relation = str(node.get("allen_relation_to_event") or "unknown").strip().lower()
+            raw_score = float(node.get("allen_base_score") or 0.0)
+
+            # SOE clock-sync discount — I&C timing uncertainty degrades the score
+            if not soe_clock_ok and str(node.get("node_type") or "") == "soe_record":
+                raw_score = raw_score * SOE_CLOCK_DISCOUNT
+
+            if relation == "follows":
+                follow_ids.add(cid)
+
+            if bool(node.get("causal_candidate")) and raw_score > 0.0:
+                if raw_score > causal_scores.get(cid, -1.0):
+                    causal_scores[cid] = raw_score
+                    causal_relation[cid] = relation
+
+        return causal_scores, causal_relation, follow_ids
+
+    @staticmethod
+    def _apply_allen_temporal_blend(
+        candidate: JsonDict,
+        causal_scores: Dict[str, float],
+        causal_relation: Dict[str, str],
+        follow_ids: "set[str]",
+        weights: Dict[str, float],
+    ) -> None:
+        """Blend Allen base score into candidate temporal score in-place.
+
+        Blend formula (α = 0.25):
+            new_temporal = 0.75 × old_temporal + 0.25 × allen_score   (when match found)
+
+        Allen can only raise the temporal score, not lower it.
+        When the component has a 'follows' node, temporal_contradiction is set True.
+        composite_raw and composite_score are updated by the temporal weight delta.
+        """
+        ALLEN_ALPHA = 0.25
+        cid = str(candidate.get("component_id") or "")
+        candidate.setdefault("scores", {})
+
+        # --- contradiction flag ---
+        if cid and cid in follow_ids:
+            te = candidate.setdefault("temporal_evidence", {})
+            te["temporal_contradiction"] = True
+            candidate["scores"]["allen_relation"] = "follows"
+            candidate["scores"]["allen_temporal_score"] = None
+            candidate["scores"]["allen_blend_applied"] = False
+            return
+
+        allen_score = causal_scores.get(cid) if cid else None
+
+        if allen_score is None:
+            # No causal Allen match — leave temporal unchanged
+            candidate["scores"]["allen_temporal_score"] = None
+            candidate["scores"]["allen_relation"] = None
+            candidate["scores"]["allen_blend_applied"] = False
+            return
+
+        old_temporal = float(candidate["scores"].get("temporal", 0.0) or 0.0)
+        new_temporal = min(1.0, (1.0 - ALLEN_ALPHA) * old_temporal + ALLEN_ALPHA * allen_score)
+        # Allen only raises temporal — never lowers it
+        new_temporal = max(old_temporal, new_temporal)
+
+        candidate["scores"]["allen_temporal_score"] = round(allen_score, 6)
+        candidate["scores"]["allen_relation"] = causal_relation.get(cid)
+        candidate["scores"]["allen_blend_applied"] = True
+
+        if new_temporal <= old_temporal:
+            # No actual change after clamping — skip composite update
+            return
+
+        candidate["scores"]["temporal"] = round(new_temporal, 6)
+
+        # Propagate temporal delta into composite_raw / composite_score
+        total_weight = sum(weights.values()) or 1.0
+        w_temporal = float(weights.get("temporal", 0.0))
+        temporal_delta = new_temporal - old_temporal
+        raw_delta = w_temporal * temporal_delta / total_weight
+
+        old_raw = float(candidate["scores"].get("composite_raw", candidate.get("composite_score", 0.0)) or 0.0)
+        new_raw = min(1.0, max(0.0, old_raw + raw_delta))
+        candidate["scores"]["composite_raw"] = round(new_raw, 6)
+
+        q_mult = float(candidate.get("quality_multiplier", 1.0) or 1.0)
+        new_composite = round(min(1.0, max(0.0, new_raw * q_mult)), 6)
+        candidate["composite_score"] = new_composite
+
+    # ------------------------------------------------------------------
+    # Finding I — Protection logic context helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_plc_barrier_index(
+        protection_logic_context: Optional[JsonDict],
+    ) -> Tuple[Dict[str, str], "set[str]"]:
+        """Parse protection_logic_context into lookup structures.
+
+        Returns:
+            sf_state_index   {sf_id → barrier_state}  from barrier_states[]
+            logic_signal_ids set of signal/component IDs from logic_set
+                             input_signals and output_signals (all logic_sets)
+        """
+        sf_state_index: Dict[str, str] = {}
+        logic_signal_ids: set = set()
+
+        if not isinstance(protection_logic_context, dict):
+            return sf_state_index, logic_signal_ids
+
+        for bs in (protection_logic_context.get("barrier_states") or []):
+            if not isinstance(bs, dict):
+                continue
+            sf_id = bs.get("sf_id")
+            state = bs.get("state")
+            if sf_id and state:
+                sf_state_index[str(sf_id)] = str(state)
+
+        for ls in (protection_logic_context.get("logic_sets") or []):
+            if not isinstance(ls, dict):
+                continue
+            for sig in (ls.get("input_signals") or []):
+                if sig:
+                    logic_signal_ids.add(str(sig))
+            for sig in (ls.get("output_signals") or []):
+                if sig:
+                    logic_signal_ids.add(str(sig))
+
+        return sf_state_index, logic_signal_ids
+
+    # ------------------------------------------------------------------
+    # Finding H — Category E operating-point score
+    # ------------------------------------------------------------------
+
+    # Mode-based base contribution: reflects how much the plant operating
+    # mode itself elevates the plausibility of transient/envelope causes.
+    _OP_MODE_BASE: Dict[str, float] = {
+        "power_ramp":            0.70,
+        "startup":               0.60,
+        "post_maintenance_test": 0.40,
+        "power_ramp_down":       0.50,
+        "maintenance":           0.35,
+        "steady":                0.30,
+        "shutdown":              0.20,
+    }
+    # Category E keyword sets that interact with power level or train state.
+    _OP_HIGH_POWER_KEYWORDS = frozenset(
+        ["overload", "off-design", "runout", "cycling", "transient", "high demand"]
+    )
+    _OP_STANDBY_KEYWORDS = frozenset(
+        ["standby", "stagnation", "idle", "low flow", "self-heat", "seal stagnant"]
+    )
+
+    @classmethod
+    def _operating_point_score(
+        cls,
+        *,
+        operational_context: Optional[JsonDict],
+        primary_causal_category: str,
+        fm_superclass: Optional[str],
+        fm_name: Optional[str],
+    ) -> Tuple[float, str]:
+        """Return (score 0–1, rationale_note) for the operating-point dimension.
+
+        Returns (0.0, "not_assessed") when operational_context is None or
+        mode is absent — never penalises candidates for missing data.
+
+        Only Category E candidates receive the power-level modifier.
+        Train OOS bonus applies to standby-mechanism keywords for all categories.
+        """
+        if not isinstance(operational_context, dict):
+            return 0.0, "not_assessed"
+
+        mode = str(operational_context.get("mode") or "")
+        mode_base = cls._OP_MODE_BASE.get(mode, 0.0)
+        if mode_base == 0.0 and mode != "":
+            mode_base = 0.0  # truly unknown mode
+
+        if mode_base == 0.0 and not mode:
+            return 0.0, "not_assessed"
+
+        # Normalise fm text for keyword matching
+        fm_text = " ".join([
+            str(fm_name or "").lower(),
+            str(fm_superclass or "").lower(),
+        ])
+
+        power_modifier = 0.0
+        power_note = ""
+        if primary_causal_category == "E":
+            prp = operational_context.get("percent_rated_power")
+            if prp is not None:
+                p_norm = max(0.0, min(1.0, float(prp) / 100.0))
+                if any(kw in fm_text for kw in cls._OP_HIGH_POWER_KEYWORDS):
+                    power_modifier = p_norm * 0.30
+                    power_note = f" power={prp:.1f}%_rated(high-demand)"
+                elif any(kw in fm_text for kw in cls._OP_STANDBY_KEYWORDS):
+                    power_modifier = (1.0 - p_norm) * 0.25
+                    power_note = f" power={prp:.1f}%_rated(standby)"
+
+        train_bonus = 0.0
+        train_note = ""
+        train_cfg = operational_context.get("train_configuration")
+        if isinstance(train_cfg, dict) and train_cfg.get("in_service") is False:
+            if any(kw in fm_text for kw in cls._OP_STANDBY_KEYWORDS):
+                train_bonus = 0.15
+                train_note = " train_oos+standby_mechanism"
+
+        score = min(1.0, mode_base + power_modifier + train_bonus)
+        note = (
+            f"op_point: mode={mode or 'absent'}"
+            f"(base={mode_base:.2f}){power_note}{train_note}"
+            f" cat={primary_causal_category}"
+        )
+        return round(score, 6), note
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_sensitivity_table(
+        *,
+        candidates: List[JsonDict],
+        coverage_summary: Optional[JsonDict],
+        top_n: int = 5,
+    ) -> JsonDict:
+        """Step 5 — sensitivity table: estimate composite-score delta per candidate
+        if each currently missing/not_assessed data source were available at full quality.
+
+        The estimate re-computes the coverage_factor with the target family set to
+        'complete', then scales the composite_raw by the ratio of the new factor to
+        the current one (capped at 1.0).  This is an upper-bound estimate, not a
+        precise prediction.
+        """
+        event_id = str((candidates[0] if candidates else {}).get("event_id") or "")
+
+        source_families: Dict[str, Any] = {}
+        if isinstance(coverage_summary, dict):
+            sf = coverage_summary.get("source_families")
+            if isinstance(sf, dict):
+                source_families = sf
+
+        # Identify sources that are degraded (missing/not_assessed/partial)
+        CORE_FAMILIES: Dict[str, float] = {
+            "kg_context": 0.40,
+            "upstream_anomaly_inputs": 0.20,
+            "chroma_corpus": 0.15,
+            "telemetry_detail": 0.10,
+        }
+        OPTIONAL_FAMILIES = [
+            "soe_log", "alarm_log", "protection_logic_context",
+            "configuration_change_records",
+        ]
+        degraded_sources: List[str] = []
+        for fam in list(CORE_FAMILIES.keys()) + OPTIONAL_FAMILIES:
+            row = source_families.get(fam)
+            if not isinstance(row, dict):
+                continue
+            st = str(row.get("status") or "missing").strip().lower()
+            if st in {"missing", "not_assessed", "partial"}:
+                degraded_sources.append(fam)
+
+        # Current coverage factor
+        current_factor, _ = RuleBasedCausalityEngineV32._coverage_quality_profile(coverage_summary)
+
+        top_candidates = sorted(
+            [c for c in candidates if isinstance(c, dict)],
+            key=lambda c: (-float(c.get("composite_score", 0.0) or 0.0), c.get("candidate_id") or ""),
+        )[:top_n]
+
+        rows: List[JsonDict] = []
+        any_change = False
+        checked_sources: List[str] = list(degraded_sources)
+
+        for rank_idx, cand in enumerate(top_candidates, start=1):
+            cid = str(cand.get("candidate_id") or "")
+            current_score = float(cand.get("composite_score", 0.0) or 0.0)
+            raw_score = float((cand.get("scores") or {}).get("composite_raw", current_score) or current_score)
+
+            for src in degraded_sources:
+                # Simulate: patch this source to 'complete' and recompute factor
+                patched_families = {k: dict(v) for k, v in source_families.items() if isinstance(v, dict)}
+                if src in patched_families:
+                    patched_families[src] = dict(patched_families[src])
+                    patched_families[src]["status"] = "complete"
+                else:
+                    patched_families[src] = {"status": "complete"}
+                patched_summary: JsonDict = {"source_families": patched_families}
+                new_factor, _ = RuleBasedCausalityEngineV32._coverage_quality_profile(patched_summary)
+
+                # Upper-bound score estimate: rescale raw by new factor
+                if current_factor > 0:
+                    estimated = min(1.0, raw_score * new_factor)
+                else:
+                    estimated = min(1.0, raw_score * new_factor)
+                delta = round(estimated - current_score, 6)
+
+                # Would it change ranking vs the next candidate?
+                would_change = False
+                if rank_idx < len(top_candidates):
+                    next_score = float(top_candidates[rank_idx].get("composite_score", 0.0) or 0.0)
+                    # Current top candidate vs second — check if order might flip
+                    if rank_idx == 1 and estimated > next_score + 0.001:
+                        would_change = False  # already ranked first, stays first
+                    elif rank_idx > 1:
+                        prev_score = float(top_candidates[rank_idx - 2].get("composite_score", 0.0) or 0.0)
+                        would_change = estimated > prev_score
+                if would_change:
+                    any_change = True
+
+                # Always flag if score improvement is meaningful (> 2%)
+                if delta > 0.02:
+                    any_change = True
+
+                rows.append({
+                    "candidate_id": cid,
+                    "candidate_rank": rank_idx,
+                    "source_family": src,
+                    "current_status": str((source_families.get(src) or {}).get("status") or "missing"),
+                    "current_composite_score": round(current_score, 6),
+                    "estimated_composite_if_available": round(estimated, 6),
+                    "estimated_score_delta": delta,
+                    "would_change_ranking": would_change,
+                })
+
+        return {
+            "event_id": event_id,
+            "generated_at": utcnow_iso(),
+            "summary": {
+                "any_ranking_change_possible": any_change,
+                "missing_sources_checked": checked_sources,
+                "top_n_candidates": len(top_candidates),
+            },
+            "rows": rows,
+            "provenance": {
+                "generated_by": "RuleBasedCausalityEngineV32._build_sensitivity_table",
+                "top_n": top_n,
+            },
+        }
+
+    def _apply_coverage_quality_adjustment(
+        self,
+        candidate: JsonDict,
+        *,
+        coverage_factor: float,
+        coverage_flags: List[str],
+    ) -> None:
+        candidate.setdefault("scores", {})
+        candidate["scores"]["coverage_quality_factor"] = round(float(coverage_factor), 6)
+        candidate["scores"]["coverage_quality_flags"] = list(coverage_flags)
+        if float(coverage_factor) >= 0.999999:
+            return
+        q_base = float(candidate.get("quality_multiplier", 1.0) or 1.0)
+        q_adj = max(0.0, min(1.0, q_base * float(coverage_factor)))
+        candidate["quality_multiplier"] = round(q_adj, 6)
+        candidate["scores"]["quality_multiplier"] = candidate["quality_multiplier"]
+        raw = float(candidate["scores"].get("composite_raw", candidate.get("composite_score", 0.0)) or 0.0)
+        candidate["scores"]["composite_raw"] = raw
+        candidate["composite_score"] = round(min(1.0, max(0.0, raw * q_adj)), 6)
+        candidate["confidence_label"] = self._normalized_confidence_label(float(candidate.get("composite_score", 0.0) or 0.0))
+
+    def _apply_category_minimum_evidence_gate(self, candidate: JsonDict) -> None:
+        stream_quality = self._stream_quality_for_candidate(candidate)
+        category = str(candidate.get("primary_causal_category") or "A").strip().upper()
+        required = self._CATEGORY_REQUIRED_STREAMS.get(category, ["temporal", "logical", "documentary"])
+        missing = [k for k in required if float(stream_quality.get(k, 0.0)) < 0.35]
+        candidate["evidence_minima_met"] = not bool(missing)
+        candidate["evidence_minima_missing"] = missing
+        if missing:
+            posture = str(candidate.get("evidence_posture") or "").strip().lower()
+            if posture in {"supported", "mixed", "contextual_only"}:
+                candidate["evidence_posture"] = "weak"
+                candidate["evidence_minima_cap_reason"] = (
+                    "Category-specific minimum evidence not satisfied; posture capped to weak."
+                )
+
+    def _apply_physical_plausibility_gate(
+        self,
+        candidate: JsonDict,
+        plc_logic_signal_ids: Optional["set[str]"] = None,
+        plc_sf_state: Optional[Dict[str, str]] = None,
+    ) -> None:
+        scores = candidate.get("scores") or {}
+        structural_raw = scores.get("structural")
+        structural = (
+            float(structural_raw)
+            if isinstance(structural_raw, (int, float))
+            else None
+        )
+        canonical_tuple = candidate.get("canonical_tuple") or {}
+        component_id = str(
+            candidate.get("component_id")
+            or canonical_tuple.get("component")
+            or ""
+        ).strip()
+        failure_mode_id = str(
+            candidate.get("failure_mode_id")
+            or canonical_tuple.get("failure_mode")
+            or ""
+        ).strip()
+        reasons: List[str] = []
+        if structural is not None and structural < 0.20:
+            reasons.append(
+                f"structural score {structural:.3f} is below physical plausibility floor 0.200"
+            )
+
+        # Finding I — PLC logic-signal presence check
+        plc_consulted = False
+        plc_note = ""
+        if plc_logic_signal_ids and component_id and component_id in plc_logic_signal_ids:
+            plc_consulted = True
+            # Check if any affected safety function has its barrier held
+            affected_sfs = candidate.get("affected_safety_functions") or []
+            held_sfs = [
+                sf.get("sf_id") for sf in affected_sfs
+                if isinstance(sf, dict)
+                and plc_sf_state
+                and plc_sf_state.get(str(sf.get("sf_id") or "")) == "held"
+            ]
+            if held_sfs:
+                plc_note = (
+                    f" PLC: component '{component_id}' monitored in trip/actuation logic; "
+                    f"barrier held for sf_ids={held_sfs} — protection system responded."
+                )
+            else:
+                plc_note = (
+                    f" PLC: component '{component_id}' appears in protection logic signals."
+                )
+
+        passed = len(reasons) == 0
+        rationale = (
+            f"PASS: structural={f'{structural:.3f}' if structural is not None else 'not_assessed'}; component='{component_id or 'n/a'}'; "
+            f"failure_mode='{failure_mode_id or 'n/a'}'."
+            if passed
+            else "FAIL: " + "; ".join(reasons) + "."
+        ) + plc_note
+        hard_gates = candidate.setdefault("hard_gates", {})
+        hard_gates["physical_plausibility"] = {
+            "passed": passed,
+            "rationale": rationale,
+            "gate_order": 1,
+            "plc_consulted": plc_consulted,
+            "degraded_mode": not (structural_raw is not None or plc_consulted),
+        }
+        if passed:
+            return
+
+        candidate["review_required"] = True
+        candidate["primary_eligibility"] = "blocked"
+        candidate.setdefault("primary_block_reasons", [])
+        if "physical_plausibility_gate_failed" not in candidate["primary_block_reasons"]:
+            candidate["primary_block_reasons"].append("physical_plausibility_gate_failed")
+        candidate["meets_evidence_threshold"] = False
+        ruleout = candidate.get("ruleout") or {}
+        if not isinstance(ruleout, dict):
+            ruleout = {}
+        ruleout.setdefault("reason_code", "physically_impossible")
+        ruleout.setdefault("reason_detail", rationale)
+        ruleout.setdefault("ruled_out_by", "engine")
+        ruleout.setdefault("ruled_out_at", utcnow_iso())
+        candidate["ruleout"] = ruleout
+
+    def _apply_timeline_consistency_gate(self, candidate: JsonDict) -> None:
+        temporal_evidence = candidate.get("temporal_evidence") or {}
+        temporal_posture = str(candidate.get("temporal_posture") or "").strip().lower()
+        latency_violation = str(temporal_evidence.get("latency_violation_type") or "unknown").strip().lower()
+        temporal_contradiction = bool(temporal_evidence.get("temporal_contradiction", False))
+        expected_min = temporal_evidence.get("expected_latency_min_hours")
+        expected_max = temporal_evidence.get("expected_latency_max_hours")
+        observed_lag = temporal_evidence.get("observed_lag_hours")
+        degraded = (
+            latency_violation in {"unknown", "not_available", ""}
+            or (expected_min is None and expected_max is None)
+            or observed_lag is None
+        )
+        reasons: List[str] = []
+        if latency_violation in {"too_fast", "too_slow"}:
+            reasons.append(f"latency violation reported as {latency_violation}")
+        if temporal_contradiction or temporal_posture == "contradicted":
+            reasons.append("temporal contradiction detected")
+        passed = len(reasons) == 0
+        rationale = (
+            (
+                f"PASS: latency_violation_type={latency_violation}; "
+                f"observed_lag_hours={observed_lag}; expected_range=({expected_min}, {expected_max})."
+            )
+            if passed and not degraded
+            else (
+                f"PASS (degraded): insufficient latency parameters for strict timing check; "
+                f"latency_violation_type={latency_violation}; observed_lag_hours={observed_lag}; "
+                f"expected_range=({expected_min}, {expected_max})."
+            )
+            if passed and degraded
+            else "FAIL: " + "; ".join(reasons) + "."
+        )
+        hard_gates = candidate.setdefault("hard_gates", {})
+        hard_gates["timeline_consistency"] = {
+            "passed": passed,
+            "degraded_mode": bool(degraded),
+            "rationale": rationale,
+            "gate_order": 2,
+        }
+        if passed:
+            return
+
+        candidate["review_required"] = True
+        candidate["primary_eligibility"] = "blocked"
+        candidate.setdefault("primary_block_reasons", [])
+        if "timeline_consistency_gate_failed" not in candidate["primary_block_reasons"]:
+            candidate["primary_block_reasons"].append("timeline_consistency_gate_failed")
+        candidate["review_required_contradiction"] = True
+        candidate["meets_evidence_threshold"] = False
+        ruleout = candidate.get("ruleout") or {}
+        if not isinstance(ruleout, dict):
+            ruleout = {}
+        if "reason_code" not in ruleout:
+            ruleout["reason_code"] = "timeline_inconsistent"
+        ruleout.setdefault("reason_detail", rationale)
+        ruleout.setdefault("ruled_out_by", "engine")
+        ruleout.setdefault("ruled_out_at", utcnow_iso())
+        candidate["ruleout"] = ruleout
+
+    def _apply_barrier_logic_gate(
+        self,
+        candidate: JsonDict,
+        plc_sf_state: Optional[Dict[str, str]] = None,
+    ) -> None:
+        scores = candidate.get("scores") or {}
+        affected_safety_functions = candidate.get("affected_safety_functions") or []
+        barrier_signal_raw = scores.get("barrier_signal")
+        barrier_signal = (
+            float(barrier_signal_raw)
+            if isinstance(barrier_signal_raw, (int, float))
+            else None
+        )
+        has_barrier_inputs = bool(affected_safety_functions) or barrier_signal is not None
+        degraded = not has_barrier_inputs
+
+        # Gate executes in all cases; in degraded mode we record that barrier/protection
+        # inputs were unavailable rather than silently skipping the gate.
+        blocked_by_barrier_held = (
+            isinstance(candidate.get("ruleout"), dict)
+            and str((candidate.get("ruleout") or {}).get("reason_code") or "") == "barrier_held"
+        )
+
+        # Finding I — PLC-backed barrier state check
+        plc_consulted = False
+        plc_barrier_notes: List[str] = []
+        plc_forced_fail = False
+        if plc_sf_state:
+            for sf in affected_safety_functions:
+                if not isinstance(sf, dict):
+                    continue
+                sf_id = str(sf.get("sf_id") or "")
+                state = plc_sf_state.get(sf_id)
+                if state:
+                    plc_consulted = True
+                    if state in ("failed", "degraded"):
+                        plc_barrier_notes.append(
+                            f"sf_id='{sf_id}' barrier_state='{state}'"
+                        )
+                        plc_forced_fail = True
+                    elif state == "held":
+                        plc_barrier_notes.append(
+                            f"sf_id='{sf_id}' barrier_state='held'"
+                        )
+
+        passed = not blocked_by_barrier_held and not plc_forced_fail
+
+        plc_suffix = ""
+        if plc_consulted:
+            plc_suffix = " PLC: " + "; ".join(plc_barrier_notes) + "."
+
+        rationale = (
+            (
+                f"PASS: barrier/protection inputs assessed; barrier_signal="
+                f"{barrier_signal if barrier_signal is not None else 'n/a'}; "
+                f"affected_safety_functions={len(affected_safety_functions)}."
+            )
+            if passed and not degraded
+            else (
+                "PASS (degraded): barrier/protection inputs unavailable; "
+                "barrier logic gate recorded in degraded mode."
+            )
+            if passed and degraded
+            else "FAIL: barrier logic indicates protection/barrier held against this hypothesis."
+        ) + plc_suffix
+
+        hard_gates = candidate.setdefault("hard_gates", {})
+        hard_gates["barrier_logic"] = {
+            "passed": passed,
+            "degraded_mode": bool(degraded),
+            "rationale": rationale,
+            "gate_order": 3,
+            "plc_consulted": plc_consulted,
+        }
+
+        if passed:
+            return
+
+        candidate["review_required"] = True
+        candidate["primary_eligibility"] = "blocked"
+        candidate.setdefault("primary_block_reasons", [])
+        if "barrier_logic_gate_failed" not in candidate["primary_block_reasons"]:
+            candidate["primary_block_reasons"].append("barrier_logic_gate_failed")
+        candidate["meets_evidence_threshold"] = False
+        ruleout = candidate.get("ruleout") or {}
+        if not isinstance(ruleout, dict):
+            ruleout = {}
+        if "reason_code" not in ruleout:
+            ruleout["reason_code"] = "barrier_held"
+        ruleout.setdefault("reason_detail", rationale)
+        ruleout.setdefault("ruled_out_by", "engine")
+        ruleout.setdefault("ruled_out_at", utcnow_iso())
+        candidate["ruleout"] = ruleout
 
     @staticmethod
     def _build_pipeline_health(
@@ -1804,7 +3125,7 @@ class RuleBasedCausalityEngineV32:
     def _telemetry_score_for_fm(self, telemetry_summary, fm, component_id, components):
         signals = telemetry_summary.get("signals", []) or []
         if not signals:
-            return 0.0
+            return 0.20
         anomaly_count = 0
         severity_points = 0.0
         for sig in signals:
@@ -1823,7 +3144,7 @@ class RuleBasedCausalityEngineV32:
                 else:
                     severity_points += 0.5
         if anomaly_count == 0:
-            return 0.0
+            return 0.20
         base = min(1.0, 0.35 + 0.12 * anomaly_count + 0.08 * severity_points)
         seed_type = None
         if component_id and component_id in components:
@@ -2621,6 +3942,42 @@ class RuleBasedCausalityEngineV32:
                 str(rationale.get("governance") or "").strip()
                 + f" Stage F risk significance scalar={risk_scalar:.3f} keeps governance-adjusted score at {governance_score:.3f}"
                 + (f" (base {governance_base:.3f})." if governance_base > 0.0 else ".")
+            ).strip()
+
+        # Finding G — Allen temporal blend note
+        scores = candidate.get("scores") or {}
+        if bool(scores.get("allen_blend_applied")):
+            allen_score = scores.get("allen_temporal_score")
+            allen_rel = scores.get("allen_relation")
+            new_temporal = scores.get("temporal")
+            rationale["temporal"] = (
+                str(rationale.get("temporal") or "").rstrip(" .") + " "
+                + f"Allen blend applied (α=0.25): allen_base_score={allen_score:.3f}, "
+                f"relation={allen_rel}, blended_temporal={new_temporal:.3f}."
+            ).strip()
+        elif str(scores.get("allen_relation") or "") == "follows":
+            rationale["temporal"] = (
+                str(rationale.get("temporal") or "").rstrip(" .") + " "
+                + "Allen contradiction: component has 'follows' node — temporal_contradiction=True."
+            ).strip()
+
+        # Finding H — operating-point note in structural rationale
+        op_note = str(scores.get("operating_point_note") or "")
+        op_score_val = scores.get("operating_point_score")
+        if op_note and op_note != "not_assessed" and isinstance(op_score_val, (int, float)) and op_score_val > 0.0:
+            rationale["structural"] = (
+                str(rationale.get("structural") or "").rstrip(" .") + " "
+                + f"Operating-point contribution: {op_note} (op_score={op_score_val:.3f}, delta≤0.12)."
+            ).strip()
+
+        # Item 3 — CCF structural delta note
+        ccf_note_val = str(scores.get("ccf_note") or "")
+        ccf_score_val = scores.get("ccf_score")
+        if (ccf_note_val and ccf_note_val != "not_applied"
+                and isinstance(ccf_score_val, (int, float)) and ccf_score_val > 0.0):
+            rationale["structural"] = (
+                str(rationale.get("structural") or "").rstrip(" .") + " "
+                + f"CCF contribution: {ccf_note_val} (delta≤0.10)."
             ).strip()
 
     def _pattern_confidence(self, pattern):

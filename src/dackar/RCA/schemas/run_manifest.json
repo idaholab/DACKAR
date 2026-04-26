@@ -32,6 +32,19 @@
         "ishikawa_skip_reason":              { "type": ["string", "null"], "description": "Populated when ishikawa_run is false; explains why Ishikawa was not performed." },
         "top_k_candidates":                  { "type": "integer" },
         "top_k_evidence":                    { "type": "integer" },
+        "metamodel_compliance_level":        { "type": "string", "enum": ["partial", "full"] },
+        "metamodel_decision_log_version":    { "type": "string" },
+        "near_tie_delta":                    { "type": "number" },
+        "critical_stream_floor":             { "type": "number" },
+        "oe_reinstatement_threshold":        { "type": "number" },
+        "metamodel_migration": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "phase": { "type": "string" },
+            "compatibility_mode": { "type": "boolean" }
+          }
+        },
         "scoring_evolution": {
           "type": ["array", "null"],
           "description": "v1→v2 candidate ranking delta rows, sorted by |rank_post - rank_pre|.",
@@ -102,6 +115,122 @@
         "decision_status": { "type": ["string", "null"] }
       }
     },
+    "coverage_summary": {
+      "type": "object",
+      "description": "Step-1 data coverage report by source family plus category coverage rollup.",
+      "additionalProperties": true,
+      "properties": {
+        "overall_status": {
+          "type": "string",
+          "enum": ["complete", "partial", "missing"]
+        },
+        "source_families": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "kg_context": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string", "enum": ["complete", "partial", "missing"] },
+                "metrics": { "type": "object", "additionalProperties": true }
+              },
+              "additionalProperties": true
+            },
+            "chroma_corpus": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string", "enum": ["complete", "partial", "missing"] },
+                "metrics": { "type": "object", "additionalProperties": true }
+              },
+              "additionalProperties": true
+            },
+            "upstream_anomaly_inputs": {
+              "type": "object",
+              "properties": {
+                "status": { "type": "string", "enum": ["complete", "partial", "missing"] },
+                "metrics": { "type": "object", "additionalProperties": true }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "category_coverage": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "applicability_summary": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "uncertainty_summary": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "decision_posture": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "replayability_signature": {
+      "type": "object",
+      "description": "Deterministic digest over replay-critical outputs (ranking/gates/posture/review hooks).",
+      "additionalProperties": true,
+      "properties": {
+        "algorithm": { "type": "string" },
+        "digest": { "type": "string" },
+        "candidate_count": { "type": "integer", "minimum": 0 },
+        "canonical_payload_version": { "type": "string" }
+      }
+    },
+    "analyst_checkpoints": {
+      "type": "array",
+      "description": "Stage-level analyst decision checkpoints captured for the run.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "step_id": { "type": "string" },
+          "step_name": { "type": "string" },
+          "status": { "type": "string", "enum": ["completed", "pending"] },
+          "decision_required": { "type": "boolean" },
+          "decision_state": {
+            "type": "string",
+            "enum": ["completed", "hold_until_review", "ready_if_accepted"]
+          }
+        }
+      }
+    },
+    "decision_trail": {
+      "type": "array",
+      "description": "Immutable decision lifecycle entries (rule-out, reinstatement, final decision).",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "enum": ["ruleout", "reinstatement_status", "final_decision"]
+          },
+          "candidate_id": { "type": ["string", "null"] },
+          "reason_code": { "type": "string" },
+          "reason_detail": { "type": "string" },
+          "ruled_out_by": { "type": "string" },
+          "ruled_out_at": { "type": "string", "format": "date-time" },
+          "status": { "type": "string" },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } },
+          "reinstated_at": { "type": "string", "format": "date-time" },
+          "decision_status": {
+            "type": "string",
+            "enum": ["review_required", "candidate_ready", "insufficient_evidence"]
+          },
+          "confidence_label": {
+            "type": "string",
+            "enum": ["high", "medium", "low", "speculative"]
+          }
+        }
+      }
+    },
 
     "review_hooks": {
       "type": "object",
@@ -117,6 +246,10 @@
         },
         "degraded_run": { "type": "boolean" },
         "degraded_reasons": { "type": "array", "items": { "type": "string" } },
+        "coverage_status": { "type": "string", "enum": ["complete", "partial", "missing"] },
+        "coverage_degraded": { "type": "boolean" },
+        "coverage_acknowledgement_required": { "type": "boolean" },
+        "coverage_acknowledged": { "type": "boolean" },
         "reentry_hook": { "type": "object", "additionalProperties": true },
         "workflow_dispatch": {
           "type": "object",

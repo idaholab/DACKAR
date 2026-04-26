@@ -114,6 +114,8 @@ class TSKRTemporalScorerV1:
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
         signal_evidence: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
     ) -> JsonDict:
         event_id = event.get("event_id") or event.get("id")
         asset_id = event.get("asset_id")
@@ -125,6 +127,12 @@ class TSKRTemporalScorerV1:
             if signal_evidence and int(signal_evidence.get("augmented_anomaly_count", 0) or 0) > 0
             else self._extract_anomaly_windows(telemetry_summary)
         )
+        # Merge alarm and SOE point-event windows into the anomaly pool
+        if alarm_log:
+            anomaly_windows = anomaly_windows + self._extract_alarm_windows(alarm_log)
+        if soe_log:
+            anomaly_windows = anomaly_windows + self._extract_soe_windows(soe_log)
+        anomaly_windows = sorted(anomaly_windows, key=lambda x: x["start"])
         anomaly_window_summary = self._summarize_anomaly_windows(anomaly_windows)
         signal_ids           = self._extract_signal_ids(telemetry_summary)
         telemetry_support    = self._telemetry_support_score(anomaly_windows)
@@ -165,6 +173,7 @@ class TSKRTemporalScorerV1:
             sum(float(p.get("confidence") or 0.0) for p in patterns) / len(patterns)
             if patterns else 0.0
         )
+        novel_count = sum(1 for p in patterns if p.get("novel_pattern", False))
         recurrence_quality = self._recurrence_match_quality_stats(past_events)
 
         return {
@@ -176,6 +185,8 @@ class TSKRTemporalScorerV1:
                 "mode": "deterministic_v1",
                 "n_patterns": len(patterns),
                 "n_supported_patterns": len(supported),
+                "n_novel_patterns": novel_count,
+                "has_novel_patterns": novel_count > 0,
                 "operator_family": operator_family,
                 "anomaly_point_count": len(anomaly_windows),
                 "signal_count": len(signal_ids),
@@ -269,6 +280,75 @@ class TSKRTemporalScorerV1:
                     ),
                 }
             )
+        windows.sort(key=lambda x: x["start"])
+        return windows
+
+    @staticmethod
+    def _extract_alarm_windows(alarm_log: Optional[JsonDict]) -> List[Dict[str, Any]]:
+        """Extract point-event windows from alarm_log.alarms[] for pattern matching.
+
+        Alarms without an ``acknowledged_at`` are treated as point events (end == start).
+        Clock-sync failures mark windows as low-severity so they contribute less to scoring.
+        """
+        windows: List[Dict[str, Any]] = []
+        if not isinstance(alarm_log, dict):
+            return windows
+        clock_ok = (alarm_log.get("quality") or {}).get("clock_sync_ok")
+        for alm in (alarm_log.get("alarms") or []):
+            if not isinstance(alm, dict):
+                continue
+            ts = parse_dt(alm.get("activated_at") or alm.get("timestamp"))
+            if ts is None:
+                continue
+            end_raw = alm.get("acknowledged_at") or alm.get("cleared_at")
+            end = parse_dt(end_raw) if end_raw else ts
+            if end is None:
+                end = ts
+            severity = alm.get("severity") or ("DEGRADED" if clock_ok is False else "MEDIUM")
+            windows.append({
+                "sensor_id": alm.get("alarm_id") or alm.get("tag"),
+                "start": ts,
+                "end": end,
+                "pattern": "alarm_activation",
+                "interval_type": "closed",
+                "severity": severity,
+                "instrument_validity_flag": None if clock_ok is not False else "clock_sync_failed",
+                "severity_score": 0.4 if clock_ok is False else None,
+                "tone": "degraded" if clock_ok is False else "suspect",
+                "source_type": "alarm",
+            })
+        windows.sort(key=lambda x: x["start"])
+        return windows
+
+    @staticmethod
+    def _extract_soe_windows(soe_log: Optional[JsonDict]) -> List[Dict[str, Any]]:
+        """Extract point-event windows from soe_log.records[] for pattern matching.
+
+        All SOE records are point events (end == start).  Clock-sync failure
+        marks windows as unreliable; they are still included but flagged.
+        """
+        windows: List[Dict[str, Any]] = []
+        if not isinstance(soe_log, dict):
+            return windows
+        clock_ok = (soe_log.get("quality") or {}).get("clock_sync_ok")
+        for rec in (soe_log.get("records") or []):
+            if not isinstance(rec, dict):
+                continue
+            ts = parse_dt(rec.get("timestamp"))
+            if ts is None:
+                continue
+            windows.append({
+                "sensor_id": rec.get("record_id") or rec.get("tag"),
+                "start": ts,
+                "end": ts,
+                "pattern": rec.get("transition") or rec.get("state_change") or "soe_transition",
+                "interval_type": "closed",
+                "severity": "HIGH" if rec.get("is_protection_signal") else "MEDIUM",
+                "instrument_validity_flag": None if clock_ok is not False else "clock_sync_failed",
+                "severity_score": 0.3 if clock_ok is False else (0.85 if rec.get("is_protection_signal") else 0.5),
+                "tone": "degraded" if clock_ok is False else ("failed" if rec.get("is_protection_signal") else "suspect"),
+                "source_type": "soe",
+            })
         windows.sort(key=lambda x: x["start"])
         return windows
 
@@ -873,6 +953,13 @@ class TSKRTemporalScorerV1:
             "recurrence_count":            recurrence_profile.count,
             "recurrence_trend":            recurrence_profile.trend,
             "unresolved_recurrence_count": recurrence_profile.unresolved_count,
+            # Step 3.5 — novel pattern flag: True when this pattern has no historical support
+            # and no anomaly evidence aligns with the failure mode.
+            "novel_pattern": bool(
+                recurrence_profile.count == 0
+                and history_score < 0.20
+                and not bool(signal_ids)
+            ),
         }
 
     # ------------------------------------------------------------------ #

@@ -21,6 +21,9 @@ _VALID_OVERRIDE_TYPES = {
     "alternative_rerank",
     "evidence_role_change",
     "reject_all",
+    "gate_override_physical",
+    "gate_override_timeline",
+    "gate_override_barrier",
 }
 
 _VALID_WRITEBACK_DECISIONS = {"accept", "reject", "defer"}
@@ -131,6 +134,7 @@ class AnalystOverrideProcessor:
 
         # --- Apply override mutations ---
         override_primary_snapshot: Optional[JsonDict] = None
+        gate_override_snapshot: Optional[JsonDict] = None
 
         if override_type == "primary_candidate_change":
             target_id = override_input["override_primary_candidate_id"]
@@ -142,6 +146,17 @@ class AnalystOverrideProcessor:
             self._apply_accepted_state(card, caveats)
         elif override_type == "reject_all":
             self._apply_rejected_state(card)
+        elif override_type in {"gate_override_physical", "gate_override_timeline", "gate_override_barrier"}:
+            gate_type = override_type.replace("gate_override_", "")
+            gate_override_snapshot = {
+                "gate_type": gate_type,
+                "candidate_id": str(override_input.get("gate_override_candidate_id")),
+                "evidence_refs": [
+                    str(x) for x in (override_input.get("gate_override_evidence_refs") or []) if str(x).strip()
+                ],
+                "lifecycle_event": "reinstated_by_analyst",
+            }
+            self._apply_gate_override_state(card, gate_override_snapshot, rationale)
         # "alternative_rerank" and "evidence_role_change" update the record
         # but do not structurally modify the rca_card — the analyst's rationale
         # and questions_resolved carry the semantic content.
@@ -171,6 +186,7 @@ class AnalystOverrideProcessor:
             "rationale": rationale,
             "original_primary": original_primary,
             "override_primary": override_primary_snapshot,
+            "gate_override": gate_override_snapshot,
             "primary_diff": primary_diff,
             "questions_resolved": questions_resolved,
             "evidence_additions": evidence_additions,
@@ -229,6 +245,24 @@ class AnalystOverrideProcessor:
                 raise ValueError(
                     f"override_primary_candidate_id {target_id!r} is already the "
                     "current primary — use override_type='accept' instead"
+                )
+        elif override_type in {"gate_override_physical", "gate_override_timeline", "gate_override_barrier"}:
+            candidate_id = override_input.get("gate_override_candidate_id")
+            if not candidate_id:
+                raise ValueError(
+                    "gate_override_candidate_id is required when override_type is a gate override."
+                )
+            available = self._all_candidate_ids(rca_card)
+            if candidate_id not in available:
+                raise ValueError(
+                    f"gate_override_candidate_id {candidate_id!r} is not present "
+                    f"in rca_card alternatives or primary. Available: {sorted(available)}"
+                )
+            refs = override_input.get("gate_override_evidence_refs") or []
+            ref_count = len([x for x in refs if str(x).strip()])
+            if ref_count < 1:
+                raise ValueError(
+                    "gate_override_evidence_refs must contain at least one non-empty evidence reference."
                 )
 
         for qa in override_input.get("questions_resolved") or []:
@@ -399,6 +433,41 @@ class AnalystOverrideProcessor:
         exec_summary = card.get("executive_summary") or {}
         exec_summary["decision_status"] = "review_required"
         card["executive_summary"] = exec_summary
+
+    def _apply_gate_override_state(
+        self,
+        card: JsonDict,
+        gate_override: JsonDict,
+        rationale: str,
+    ) -> None:
+        exec_summary = card.get("executive_summary") or {}
+        flags = exec_summary.get("analyst_attention_flags") or []
+        if not isinstance(flags, list):
+            flags = []
+        msg = (
+            "Analyst gate override applied: "
+            f"{gate_override.get('gate_type')} for candidate {gate_override.get('candidate_id')}."
+        )
+        if msg not in flags:
+            flags.append(msg)
+        exec_summary["analyst_attention_flags"] = flags
+        exec_summary["decision_status"] = "review_required"
+        card["executive_summary"] = exec_summary
+
+        analyst_review = card.get("analyst_review") or {}
+        analyst_review["decision_required"] = True
+        analyst_review["writeback_recommendation"] = "hold_until_review"
+        questions = analyst_review.get("questions_to_resolve") or []
+        if not isinstance(questions, list):
+            questions = []
+        followup = (
+            f"Gate override rationale ({gate_override.get('gate_type')}): {rationale}. "
+            "Confirm reinstatement evidence before final writeback."
+        )
+        if followup not in questions:
+            questions.append(followup)
+        analyst_review["questions_to_resolve"] = questions
+        card["analyst_review"] = analyst_review
 
     def _normalize_questions(
         self, raw: List[Any]

@@ -23,8 +23,8 @@ Pipeline assertion targets
 --------------------------
 A1  Primary hypothesis maps to FM-CND-AIR-INLEAK (air in-leakage)
 A2  FM-CND-TUBE-FOUL appears in alternatives, not as primary
-A3  FM-CND-TUBE-LEAK filtered out or flagged temporal_contradiction
-       (expected latency 2-48 h vs 336-h gradual drift)
+A3  FM-CND-TUBE-LEAK absent or low-ranked (contradicted by conductivity signal
+       and helium leak test: no tube leakage found)
 A4  WO-2024-11847 classified as contradicting evidence for fouling candidate
 A5  Score gap between #1 and #2 candidates >= 0.05 after evidence refinement
 A6  Air in-leakage recurrence score >= fouling recurrence score
@@ -32,7 +32,8 @@ A6  Air in-leakage recurrence score >= fouling recurrence score
 A7  FM-CW-TEMP-RISE not primary and ranked position >= 2
 A8  FM-HVAC-DEGRAD present in Ishikawa matrix
 A9  Analyst review questions mention expansion joint / inspection / PM deferral
-A10 RCA card: schema_valid=True AND all_claims_cited=True
+A10 data_coverage_summary: environmental_monitoring status = complete
+A11 data_coverage_summary: configuration_change_records status = complete
 
 Usage
 -----
@@ -625,65 +626,59 @@ KG_CONTEXT: Dict[str, Any] = {
     ],
 
     "failure_modes": [
-        # FM-1: TRUE ROOT CAUSE — latency 48-336 h covers the 336-h gradual drift
+        # FM-1: TRUE ROOT CAUSE
+        # Discriminated by observable evidence: hotwell DO 23x above normal,
+        # expansion joint PM overdue 104 days, helium leak confirmation.
         {
             "fm_id": "FM-CND-AIR-INLEAK",
             "name": "Air in-leakage through boundary",
             "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
             "component_name": "Turbine Exhaust Duct Expansion Joint",
             "superclass": "pressure_boundary_failure",
-            "expected_latency_min_hours": 48.0,
-            "expected_latency_max_hours": 336.0,
             "expected_symptom_types": ["pressure", "chemistry"],
             "expected_anomaly_pattern": "gradual_drift",
         },
-        # FM-2: RED HERRING — tube inspection passed; DO not elevated in fouling
+        # FM-2: RED HERRING — tube inspection passed (WO-2024-11847 as-found acceptable);
+        # DO elevation contradicts fouling mechanism; tube outlet temps within limits.
         {
             "fm_id": "FM-CND-TUBE-FOUL",
             "name": "Condenser tube fouling",
             "component_id": "U2-CND-TUBE-BUNDLE-A",
             "component_name": "Condenser Tube Bundle A",
             "superclass": "heat_transfer_degradation",
-            "expected_latency_min_hours": 168.0,
-            "expected_latency_max_hours": 720.0,
             "expected_symptom_types": ["pressure", "temperature"],
             "expected_anomaly_pattern": "gradual_drift",
         },
-        # FM-3: SHOULD BE FILTERED — expected latency 2-48 h vs 336-h drift
-        #        temporal_contradiction expected: latency_violation_type=too_slow
+        # FM-3: RULED OUT by conductivity (no anomaly) and helium test
+        # (tube bundles tested, no tube leakage confirmed).
         {
             "fm_id": "FM-CND-TUBE-LEAK",
             "name": "Condenser tube leakage",
             "component_id": "U2-CND-TUBE-BUNDLE-A",
             "component_name": "Condenser Tube Bundle A",
             "superclass": "pressure_boundary_failure",
-            "expected_latency_min_hours": 2.0,
-            "expected_latency_max_hours": 48.0,
             "expected_symptom_types": ["chemistry", "pressure"],
             "expected_anomaly_pattern": "step_change",
         },
-        # FM-4: CONTRIBUTING FACTOR ONLY — seasonal rise insufficient alone;
-        #        operator increased CW flow with minimal effect (0.04 inHg)
+        # FM-4: CONTRIBUTING FACTOR ONLY — seasonal CW inlet rise 4.2 degF within
+        # normal; operator CW flow increase yielded only 0.04 inHg effect.
         {
             "fm_id": "FM-CW-TEMP-RISE",
             "name": "Circulating water inlet temperature elevation",
             "component_id": "U2-CND-WATERBOX-A",
             "component_name": "Condenser Waterbox A",
             "superclass": "thermal_performance_degradation",
-            "expected_latency_min_hours": 0.0,
-            "expected_latency_max_hours": 720.0,
             "expected_symptom_types": ["pressure", "temperature"],
             "expected_anomaly_pattern": "gradual_drift",
         },
         # FM-5: CONTRIBUTING CAUSE — HVAC PM overdue 60 days; fan trip Day 4
+        # triggers pit ambient rise (gradual_drift Day 4 onset, U2-TE-5501).
         {
             "fm_id": "FM-HVAC-DEGRAD",
             "name": "HVAC cooling capacity reduction",
             "component_id": "U2-HVAC-TURBINE-BAY-FAN-A",
             "component_name": "Turbine Bay HVAC Fan Motor A",
             "superclass": "auxiliary_system_degradation",
-            "expected_latency_min_hours": 24.0,
-            "expected_latency_max_hours": 120.0,
             "expected_symptom_types": ["vibration", "temperature"],
             "expected_anomaly_pattern": "step_change",
         },
@@ -1579,6 +1574,249 @@ PROCESSED_RECORDS: List[Dict[str, Any]] = [
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# FIXTURE: ALARM LOG
+# Day 1 advisory → Day 9 trend CR alarm → Day 12 above engineering threshold
+# → Day 14 turbine runback actuation.
+# ─────────────────────────────────────────────────────────────────────────────
+
+ALARM_LOG: Dict[str, Any] = {
+    "alarm_log_id": "ALM-LOG-EVT-U2-2024-0847",
+    "event_id": "EVT-U2-2024-0847",
+    "asset_id": "U2-CONDENSER-MAIN",
+    "generated_at": "2024-07-14T06:00:00Z",
+    "window": {
+        "start": "2024-06-30T00:00:00Z",
+        "end": "2024-07-14T04:00:00Z",
+    },
+    "alarms": [
+        {
+            "alarm_id": "ALM-U2-CNDSR-BP-TREND",
+            "timestamp": "2024-06-30T12:00:00Z",
+            "description": "Condenser backpressure trending advisory — sustained rise above 2.0 inHg for 72 h; advisory threshold",
+            "priority": "low",
+            "state": "active",
+            "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
+            "system": "secondary-side-condenser",
+            "setpoint": 2.0,
+            "actual_value": 2.01,
+            "unit": "inHg",
+            "acknowledged_at": "2024-07-01T08:00:00Z",
+            "acknowledged_by": "U2-OPS-SHIFT-A",
+        },
+        {
+            "alarm_id": "ALM-U2-HVAC-VIB-H",
+            "timestamp": "2024-07-04T09:33:00Z",
+            "description": "Turbine bay HVAC fan A bearing vibration high — 0.52 in/s exceeds 0.35 in/s setpoint",
+            "priority": "medium",
+            "state": "active",
+            "component_id": "U2-HVAC-TURBINE-BAY-FAN-A",
+            "system": "turbine-building-hvac",
+            "setpoint": 0.35,
+            "actual_value": 0.52,
+            "unit": "in_s_peak",
+            "acknowledged_at": "2024-07-04T09:45:00Z",
+            "acknowledged_by": "U2-MAINT-SHIFT",
+        },
+        {
+            "alarm_id": "ALM-U2-CNDSR-BP-H",
+            "timestamp": "2024-07-12T14:15:00Z",
+            "description": "Condenser backpressure high — 2.51 inHg above 2.50 inHg high setpoint; engineering evaluation threshold",
+            "priority": "medium",
+            "state": "active",
+            "component_id": "CONDENSER_TRAIN_A",
+            "system": "secondary-side-condenser",
+            "setpoint": 2.5,
+            "actual_value": 2.51,
+            "unit": "inHg",
+            "acknowledged_at": "2024-07-12T14:22:00Z",
+            "acknowledged_by": "U2-OPS-SHIFT-C",
+        },
+        {
+            "alarm_id": "ALM-U2-CNDSR-BP-HH",
+            "timestamp": "2024-07-14T03:22:00Z",
+            "description": "Condenser backpressure high-high — 3.02 inHg above 3.00 inHg runback setpoint; turbine load runback actuated",
+            "priority": "critical",
+            "state": "active",
+            "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
+            "system": "secondary-side-condenser",
+            "setpoint": 3.0,
+            "actual_value": 3.02,
+            "unit": "inHg",
+            "acknowledged_at": "2024-07-14T03:25:00Z",
+            "acknowledged_by": "U2-OPS-SHIFT-D",
+        },
+        {
+            "alarm_id": "ALM-U2-TRB-RUNBACK",
+            "timestamp": "2024-07-14T03:22:10Z",
+            "description": "Turbine automatic load runback initiated — backpressure setpoint exceeded; power reduced 97% → 85%",
+            "priority": "critical",
+            "state": "cleared",
+            "component_id": None,
+            "system": "turbine-protection",
+            "setpoint": None,
+            "actual_value": None,
+            "unit": None,
+            "acknowledged_at": "2024-07-14T03:26:00Z",
+            "acknowledged_by": "U2-OPS-SHIFT-D",
+        },
+    ],
+    "quality": {
+        "missing_fraction": 0.0,
+        "clock_sync_ok": True,
+        "quality_flags": [],
+    },
+    "provenance": {
+        "generated_by": "show-and-tell-fixture-generator",
+        "query_params": {
+            "test_case": "TC-3",
+            "scenario": "condenser-vacuum-loss-pwr-u2",
+        },
+    },
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIXTURE: CONFIGURATION CHANGE RECORDS
+# WO-2024-11847: tube cleaning — tube cleanliness score 0.94; zero tubes plugged.
+# Provides a structured record contradicting fouling without needing document retrieval.
+# ─────────────────────────────────────────────────────────────────────────────
+
+CONFIGURATION_CHANGE_RECORDS: Dict[str, Any] = {
+    "configuration_change_context_id": "CCR-EVT-U2-2024-0847",
+    "event_id": "EVT-U2-2024-0847",
+    "asset_id": "U2-CONDENSER-MAIN",
+    "generated_at": "2024-07-14T06:00:00Z",
+    "records": [
+        # WO-2024-11847: tube cleaning — as-found acceptable, zero tubes plugged.
+        # Provides a structured record contradicting the fouling hypothesis without
+        # needing document retrieval from the evidence store.
+        {
+            "change_id": "CCR-WO-2024-11847",
+            "change_type": "other",
+            "status": "implemented",
+            "implemented_at": "2024-06-23T16:00:00Z",
+            "reverted_at": None,
+            "component_ids": ["U2-CND-WATERBOX-A", "U2-CND-TUBE-BUNDLE-A"],
+            "system_ids": ["secondary-side-condenser"],
+            "summary": (
+                "Condenser Waterbox A tube cleaning and inspection per annual PM schedule. "
+                "847 tubes inspected. As-found tube cleanliness score: 0.94/1.0. "
+                "Zero tubes plugged. As-left: acceptable. No fouling or biological growth found. "
+                "This maintenance record contradicts the tube fouling hypothesis."
+            ),
+            "reason": "scheduled preventive maintenance per PM-U2-CND-TUBE-INSP-A",
+            "approver": "U2-OUTAGE-ENGINEERING",
+            "document_refs": ["WO-2024-11847", "SOP-U2-CND-001"],
+        },
+        # WO-2024-11901: HVAC fan bearing replacement (corrective, not yet complete).
+        # Links HVAC PM deferral to the causal chain.
+        {
+            "change_id": "CCR-WO-2024-11901",
+            "change_type": "other",
+            "status": "planned",
+            "implemented_at": "2024-07-10T11:30:00Z",
+            "reverted_at": None,
+            "component_ids": ["U2-HVAC-TURBINE-BAY-FAN-A"],
+            "system_ids": ["turbine-building-hvac"],
+            "summary": (
+                "HVAC turbine bay fan A motor bearing replacement — corrective maintenance. "
+                "Bearing failure attributed to PM overdue 60 days. "
+                "Fan A tripped on high vibration (0.89 in/s). Fan B in service for interim ventilation. "
+                "Parts on order; work not completed at time of main event."
+            ),
+            "reason": "corrective action following fan A trip on high vibration 2024-07-10",
+            "approver": None,
+            "document_refs": ["WO-2024-11901"],
+        },
+    ],
+    "quality": {
+        "coverage_status": "complete",
+        "quality_flags": [],
+    },
+    "provenance": {
+        "generated_by": "show-and-tell-fixture-generator",
+        "query_params": {
+            "test_case": "TC-3",
+            "scenario": "condenser-vacuum-loss-pwr-u2",
+        },
+    },
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIXTURE: ENVIRONMENTAL MONITORING
+# CW inlet temperature seasonal rise (within normal bounds — not causal).
+# Condenser pit ambient temperature gradual_drift onset Day 4 (HVAC-linked).
+# ─────────────────────────────────────────────────────────────────────────────
+
+ENVIRONMENTAL_MONITORING: Dict[str, Any] = {
+    "environmental_context_id": "ENV-EVT-U2-2024-0847",
+    "event_id": "EVT-U2-2024-0847",
+    "asset_id": "U2-CONDENSER-MAIN",
+    "generated_at": "2024-07-14T06:00:00Z",
+    "window": {
+        "start": "2024-06-30T00:00:00Z",
+        "end": "2024-07-14T04:00:00Z",
+    },
+    "records": [
+        # CW inlet temperature — seasonal rise within normal; environmental factor, not causal.
+        {
+            "record_id": "ENV-CW-INLET-TEMP-SEASONAL",
+            "timestamp": "2024-07-14T03:22:00Z",
+            "record_type": "ambient_temperature",
+            "location": "circulating_water_intake",
+            "severity": "low",
+            "value": 75.4,
+            "unit": "degF",
+            "duration_seconds": 1209600,  # 14 days
+            "description": (
+                "4.2 degF seasonal CW inlet temperature rise over 14-day window "
+                "(71.2 degF baseline → 75.4 degF observed). Within expected summer range "
+                "for this site (73–78 degF). Operator increased CW pump speed from 85% to 100% "
+                "on 2024-07-12 — only 0.04 inHg backpressure reduction observed. "
+                "CW temperature elevation alone is insufficient to explain the 1.2 inHg "
+                "backpressure increase. Environmental factor: not causal."
+            ),
+            "source_system": "PI_HISTORIAN",
+        },
+        # Condenser pit ambient temperature — abnormal rise linked to HVAC degradation.
+        {
+            "record_id": "ENV-COND-PIT-AMBIENT-DRIFT",
+            "timestamp": "2024-07-04T09:00:00Z",
+            "record_type": "ambient_temperature",
+            "location": "condenser_pit_turbine_building",
+            "severity": "high",
+            "value": 97.6,
+            "unit": "degF",
+            "duration_seconds": 864000,  # 10 days
+            "description": (
+                "Condenser pit ambient temperature rose from 82.1 degF baseline to 97.6 degF peak "
+                "(15.5 degF above baseline) over 10 days. Rise onset coincides within 1 hour of "
+                "HVAC turbine bay fan A trip on high vibration (2024-07-04T09:10). "
+                "Causal sequence: HVAC fan bearing failure → reduced turbine bay ventilation "
+                "→ elevated pit ambient temperature → accelerated thermal fatigue of condenser "
+                "expansion joint seal material. "
+                "15.5 degF above baseline is abnormal and exceeds seasonal variation by 11 degF. "
+                "This environmental record directly links HVAC PM deferral to the primary causal chain."
+            ),
+            "source_system": "PI_HISTORIAN",
+        },
+    ],
+    "quality": {
+        "coverage_status": "complete",
+        "quality_flags": [],
+    },
+    "provenance": {
+        "generated_by": "show-and-tell-fixture-generator",
+        "query_params": {
+            "test_case": "TC-3",
+            "scenario": "condenser-vacuum-loss-pwr-u2",
+        },
+    },
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # FIXTURE I/O
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1593,6 +1831,9 @@ def dump_fixture_files(fixture_dir: Path) -> None:
         "operational_context.json": OPERATIONAL_CONTEXT,
         "pm_compliance.json": PM_COMPLIANCE,
         "evidence_store_rows.json": EVIDENCE_STORE_ROWS,
+        "alarm_log.json": ALARM_LOG,
+        "configuration_change_records.json": CONFIGURATION_CHANGE_RECORDS,
+        "environmental_monitoring.json": ENVIRONMENTAL_MONITORING,
     }
     for name, payload in json_fixtures.items():
         (fixture_dir / name).write_text(json.dumps(payload, indent=2))

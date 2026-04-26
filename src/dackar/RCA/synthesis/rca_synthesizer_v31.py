@@ -45,6 +45,9 @@ class RuleValidatedRCASynthesizerV31:
       - validate minimum semantic requirements
       - fallback to deterministic template synthesis if needed
     """
+    _PROXIMATE_CATEGORIES = {"A", "B", "C", "D", "E", "F"}
+    _CONTRIBUTING_CATEGORIES = {"G", "H", "I", "J", "K"}
+    _ROOT_CATEGORIES = {"L"}
 
     def __init__(self, llm_client: LLMClient, config: Optional[RCASynthesizerConfig] = None):
         self.llm_client = llm_client
@@ -63,6 +66,7 @@ class RuleValidatedRCASynthesizerV31:
         ishikawa_matrix: Optional[JsonDict],
         run_context: JsonDict,
         cmms_context: Optional[JsonDict] = None,
+        similar_event_list: Optional[JsonDict] = None,
     ) -> JsonDict:
         event_id = event.get("event_id") or event["id"]
         rca_id = f"RCA::{event_id}::{uuid.uuid4()}"
@@ -144,6 +148,8 @@ class RuleValidatedRCASynthesizerV31:
                 evidence_bundle=evidence_bundle,
                 run_context=run_context,
                 prior_errors=validation_errors,
+                tskr_patterns=tskr_patterns,
+                similar_event_list=similar_event_list,
             )
             validation_errors = self._validate_card_semantics(card)
 
@@ -160,6 +166,8 @@ class RuleValidatedRCASynthesizerV31:
         # Apply deterministic safety-significance routing on top of both LLM and
         # fallback cards so action priority reflects affected safety functions.
         self._apply_safety_significance_postprocessing(card, causality_candidates)
+        self._apply_metamodel_phase2_postprocessing(card, causality_candidates)
+        self._enforce_recommended_action_depth_mapping(card, causality_candidates)
 
         # Inject ccf_summary deterministically so both LLM and fallback cards carry it.
         # The LLM is not prompted to generate this block; the schema marks it optional.
@@ -177,6 +185,13 @@ class RuleValidatedRCASynthesizerV31:
         card["validation_status"]["schema_valid"] = len(validation_errors) == 0
         card["validation_status"]["all_claims_cited"] = self._all_claims_cited(card)
         card["validation_status"]["passed_minimum_evidence_gate"] = self._passes_minimum_evidence_gate(card)
+
+        # Deterministically inject human_performance_assessment when absent (covers LLM path).
+        if "human_performance_assessment" not in card:
+            card["human_performance_assessment"] = self._build_human_performance_assessment(
+                selected_candidates=selected_candidates,
+                recommended_actions=card.get("recommended_actions") or [],
+            )
 
         return card
 
@@ -1127,6 +1142,7 @@ analyst_review = {
                 "expected_observation_if_true",
                 f"Plant observations should be consistent with {primary_cause_label} if this hypothesis is correct."
             )
+            action_row.setdefault("target_causal_depth", "proximate")
 
             action_row["posture_warning"] = posture_warning
             action_row["priority"] = self._apply_safety_priority(
@@ -1147,6 +1163,121 @@ analyst_review = {
             normalized.append(action_row)
 
         return normalized
+
+    def _enforce_recommended_action_depth_mapping(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        summary = (card.get("executive_summary") or {})
+        depth_summary = summary.get("causal_depth_summary")
+        if not isinstance(depth_summary, dict):
+            return
+        actions = card.get("recommended_actions")
+        if not isinstance(actions, list):
+            return
+
+        candidate_rows = [
+            c for c in (causality_candidates.get("candidates") or [])
+            if isinstance(c, dict)
+        ]
+        candidate_map = {
+            str(c.get("candidate_id") or "").strip(): c
+            for c in candidate_rows
+            if str(c.get("candidate_id") or "").strip()
+        }
+        contributing_rows = [
+            c for c in (card.get("contributing_causes") or [])
+            if isinstance(c, dict)
+        ]
+        primary_id = str(((card.get("primary_hypothesis") or {}).get("candidate_id") or "")).strip()
+        root_candidate_id = ""
+        for row in candidate_rows:
+            if str(row.get("primary_causal_category") or "").strip().upper() == "L":
+                root_candidate_id = str(row.get("candidate_id") or "").strip()
+                if root_candidate_id:
+                    break
+
+        required_depths: List[str] = []
+        prox = str(depth_summary.get("proximate_cause") or "").strip()
+        if prox and prox.lower() != "unresolved":
+            required_depths.append("proximate")
+        contrib = depth_summary.get("contributing_causes")
+        if isinstance(contrib, list) and any(isinstance(x, str) and x.strip() for x in contrib):
+            required_depths.append("contributing")
+        root = str(depth_summary.get("root_cause") or "").strip()
+        if root and root.lower() != "unresolved":
+            required_depths.append("root")
+
+        covered_depths: set = set()
+        for idx, action in enumerate(actions):
+            if not isinstance(action, dict):
+                continue
+            depth = str(action.get("target_causal_depth") or "").strip().lower()
+            if depth not in {"proximate", "contributing", "root"}:
+                linked_id = str(action.get("linked_candidate_id") or "").strip()
+                linked_candidate = candidate_map.get(linked_id)
+                category = str((linked_candidate or {}).get("primary_causal_category") or "").strip().upper()
+                if category in self._PROXIMATE_CATEGORIES:
+                    depth = "proximate"
+                elif category in self._CONTRIBUTING_CATEGORIES:
+                    depth = "contributing"
+                elif category in self._ROOT_CATEGORIES:
+                    depth = "root"
+                else:
+                    depth = "proximate" if idx == 0 else "contributing"
+                action["target_causal_depth"] = depth
+            covered_depths.add(depth)
+
+        missing = [d for d in required_depths if d not in covered_depths]
+        if not missing:
+            return
+
+        existing_ids = {
+            str(a.get("action_id") or "").strip()
+            for a in actions
+            if isinstance(a, dict) and str(a.get("action_id") or "").strip()
+        }
+        id_counter = len(existing_ids) + 1
+
+        def next_action_id() -> str:
+            nonlocal id_counter
+            while True:
+                candidate_id = f"ACT-{id_counter:03d}"
+                id_counter += 1
+                if candidate_id not in existing_ids:
+                    existing_ids.add(candidate_id)
+                    return candidate_id
+
+        for depth in missing:
+            if depth == "proximate":
+                label = prox or "the proximate mechanism"
+                linked_candidate_id = primary_id or None
+                action_type = "immediate_corrective"
+            elif depth == "contributing":
+                labels = [str(x).strip() for x in (contrib or []) if isinstance(x, str) and str(x).strip()]
+                label = labels[0] if labels else "identified contributing factors"
+                linked_candidate_id = str((contributing_rows[0] or {}).get("candidate_id") or "").strip() or None
+                action_type = "preventive"
+            else:
+                label = root or "the systemic root cause"
+                linked_candidate_id = root_candidate_id or None
+                action_type = "long_term_corrective"
+
+            actions.append(
+                {
+                    "action_id": next_action_id(),
+                    "action_type": action_type,
+                    "description": f"Address {label} with a depth-specific corrective plan and verification criteria.",
+                    "priority": "high" if depth in {"proximate", "root"} else "medium",
+                    "linked_candidate_id": linked_candidate_id,
+                    "target_causal_depth": depth,
+                    "rationale": f"Action explicitly addresses the {depth} causal layer.",
+                    "expected_observation_if_true": (
+                        f"Follow-up evidence should show reduced recurrence risk tied to {label}."
+                    ),
+                }
+            )
 
     @staticmethod
     def _priority_rank(priority: str) -> int:
@@ -1388,6 +1519,107 @@ analyst_review = {
                     risk_ctx,
                 )
 
+    def _apply_metamodel_phase2_postprocessing(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        summary = card.setdefault("executive_summary", {})
+        flags = summary.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+
+        coverage = causality_candidates.get("category_coverage") or {}
+        unknown_or_ruled_out = [
+            cat
+            for cat, row in coverage.items()
+            if isinstance(row, dict) and str(row.get("status") or "").strip().lower() in {"unknown", "ruled_out"}
+        ]
+        if unknown_or_ruled_out:
+            msg = (
+                "Metamodel coverage unresolved/ruled-out categories: "
+                + ", ".join(sorted(unknown_or_ruled_out))
+                + "."
+            )
+            if msg not in flags:
+                flags.append(msg)
+
+        if bool(causality_candidates.get("external_oe_unavailable", False)):
+            summary["external_oe_unavailable"] = True
+            msg = "Fleet/industry OE evidence unavailable; confidence reflects an OE-insufficient posture."
+            if msg not in flags:
+                flags.append(msg)
+
+        applicability = causality_candidates.get("applicability_assessment") or {}
+        high_impact_unknown = [
+            cat for cat in ("B", "F", "I", "L")
+            if isinstance(applicability.get(cat), dict)
+            and str((applicability.get(cat) or {}).get("status") or "").strip().lower() == "unknown"
+        ]
+        if high_impact_unknown:
+            msg = "High-impact category applicability remains unknown: " + ", ".join(high_impact_unknown) + "."
+            if msg not in flags:
+                flags.append(msg)
+
+        decision_posture = causality_candidates.get("decision_posture") or {}
+        near_tie = bool(decision_posture.get("near_tie", False))
+        contradiction_blocked_count = int(decision_posture.get("contradiction_blocked_count", 0) or 0)
+        if near_tie:
+            msg = "Near-tie detected between top candidates; automatic primary conclusion is blocked."
+            if msg not in flags:
+                flags.append(msg)
+        if contradiction_blocked_count > 0:
+            msg = (
+                f"{contradiction_blocked_count} candidate(s) blocked by contradiction gate; analyst override required to promote."
+            )
+            if msg not in flags:
+                flags.append(msg)
+        if near_tie or contradiction_blocked_count > 0:
+            summary["decision_status"] = "review_required"
+            analyst_review = card.setdefault("analyst_review", {})
+            analyst_review["decision_required"] = True
+            analyst_review["writeback_recommendation"] = "hold_until_review"
+
+        primary = card.setdefault("primary_hypothesis", {})
+        primary_id = str(primary.get("candidate_id") or "").strip()
+        if not primary_id:
+            return
+        primary_candidate = next(
+            (
+                c for c in (causality_candidates.get("candidates") or [])
+                if isinstance(c, dict) and str(c.get("candidate_id") or "").strip() == primary_id
+            ),
+            None,
+        )
+        if not isinstance(primary_candidate, dict):
+            return
+
+        why_primary = primary.setdefault("why_primary", [])
+        if isinstance(why_primary, list):
+            category = primary_candidate.get("primary_causal_category")
+            chain_pos = primary_candidate.get("chain_position")
+            if category:
+                line = f"Primary hypothesis is classified in causal category {category}."
+                if line not in why_primary:
+                    why_primary.append(line)
+            if chain_pos:
+                line = f"Chain position assessed as {chain_pos}."
+                if line not in why_primary:
+                    why_primary.append(line)
+
+        uncertainties = primary.setdefault("uncertainties", [])
+        if isinstance(uncertainties, list):
+            if bool(primary_candidate.get("data_limited_conclusion", False)):
+                missing = primary_candidate.get("critical_streams_below_floor") or []
+                line = (
+                    "Confidence is data-limited; critical stream(s) below floor: "
+                    + ", ".join(missing)
+                    if missing
+                    else "Confidence is data-limited due to low critical evidence-stream quality."
+                )
+                if line not in uncertainties:
+                    uncertainties.append(line)
+
     def _summarize_primary_evidence_posture(
         self,
         evidence_rows: Sequence[JsonDict],
@@ -1611,7 +1843,344 @@ analyst_review = {
         if candidate.get("supporting_evidence_refs"):
             return "supported"
         return "unknown"
-    
+
+    def _build_causal_depth_summary(
+        self,
+        *,
+        primary_candidate: Optional[JsonDict],
+        selected_candidates: Sequence[JsonDict],
+    ) -> JsonDict:
+        primary_candidate = primary_candidate or {}
+        selected_rows = [row for row in (selected_candidates or []) if isinstance(row, dict)]
+
+        proximate_rows = [
+            row for row in selected_rows
+            if str(row.get("primary_causal_category") or "").strip().upper() in self._PROXIMATE_CATEGORIES
+        ]
+        contributing_rows = [
+            row for row in selected_rows
+            if str(row.get("primary_causal_category") or "").strip().upper() in self._CONTRIBUTING_CATEGORIES
+        ]
+        root_rows = [
+            row for row in selected_rows
+            if str(row.get("primary_causal_category") or "").strip().upper() in self._ROOT_CATEGORIES
+        ]
+
+        primary_category = str(primary_candidate.get("primary_causal_category") or "").strip().upper()
+        proximate_primary = (
+            str(primary_candidate.get("cause_label") or "").strip()
+            if primary_category in self._PROXIMATE_CATEGORIES
+            else (
+                str((proximate_rows[0] or {}).get("cause_label") or "").strip()
+                if proximate_rows else "unresolved"
+            )
+        )
+        root_cause = (
+            str((root_rows[0] or {}).get("cause_label") or "").strip()
+            if root_rows else "unresolved"
+        )
+        contributing_labels = [
+            str(row.get("cause_label") or "").strip()
+            for row in contributing_rows
+            if str(row.get("cause_label") or "").strip()
+        ][:3]
+
+        depth_complete = bool(
+            (proximate_primary and proximate_primary != "unresolved")
+            and bool(contributing_labels)
+            and (root_cause and root_cause != "unresolved")
+        )
+
+        # Build an explanation when any depth layer is missing
+        incomplete_parts: List[str] = []
+        if not proximate_primary or proximate_primary == "unresolved":
+            incomplete_parts.append("proximate cause layer (A–F category) unresolved")
+        if not contributing_labels:
+            incomplete_parts.append(
+                "contributing cause layer (G–K categories) unresolved — "
+                "no maintenance, procedural, training, or organisational candidate retained"
+            )
+        if not root_cause or root_cause == "unresolved":
+            incomplete_parts.append(
+                "root cause layer (Category L) unresolved — "
+                "systemic/programmatic investigation has not produced a retained candidate"
+            )
+        depth_incomplete_reason = "; ".join(incomplete_parts) if incomplete_parts else ""
+
+        result: JsonDict = {
+            "proximate_cause": proximate_primary or "unresolved",
+            "contributing_causes": contributing_labels,
+            "root_cause": root_cause or "unresolved",
+            "depth_complete": depth_complete,
+        }
+        if depth_incomplete_reason:
+            result["depth_incomplete_reason"] = depth_incomplete_reason
+        return result
+
+    def _build_unresolved_gaps(
+        self,
+        *,
+        primary_candidate: Optional[JsonDict],
+        evidence_summary: JsonDict,
+        pattern_posture: JsonDict,
+        analyst_attention_flags: Sequence[str],
+        causal_depth_summary: Optional[JsonDict] = None,
+        sensitivity_any_change: bool = False,
+        novel_pattern_flag: bool = False,
+        similar_event_list: Optional[JsonDict] = None,
+    ) -> List[str]:
+        """Deeper gap list — links depth layers, sensitivity table, novel patterns, and OE coverage."""
+        gaps: List[str] = []
+        supporting = int(evidence_summary.get("supporting", 0) or 0)
+        contradicting = int(evidence_summary.get("contradicting", 0) or 0)
+        if supporting == 0:
+            gaps.append("No direct supporting evidence retained for the current primary hypothesis.")
+        if contradicting > 0:
+            gaps.append("Contradicting evidence remains unresolved and may alter final ranking.")
+        if bool(pattern_posture.get("temporal_contradiction", False)):
+            gaps.append("Temporal contradiction exists between candidate mechanism and event chronology.")
+        primary_candidate = primary_candidate or {}
+        if bool(primary_candidate.get("data_limited_conclusion", False)):
+            missing = primary_candidate.get("critical_streams_below_floor") or []
+            if missing:
+                gaps.append(
+                    "Critical evidence stream quality below floor: " + ", ".join(str(x) for x in missing)
+                )
+            else:
+                gaps.append("Critical evidence stream quality is below floor for this conclusion.")
+
+        # Depth-layer gaps
+        ds = causal_depth_summary or {}
+        if str(ds.get("contributing_causes") or "") in ("", "[]"):
+            pass  # list type — check length
+        contrib_list = ds.get("contributing_causes") or []
+        root_val = str(ds.get("root_cause") or "unresolved").strip().lower()
+        if not contrib_list:
+            gaps.append(
+                "Contributing cause layer is unresolved — no H/I/J/K or G category candidate retained. "
+                "Investigate maintenance, procedural, training, and supervisory factors."
+            )
+        if root_val in ("unresolved", ""):
+            gaps.append(
+                "Root cause layer is unresolved — no Category L candidate retained. "
+                "A programmatic or systemic weakness investigation is required for regulatory closure."
+            )
+
+        # Sensitivity table flag
+        if sensitivity_any_change:
+            gaps.append(
+                "Sensitivity analysis indicates candidate ranking could change if missing data sources "
+                "are made available — review sensitivity_table before writing back."
+            )
+
+        # Novel patterns
+        if novel_pattern_flag:
+            gaps.append(
+                "One or more novel signal patterns detected (no historical precedent in KG). "
+                "Causal attribution is uncertain until these patterns are investigated and classified."
+            )
+
+        # Step 2d — OE similar-event coverage gaps
+        if similar_event_list is not None:
+            sel_summary = (similar_event_list.get("summary") or {})
+            plant_count = int(sel_summary.get("plant_count", 0) or 0)
+            degraded_tiers = list(sel_summary.get("degraded_tiers") or [])
+            if plant_count == 0:
+                gaps.append(
+                    "No similar events found in plant history for the primary hypothesis component. "
+                    "This event may be without plant precedent — consider fleet/industry OE lookup."
+                )
+            for tier in degraded_tiers:
+                gaps.append(
+                    f"Similar-event {tier}-tier lookup failed or timed out. "
+                    f"Operating experience from {tier} databases is unavailable for this analysis."
+                )
+
+        # Attention flags from earlier stages that indicate something unresolved/missing
+        for flag in analyst_attention_flags or []:
+            text = str(flag).strip()
+            if not text:
+                continue
+            low = text.lower()
+            if any(tok in low for tok in ("insufficient", "missing", "unresolved", "novel")) and text not in gaps:
+                gaps.append(text)
+
+        return gaps[:8]
+
+    @staticmethod
+    def _build_effectiveness_monitoring_plan(
+        *,
+        primary_candidate: Optional[JsonDict],
+        recommended_actions: Sequence[JsonDict],
+    ) -> List[JsonDict]:
+        """Depth-stratified monitoring plan.
+
+        Proximate  → equipment-health indicator (recurrence / precursor anomaly)
+        Contributing → process/procedure adherence indicator (PM compliance, WO closure)
+        Root       → programmatic/systemic indicator (fleet OE recurrence, AMP review)
+        """
+        candidate = primary_candidate or {}
+        cause_label = str(candidate.get("cause_label") or "leading hypothesis").strip()
+        plan: List[JsonDict] = []
+
+        DEPTH_PROFILES = {
+            "proximate": {
+                "indicator_template": (
+                    "Equipment health monitoring: recurrence of precursor anomalies "
+                    "associated with {cause_label} within the review window."
+                ),
+                "threshold": "No repeat anomaly signature and no failed equipment inspection within review window.",
+                "review_horizon": "90d",
+                "success_criteria": (
+                    "Zero recurrence of the triggering anomaly pattern; "
+                    "equipment inspection results normal at next scheduled interval."
+                ),
+            },
+            "contributing": {
+                "indicator_template": (
+                    "Process/procedure adherence: PM compliance rate and work-order closure "
+                    "timeliness for tasks related to {cause_label}."
+                ),
+                "threshold": "PM compliance ≥ 95% and no overdue corrective work orders in this system.",
+                "review_horizon": "180d",
+                "success_criteria": (
+                    "PM compliance target met; no repeat procedure or maintenance deviation "
+                    "of the same type within the review window."
+                ),
+            },
+            "root": {
+                "indicator_template": (
+                    "Programmatic indicator: trend review of fleet OE and corrective-action programme "
+                    "for systemic recurrence of {cause_label} pattern."
+                ),
+                "threshold": "No new CAP entries of the same root pattern within review window; fleet OE search negative.",
+                "review_horizon": "365d",
+                "success_criteria": (
+                    "Corrective action programme shows closure of root-level action items; "
+                    "fleet OE trend review negative for same systemic pattern."
+                ),
+            },
+        }
+
+        for action in (recommended_actions or []):
+            if not isinstance(action, dict):
+                continue
+            action_id = str(action.get("action_id") or "").strip()
+            if not action_id:
+                continue
+            depth = str(action.get("target_causal_depth") or "proximate").strip().lower()
+            profile = DEPTH_PROFILES.get(depth, DEPTH_PROFILES["proximate"])
+            plan.append(
+                {
+                    "linked_action_id": action_id,
+                    "causal_depth_level": depth,
+                    "indicator": profile["indicator_template"].format(cause_label=cause_label),
+                    "threshold": profile["threshold"],
+                    "review_horizon": profile["review_horizon"],
+                    "success_criteria": profile["success_criteria"],
+                }
+            )
+            if len(plan) >= 5:
+                break
+
+        if not plan:
+            plan.append(
+                {
+                    "linked_action_id": "none",
+                    "causal_depth_level": "proximate",
+                    "indicator": f"Evidence closure for {cause_label}",
+                    "threshold": "At least one direct supporting verification artifact captured.",
+                    "review_horizon": "30d",
+                    "success_criteria": "Direct plant observation confirms or refutes hypothesis within review window.",
+                }
+            )
+        return plan
+
+    @staticmethod
+    def _build_human_performance_assessment(
+        *,
+        selected_candidates: Sequence[JsonDict],
+        recommended_actions: Sequence[JsonDict],
+    ) -> JsonDict:
+        """Step 6 — Human and Organisational Performance Assessment.
+
+        Scans retained candidates for H/I/J/K categories and produces a structured
+        block for the RCA card.  When no such candidates are present, returns an
+        ``applicable=False`` record so the field is always populated.
+        """
+        HOP_CATEGORIES = {"H", "I", "J", "K"}
+        PERFORMANCE_MODE: Dict[str, str] = {
+            "H": "execution_error",
+            "I": "procedure_gap",
+            "J": "knowledge_gap",
+            "K": "supervisory_gap",
+        }
+        REGULATORY_REF: Dict[str, str] = {
+            "H": "AP-913 §4.3 — Human Performance (maintenance execution)",
+            "I": "AP-913 §4.4 — Procedure Adequacy",
+            "J": "AP-913 §4.5 — Training and Qualification",
+            "K": "AP-913 §4.6 — Supervisory and Organisational Factors",
+        }
+
+        hop_candidates = [
+            c for c in (selected_candidates or [])
+            if isinstance(c, dict)
+            and str(c.get("primary_causal_category") or "").strip().upper() in HOP_CATEGORIES
+        ]
+
+        category_flags: Dict[str, bool] = {cat: False for cat in HOP_CATEGORIES}
+        for c in hop_candidates:
+            cat = str(c.get("primary_causal_category") or "").strip().upper()
+            if cat in category_flags:
+                category_flags[cat] = True
+
+        if not hop_candidates:
+            return {
+                "applicable": False,
+                "category_flags": category_flags,
+                "findings": [],
+                "provenance_note": (
+                    "No H/I/J/K category candidate was retained in the final candidate set. "
+                    "Human and organisational factors were not identified as contributors in this event."
+                ),
+            }
+
+        # Build action-id lookup per candidate for cross-reference
+        action_map: Dict[str, List[str]] = {}
+        for action in (recommended_actions or []):
+            if not isinstance(action, dict):
+                continue
+            linked = str(action.get("linked_candidate_id") or "").strip()
+            action_id = str(action.get("action_id") or "").strip()
+            if linked and action_id:
+                action_map.setdefault(linked, []).append(action_id)
+
+        findings: List[JsonDict] = []
+        for c in hop_candidates:
+            cid = str(c.get("candidate_id") or "").strip()
+            cat = str(c.get("primary_causal_category") or "").strip().upper()
+            findings.append(
+                {
+                    "candidate_id": cid,
+                    "causal_category": cat,
+                    "cause_label": str(c.get("cause_label") or "").strip(),
+                    "confidence_label": str(c.get("confidence_label") or "low").strip(),
+                    "performance_mode": PERFORMANCE_MODE.get(cat, "unknown"),
+                    "corrective_action_ids": action_map.get(cid, []),
+                    "regulatory_reference": REGULATORY_REF.get(cat, ""),
+                }
+            )
+
+        return {
+            "applicable": True,
+            "category_flags": category_flags,
+            "findings": findings,
+            "provenance_note": (
+                f"{len(findings)} human/organisational finding(s) identified across "
+                f"categories: {', '.join(sorted(k for k, v in category_flags.items() if v))}."
+            ),
+        }
+
     def _primary_common_cause_why_primary(
         self,
         candidate: Optional[JsonDict],
@@ -1952,6 +2521,8 @@ analyst_review = {
         evidence_bundle: JsonDict,
         run_context: JsonDict,
         prior_errors: List[str],
+        tskr_patterns: Optional[JsonDict] = None,
+        similar_event_list: Optional[JsonDict] = None,
     ) -> JsonDict:
         top = selected_candidates[0] if selected_candidates else None
         actuation_type: Optional[str] = event.get("actuation_type")
@@ -1974,6 +2545,28 @@ analyst_review = {
                 "confidence_label": "speculative",
                 "analyst_attention_flags": _no_top_flags,
                 "conclusion_type": "no_adequate_hypothesis",
+                "causal_depth_summary": {
+                    "proximate_cause": "unresolved",
+                    "contributing_causes": [],
+                    "root_cause": "unresolved",
+                    "depth_complete": False,
+                    "depth_incomplete_reason": (
+                        "proximate cause layer (A–F category) unresolved; "
+                        "contributing cause layer (G–K categories) unresolved; "
+                        "root cause layer (Category L) unresolved — no candidates met minimum synthesis requirements"
+                    ),
+                },
+                "unresolved_gaps": list(_no_top_flags),
+                "effectiveness_monitoring_plan": [
+                    {
+                        "linked_action_id": "ACT-FALLBACK-001",
+                        "causal_depth_level": "proximate",
+                        "indicator": "Evidence closure for unresolved primary mechanism",
+                        "threshold": "At least one direct plant verification artifact captured.",
+                        "review_horizon": "30d",
+                        "success_criteria": "Direct plant observation narrows candidate set to a single retained hypothesis.",
+                    }
+                ],
             }
 
             primary = {
@@ -2279,6 +2872,36 @@ analyst_review = {
                     ),
                 }
             ]
+            causal_depth_summary = self._build_causal_depth_summary(
+                primary_candidate=top,
+                selected_candidates=selected_candidates,
+            )
+            unresolved_gaps = self._build_unresolved_gaps(
+                primary_candidate=top,
+                evidence_summary=evidence_summary,
+                pattern_posture=pattern_posture,
+                analyst_attention_flags=analyst_attention_flags,
+                causal_depth_summary=causal_depth_summary,
+                sensitivity_any_change=bool(
+                    ((causality_candidates.get("sensitivity_table") or {}).get("summary") or {}).get(
+                        "any_ranking_change_possible", False
+                    )
+                ),
+                novel_pattern_flag=bool(
+                    ((tskr_patterns or {}).get("summary") or {}).get(
+                        "has_novel_patterns", False
+                    )
+                ),
+                similar_event_list=similar_event_list,
+            )
+            effectiveness_monitoring_plan = self._build_effectiveness_monitoring_plan(
+                primary_candidate=top,
+                recommended_actions=actions,
+            )
+            human_performance_assessment = self._build_human_performance_assessment(
+                selected_candidates=selected_candidates,
+                recommended_actions=actions,
+            )
 
             executive_summary = {
                 "decision_status": decision_status,
@@ -2286,6 +2909,9 @@ analyst_review = {
                 "confidence_label": calibrated_confidence_label,
                 "analyst_attention_flags": analyst_attention_flags,
                 "conclusion_type": conclusion_type,
+                "causal_depth_summary": causal_depth_summary,
+                "unresolved_gaps": unresolved_gaps,
+                "effectiveness_monitoring_plan": effectiveness_monitoring_plan,
             }
 
             analyst_review = {
@@ -2349,6 +2975,13 @@ analyst_review = {
         }
         if ccf_summary is not None:
             card["ccf_summary"] = ccf_summary
+        # Always populate human_performance_assessment (applicable=False when no H/I/J/K candidates)
+        card["human_performance_assessment"] = human_performance_assessment if top is not None else {
+            "applicable": False,
+            "category_flags": {"H": False, "I": False, "J": False, "K": False},
+            "findings": [],
+            "provenance_note": "No primary hypothesis — human performance assessment not applicable.",
+        }
         return card
 
     def _balanced_fallback_evidence(
@@ -2670,8 +3303,19 @@ analyst_review = {
                 and bool(ev.get("source_id"))
             )
         )
+        typed_primary_supporting_count = sum(
+            1
+            for ev in evidence_rows
+            if (
+                isinstance(ev, dict)
+                and (ev.get("support_role") or "").strip().lower() == "supporting"
+                and ev.get("linked_candidate_id") == primary_candidate_id
+                and bool(ev.get("source_id"))
+                and bool(ev.get("source_type"))
+            )
+        )
 
-        return primary_supporting_count >= 2
+        return typed_primary_supporting_count >= 1 or primary_supporting_count >= 2
 
     def _normalize_confidence_label(self, label: Optional[str]) -> str:
         if not label:

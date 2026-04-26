@@ -8,6 +8,7 @@ implementation skeleton.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,6 +19,13 @@ JsonDict = Dict[str, Any]
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_export_filename(export_id: str) -> str:
+    """Return a filesystem-safe stem for CAP export files."""
+    normalized = str(export_id or "unknown").replace("::", "_").replace(" ", "_")
+    # Windows-invalid chars: <>:"/\|?* ; keep output deterministic across OSes.
+    return re.sub(r'[<>:"/\\|?*]', "_", normalized)
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +142,7 @@ class FileDropCAPAdapter:
         submitted_at = _utcnow_iso()
         receipt_id = f"RCPT::{export_id}::{submitted_at}"
 
-        safe_name = export_id.replace("::", "_").replace(" ", "_")
+        safe_name = _safe_export_filename(export_id)
         file_path = self.drop_dir / f"cap_export_{safe_name}.json"
         file_path.write_text(json.dumps(package, indent=2, default=str))
 

@@ -243,6 +243,10 @@ def test_manifest_includes_reentry_execution_artifact_block():
     assert manifest["artifacts"]["reentry_execution"]["present"] is True
     assert manifest["artifacts"]["reentry_execution"]["attempt_count"] == 1
     assert manifest["pipeline_config"]["reentry_execution"]["attempt_count"] == 1
+    scope_runtime = (manifest.get("pipeline_config") or {}).get("scope_runtime") or {}
+    assert scope_runtime.get("active_scope_version") in {None, 0}
+    assert scope_runtime.get("revision_count") == 0
+    assert "scope_revision_summary" in manifest
 
 
 def test_stage_health_marks_missing_stage_outputs():
@@ -524,4 +528,270 @@ def test_manifest_pipeline_config_has_ishikawa_run_true_when_matrix_present():
     )
     assert manifest["pipeline_config"]["ishikawa_run"] is True
     assert manifest["pipeline_config"]["ishikawa_skip_reason"] is None
+
+
+def test_manifest_includes_analyst_checkpoints_for_all_stage_gates():
+    o = RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
+    )
+    manifest = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-2", "input_refs": {"event_id": "EVT-2", "asset_id": "ASSET-2"}},
+        kg_context={"subgraph_id": "KGCTX::2", "components": [], "failure_modes": []},
+        tskr_patterns={"patterns": []},
+        causality_candidates={"candidates": [], "provenance": {}},
+        causality_candidates_pre_refine=None,
+        evidence_bundle={"results": []},
+        ishikawa_matrix=None,
+        cmms_context=None,
+        rca_card={
+            "validation_status": {"schema_valid": True, "all_claims_cited": True, "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": True, "writeback_recommendation": "hold_until_review"},
+            "executive_summary": {"decision_status": "review_required"},
+            "primary_hypothesis": {"candidate_id": "FM::A", "confidence_label": "medium"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        },
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 0, "min_failure_modes_required": 0},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green", "barrier_count": 0, "degraded_barrier_count": 0}},
+    )
+    checkpoints = manifest.get("analyst_checkpoints") or []
+    step_ids = {str(row.get("step_id")) for row in checkpoints if isinstance(row, dict)}
+    assert {"0", "1", "2", "3", "3.5", "4", "5", "6"}.issubset(step_ids)
+    step5 = next((row for row in checkpoints if str((row or {}).get("step_id")) == "5"), {})
+    step6 = next((row for row in checkpoints if str((row or {}).get("step_id")) == "6"), {})
+    assert step5.get("status") == "pending"
+    assert step6.get("status") == "pending"
+    assert step5.get("decision_required") is False
+    assert step6.get("decision_required") is False
+
+
+def test_manifest_checkpoint_decision_required_when_stages_complete():
+    o = RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
+    )
+    manifest = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-2B", "input_refs": {"event_id": "EVT-2B", "asset_id": "ASSET-2B"}},
+        kg_context={"subgraph_id": "KGCTX::2B", "components": [{"component_id": "C1"}], "failure_modes": [{"fm_id": "FM-1"}], "past_events": []},
+        tskr_patterns={"patterns": [{"target_id": "FM-1"}]},
+        causality_candidates={"candidates": [{"candidate_id": "C1"}], "provenance": {}, "filtered_out_candidates": []},
+        causality_candidates_pre_refine=None,
+        evidence_bundle={"results": [{"snippet_id": "S1"}], "pipeline_health": {"issues": []}},
+        ishikawa_matrix={"categories": []},
+        cmms_context=None,
+        rca_card={
+            "validation_status": {"schema_valid": True, "all_claims_cited": True, "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": True, "writeback_recommendation": "hold_until_review"},
+            "executive_summary": {"decision_status": "review_required"},
+            "primary_hypothesis": {"candidate_id": "FM::A", "confidence_label": "medium"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        },
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 1, "min_failure_modes_required": 0},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green", "barrier_count": 0, "degraded_barrier_count": 0}},
+    )
+    checkpoints = manifest.get("analyst_checkpoints") or []
+    step5 = next((row for row in checkpoints if str((row or {}).get("step_id")) == "5"), {})
+    step6 = next((row for row in checkpoints if str((row or {}).get("step_id")) == "6"), {})
+    assert step5.get("status") == "completed"
+    assert step6.get("status") == "completed"
+    assert step5.get("decision_required") is True
+    assert step6.get("decision_required") is True
+    assert step5.get("decision_state") == "hold_until_review"
+    assert step6.get("decision_state") == "hold_until_review"
+
+
+def test_manifest_emits_step1_source_family_coverage_summary():
+    o = RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
+    )
+    manifest = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-COV-1", "input_refs": {"event_id": "EVT-COV-1", "asset_id": "ASSET-COV-1"}},
+        kg_context={"subgraph_id": "KGCTX::COV", "components": [{"component_id": "C1"}], "failure_modes": [{"fm_id": "FM-1"}], "past_events": []},
+        tskr_patterns={"patterns": []},
+        causality_candidates={"candidates": [{"candidate_id": "C1"}], "provenance": {}, "category_coverage": {"A": {"status": "candidate_scored"}}},
+        causality_candidates_pre_refine=None,
+        evidence_bundle={"results": [{"snippet_id": "S1"}], "pipeline_health": {"issues": []}},
+        ishikawa_matrix=None,
+        cmms_context=None,
+        rca_card={
+            "validation_status": {"schema_valid": True, "all_claims_cited": True, "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": False, "writeback_recommendation": "ready_if_accepted"},
+            "executive_summary": {"decision_status": "candidate_ready"},
+            "primary_hypothesis": {"candidate_id": "FM::A", "confidence_label": "medium"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        },
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 1, "min_failure_modes_required": 0},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green", "barrier_count": 0, "degraded_barrier_count": 0}},
+    )
+    coverage = manifest.get("coverage_summary") or {}
+    source_families = coverage.get("source_families") or {}
+    assert coverage.get("overall_status") in {"complete", "partial", "missing"}
+    assert {"kg_context", "chroma_corpus", "upstream_anomaly_inputs"}.issubset(set(source_families.keys()))
+    for key in ("kg_context", "chroma_corpus", "upstream_anomaly_inputs"):
+        assert (source_families.get(key) or {}).get("status") in {"complete", "partial", "missing"}
+
+
+def test_manifest_decision_trail_includes_ruleout_and_final_decision():
+    o = RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
+    )
+    manifest = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-3", "input_refs": {"event_id": "EVT-3", "asset_id": "ASSET-3"}},
+        kg_context={"subgraph_id": "KGCTX::3", "components": [], "failure_modes": []},
+        tskr_patterns={"patterns": []},
+        causality_candidates={
+            "candidates": [
+                {
+                    "candidate_id": "FM::PRIMARY",
+                    "reinstatement_status": "retained",
+                    "reinstatement_rationale": "OE recurrence signal reinstated candidate for analyst review.",
+                    "supporting_evidence_refs": ["SNIP-REINSTATE-1"],
+                    "reinstated_at": "2026-01-02T00:00:00+00:00",
+                },
+            ],
+            "filtered_out_candidates": [
+                {
+                    "candidate_id": "FM::ALT",
+                    "ruleout": {
+                        "reason_code": "no_supporting_data",
+                        "reason_detail": "No direct evidence.",
+                        "ruled_out_by": "engine",
+                        "ruled_out_at": "2026-01-01T00:00:00+00:00",
+                    },
+                }
+            ],
+            "provenance": {},
+        },
+        causality_candidates_pre_refine=None,
+        evidence_bundle={"results": []},
+        ishikawa_matrix=None,
+        cmms_context=None,
+        rca_card={
+            "validation_status": {"schema_valid": True, "all_claims_cited": True, "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": False, "writeback_recommendation": "ready_if_accepted"},
+            "executive_summary": {"decision_status": "candidate_ready"},
+            "primary_hypothesis": {"candidate_id": "FM::PRIMARY", "confidence_label": "medium"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        },
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 0, "min_failure_modes_required": 0},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green", "barrier_count": 0, "degraded_barrier_count": 0}},
+    )
+    trail = manifest.get("decision_trail") or []
+    event_types = {str(row.get("event_type")) for row in trail if isinstance(row, dict)}
+    assert "ruleout" in event_types
+    assert "final_decision" in event_types
+    reinstatement_rows = [
+        row for row in trail
+        if isinstance(row, dict) and str(row.get("event_type")) == "reinstatement_status"
+    ]
+    assert reinstatement_rows
+    rein = reinstatement_rows[0]
+    assert rein.get("reason_detail")
+    assert (rein.get("evidence_refs") or [])[0] == "SNIP-REINSTATE-1"
+    assert rein.get("reinstated_at") == "2026-01-02T00:00:00+00:00"
+
+
+def test_manifest_replayability_signature_is_stable_for_identical_inputs():
+    o = RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
+    )
+    kwargs = dict(
+        kg_context={"subgraph_id": "KGCTX::R", "components": [{"component_id": "CMP-1"}], "failure_modes": [{"failure_mode_id": "FM-1"}]},
+        tskr_patterns={"patterns": [{"pattern_id": "P1"}]},
+        causality_candidates={
+            "candidates": [
+                {
+                    "candidate_id": "FM::PRIMARY",
+                    "composite_score": 0.71,
+                    "quality_multiplier": 0.9,
+                    "primary_eligibility": "eligible",
+                    "evidence_posture": "supported",
+                    "reinstatement_status": "none",
+                    "near_tie_with": [],
+                }
+            ],
+            "filtered_out_candidates": [],
+            "provenance": {},
+            "metamodel_compliance": {"level": "full"},
+            "pipeline_health": {"status": "green", "issues": []},
+            "uncertainty_summary": {"candidate_count": 1},
+            "decision_posture": {"recommended_decision_status": "candidate_ready"},
+            "applicability_summary": {"applicable": 1, "not_applicable": 0, "unknown": 11},
+        },
+        causality_candidates_pre_refine=None,
+        evidence_bundle={"results": [], "pipeline_health": {"status": "green", "issues": []}},
+        ishikawa_matrix=None,
+        cmms_context=None,
+        rca_card={
+            "validation_status": {"schema_valid": True, "all_claims_cited": True, "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": False, "writeback_recommendation": "ready_if_accepted"},
+            "executive_summary": {"decision_status": "candidate_ready"},
+            "primary_hypothesis": {"candidate_id": "FM::PRIMARY", "confidence_label": "medium"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        },
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 1, "min_failure_modes_required": 1},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green", "barrier_count": 0, "degraded_barrier_count": 0}},
+    )
+    manifest_1 = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-REPLAY-1", "input_refs": {"event_id": "EVT-R", "asset_id": "ASSET-R", "event_severity": "high"}},
+        **kwargs,
+    )
+    manifest_2 = o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-REPLAY-2", "input_refs": {"event_id": "EVT-R", "asset_id": "ASSET-R", "event_severity": "high"}},
+        **kwargs,
+    )
+    sig_1 = manifest_1.get("replayability_signature") or {}
+    sig_2 = manifest_2.get("replayability_signature") or {}
+    assert sig_1.get("algorithm") == "sha256"
+    assert isinstance(sig_1.get("digest"), str) and len(sig_1["digest"]) == 64
+    assert sig_1.get("digest") == sig_2.get("digest")
+    assert sig_1.get("canonical_payload_version") == "v1"
 

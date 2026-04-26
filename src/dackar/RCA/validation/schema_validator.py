@@ -89,6 +89,13 @@ class RCAArtifactValidator:
         "run_context",
         "run_manifest",
         "reentry_execution",
+        "soe_log",
+        "alarm_log",
+        "environmental_monitoring",
+        "protection_logic_context",
+        "configuration_change_records",
+        "vendor_supply_chain_records",
+        "training_records",
         "fmea_ingestion_report",
         "document",
         "processed_text_record",
@@ -384,6 +391,12 @@ class RCAArtifactValidator:
         elif artifact_type == "rca_card":
             issues.extend(self._semantic_checks_rca_card(payload))
 
+        elif artifact_type == "run_manifest":
+            issues.extend(self._semantic_checks_run_manifest(payload))
+
+        elif artifact_type == "run_context":
+            issues.extend(self._semantic_checks_run_context(payload))
+
         elif artifact_type == "causality_candidates":
             issues.extend(self._semantic_checks_causality_candidates(payload))
 
@@ -675,6 +688,101 @@ class RCAArtifactValidator:
                 candidates=candidates,
                 kg_context=kg_context,
             ))
+
+        metamodel_level = str(
+            ((candidates.get("metamodel_compliance") or {}).get("level") or "partial")
+        ).strip().lower()
+        full_mode = metamodel_level == "full"
+        if full_mode and rca_card:
+            summary = rca_card.get("executive_summary")
+            if not isinstance(summary, dict):
+                issues.append(self._issue(
+                    artifact="rca_card",
+                    severity=self._sev("error"),
+                    code="full_mode_executive_summary_missing",
+                    message="rca_card.executive_summary must be an object in full mode.",
+                    path=["executive_summary"],
+                ))
+            else:
+                depth = summary.get("causal_depth_summary")
+                if not isinstance(depth, dict):
+                    issues.append(self._issue(
+                        artifact="rca_card",
+                        severity=self._sev("error"),
+                        code="full_mode_causal_depth_summary_missing",
+                        message="executive_summary.causal_depth_summary is required in full mode.",
+                        path=["executive_summary", "causal_depth_summary"],
+                    ))
+                else:
+                    for field in ("proximate_cause", "contributing_causes", "root_cause", "depth_complete"):
+                        if field not in depth:
+                            issues.append(self._issue(
+                                artifact="rca_card",
+                                severity=self._sev("error"),
+                                code="full_mode_causal_depth_field_missing",
+                                message=f"executive_summary.causal_depth_summary.{field} is required in full mode.",
+                                path=["executive_summary", "causal_depth_summary", field],
+                            ))
+                    if "contributing_causes" in depth and not isinstance(depth.get("contributing_causes"), list):
+                        issues.append(self._issue(
+                            artifact="rca_card",
+                            severity=self._sev("error"),
+                            code="full_mode_causal_depth_contributing_wrong_type",
+                            message="executive_summary.causal_depth_summary.contributing_causes must be an array.",
+                            path=["executive_summary", "causal_depth_summary", "contributing_causes"],
+                        ))
+                    if "depth_complete" in depth and not isinstance(depth.get("depth_complete"), bool):
+                        issues.append(self._issue(
+                            artifact="rca_card",
+                            severity=self._sev("error"),
+                            code="full_mode_causal_depth_complete_wrong_type",
+                            message="executive_summary.causal_depth_summary.depth_complete must be a boolean.",
+                            path=["executive_summary", "causal_depth_summary", "depth_complete"],
+                        ))
+
+                gaps = summary.get("unresolved_gaps")
+                if not isinstance(gaps, list):
+                    issues.append(self._issue(
+                        artifact="rca_card",
+                        severity=self._sev("error"),
+                        code="full_mode_unresolved_gaps_missing",
+                        message="executive_summary.unresolved_gaps must be an array in full mode.",
+                        path=["executive_summary", "unresolved_gaps"],
+                    ))
+
+                monitoring = summary.get("effectiveness_monitoring_plan")
+                if not isinstance(monitoring, list) or not monitoring:
+                    issues.append(self._issue(
+                        artifact="rca_card",
+                        severity=self._sev("error"),
+                        code="full_mode_effectiveness_plan_missing",
+                        message="executive_summary.effectiveness_monitoring_plan must be a non-empty array in full mode.",
+                        path=["executive_summary", "effectiveness_monitoring_plan"],
+                    ))
+                else:
+                    for idx, row in enumerate(monitoring):
+                        if not isinstance(row, dict):
+                            issues.append(self._issue(
+                                artifact="rca_card",
+                                severity=self._sev("error"),
+                                code="full_mode_effectiveness_plan_row_wrong_type",
+                                message=f"effectiveness_monitoring_plan[{idx}] must be an object.",
+                                path=["executive_summary", "effectiveness_monitoring_plan", str(idx)],
+                            ))
+                            continue
+                        for field in ("linked_action_id", "indicator", "threshold", "review_horizon"):
+                            val = row.get(field)
+                            if not isinstance(val, str) or not val.strip():
+                                issues.append(self._issue(
+                                    artifact="rca_card",
+                                    severity=self._sev("error"),
+                                    code="full_mode_effectiveness_plan_field_missing",
+                                    message=(
+                                        "effectiveness_monitoring_plan[" + str(idx) + f"].{field} "
+                                        "must be a non-empty string in full mode."
+                                    ),
+                                    path=["executive_summary", "effectiveness_monitoring_plan", str(idx), field],
+                                ))
 
         return issues
 
@@ -985,6 +1093,18 @@ class RCAArtifactValidator:
                     ),
                     path=["recommended_actions", str(idx), "expected_observation_if_true"],
                 ))
+            target_depth = action.get("target_causal_depth")
+            if target_depth is not None and target_depth not in {"proximate", "contributing", "root"}:
+                issues.append(self._issue(
+                    artifact="rca_card",
+                    severity=self._sev("error"),
+                    code="recommended_action_target_causal_depth_invalid",
+                    message=(
+                        f"recommended_actions[{idx}].target_causal_depth must be one of "
+                        "{proximate, contributing, root}."
+                    ),
+                    path=["recommended_actions", str(idx), "target_causal_depth"],
+                ))
 
         review = payload.get("analyst_review")
         if review is None:
@@ -1050,8 +1170,772 @@ class RCAArtifactValidator:
 
         return issues
 
+    def _semantic_checks_run_manifest(self, payload: JsonDict) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
+        pipeline_config = payload.get("pipeline_config")
+        if not isinstance(pipeline_config, dict):
+            issues.append(self._issue(
+                artifact="run_manifest",
+                severity=self._sev("error"),
+                code="pipeline_config_missing",
+                message="run_manifest.pipeline_config must be an object.",
+                path=["pipeline_config"],
+            ))
+            return issues
+
+        metamodel_level = str(pipeline_config.get("metamodel_compliance_level") or "partial").strip().lower()
+        full_mode = metamodel_level == "full"
+
+        for key in ("coverage_summary", "applicability_summary", "uncertainty_summary", "decision_posture", "replayability_signature"):
+            value = payload.get(key)
+            if value is None:
+                if full_mode:
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_full_mode_field_missing",
+                        message=f"run_manifest.{key} is required when metamodel_compliance_level=full.",
+                        path=[key],
+                    ))
+                continue
+            if not isinstance(value, dict):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error") if full_mode else self._sev("warning"),
+                    code="run_manifest_summary_wrong_type",
+                    message=f"run_manifest.{key} must be an object when present.",
+                    path=[key],
+                ))
+
+        replayability_signature = payload.get("replayability_signature")
+        if isinstance(replayability_signature, dict):
+            algorithm = replayability_signature.get("algorithm")
+            digest = replayability_signature.get("digest")
+            candidate_count = replayability_signature.get("candidate_count")
+            payload_version = replayability_signature.get("canonical_payload_version")
+            if full_mode and (not isinstance(algorithm, str) or not algorithm.strip()):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_replayability_algorithm_missing",
+                    message="run_manifest.replayability_signature.algorithm must be a non-empty string in full mode.",
+                    path=["replayability_signature", "algorithm"],
+                ))
+            if full_mode and (not isinstance(digest, str) or len(digest.strip()) < 16):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_replayability_digest_missing",
+                    message="run_manifest.replayability_signature.digest must be a non-empty digest string in full mode.",
+                    path=["replayability_signature", "digest"],
+                ))
+            if full_mode and (not isinstance(candidate_count, int) or candidate_count < 0):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_replayability_candidate_count_invalid",
+                    message="run_manifest.replayability_signature.candidate_count must be a non-negative integer in full mode.",
+                    path=["replayability_signature", "candidate_count"],
+                ))
+            if full_mode and (not isinstance(payload_version, str) or not payload_version.strip()):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_replayability_version_missing",
+                    message=(
+                        "run_manifest.replayability_signature.canonical_payload_version must be a "
+                        "non-empty string in full mode."
+                    ),
+                    path=["replayability_signature", "canonical_payload_version"],
+                ))
+
+        coverage_summary = payload.get("coverage_summary")
+        coverage_overall_status = None
+        degraded_source_families: List[str] = []
+        if isinstance(coverage_summary, dict):
+            valid_cov_status = {"complete", "partial", "missing"}
+            coverage_overall_status = str(coverage_summary.get("overall_status") or "").strip().lower() or None
+            source_families = coverage_summary.get("source_families")
+            if full_mode and not isinstance(source_families, dict):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_coverage_summary_source_families_missing",
+                    message=(
+                        "run_manifest.coverage_summary.source_families is required in full mode "
+                        "and must be an object."
+                    ),
+                    path=["coverage_summary", "source_families"],
+                ))
+            if isinstance(source_families, dict):
+                required_families = {"kg_context", "chroma_corpus", "upstream_anomaly_inputs"}
+                if full_mode:
+                    missing_families = sorted(required_families.difference(set(source_families.keys())))
+                    for fam in missing_families:
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error"),
+                            code="run_manifest_coverage_summary_family_missing",
+                            message=f"run_manifest.coverage_summary.source_families.{fam} is required in full mode.",
+                            path=["coverage_summary", "source_families", fam],
+                        ))
+                for fam, row in source_families.items():
+                    if not isinstance(row, dict):
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="run_manifest_coverage_summary_family_wrong_type",
+                            message=f"run_manifest.coverage_summary.source_families.{fam} must be an object.",
+                            path=["coverage_summary", "source_families", str(fam)],
+                        ))
+                        continue
+                    status_val = str(row.get("status") or "").strip().lower()
+                    if status_val not in valid_cov_status and status_val != "not_assessed":
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="run_manifest_coverage_summary_status_invalid",
+                            message=(
+                                f"run_manifest.coverage_summary.source_families.{fam}.status must be one of "
+                                "{complete, partial, missing, not_assessed}."
+                            ),
+                            path=["coverage_summary", "source_families", str(fam), "status"],
+                        ))
+                    elif status_val in {"partial", "missing"} and str(fam) in required_families:
+                        degraded_source_families.append(str(fam))
+
+            # ── Step 1: paired-data and new-family strict checks ────────────
+            if full_mode and isinstance(source_families, dict):
+                # All families must be present (new families may be not_assessed but must exist)
+                all_expected_families = {
+                    "kg_context", "chroma_corpus", "upstream_anomaly_inputs",
+                    "telemetry_detail", "soe_log", "alarm_log",
+                    "protection_logic_context", "configuration_change_records",
+                    "environmental_monitoring", "vendor_supply_chain_records", "training_records",
+                }
+                for efam in sorted(all_expected_families):
+                    if efam not in source_families:
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error"),
+                            code="run_manifest_coverage_summary_step1_family_missing",
+                            message=f"run_manifest.coverage_summary.source_families.{efam} is required in full mode (Step 1 coverage).",
+                            path=["coverage_summary", "source_families", efam],
+                        ))
+                # Telemetry must not be missing (it is mandatory input)
+                telemetry_row = source_families.get("telemetry_detail") or {}
+                telemetry_s = str(telemetry_row.get("status") or "").strip().lower()
+                if telemetry_s == "missing":
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_telemetry_detail_missing",
+                        message=(
+                            "run_manifest.coverage_summary.source_families.telemetry_detail.status is 'missing'. "
+                            "Telemetry is a mandatory Step 1 input."
+                        ),
+                        path=["coverage_summary", "source_families", "telemetry_detail", "status"],
+                    ))
+                # Paired-data: SOE present without protection logic context is an error in full mode
+                soe_row = source_families.get("soe_log") or {}
+                soe_s = str(soe_row.get("status") or "").strip().lower()
+                plc_row = source_families.get("protection_logic_context") or {}
+                plc_s = str(plc_row.get("status") or "").strip().lower()
+                if soe_s not in {"not_assessed", ""} and plc_s in {"missing", "violated"}:
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_paired_data_soe_plc_violated",
+                        message=(
+                            "SOE log is present but protection_logic_context is missing. "
+                            "Paired-data requirement violated in full mode: both must be provided together."
+                        ),
+                        path=["coverage_summary", "source_families", "protection_logic_context", "status"],
+                    ))
+                # Overall status must not be 'complete' if any assessed family is missing/partial
+                if coverage_overall_status == "complete":
+                    truly_degraded = [
+                        fam for fam, row in source_families.items()
+                        if isinstance(row, dict)
+                        and str(row.get("status") or "").strip().lower() in {"partial", "missing"}
+                    ]
+                    if truly_degraded:
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error"),
+                            code="run_manifest_coverage_overall_status_inconsistent",
+                            message=(
+                                "coverage_summary.overall_status is 'complete' but the following families are "
+                                f"degraded: {sorted(truly_degraded)}. Overall status must reflect actual coverage."
+                            ),
+                            path=["coverage_summary", "overall_status"],
+                        ))
+                # Paired-data check block must be present
+                paired_checks = coverage_summary.get("paired_data_checks")
+                if not isinstance(paired_checks, dict):
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_paired_data_checks_missing",
+                        message=(
+                            "run_manifest.coverage_summary.paired_data_checks is required in full mode (Step 1)."
+                        ),
+                        path=["coverage_summary", "paired_data_checks"],
+                    ))
+
+        uncertainty_summary = payload.get("uncertainty_summary")
+        if (
+            full_mode
+            and coverage_overall_status in {"partial", "missing"}
+            and isinstance(uncertainty_summary, dict)
+        ):
+            cov_factor = uncertainty_summary.get("average_coverage_quality_factor")
+            cov_degraded_count = uncertainty_summary.get("coverage_degraded_candidate_count")
+            cov_flags = uncertainty_summary.get("coverage_flagged_source_families")
+            if not isinstance(cov_factor, (int, float)):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_uncertainty_coverage_factor_missing",
+                    message=(
+                        "Coverage is degraded (partial/missing); uncertainty_summary.average_coverage_quality_factor "
+                        "must be a numeric value in full mode."
+                    ),
+                    path=["uncertainty_summary", "average_coverage_quality_factor"],
+                ))
+            if not isinstance(cov_degraded_count, int) or cov_degraded_count < 0:
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_uncertainty_coverage_degraded_count_invalid",
+                    message=(
+                        "Coverage is degraded (partial/missing); uncertainty_summary.coverage_degraded_candidate_count "
+                        "must be a non-negative integer in full mode."
+                    ),
+                    path=["uncertainty_summary", "coverage_degraded_candidate_count"],
+                ))
+            if not isinstance(cov_flags, list):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_uncertainty_coverage_flags_missing",
+                    message=(
+                        "Coverage is degraded (partial/missing); uncertainty_summary.coverage_flagged_source_families "
+                        "must be an array in full mode."
+                    ),
+                    path=["uncertainty_summary", "coverage_flagged_source_families"],
+                ))
+            else:
+                flagged = {str(x).strip() for x in cov_flags if str(x).strip()}
+                missing_flags = sorted(set(degraded_source_families).difference(flagged))
+                if missing_flags:
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_uncertainty_coverage_flags_incomplete",
+                        message=(
+                            "uncertainty_summary.coverage_flagged_source_families must include all degraded "
+                            f"source families in full mode; missing {missing_flags}."
+                        ),
+                        path=["uncertainty_summary", "coverage_flagged_source_families"],
+                    ))
+
+        review_hooks = payload.get("review_hooks")
+        if isinstance(review_hooks, dict) and coverage_overall_status in {"partial", "missing"}:
+            coverage_degraded = review_hooks.get("coverage_degraded")
+            coverage_status = str(review_hooks.get("coverage_status") or "").strip().lower()
+            coverage_ack_required = review_hooks.get("coverage_acknowledgement_required")
+            coverage_acknowledged = review_hooks.get("coverage_acknowledged")
+            writeback_ready = review_hooks.get("writeback_ready")
+            if full_mode and coverage_degraded is not True:
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_coverage_degraded_flag_missing",
+                    message=(
+                        "Coverage is degraded (partial/missing); review_hooks.coverage_degraded must be true "
+                        "in full mode."
+                    ),
+                    path=["review_hooks", "coverage_degraded"],
+                ))
+            if full_mode and coverage_status not in {"partial", "missing"}:
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_coverage_status_mismatch",
+                    message=(
+                        "Coverage is degraded (partial/missing); review_hooks.coverage_status must be partial "
+                        "or missing in full mode."
+                    ),
+                    path=["review_hooks", "coverage_status"],
+                ))
+            if coverage_ack_required is not None and not isinstance(coverage_ack_required, bool):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error") if full_mode else self._sev("warning"),
+                    code="run_manifest_coverage_ack_required_invalid",
+                    message="run_manifest.review_hooks.coverage_acknowledgement_required must be a boolean.",
+                    path=["review_hooks", "coverage_acknowledgement_required"],
+                ))
+            if coverage_acknowledged is not None and not isinstance(coverage_acknowledged, bool):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error") if full_mode else self._sev("warning"),
+                    code="run_manifest_coverage_acknowledged_invalid",
+                    message="run_manifest.review_hooks.coverage_acknowledged must be a boolean.",
+                    path=["review_hooks", "coverage_acknowledged"],
+                ))
+            if full_mode and coverage_acknowledged is not True and bool(writeback_ready):
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_coverage_acknowledgement_missing_for_writeback",
+                    message=(
+                        "Coverage is degraded (partial/missing); analyst acknowledgement is required before "
+                        "writeback_ready can be true."
+                    ),
+                    path=["review_hooks", "writeback_ready"],
+                ))
+            if full_mode and coverage_acknowledged is not True and coverage_ack_required is not True:
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_coverage_ack_required_missing",
+                    message=(
+                        "Coverage is degraded (partial/missing); review_hooks.coverage_acknowledgement_required "
+                        "must be true until acknowledged."
+                    ),
+                    path=["review_hooks", "coverage_acknowledgement_required"],
+                ))
+
+        checkpoints = payload.get("analyst_checkpoints")
+        if checkpoints is None:
+            if full_mode:
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_analyst_checkpoints_missing",
+                    message="run_manifest.analyst_checkpoints is required when metamodel_compliance_level=full.",
+                    path=["analyst_checkpoints"],
+                ))
+        elif not isinstance(checkpoints, list):
+            issues.append(self._issue(
+                artifact="run_manifest",
+                severity=self._sev("error") if full_mode else self._sev("warning"),
+                code="run_manifest_analyst_checkpoints_wrong_type",
+                message="run_manifest.analyst_checkpoints must be an array when present.",
+                path=["analyst_checkpoints"],
+            ))
+        elif full_mode:
+            step_ids = set()
+            valid_status = {"completed", "pending"}
+            valid_decision_state = {"completed", "hold_until_review", "ready_if_accepted"}
+            for idx, row in enumerate(checkpoints):
+                if not isinstance(row, dict):
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_analyst_checkpoints_row_wrong_type",
+                        message=f"run_manifest.analyst_checkpoints[{idx}] must be an object in full mode.",
+                        path=["analyst_checkpoints", str(idx)],
+                    ))
+                    continue
+
+                step_id = row.get("step_id")
+                if not isinstance(step_id, str) or not step_id.strip():
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_analyst_checkpoint_step_id_missing",
+                        message=f"run_manifest.analyst_checkpoints[{idx}].step_id must be a non-empty string.",
+                        path=["analyst_checkpoints", str(idx), "step_id"],
+                    ))
+                else:
+                    step_ids.add(step_id.strip())
+
+                step_name = row.get("step_name")
+                if not isinstance(step_name, str) or not step_name.strip():
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_analyst_checkpoint_step_name_missing",
+                        message=f"run_manifest.analyst_checkpoints[{idx}].step_name must be a non-empty string.",
+                        path=["analyst_checkpoints", str(idx), "step_name"],
+                    ))
+
+                status_val = str(row.get("status") or "").strip().lower()
+                if status_val not in valid_status:
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_analyst_checkpoint_status_invalid",
+                        message=(
+                            "run_manifest.analyst_checkpoints[" + str(idx) + "].status must be one of "
+                            "{completed, pending} in full mode."
+                        ),
+                        path=["analyst_checkpoints", str(idx), "status"],
+                    ))
+
+                decision_required = row.get("decision_required")
+                if not isinstance(decision_required, bool):
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_analyst_checkpoint_decision_required_invalid",
+                        message=(
+                            "run_manifest.analyst_checkpoints[" + str(idx) + "].decision_required must be a boolean "
+                            "in full mode."
+                        ),
+                        path=["analyst_checkpoints", str(idx), "decision_required"],
+                    ))
+
+                decision_state = str(row.get("decision_state") or "").strip().lower()
+                if decision_state not in valid_decision_state:
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error"),
+                        code="run_manifest_analyst_checkpoint_decision_state_invalid",
+                        message=(
+                            "run_manifest.analyst_checkpoints[" + str(idx) + "].decision_state must be one of "
+                            "{completed, hold_until_review, ready_if_accepted} in full mode."
+                        ),
+                        path=["analyst_checkpoints", str(idx), "decision_state"],
+                    ))
+                elif isinstance(decision_required, bool):
+                    if not decision_required and decision_state != "completed":
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error"),
+                            code="run_manifest_analyst_checkpoint_state_inconsistent",
+                            message=(
+                                "run_manifest.analyst_checkpoints[" + str(idx) + "]: decision_required=false "
+                                "must use decision_state='completed'."
+                            ),
+                            path=["analyst_checkpoints", str(idx), "decision_state"],
+                        ))
+                    if decision_required and decision_state == "completed":
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error"),
+                            code="run_manifest_analyst_checkpoint_state_inconsistent",
+                            message=(
+                                "run_manifest.analyst_checkpoints[" + str(idx) + "]: decision_required=true "
+                                "must use decision_state in {hold_until_review, ready_if_accepted}."
+                            ),
+                            path=["analyst_checkpoints", str(idx), "decision_state"],
+                        ))
+
+            required_step_ids = {"0", "1", "2", "3", "3.5", "4", "5", "6"}
+            if not required_step_ids.issubset(step_ids):
+                missing = sorted(required_step_ids.difference(step_ids))
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_analyst_checkpoints_incomplete",
+                    message=(
+                        "run_manifest.analyst_checkpoints must include stage IDs "
+                        f"{sorted(required_step_ids)} in full mode; missing {missing}."
+                    ),
+                    path=["analyst_checkpoints"],
+                ))
+
+        decision_trail = payload.get("decision_trail")
+        if decision_trail is None:
+            if full_mode:
+                issues.append(self._issue(
+                    artifact="run_manifest",
+                    severity=self._sev("error"),
+                    code="run_manifest_decision_trail_missing",
+                    message="run_manifest.decision_trail is required when metamodel_compliance_level=full.",
+                    path=["decision_trail"],
+                ))
+        elif not isinstance(decision_trail, list):
+            issues.append(self._issue(
+                artifact="run_manifest",
+                severity=self._sev("error") if full_mode else self._sev("warning"),
+                code="run_manifest_decision_trail_wrong_type",
+                message="run_manifest.decision_trail must be an array when present.",
+                path=["decision_trail"],
+            ))
+        elif full_mode and not decision_trail:
+            issues.append(self._issue(
+                artifact="run_manifest",
+                severity=self._sev("error"),
+                code="run_manifest_decision_trail_empty",
+                message="run_manifest.decision_trail must include at least one decision entry in full mode.",
+                path=["decision_trail"],
+            ))
+        elif isinstance(decision_trail, list):
+            valid_event_types = {"ruleout", "reinstatement_status", "final_decision"}
+            for idx, row in enumerate(decision_trail):
+                if not isinstance(row, dict):
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error") if full_mode else self._sev("warning"),
+                        code="run_manifest_decision_trail_row_wrong_type",
+                        message=f"run_manifest.decision_trail[{idx}] must be an object.",
+                        path=["decision_trail", str(idx)],
+                    ))
+                    continue
+
+                event_type = str(row.get("event_type") or "").strip().lower()
+                if event_type not in valid_event_types:
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error") if full_mode else self._sev("warning"),
+                        code="run_manifest_decision_trail_event_type_invalid",
+                        message=(
+                            "run_manifest.decision_trail[" + str(idx) + "].event_type must be one of "
+                            "{ruleout, reinstatement_status, final_decision}."
+                        ),
+                        path=["decision_trail", str(idx), "event_type"],
+                    ))
+                    continue
+
+                candidate_id = row.get("candidate_id")
+                if not isinstance(candidate_id, str) or not candidate_id.strip():
+                    issues.append(self._issue(
+                        artifact="run_manifest",
+                        severity=self._sev("error") if full_mode else self._sev("warning"),
+                        code="run_manifest_decision_trail_candidate_id_missing",
+                        message=f"run_manifest.decision_trail[{idx}].candidate_id must be a non-empty string.",
+                        path=["decision_trail", str(idx), "candidate_id"],
+                    ))
+
+                if event_type == "ruleout":
+                    for field in ("reason_code", "reason_detail", "ruled_out_by", "ruled_out_at"):
+                        value = row.get(field)
+                        if not isinstance(value, str) or not value.strip():
+                            issues.append(self._issue(
+                                artifact="run_manifest",
+                                severity=self._sev("error") if full_mode else self._sev("warning"),
+                                code="run_manifest_decision_trail_ruleout_field_missing",
+                                message=(
+                                    "run_manifest.decision_trail[" + str(idx) + f"].{field} "
+                                    "must be a non-empty string for event_type=ruleout."
+                                ),
+                                path=["decision_trail", str(idx), field],
+                            ))
+                elif event_type == "reinstatement_status":
+                    value = row.get("status")
+                    if not isinstance(value, str) or not value.strip():
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="run_manifest_decision_trail_reinstatement_status_missing",
+                            message=(
+                                "run_manifest.decision_trail[" + str(idx) + "].status must be a non-empty string "
+                                "for event_type=reinstatement_status."
+                            ),
+                            path=["decision_trail", str(idx), "status"],
+                        ))
+                    if full_mode:
+                        detail = row.get("reason_detail")
+                        if not isinstance(detail, str) or not detail.strip():
+                            issues.append(self._issue(
+                                artifact="run_manifest",
+                                severity=self._sev("error"),
+                                code="run_manifest_decision_trail_reinstatement_reason_missing",
+                                message=(
+                                    "run_manifest.decision_trail[" + str(idx) + "].reason_detail must be a "
+                                    "non-empty string for event_type=reinstatement_status in full mode."
+                                ),
+                                path=["decision_trail", str(idx), "reason_detail"],
+                            ))
+                        evidence_refs = row.get("evidence_refs")
+                        if not isinstance(evidence_refs, list) or not any(
+                            isinstance(x, str) and x.strip() for x in (evidence_refs or [])
+                        ):
+                            issues.append(self._issue(
+                                artifact="run_manifest",
+                                severity=self._sev("error"),
+                                code="run_manifest_decision_trail_reinstatement_evidence_refs_missing",
+                                message=(
+                                    "run_manifest.decision_trail[" + str(idx) + "].evidence_refs must include at "
+                                    "least one non-empty evidence reference for event_type=reinstatement_status in full mode."
+                                ),
+                                path=["decision_trail", str(idx), "evidence_refs"],
+                            ))
+                        reinstated_at = row.get("reinstated_at")
+                        if not isinstance(reinstated_at, str) or not reinstated_at.strip():
+                            issues.append(self._issue(
+                                artifact="run_manifest",
+                                severity=self._sev("error"),
+                                code="run_manifest_decision_trail_reinstatement_timestamp_missing",
+                                message=(
+                                    "run_manifest.decision_trail[" + str(idx) + "].reinstated_at must be a "
+                                    "non-empty timestamp string for event_type=reinstatement_status in full mode."
+                                ),
+                                path=["decision_trail", str(idx), "reinstated_at"],
+                            ))
+                elif event_type == "final_decision":
+                    decision_status = row.get("decision_status")
+                    if decision_status not in {"review_required", "candidate_ready", "insufficient_evidence"}:
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="run_manifest_decision_trail_final_status_invalid",
+                            message=(
+                                "run_manifest.decision_trail[" + str(idx) + "].decision_status must be one of "
+                                "{review_required, candidate_ready, insufficient_evidence}."
+                            ),
+                            path=["decision_trail", str(idx), "decision_status"],
+                        ))
+                    confidence = row.get("confidence_label")
+                    if confidence not in {"high", "medium", "low", "speculative"}:
+                        issues.append(self._issue(
+                            artifact="run_manifest",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="run_manifest_decision_trail_final_confidence_invalid",
+                            message=(
+                                "run_manifest.decision_trail[" + str(idx) + "].confidence_label must be one of "
+                                "{high, medium, low, speculative}."
+                            ),
+                            path=["decision_trail", str(idx), "confidence_label"],
+                        ))
+
+        return issues
+
+    def _semantic_checks_run_context(self, payload: JsonDict) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
+        scope_management = payload.get("scope_management")
+        config = payload.get("config") or {}
+        metamodel_level = str(config.get("metamodel_compliance_level") or "partial").strip().lower()
+        full_mode = metamodel_level == "full"
+
+        if not isinstance(scope_management, dict):
+            if full_mode:
+                issues.append(self._issue(
+                    artifact="run_context",
+                    severity=self._sev("error"),
+                    code="scope_management_missing_full_mode",
+                    message="run_context.scope_management is required in full metamodel mode.",
+                    path=["scope_management"],
+                ))
+            return issues
+
+        revisions = scope_management.get("scope_revisions")
+        if not isinstance(revisions, list) or not revisions:
+            issues.append(self._issue(
+                artifact="run_context",
+                severity=self._sev("error") if full_mode else self._sev("warning"),
+                code="scope_revisions_empty",
+                message="run_context.scope_management.scope_revisions must include at least one revision.",
+                path=["scope_management", "scope_revisions"],
+            ))
+            return issues
+
+        accepted = [
+            row for row in revisions
+            if isinstance(row, dict) and str(row.get("analyst_decision") or "").strip().lower() == "accepted"
+        ]
+        if full_mode and not accepted:
+            issues.append(self._issue(
+                artifact="run_context",
+                severity=self._sev("error"),
+                code="scope_revision_initial_acceptance_missing_full_mode",
+                message="At least one accepted scope revision is required in full metamodel mode.",
+                path=["scope_management", "scope_revisions"],
+            ))
+
+        active_scope_version = scope_management.get("active_scope_version")
+        if isinstance(active_scope_version, int):
+            accepted_versions = {
+                int(row.get("scope_version"))
+                for row in accepted
+                if isinstance(row.get("scope_version"), int)
+            }
+            if accepted_versions and active_scope_version not in accepted_versions:
+                issues.append(self._issue(
+                    artifact="run_context",
+                    severity=self._sev("error") if full_mode else self._sev("warning"),
+                    code="active_scope_version_not_accepted",
+                    message=(
+                        "run_context.scope_management.active_scope_version must match an accepted "
+                        "scope_revision scope_version."
+                    ),
+                    path=["scope_management", "active_scope_version"],
+                ))
+        elif full_mode:
+            issues.append(self._issue(
+                artifact="run_context",
+                severity=self._sev("error"),
+                code="active_scope_version_missing_full_mode",
+                message="run_context.scope_management.active_scope_version is required in full mode.",
+                path=["scope_management", "active_scope_version"],
+            ))
+
+        input_refs = payload.get("input_refs") or {}
+        input_active_scope_version = input_refs.get("active_scope_version")
+        if isinstance(active_scope_version, int) and input_active_scope_version is not None:
+            if input_active_scope_version != active_scope_version:
+                issues.append(self._issue(
+                    artifact="run_context",
+                    severity=self._sev("error") if full_mode else self._sev("warning"),
+                    code="input_refs_active_scope_version_mismatch",
+                    message=(
+                        "run_context.input_refs.active_scope_version must match "
+                        "run_context.scope_management.active_scope_version."
+                    ),
+                    path=["input_refs", "active_scope_version"],
+                ))
+        elif full_mode and isinstance(active_scope_version, int) and input_active_scope_version is None:
+            issues.append(self._issue(
+                artifact="run_context",
+                severity=self._sev("error"),
+                code="input_refs_active_scope_version_missing_full_mode",
+                message=(
+                    "run_context.input_refs.active_scope_version is required in full mode "
+                    "when scope_management.active_scope_version is present."
+                ),
+                path=["input_refs", "active_scope_version"],
+            ))
+
+        latest_approved_revision_id = scope_management.get("latest_approved_revision_id")
+        input_active_scope_revision_id = input_refs.get("active_scope_revision_id")
+        if latest_approved_revision_id is not None and input_active_scope_revision_id is not None:
+            if input_active_scope_revision_id != latest_approved_revision_id:
+                issues.append(self._issue(
+                    artifact="run_context",
+                    severity=self._sev("error") if full_mode else self._sev("warning"),
+                    code="input_refs_active_scope_revision_id_mismatch",
+                    message=(
+                        "run_context.input_refs.active_scope_revision_id must match "
+                        "run_context.scope_management.latest_approved_revision_id."
+                    ),
+                    path=["input_refs", "active_scope_revision_id"],
+                ))
+        elif full_mode and latest_approved_revision_id is not None and input_active_scope_revision_id is None:
+            issues.append(self._issue(
+                artifact="run_context",
+                severity=self._sev("error"),
+                code="input_refs_active_scope_revision_id_missing_full_mode",
+                message=(
+                    "run_context.input_refs.active_scope_revision_id is required in full mode "
+                    "when scope_management.latest_approved_revision_id is present."
+                ),
+                path=["input_refs", "active_scope_revision_id"],
+            ))
+
+        return issues
+
     def _semantic_checks_causality_candidates(self, payload: JsonDict) -> List[ValidationIssue]:
         issues: List[ValidationIssue] = []
+        valid_categories = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"}
+        valid_chain_positions = {"initiating", "contributing", "consequence"}
+        valid_applicability = {"applicable", "not_applicable", "unknown"}
+        valid_assignment_methods = {"deterministic", "llm_fallback", "analyst_override"}
+        valid_ruleout_codes = {
+            "physically_impossible",
+            "timeline_inconsistent",
+            "barrier_held",
+            "no_supporting_data",
+            "category_not_applicable",
+            "outside_investigation_scope",
+            "superseded_by_higher_fidelity_evidence",
+            "analyst_excluded",
+        }
+        valid_coverage_status = {"candidate_scored", "ruled_out", "not_applicable", "unknown"}
 
         candidates = payload.get("candidates")
         if not isinstance(candidates, list):
@@ -1063,6 +1947,228 @@ class RCAArtifactValidator:
                 path=["candidates"],
             ))
             return issues
+
+        metamodel = payload.get("metamodel_compliance")
+        metamodel_level = (
+            str((metamodel or {}).get("level") or "partial").strip().lower()
+            if isinstance(metamodel, dict)
+            else "partial"
+        )
+        full_mode = metamodel_level == "full"
+        if metamodel is None:
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("warning"),
+                code="metamodel_compliance_missing",
+                message="causality_candidates.metamodel_compliance is recommended in compatibility mode.",
+                path=["metamodel_compliance"],
+            ))
+
+        coverage = payload.get("category_coverage")
+        coverage_status_map: Dict[str, str] = {}
+        if coverage is None:
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error") if full_mode else self._sev("warning"),
+                code="category_coverage_missing",
+                message="causality_candidates.category_coverage is recommended in compatibility mode.",
+                path=["category_coverage"],
+            ))
+        elif not isinstance(coverage, dict):
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="category_coverage_wrong_type",
+                message="causality_candidates.category_coverage must be an object when present.",
+                path=["category_coverage"],
+            ))
+        else:
+            for key, row in coverage.items():
+                if key not in valid_categories:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="category_coverage_key_invalid",
+                        message=f"category_coverage key '{key}' must be one of A-L.",
+                        path=["category_coverage", str(key)],
+                    ))
+                    continue
+                if isinstance(row, dict):
+                    status = row.get("status")
+                    if status is not None and status not in valid_coverage_status:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="category_coverage_status_invalid",
+                            message=f"category_coverage[{key}].status is invalid.",
+                            path=["category_coverage", str(key), "status"],
+                        ))
+                    if isinstance(status, str):
+                        coverage_status_map[key] = status
+            if full_mode:
+                missing_cov = sorted([k for k in valid_categories if k not in coverage])
+                for key in missing_cov:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="category_coverage_category_missing_full_mode",
+                        message=f"category_coverage[{key}] is required when metamodel_compliance.level=full.",
+                        path=["category_coverage", key],
+                    ))
+                for key, status in coverage_status_map.items():
+                    if status == "unknown":
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="category_coverage_unknown_forbidden_full_mode",
+                            message=(
+                                f"category_coverage[{key}].status='unknown' is not allowed in full mode; "
+                                "use candidate_scored, ruled_out, or not_applicable."
+                            ),
+                            path=["category_coverage", key, "status"],
+                        ))
+
+        applicability = payload.get("applicability_assessment")
+        applicability_status_map: Dict[str, str] = {}
+        if applicability is None:
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error") if full_mode else self._sev("warning"),
+                code="applicability_assessment_missing",
+                message="causality_candidates.applicability_assessment is recommended in compatibility mode.",
+                path=["applicability_assessment"],
+            ))
+        elif not isinstance(applicability, dict):
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="applicability_assessment_wrong_type",
+                message="causality_candidates.applicability_assessment must be an object when present.",
+                path=["applicability_assessment"],
+            ))
+        else:
+            for key, row in applicability.items():
+                if key not in valid_categories:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="applicability_key_invalid",
+                        message=f"applicability_assessment key '{key}' must be one of A-L.",
+                        path=["applicability_assessment", str(key)],
+                    ))
+                    continue
+                if isinstance(row, dict):
+                    status = row.get("status")
+                    if status is not None and status not in valid_applicability:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="applicability_status_invalid",
+                            message=f"applicability_assessment[{key}].status is invalid.",
+                            path=["applicability_assessment", str(key), "status"],
+                        ))
+                    if isinstance(status, str):
+                        applicability_status_map[key] = status
+                    if (
+                        str(row.get("status") or "").strip().lower() == "not_applicable"
+                        and not str(row.get("rationale") or "").strip()
+                    ):
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("warning"),
+                            code="not_applicable_missing_rationale",
+                            message=f"applicability_assessment[{key}] should include rationale when status=not_applicable.",
+                            path=["applicability_assessment", str(key), "rationale"],
+                        ))
+            if full_mode:
+                missing_app = sorted([k for k in valid_categories if k not in applicability])
+                for key in missing_app:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="applicability_assessment_category_missing_full_mode",
+                        message=f"applicability_assessment[{key}] is required in full mode.",
+                        path=["applicability_assessment", key],
+                    ))
+
+        if full_mode and coverage_status_map and applicability_status_map:
+            for category in sorted(valid_categories):
+                app_status = applicability_status_map.get(category)
+                cov_status = coverage_status_map.get(category)
+                if app_status == "applicable" and cov_status not in {"candidate_scored", "ruled_out"}:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="category_coverage_applicable_status_invalid_full_mode",
+                        message=(
+                            f"Applicable category {category} must be candidate_scored or ruled_out in full mode "
+                            f"(got '{cov_status}')."
+                        ),
+                        path=["category_coverage", category, "status"],
+                    ))
+                if app_status == "not_applicable" and cov_status not in {"not_applicable", "ruled_out"}:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="category_coverage_not_applicable_status_invalid_full_mode",
+                        message=(
+                            f"Not-applicable category {category} must be not_applicable (or ruled_out for explicit "
+                            f"traceability) in full mode (got '{cov_status}')."
+                        ),
+                        path=["category_coverage", category, "status"],
+                    ))
+
+        applicability_summary = payload.get("applicability_summary")
+        if applicability_summary is not None and not isinstance(applicability_summary, dict):
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="applicability_summary_wrong_type",
+                message="causality_candidates.applicability_summary must be an object when present.",
+                path=["applicability_summary"],
+            ))
+        if full_mode and applicability_summary is None:
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="applicability_summary_missing_full_mode",
+                message="applicability_summary is required when metamodel_compliance.level=full.",
+                path=["applicability_summary"],
+            ))
+        uncertainty_summary = payload.get("uncertainty_summary")
+        if uncertainty_summary is not None and not isinstance(uncertainty_summary, dict):
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="uncertainty_summary_wrong_type",
+                message="causality_candidates.uncertainty_summary must be an object when present.",
+                path=["uncertainty_summary"],
+            ))
+        if full_mode and uncertainty_summary is None:
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="uncertainty_summary_missing_full_mode",
+                message="uncertainty_summary is required when metamodel_compliance.level=full.",
+                path=["uncertainty_summary"],
+            ))
+        decision_posture = payload.get("decision_posture")
+        if decision_posture is not None and not isinstance(decision_posture, dict):
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="decision_posture_wrong_type",
+                message="causality_candidates.decision_posture must be an object when present.",
+                path=["decision_posture"],
+            ))
+        if full_mode and decision_posture is None:
+            issues.append(self._issue(
+                artifact="causality_candidates",
+                severity=self._sev("error"),
+                code="decision_posture_missing_full_mode",
+                message="decision_posture is required when metamodel_compliance.level=full.",
+                path=["decision_posture"],
+            ))
 
         screening = payload.get("screening")
         summary = payload.get("summary")
@@ -1266,6 +2372,477 @@ class RCAArtifactValidator:
                     path=["candidates", str(idx), "temporal_posture"],
                 ))
 
+            category = c.get("primary_causal_category")
+            if category is not None and category not in valid_categories:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="primary_causal_category_invalid",
+                    message=f"Candidate {idx} has invalid primary_causal_category '{category}'.",
+                    path=["candidates", str(idx), "primary_causal_category"],
+                ))
+
+            chain_position = c.get("chain_position")
+            if chain_position is not None and chain_position not in valid_chain_positions:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="chain_position_invalid",
+                    message=f"Candidate {idx} has invalid chain_position '{chain_position}'.",
+                    path=["candidates", str(idx), "chain_position"],
+                ))
+
+            assignment_method = c.get("category_assignment_method")
+            if assignment_method is not None and assignment_method not in valid_assignment_methods:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="category_assignment_method_invalid",
+                    message=f"Candidate {idx} has invalid category_assignment_method '{assignment_method}'.",
+                    path=["candidates", str(idx), "category_assignment_method"],
+                ))
+
+            candidate_applicability = c.get("category_applicability")
+            if candidate_applicability is not None and candidate_applicability not in valid_applicability:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="category_applicability_invalid",
+                    message=f"Candidate {idx} has invalid category_applicability '{candidate_applicability}'.",
+                    path=["candidates", str(idx), "category_applicability"],
+                ))
+
+            for fld in ("chain_position_confidence", "category_assignment_confidence"):
+                value = c.get(fld)
+                if value is None:
+                    continue
+                if not isinstance(value, (int, float)) or float(value) < 0.0 or float(value) > 1.0:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code=f"{fld}_invalid",
+                        message=f"Candidate {idx} has invalid {fld}; expected number in [0,1].",
+                        path=["candidates", str(idx), fld],
+                    ))
+            if full_mode:
+                for required_field in (
+                    "canonical_tuple",
+                    "canonical_candidate_key",
+                    "primary_causal_category",
+                    "chain_position",
+                    "category_assignment_method",
+                    "category_assignment_confidence",
+                    "category_applicability",
+                    "chain_position_rationale",
+                    "primary_eligibility",
+                    "primary_block_reasons",
+                    "reinstatement_status",
+                    "stream_quality",
+                    "quality_multiplier",
+                    "hard_gates",
+                ):
+                    if required_field not in c:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="full_mode_candidate_field_missing",
+                            message=f"Candidate {idx} missing required full-mode field '{required_field}'.",
+                            path=["candidates", str(idx), required_field],
+                        ))
+
+            canonical_tuple = c.get("canonical_tuple")
+            tuple_component = None
+            tuple_failure_mode = None
+            tuple_category = None
+            tuple_chain_position = None
+            if canonical_tuple is not None:
+                if not isinstance(canonical_tuple, dict):
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="canonical_tuple_wrong_type",
+                        message=f"Candidate {idx} canonical_tuple must be an object when present.",
+                        path=["candidates", str(idx), "canonical_tuple"],
+                    ))
+                else:
+                    tuple_component = str(canonical_tuple.get("component") or "").strip()
+                    tuple_failure_mode = str(canonical_tuple.get("failure_mode") or "").strip()
+                    tuple_category = str(canonical_tuple.get("causal_category") or "").strip()
+                    tuple_chain_position = str(canonical_tuple.get("chain_position") or "").strip()
+                    if not tuple_component:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="canonical_tuple_component_missing",
+                            message=f"Candidate {idx} canonical_tuple.component is required.",
+                            path=["candidates", str(idx), "canonical_tuple", "component"],
+                        ))
+                    if not tuple_failure_mode:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="canonical_tuple_failure_mode_missing",
+                            message=f"Candidate {idx} canonical_tuple.failure_mode is required.",
+                            path=["candidates", str(idx), "canonical_tuple", "failure_mode"],
+                        ))
+                    if tuple_category not in valid_categories:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="canonical_tuple_category_invalid",
+                            message=f"Candidate {idx} canonical_tuple.causal_category must be one of A-L.",
+                            path=["candidates", str(idx), "canonical_tuple", "causal_category"],
+                        ))
+                    if tuple_chain_position not in valid_chain_positions:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="canonical_tuple_chain_position_invalid",
+                            message=(
+                                f"Candidate {idx} canonical_tuple.chain_position must be one of "
+                                "{initiating, contributing, consequence}."
+                            ),
+                            path=["candidates", str(idx), "canonical_tuple", "chain_position"],
+                        ))
+            elif full_mode:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="canonical_tuple_missing_full_mode",
+                    message=f"Candidate {idx} missing canonical_tuple in full mode.",
+                    path=["candidates", str(idx), "canonical_tuple"],
+                ))
+
+            if tuple_category and category and tuple_category != category:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="canonical_tuple_category_mismatch",
+                    message=(
+                        f"Candidate {idx} canonical_tuple.causal_category '{tuple_category}' does not match "
+                        f"primary_causal_category '{category}'."
+                    ),
+                    path=["candidates", str(idx), "canonical_tuple", "causal_category"],
+                ))
+            if tuple_chain_position and chain_position and tuple_chain_position != chain_position:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="canonical_tuple_chain_position_mismatch",
+                    message=(
+                        f"Candidate {idx} canonical_tuple.chain_position '{tuple_chain_position}' does not match "
+                        f"chain_position '{chain_position}'."
+                    ),
+                    path=["candidates", str(idx), "canonical_tuple", "chain_position"],
+                ))
+            component_id = c.get("component_id")
+            if tuple_component and component_id is not None and str(component_id) != tuple_component:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="component_id_canonical_tuple_mismatch",
+                    message=(
+                        f"Candidate {idx} component_id '{component_id}' does not match canonical_tuple.component "
+                        f"'{tuple_component}'."
+                    ),
+                    path=["candidates", str(idx), "component_id"],
+                ))
+            failure_mode_id = c.get("failure_mode_id")
+            if tuple_failure_mode and failure_mode_id is not None and str(failure_mode_id) != tuple_failure_mode:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="failure_mode_id_canonical_tuple_mismatch",
+                    message=(
+                        f"Candidate {idx} failure_mode_id '{failure_mode_id}' does not match "
+                        f"canonical_tuple.failure_mode '{tuple_failure_mode}'."
+                    ),
+                    path=["candidates", str(idx), "failure_mode_id"],
+                ))
+            canonical_key = c.get("canonical_candidate_key")
+            if canonical_key is not None and tuple_component and tuple_failure_mode and tuple_category and tuple_chain_position:
+                event_scope = str(c.get("event_scope_id") or c.get("target_event_id") or "unknown_scope")
+                expected_key = "::".join(
+                    [tuple_component, tuple_failure_mode, tuple_category, tuple_chain_position, event_scope]
+                )
+                if str(canonical_key) != expected_key:
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="canonical_candidate_key_mismatch_canonical_tuple",
+                        message=(
+                            f"Candidate {idx} canonical_candidate_key does not match canonical tuple projection "
+                            f"('{expected_key}')."
+                        ),
+                        path=["candidates", str(idx), "canonical_candidate_key"],
+                    ))
+
+            stream_quality = c.get("stream_quality")
+            if stream_quality is not None:
+                if not isinstance(stream_quality, dict):
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="stream_quality_wrong_type",
+                        message=f"Candidate {idx} stream_quality must be an object when present.",
+                        path=["candidates", str(idx), "stream_quality"],
+                    ))
+                else:
+                    for dim in ("temporal", "logical", "documentary", "oe"):
+                        val = stream_quality.get(dim)
+                        if val is None:
+                            continue
+                        if not isinstance(val, (int, float)) or float(val) < 0.0 or float(val) > 1.0:
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="stream_quality_value_invalid",
+                                message=f"Candidate {idx} stream_quality.{dim} must be in [0,1].",
+                                path=["candidates", str(idx), "stream_quality", dim],
+                            ))
+            q_mult = c.get("quality_multiplier")
+            if q_mult is not None and (not isinstance(q_mult, (int, float)) or float(q_mult) < 0.0 or float(q_mult) > 1.0):
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="quality_multiplier_invalid",
+                    message=f"Candidate {idx} quality_multiplier must be in [0,1].",
+                    path=["candidates", str(idx), "quality_multiplier"],
+                ))
+            primary_eligibility = c.get("primary_eligibility")
+            if primary_eligibility is not None and primary_eligibility not in {"eligible", "blocked"}:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="primary_eligibility_invalid",
+                    message=f"Candidate {idx} primary_eligibility must be 'eligible' or 'blocked'.",
+                    path=["candidates", str(idx), "primary_eligibility"],
+                ))
+            if c.get("near_tie_with") is not None and not isinstance(c.get("near_tie_with"), list):
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="near_tie_with_wrong_type",
+                    message=f"Candidate {idx} near_tie_with must be an array when present.",
+                    path=["candidates", str(idx), "near_tie_with"],
+                ))
+            reinstatement_status = c.get("reinstatement_status")
+            if reinstatement_status is not None and reinstatement_status not in {
+                "none",
+                "reinstated_by_oe",
+                "reinstated_by_analyst",
+            }:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="reinstatement_status_invalid",
+                    message=f"Candidate {idx} reinstatement_status is invalid.",
+                    path=["candidates", str(idx), "reinstatement_status"],
+                ))
+
+            ruleout = c.get("ruleout")
+            if ruleout is not None:
+                if not isinstance(ruleout, dict):
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="ruleout_wrong_type",
+                        message=f"Candidate {idx} ruleout must be an object when present.",
+                        path=["candidates", str(idx), "ruleout"],
+                    ))
+                else:
+                    reason = ruleout.get("reason_code")
+                    if reason is not None and reason not in valid_ruleout_codes:
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error"),
+                            code="ruleout_reason_code_invalid",
+                            message=f"Candidate {idx} has invalid ruleout reason_code '{reason}'.",
+                            path=["candidates", str(idx), "ruleout", "reason_code"],
+                        ))
+            hard_gates = c.get("hard_gates")
+            if hard_gates is not None:
+                if not isinstance(hard_gates, dict):
+                    issues.append(self._issue(
+                        artifact="causality_candidates",
+                        severity=self._sev("error"),
+                        code="hard_gates_wrong_type",
+                        message=f"Candidate {idx} hard_gates must be an object when present.",
+                        path=["candidates", str(idx), "hard_gates"],
+                    ))
+                else:
+                    phys = hard_gates.get("physical_plausibility")
+                    if not isinstance(phys, dict):
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="physical_plausibility_gate_missing",
+                            message=(
+                                f"Candidate {idx} missing hard_gates.physical_plausibility; "
+                                "physical gate must be logged before ranking."
+                            ),
+                            path=["candidates", str(idx), "hard_gates", "physical_plausibility"],
+                        ))
+                    else:
+                        if not isinstance(phys.get("passed"), bool):
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="physical_plausibility_gate_passed_invalid",
+                                message=f"Candidate {idx} hard_gates.physical_plausibility.passed must be boolean.",
+                                path=["candidates", str(idx), "hard_gates", "physical_plausibility", "passed"],
+                            ))
+                        rationale = phys.get("rationale")
+                        if not isinstance(rationale, str) or not rationale.strip():
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="physical_plausibility_gate_rationale_missing",
+                                message=f"Candidate {idx} hard_gates.physical_plausibility.rationale is required.",
+                                path=["candidates", str(idx), "hard_gates", "physical_plausibility", "rationale"],
+                            ))
+                        if phys.get("passed") is False:
+                            reason_code = (
+                                (c.get("ruleout") or {}).get("reason_code")
+                                if isinstance(c.get("ruleout"), dict)
+                                else None
+                            )
+                            if reason_code != "physically_impossible":
+                                issues.append(self._issue(
+                                    artifact="causality_candidates",
+                                    severity=self._sev("error"),
+                                    code="physical_plausibility_gate_ruleout_missing",
+                                    message=(
+                                        f"Candidate {idx} failed physical plausibility gate but does not have "
+                                        "ruleout.reason_code='physically_impossible'."
+                                    ),
+                                    path=["candidates", str(idx), "ruleout", "reason_code"],
+                                ))
+                    timeline = hard_gates.get("timeline_consistency")
+                    if not isinstance(timeline, dict):
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="timeline_consistency_gate_missing",
+                            message=(
+                                f"Candidate {idx} missing hard_gates.timeline_consistency; "
+                                "timeline gate must be logged in normal/degraded mode."
+                            ),
+                            path=["candidates", str(idx), "hard_gates", "timeline_consistency"],
+                        ))
+                    else:
+                        if not isinstance(timeline.get("passed"), bool):
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="timeline_consistency_gate_passed_invalid",
+                                message=f"Candidate {idx} hard_gates.timeline_consistency.passed must be boolean.",
+                                path=["candidates", str(idx), "hard_gates", "timeline_consistency", "passed"],
+                            ))
+                        degraded_mode = timeline.get("degraded_mode")
+                        if degraded_mode is not None and not isinstance(degraded_mode, bool):
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="timeline_consistency_gate_degraded_mode_invalid",
+                                message=(
+                                    f"Candidate {idx} hard_gates.timeline_consistency.degraded_mode must be boolean."
+                                ),
+                                path=["candidates", str(idx), "hard_gates", "timeline_consistency", "degraded_mode"],
+                            ))
+                        rationale = timeline.get("rationale")
+                        if not isinstance(rationale, str) or not rationale.strip():
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="timeline_consistency_gate_rationale_missing",
+                                message=f"Candidate {idx} hard_gates.timeline_consistency.rationale is required.",
+                                path=["candidates", str(idx), "hard_gates", "timeline_consistency", "rationale"],
+                            ))
+                        if timeline.get("passed") is False:
+                            reason_code = (
+                                (c.get("ruleout") or {}).get("reason_code")
+                                if isinstance(c.get("ruleout"), dict)
+                                else None
+                            )
+                            if reason_code not in {"timeline_inconsistent", "physically_impossible"}:
+                                issues.append(self._issue(
+                                    artifact="causality_candidates",
+                                    severity=self._sev("error"),
+                                    code="timeline_consistency_gate_ruleout_missing",
+                                    message=(
+                                        f"Candidate {idx} failed timeline consistency gate but does not have "
+                                        "ruleout.reason_code='timeline_inconsistent'."
+                                    ),
+                                    path=["candidates", str(idx), "ruleout", "reason_code"],
+                                ))
+                    barrier = hard_gates.get("barrier_logic")
+                    if not isinstance(barrier, dict):
+                        issues.append(self._issue(
+                            artifact="causality_candidates",
+                            severity=self._sev("error") if full_mode else self._sev("warning"),
+                            code="barrier_logic_gate_missing",
+                            message=(
+                                f"Candidate {idx} missing hard_gates.barrier_logic; "
+                                "barrier gate must be logged in normal/degraded mode."
+                            ),
+                            path=["candidates", str(idx), "hard_gates", "barrier_logic"],
+                        ))
+                    else:
+                        if not isinstance(barrier.get("passed"), bool):
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="barrier_logic_gate_passed_invalid",
+                                message=f"Candidate {idx} hard_gates.barrier_logic.passed must be boolean.",
+                                path=["candidates", str(idx), "hard_gates", "barrier_logic", "passed"],
+                            ))
+                        degraded_mode = barrier.get("degraded_mode")
+                        if degraded_mode is not None and not isinstance(degraded_mode, bool):
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="barrier_logic_gate_degraded_mode_invalid",
+                                message=(
+                                    f"Candidate {idx} hard_gates.barrier_logic.degraded_mode must be boolean."
+                                ),
+                                path=["candidates", str(idx), "hard_gates", "barrier_logic", "degraded_mode"],
+                            ))
+                        rationale = barrier.get("rationale")
+                        if not isinstance(rationale, str) or not rationale.strip():
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="barrier_logic_gate_rationale_missing",
+                                message=f"Candidate {idx} hard_gates.barrier_logic.rationale is required.",
+                                path=["candidates", str(idx), "hard_gates", "barrier_logic", "rationale"],
+                            ))
+                        if barrier.get("passed") is False:
+                            reason_code = (
+                                (c.get("ruleout") or {}).get("reason_code")
+                                if isinstance(c.get("ruleout"), dict)
+                                else None
+                            )
+                            if reason_code not in {"barrier_held", "physically_impossible", "timeline_inconsistent"}:
+                                issues.append(self._issue(
+                                    artifact="causality_candidates",
+                                    severity=self._sev("error"),
+                                    code="barrier_logic_gate_ruleout_missing",
+                                    message=(
+                                        f"Candidate {idx} failed barrier logic gate but does not have "
+                                        "ruleout.reason_code='barrier_held'."
+                                    ),
+                                    path=["candidates", str(idx), "ruleout", "reason_code"],
+                                ))
+            elif full_mode:
+                issues.append(self._issue(
+                    artifact="causality_candidates",
+                    severity=self._sev("error"),
+                    code="hard_gates_missing_full_mode",
+                    message=f"Candidate {idx} missing hard_gates in full mode.",
+                    path=["candidates", str(idx), "hard_gates"],
+                ))
+
         if isinstance(filtered_out, list):
             retained_ids = {
                 c.get("candidate_id")
@@ -1334,6 +2911,24 @@ class RCAArtifactValidator:
                         ),
                         path=["filtered_out_candidates", str(idx), "filter_reason"],
                     ))
+                if full_mode:
+                    for required_field in (
+                        "canonical_tuple",
+                        "canonical_candidate_key",
+                        "primary_causal_category",
+                        "chain_position",
+                    ):
+                        if required_field not in row:
+                            issues.append(self._issue(
+                                artifact="causality_candidates",
+                                severity=self._sev("error"),
+                                code="filtered_out_candidate_field_missing_full_mode",
+                                message=(
+                                    f"filtered_out_candidates[{idx}] missing required full-mode field "
+                                    f"'{required_field}'."
+                                ),
+                                path=["filtered_out_candidates", str(idx), required_field],
+                            ))
 
         return issues
 
@@ -1366,6 +2961,10 @@ class RCAArtifactValidator:
                 ))
 
         if candidates:
+            metamodel_level = str(
+                ((candidates.get("metamodel_compliance") or {}).get("level") or "partial")
+            ).strip().lower()
+            full_mode = metamodel_level == "full"
             card_primary = (rca_card.get("primary_hypothesis") or {})
             candidate_rows = [
                 c for c in (candidates.get("candidates") or [])
@@ -1486,6 +3085,56 @@ class RCAArtifactValidator:
                         ),
                         path=["contributing_causes", str(idx), "candidate_id"],
                     ))
+
+            if full_mode:
+                summary = (rca_card.get("executive_summary") or {})
+                depth_summary = summary.get("causal_depth_summary")
+                if isinstance(depth_summary, dict):
+                    required_depths: set = set()
+                    prox = str(depth_summary.get("proximate_cause") or "").strip()
+                    root = str(depth_summary.get("root_cause") or "").strip()
+                    contributing_rows = depth_summary.get("contributing_causes")
+                    if prox and prox.lower() != "unresolved":
+                        required_depths.add("proximate")
+                    if root and root.lower() != "unresolved":
+                        required_depths.add("root")
+                    if isinstance(contributing_rows, list) and any(
+                        isinstance(x, str) and x.strip() for x in contributing_rows
+                    ):
+                        required_depths.add("contributing")
+
+                    covered_depths: set = set()
+                    for idx, action in enumerate(rca_card.get("recommended_actions") or []):
+                        if not isinstance(action, dict):
+                            continue
+                        explicit_depth = str(action.get("target_causal_depth") or "").strip().lower()
+                        if explicit_depth in {"proximate", "contributing", "root"}:
+                            covered_depths.add(explicit_depth)
+                            continue
+                        linked_id = action.get("linked_candidate_id")
+                        linked_candidate = candidate_map.get(linked_id) if linked_id else None
+                        category = str((linked_candidate or {}).get("primary_causal_category") or "").strip().upper()
+                        if category in {"A", "B", "C", "D", "E", "F"}:
+                            covered_depths.add("proximate")
+                        elif category in {"G", "H", "I", "J", "K"}:
+                            covered_depths.add("contributing")
+                        elif category == "L":
+                            covered_depths.add("root")
+                        elif idx == 0:
+                            covered_depths.add("proximate")
+
+                    missing_depths = sorted(required_depths.difference(covered_depths))
+                    if missing_depths:
+                        issues.append(self._issue(
+                            artifact="rca_card",
+                            severity=self._sev("error"),
+                            code="full_mode_recommended_actions_depth_mapping_incomplete",
+                            message=(
+                                "recommended_actions must cover all resolved causal depth layers in full mode; "
+                                f"missing {missing_depths}."
+                            ),
+                            path=["recommended_actions"],
+                        ))
 
         if evidence:
             result_rows = [

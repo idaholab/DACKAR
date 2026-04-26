@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Protocol, Set, Tuple
 import copy
+import hashlib
+import inspect
 import json
 import logging
 import uuid
@@ -35,12 +37,21 @@ from synthesis.rca_synthesizer_v31 import (
 
 from validation.schema_validator import RCAArtifactValidator
 from orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
+from orchestrators.temporal_relations import (
+    Interval,
+    allen_relation,
+    RELATION_SCORE,
+    PRECEDES,
+    OVERLAPS,
+    CONTAINS,
+)
 from orchestrators.artifact_store import FileArtifactStore, NoOpSchemaValidator
 from orchestrators.input_guards import assert_output_dir_writable, build_input_guards
 from orchestrators.llm_clients import LLMClient, DummyLLMClient, OllamaLLMClient
 from orchestrators.ishikawa_evaluator import HeuristicIshikawaEvaluatorV1
 from orchestrators.kg_context_builder import KGContextBuilderConfig, Neo4jKGContextBuilder
 from orchestrators.signal_evidence_builder import SignalEvidenceBuilder
+from adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS
 from pm_compliance import PMComplianceConfig, build_pm_compliance
 from signal_evidence.historian_adapter import (
     InfileHistorianAdapter,
@@ -203,7 +214,12 @@ class RCAReasoningOrchestrator:
     workflow_dispatch_adapter: Optional[Any] = None
     cmms_adapter: Optional[Any] = None
     cmms_context_builder_config: Optional[Any] = None
+    similar_event_adapter: Optional[Any] = None
     config: OrchestratorConfig = field(default_factory=OrchestratorConfig)
+
+    def set_similar_event_adapter(self, adapter: Any) -> None:
+        """Inject a SimilarEventAdapter for fleet/industry OE queries."""
+        self.similar_event_adapter = adapter
 
     def run(
         self,
@@ -216,6 +232,13 @@ class RCAReasoningOrchestrator:
         tskr_patterns: Optional[JsonDict] = None,
         causality_candidates: Optional[JsonDict] = None,
         evidence_bundle: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        protection_logic_context: Optional[JsonDict] = None,
+        configuration_change_records: Optional[JsonDict] = None,
+        environmental_monitoring: Optional[JsonDict] = None,
+        vendor_supply_chain_records: Optional[JsonDict] = None,
+        training_records: Optional[JsonDict] = None,
     ) -> JsonDict:
         run_id = str(uuid.uuid4())
         self.artifact_store.save(run_id, "run_status", {
@@ -271,6 +294,10 @@ class RCAReasoningOrchestrator:
             pm_compliance=pm_compliance,
             input_validation=input_validation,
             input_guards=input_guards,
+            soe_log=soe_log,
+            alarm_log=alarm_log,
+            protection_logic_context=protection_logic_context,
+            configuration_change_records=configuration_change_records,
         )
         run_context.setdefault("pipeline_runtime", {})
         run_context["pipeline_runtime"]["pm_compliance"] = pm_compliance_build
@@ -319,6 +346,11 @@ class RCAReasoningOrchestrator:
                     "Error: %s", exc,
                 )
 
+        kg_context = self._enrich_past_events_temporal_metadata(
+            kg_context=kg_context,
+            event=event,
+        )
+
         if signal_evidence is None:
             signal_evidence = self._build_signal_evidence(
                 run_id=run_id,
@@ -336,6 +368,8 @@ class RCAReasoningOrchestrator:
                 operational_context=operational_context,
                 run_context=run_context,
                 signal_evidence=signal_evidence,
+                alarm_log=alarm_log,
+                soe_log=soe_log,
             )
         self._validate_and_persist(run_id, "tskr_patterns", tskr_patterns)
 
@@ -350,6 +384,36 @@ class RCAReasoningOrchestrator:
                 run_context=run_context,
             )
 
+        # Scope-revision downstream propagation (Step 0 → Step 4):
+        # When the analyst has accepted at least one scope revision (version > 0),
+        # move candidates whose component_id falls outside the approved boundary
+        # to ruled_out[] with reason_code="scope_filtered".
+        _scope_boundary = self._resolve_approved_scope_boundary(run_context)
+        if _scope_boundary is not None:
+            _scope_version = int(
+                (run_context.get("scope_management") or {}).get("active_scope_version") or 1
+            )
+            causality_candidates = self._apply_scope_boundary_filter(
+                causality_candidates, _scope_boundary, _scope_version
+            )
+            run_context.setdefault("pipeline_runtime", {})["scope_filter"] = {
+                "applied": True,
+                "approved_scope_version": _scope_version,
+                "approved_boundary_size": len(_scope_boundary),
+                "filtered_count": causality_candidates.get("scope_filter_filtered_count", 0),
+                "filtered_component_ids": causality_candidates.get(
+                    "scope_filter_filtered_component_ids", []
+                ),
+            }
+        else:
+            run_context.setdefault("pipeline_runtime", {})["scope_filter"] = {
+                "applied": False,
+                "approved_scope_version": 0,
+                "approved_boundary_size": 0,
+                "filtered_count": 0,
+                "filtered_component_ids": [],
+            }
+
         self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
 
         if evidence_bundle is None:
@@ -363,8 +427,28 @@ class RCAReasoningOrchestrator:
         self._validate_and_persist(run_id, "evidence_bundle", evidence_bundle)
 
         causality_candidates_pre_refine: Optional[JsonDict] = None
+        # Pre-compute Allen relation map here so that refine_with_evidence can consume
+        # allen_base_score values during composite-score blending (Finding G).
+        # The same object is reused by _detect_scope_expansion_signals and
+        # _stage_g_finalize_manifest — no rebuild needed downstream.
+        pre_refine_allen_map: Optional[JsonDict] = self._build_allen_relation_map(
+            event=event,
+            telemetry_summary=telemetry_summary,
+            alarm_log=alarm_log,
+            soe_log=soe_log,
+        )
         if hasattr(self.causality_engine, "refine_with_evidence"):
             causality_candidates_pre_refine = copy.deepcopy(causality_candidates)
+            coverage_summary_for_refine = self._build_data_coverage_summary(
+                kg_context=kg_context,
+                tskr_patterns=tskr_patterns,
+                evidence_bundle=evidence_bundle,
+                causality_candidates=causality_candidates,
+                run_context=run_context,
+                environmental_monitoring=environmental_monitoring,
+                vendor_supply_chain_records=vendor_supply_chain_records,
+                training_records=training_records,
+            )
             if self.config.persist_intermediate_artifacts:
                 pre_val = self._validate_artifact(
                     run_id, "causality_candidates", causality_candidates_pre_refine
@@ -378,11 +462,26 @@ class RCAReasoningOrchestrator:
                         "causality_candidates_pre_refine__validation",
                         pre_val,
                     )
-            causality_candidates = self.causality_engine.refine_with_evidence(
-                causality_candidates=causality_candidates,
-                evidence_bundle=evidence_bundle,
-                signal_evidence=signal_evidence,
-            )
+            refine_kwargs = {
+                "causality_candidates": causality_candidates,
+                "evidence_bundle": evidence_bundle,
+                "signal_evidence": signal_evidence,
+            }
+            try:
+                sig = inspect.signature(self.causality_engine.refine_with_evidence)
+                accepts_var_kw = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in sig.parameters.values()
+                )
+                if accepts_var_kw or "coverage_summary" in sig.parameters:
+                    refine_kwargs["coverage_summary"] = coverage_summary_for_refine
+                if accepts_var_kw or "allen_relation_map" in sig.parameters:
+                    refine_kwargs["allen_relation_map"] = pre_refine_allen_map
+                if accepts_var_kw or "protection_logic_context" in sig.parameters:
+                    refine_kwargs["protection_logic_context"] = protection_logic_context
+            except (TypeError, ValueError):
+                pass
+            causality_candidates = self.causality_engine.refine_with_evidence(**refine_kwargs)
             self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
 
         reentry_execution = self._run_auto_reentry_if_needed(
@@ -398,6 +497,7 @@ class RCAReasoningOrchestrator:
             causality_candidates_pre_refine=causality_candidates_pre_refine,
             causality_candidates=causality_candidates,
             evidence_bundle=evidence_bundle,
+            protection_logic_context=protection_logic_context,
         )
         kg_context = reentry_execution["kg_context"]
         signal_evidence = reentry_execution["signal_evidence"]
@@ -438,6 +538,14 @@ class RCAReasoningOrchestrator:
         )
         self._validate_and_persist(run_id, "barrier_analysis", barrier_analysis)
 
+        # Step 2d — Similar Event Identification (built before synthesize so
+        # similar_event_list can feed unresolved_gaps in the RCA card)
+        similar_event_list_pre = self._build_similar_event_list(
+            event=event,
+            kg_context=kg_context,
+            causality_candidates=causality_candidates,
+        )
+
         rca_card = self.rca_synthesizer.synthesize(
             event=event,
             telemetry_summary=telemetry_summary,
@@ -450,6 +558,7 @@ class RCAReasoningOrchestrator:
             ishikawa_matrix=ishikawa_matrix,
             cmms_context=cmms_context,
             run_context=run_context,
+            similar_event_list=similar_event_list_pre,
         )
         self._apply_rank_inversion_attention_flag(
             rca_card, causality_candidates_pre_refine, causality_candidates
@@ -458,6 +567,7 @@ class RCAReasoningOrchestrator:
         self._apply_recurrence_match_quality_attention_flags(rca_card, tskr_patterns)
         self._apply_signal_evidence_attention_flags(rca_card, signal_evidence)
         self._apply_out_of_boundary_attention_flags(rca_card, kg_context)
+        self._apply_metamodel_coverage_attention_flags(rca_card, causality_candidates)
         self._apply_ishikawa_skip_attention_flag(rca_card, ishikawa_matrix)
         rca_card["barrier_analysis"] = self._barrier_summary_for_card(barrier_analysis)
         self._validate_and_persist(run_id, "rca_card", rca_card)
@@ -484,6 +594,17 @@ class RCAReasoningOrchestrator:
             run_context=run_context,
         )
 
+        # Phase 3b — scope-expansion signal detection and injection
+        expansion_signals = self._detect_scope_expansion_signals(
+            run_context=run_context,
+            allen_relation_map=pre_refine_allen_map,
+            signal_evidence=signal_evidence,
+            tskr_patterns=tskr_patterns,
+        )
+        if expansion_signals:
+            run_context = self._inject_scope_expansion_signals(run_context, expansion_signals)
+            self.artifact_store.save(run_id, "run_context", run_context)
+
         run_manifest = self._stage_g_finalize_manifest(
             run_context=run_context,
             kg_context=kg_context,
@@ -503,6 +624,17 @@ class RCAReasoningOrchestrator:
             reentry_execution=reentry_execution,
             reentry_hook=reentry_hook,
             chroma_archive=chroma_archive,
+            telemetry_summary=telemetry_summary,
+            soe_log=soe_log,
+            alarm_log=alarm_log,
+            protection_logic_context=protection_logic_context,
+            configuration_change_records=configuration_change_records,
+            environmental_monitoring=environmental_monitoring,
+            vendor_supply_chain_records=vendor_supply_chain_records,
+            training_records=training_records,
+            event=event,
+            pre_computed_allen_map=pre_refine_allen_map,
+            pre_computed_similar_event_list=similar_event_list_pre,
         )
         workflow_dispatch = self._build_workflow_dispatch(
             run_context=run_context,
@@ -585,10 +717,12 @@ class RCAReasoningOrchestrator:
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
         signal_evidence: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
     ) -> JsonDict:
         if self.tskr_temporal_scorer is not None:
             self._apply_tskr_runtime_overrides()
-            return self.tskr_temporal_scorer.score(
+            score_kwargs: JsonDict = dict(
                 event=event,
                 telemetry_summary=telemetry_summary,
                 kg_context=kg_context,
@@ -596,6 +730,12 @@ class RCAReasoningOrchestrator:
                 run_context=run_context,
                 signal_evidence=signal_evidence,
             )
+            score_sig = inspect.signature(self.tskr_temporal_scorer.score)
+            if "alarm_log" in score_sig.parameters:
+                score_kwargs["alarm_log"] = alarm_log
+            if "soe_log" in score_sig.parameters:
+                score_kwargs["soe_log"] = soe_log
+            return self.tskr_temporal_scorer.score(**score_kwargs)
         return {
             "event_id": event.get("event_id") or event.get("id"),
             "asset_id": event.get("asset_id"),
@@ -1056,6 +1196,7 @@ class RCAReasoningOrchestrator:
         causality_candidates_pre_refine: Optional[JsonDict],
         causality_candidates: JsonDict,
         evidence_bundle: JsonDict,
+        protection_logic_context: Optional[JsonDict] = None,
     ) -> JsonDict:
         hook = self._compute_reentry_hook(
             causality_candidates_pre_refine=causality_candidates_pre_refine,
@@ -1128,6 +1269,8 @@ class RCAReasoningOrchestrator:
                 operational_context=operational_context,
                 run_context=run_context,
                 signal_evidence=signal_evidence,
+                alarm_log=alarm_log,
+                soe_log=soe_log,
             )
             self._validate_and_persist(run_id, "tskr_patterns", tskr_patterns)
             causality_candidates = self.causality_engine.generate(
@@ -1167,6 +1310,7 @@ class RCAReasoningOrchestrator:
                 causality_candidates=causality_candidates,
                 evidence_bundle=evidence_bundle,
                 signal_evidence=signal_evidence,
+                protection_logic_context=protection_logic_context,
             )
             self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
             hook = self._compute_reentry_hook(
@@ -1238,6 +1382,101 @@ class RCAReasoningOrchestrator:
             "time_distance_days": record.get("days_before_event"),
             "source": "cmms_context",
         }
+
+    @staticmethod
+    def _classify_past_event_source(event_id: Optional[str]) -> str:
+        eid = str(event_id or "")
+        if eid.startswith("CMMS::CR::"):
+            return "cmms_cr"
+        if eid.startswith("CMMS::WO::"):
+            return "cmms_wo"
+        return "kg"
+
+    def _enrich_past_events_temporal_metadata(
+        self,
+        *,
+        kg_context: JsonDict,
+        event: JsonDict,
+    ) -> JsonDict:
+        """
+        Post-processing pass over kg_context.past_events (WS1–WS3 for Step 2b):
+          1. Tag each event with in_precursor_window (bool) and window_tier (str).
+          2. Build per_component_past_events index: {component_id: [event_id, ...]}.
+          3. Build temporal_search_summary in seed_context.
+        """
+        past_events = [pe for pe in (kg_context.get("past_events") or []) if isinstance(pe, dict)]
+        if not past_events:
+            return kg_context
+
+        precursor_window_days = int((self.config.extra or {}).get("precursor_window_days", 180))
+        per_component_top_n = int((self.config.extra or {}).get("per_component_past_event_top_n", 5))
+
+        # ── Tier tagging ─────────────────────────────────────────────────────
+        in_window_count = 0
+        out_of_window_count = 0
+        unknown_window_count = 0
+        for pe in past_events:
+            d = pe.get("days_before_current_event")
+            if d is None:
+                pe["in_precursor_window"] = None
+                pe["window_tier"] = "unknown"
+                unknown_window_count += 1
+            elif float(d) <= precursor_window_days:
+                pe["in_precursor_window"] = True
+                pe["window_tier"] = "primary"
+                in_window_count += 1
+            elif float(d) <= precursor_window_days * 2:
+                pe["in_precursor_window"] = False
+                pe["window_tier"] = "extended"
+                out_of_window_count += 1
+            else:
+                pe["in_precursor_window"] = False
+                pe["window_tier"] = "historical"
+                out_of_window_count += 1
+
+        # ── Per-component index (top-N by priority_score) ─────────────────────
+        per_component: Dict[str, List[str]] = {}
+        sorted_by_score = sorted(
+            past_events,
+            key=lambda x: -float(x.get("priority_score") or 0),
+        )
+        for pe in sorted_by_score:
+            cid = str(pe.get("component_id") or "_no_component")
+            bucket = per_component.setdefault(cid, [])
+            if len(bucket) < per_component_top_n:
+                eid = pe.get("event_id")
+                if eid:
+                    bucket.append(str(eid))
+
+        # ── Source breakdown ──────────────────────────────────────────────────
+        source_breakdown: Dict[str, int] = {"kg": 0, "cmms_cr": 0, "cmms_wo": 0}
+        for pe in past_events:
+            src = self._classify_past_event_source(pe.get("event_id"))
+            source_breakdown[src] = source_breakdown.get(src, 0) + 1
+
+        components_with_history = sum(
+            1 for k, v in per_component.items()
+            if k != "_no_component" and v
+        )
+
+        temporal_search_summary = {
+            "component_count_with_history": components_with_history,
+            "total_past_event_count": len(past_events),
+            "in_window_count": in_window_count,
+            "out_of_window_count": out_of_window_count,
+            "unknown_window_count": unknown_window_count,
+            "precursor_window_days_used": precursor_window_days,
+            "per_component_top_n_used": per_component_top_n,
+            "source_breakdown": source_breakdown,
+        }
+
+        out = dict(kg_context)
+        out["past_events"] = past_events
+        seed_ctx = dict(out.get("seed_context") or {})
+        seed_ctx["per_component_past_events"] = per_component
+        seed_ctx["temporal_search_summary"] = temporal_search_summary
+        out["seed_context"] = seed_ctx
+        return out
 
     def _augment_kg_context_with_cmms_past_events(
         self,
@@ -1451,12 +1690,28 @@ class RCAReasoningOrchestrator:
         pm_compliance: Optional[JsonDict],
         input_validation: Optional[JsonDict] = None,
         input_guards: Optional[JsonDict] = None,
+        cmms_context: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        protection_logic_context: Optional[JsonDict] = None,
+        configuration_change_records: Optional[JsonDict] = None,
     ) -> JsonDict:
-
+        started_at = utcnow_iso()
+        initial_scope = self._build_initial_scope_revision_record(
+            event=event,
+            operational_context=operational_context,
+            pm_compliance=pm_compliance,
+            cmms_context=cmms_context,
+            soe_log=soe_log,
+            alarm_log=alarm_log,
+            protection_logic_context=protection_logic_context,
+            configuration_change_records=configuration_change_records,
+            started_at=started_at,
+        )
         run_context = {
             "run_id": run_id,
             "run_label": self.config.run_label,
-            "started_at": utcnow_iso(),
+            "started_at": started_at,
             "config": {
                 "enable_ishikawa": self.config.enable_ishikawa,
                 "persist_intermediate_artifacts": self.config.persist_intermediate_artifacts,
@@ -1471,16 +1726,319 @@ class RCAReasoningOrchestrator:
                 "telemetry_asset_id": telemetry_summary.get("asset_id"),
                 "has_operational_context": operational_context is not None,
                 "has_pm_compliance": pm_compliance is not None,
+                "has_cmms_context": cmms_context is not None,
+                "has_soe_log": soe_log is not None,
+                "has_alarm_log": alarm_log is not None,
+                "has_protection_logic_context": protection_logic_context is not None,
+                "has_configuration_change_records": configuration_change_records is not None,
                 "event_severity": event.get("severity"),
+                "event_type": event.get("event_type"),
+                "actuation_type": event.get("actuation_type"),
+                "trigger_source": event.get("trigger_source"),
+                "active_scope_version": 0,
+                "active_scope_revision_id": initial_scope["revision_id"],
             },
             "validation": {
                 "inputs": input_validation,
+            },
+            "scope_management": {
+                "active_scope_version": 0,
+                "latest_approved_revision_id": initial_scope["revision_id"],
+                "scope_revisions": [initial_scope],
             },
         }
         if input_guards:
             run_context["input_guards"] = input_guards
         self.artifact_store.save(run_id, "run_context", run_context)
         return run_context
+
+    @staticmethod
+    def _build_initial_scope_revision_record(
+        *,
+        event: JsonDict,
+        operational_context: Optional[JsonDict],
+        pm_compliance: Optional[JsonDict] = None,
+        cmms_context: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        protection_logic_context: Optional[JsonDict] = None,
+        configuration_change_records: Optional[JsonDict] = None,
+        started_at: str,
+    ) -> JsonDict:
+        event_id = str(event.get("event_id") or event.get("id") or "UNKNOWN").strip()
+        asset_id = event.get("asset_id")
+        component_id = event.get("component_id")
+
+        # Collect system boundary from operational_context alarms AND alarm_log
+        systems_in_scope: List[str] = []
+        if isinstance(operational_context, dict):
+            for row in (operational_context.get("recent_alarms") or []):
+                if not isinstance(row, dict):
+                    continue
+                sys_name = str(row.get("system_affected") or "").strip()
+                if sys_name and sys_name not in systems_in_scope:
+                    systems_in_scope.append(sys_name)
+        if isinstance(alarm_log, dict):
+            for row in (alarm_log.get("alarms") or []):
+                if not isinstance(row, dict):
+                    continue
+                sys_name = str(row.get("system") or "").strip()
+                if sys_name and sys_name not in systems_in_scope:
+                    systems_in_scope.append(sys_name)
+
+        # Collect component_ids from soe_log and cmms_context
+        extra_component_ids: List[str] = []
+        if isinstance(soe_log, dict):
+            for row in (soe_log.get("records") or []):
+                if not isinstance(row, dict):
+                    continue
+                cid = str(row.get("component_id") or "").strip()
+                if cid and cid not in extra_component_ids:
+                    extra_component_ids.append(cid)
+        if isinstance(cmms_context, dict):
+            for rec in list((cmms_context.get("cr_records") or [])) + list((cmms_context.get("wo_records") or [])):
+                if not isinstance(rec, dict):
+                    continue
+                cid = str(rec.get("component_id") or "").strip()
+                if cid and cid not in extra_component_ids:
+                    extra_component_ids.append(cid)
+
+        seed_component_ids: List[str] = []
+        if component_id:
+            seed_component_ids.append(str(component_id))
+        for cid in extra_component_ids:
+            if cid not in seed_component_ids:
+                seed_component_ids.append(cid)
+
+        # Collect change-control systems from configuration_change_records
+        cc_system_ids: List[str] = []
+        if isinstance(configuration_change_records, dict):
+            for rec in (configuration_change_records.get("records") or []):
+                if not isinstance(rec, dict):
+                    continue
+                for sid in (rec.get("system_ids") or []):
+                    sid_s = str(sid).strip()
+                    if sid_s and sid_s not in cc_system_ids:
+                        cc_system_ids.append(sid_s)
+
+        # Operating context fields
+        op = operational_context if isinstance(operational_context, dict) else {}
+        train_cfg = op.get("train_configuration")
+
+        # Data availability flags
+        data_availability = {
+            "has_operational_context": isinstance(operational_context, dict),
+            "has_pm_compliance": isinstance(pm_compliance, dict),
+            "has_cmms_context": isinstance(cmms_context, dict),
+            "has_soe_log": isinstance(soe_log, dict),
+            "has_alarm_log": isinstance(alarm_log, dict),
+            "has_protection_logic_context": isinstance(protection_logic_context, dict),
+            "has_configuration_change_records": isinstance(configuration_change_records, dict),
+        }
+
+        scope_snapshot = {
+            "asset_ids": [str(asset_id)] if asset_id else [],
+            "component_ids": seed_component_ids,
+            "system_boundary": systems_in_scope,
+            "change_control_systems": cc_system_ids,
+            "time_window": {
+                "start": event.get("timestamp_start"),
+                "end": event.get("timestamp_end"),
+            },
+            "safety_function_map": [],
+            "operating_context": {
+                "mode": op.get("mode"),
+                "percent_rated_power": op.get("percent_rated_power"),
+                "train_id": (train_cfg or {}).get("train_id") if isinstance(train_cfg, dict) else None,
+                "train_in_service": (train_cfg or {}).get("in_service") if isinstance(train_cfg, dict) else None,
+            },
+            "event_context": {
+                "severity": event.get("severity"),
+                "event_type": event.get("event_type"),
+                "actuation_type": event.get("actuation_type"),
+                "trigger_source": event.get("trigger_source"),
+            },
+            "data_availability": data_availability,
+        }
+        return {
+            "revision_id": f"SCOPE::{event_id}::0",
+            "scope_version": 0,
+            "trigger": "initial_intake",
+            "changed_boundary": {
+                "added_asset_ids": scope_snapshot["asset_ids"],
+                "removed_asset_ids": [],
+                "added_component_ids": scope_snapshot["component_ids"],
+                "removed_component_ids": [],
+                "added_systems": scope_snapshot["system_boundary"],
+                "removed_systems": [],
+                "window_delta": "initial",
+            },
+            "analyst_decision": "accepted",
+            "decision_timestamp": started_at,
+            "scope_snapshot": scope_snapshot,
+        }
+
+    def apply_scope_revision(
+        self,
+        *,
+        run_id: str,
+        run_context: JsonDict,
+        revision_input: JsonDict,
+        persist: bool = True,
+    ) -> JsonDict:
+        """
+        Apply a scope revision decision to run_context.scope_management.
+
+        Accepted revisions become the active scope; deferred/rejected revisions
+        are logged for audit and keep the current active scope version.
+        """
+        out = copy.deepcopy(run_context or {})
+        scope_mgmt = out.setdefault("scope_management", {})
+        revisions = scope_mgmt.get("scope_revisions")
+        if not isinstance(revisions, list):
+            revisions = []
+            scope_mgmt["scope_revisions"] = revisions
+
+        active_version_raw = scope_mgmt.get("active_scope_version", 0)
+        active_version = int(active_version_raw) if isinstance(active_version_raw, int) else 0
+
+        trigger = str(revision_input.get("trigger") or "manual_revision").strip() or "manual_revision"
+        analyst_decision = str(revision_input.get("analyst_decision") or "deferred").strip().lower()
+        if analyst_decision not in {"accepted", "deferred", "rejected"}:
+            analyst_decision = "deferred"
+        changed_boundary = revision_input.get("changed_boundary")
+        if not isinstance(changed_boundary, dict):
+            changed_boundary = {}
+        current_snapshot = revision_input.get("scope_snapshot")
+        if not isinstance(current_snapshot, dict):
+            # Auto-build snapshot from latest accepted revision and changed_boundary.
+            # Walk backwards to find the most recent accepted revision's snapshot.
+            base_snapshot: JsonDict = {}
+            for rev in reversed(revisions):
+                if isinstance(rev, dict) and str(rev.get("analyst_decision") or "").lower() == "accepted":
+                    base_snapshot = copy.deepcopy(rev.get("scope_snapshot") or {})
+                    break
+            if not base_snapshot:
+                base_snapshot = copy.deepcopy(
+                    ((revisions[-1] if revisions else {}).get("scope_snapshot") or {})
+                )
+            current_snapshot = base_snapshot
+
+        # When accepting, merge added/removed component IDs into the snapshot.
+        if analyst_decision == "accepted":
+            existing_cids: List[str] = list(current_snapshot.get("component_ids") or [])
+            existing_set: Dict[str, None] = {c: None for c in existing_cids}  # ordered dedup
+
+            for cid in (changed_boundary.get("added_component_ids") or []):
+                if cid and cid not in existing_set:
+                    existing_cids.append(cid)
+                    existing_set[cid] = None
+
+            removed_set = set(changed_boundary.get("removed_component_ids") or [])
+            if removed_set:
+                existing_cids = [c for c in existing_cids if c not in removed_set]
+
+            current_snapshot = dict(current_snapshot)
+            current_snapshot["component_ids"] = existing_cids
+
+        new_version = active_version + 1 if analyst_decision == "accepted" else active_version
+        event_id = str(((out.get("input_refs") or {}).get("event_id") or "UNKNOWN")).strip() or "UNKNOWN"
+        revision_id = f"SCOPE::{event_id}::{len(revisions)}"
+        revision_row = {
+            "revision_id": revision_id,
+            "scope_version": new_version,
+            "trigger": trigger,
+            "changed_boundary": changed_boundary,
+            "analyst_decision": analyst_decision,
+            "decision_timestamp": utcnow_iso(),
+            "scope_snapshot": current_snapshot,
+        }
+        revisions.append(revision_row)
+        if analyst_decision == "accepted":
+            scope_mgmt["active_scope_version"] = new_version
+            scope_mgmt["latest_approved_revision_id"] = revision_id
+            input_refs = out.setdefault("input_refs", {})
+            if isinstance(input_refs, dict):
+                input_refs["active_scope_version"] = new_version
+                input_refs["active_scope_revision_id"] = revision_id
+        if persist:
+            self.artifact_store.save(run_id, "run_context", out)
+        return out
+
+    def resolve_expansion_suggestion(
+        self,
+        *,
+        run_id: str,
+        run_context: JsonDict,
+        signal_id: str,
+        decision: str,
+        rationale: Optional[str] = None,
+        persist: bool = True,
+    ) -> JsonDict:
+        """Mark a scope-expansion suggestion and, if accepted, update the scope.
+
+        This is the canonical bridge between the expansion-suggestion write path
+        (``_detect_scope_expansion_signals`` → ``expansion_suggestions[]``) and
+        the scope-revision lifecycle (``apply_scope_revision``).
+
+        Parameters
+        ----------
+        signal_id:
+            The ``signal_id`` of the suggestion to resolve.
+        decision:
+            One of ``"accepted"``, ``"deferred"``, or ``"rejected"``.
+        rationale:
+            Free-text analyst note stored alongside the decision.
+
+        Returns the updated ``run_context``.
+
+        Raises
+        ------
+        ValueError
+            When *signal_id* does not match any existing suggestion.
+        """
+        if decision not in {"accepted", "deferred", "rejected"}:
+            raise ValueError(f"decision must be one of accepted/deferred/rejected, got {decision!r}")
+
+        out = copy.deepcopy(run_context or {})
+        scope_mgmt = out.setdefault("scope_management", {})
+        suggestions: List[JsonDict] = scope_mgmt.setdefault("expansion_suggestions", [])
+
+        target: Optional[JsonDict] = None
+        for sug in suggestions:
+            if isinstance(sug, dict) and sug.get("signal_id") == signal_id:
+                target = sug
+                break
+
+        if target is None:
+            raise ValueError(
+                f"Expansion suggestion with signal_id={signal_id!r} not found in run_context."
+            )
+
+        target["analyst_decision"] = decision
+        target["resolution_timestamp"] = utcnow_iso()
+        if rationale:
+            target["analyst_rationale"] = str(rationale)
+
+        if decision == "accepted":
+            suggested_cids: List[str] = list(target.get("suggested_component_ids") or [])
+            out = self.apply_scope_revision(
+                run_id=run_id,
+                run_context=out,
+                revision_input={
+                    "trigger": "expansion_suggestion_accepted",
+                    "analyst_decision": "accepted",
+                    "changed_boundary": {
+                        "added_component_ids": suggested_cids,
+                        "removed_component_ids": [],
+                    },
+                },
+                persist=False,
+            )
+
+        if persist:
+            self.artifact_store.save(run_id, "run_context", out)
+        return out
 
     @staticmethod
     def _apply_rank_inversion_attention_flag(
@@ -1664,6 +2222,27 @@ class RCAReasoningOrchestrator:
         )
         return rows
 
+    @staticmethod
+    def _build_scope_revision_summary(run_context: JsonDict) -> JsonDict:
+        scope_management = (run_context or {}).get("scope_management") or {}
+        revisions = scope_management.get("scope_revisions") or []
+        latest = revisions[-1] if revisions and isinstance(revisions[-1], dict) else {}
+        accepted_revisions = [
+            row
+            for row in revisions
+            if isinstance(row, dict) and str(row.get("analyst_decision") or "").strip().lower() == "accepted"
+        ]
+        input_refs = (run_context or {}).get("input_refs") or {}
+        return {
+            "active_scope_version": input_refs.get("active_scope_version"),
+            "active_scope_revision_id": input_refs.get("active_scope_revision_id"),
+            "accepted_revision_count": len(accepted_revisions),
+            "revision_count": len(revisions),
+            "latest_trigger": latest.get("trigger"),
+            "latest_analyst_decision": latest.get("analyst_decision"),
+            "latest_decision_timestamp": latest.get("decision_timestamp"),
+        }
+
     def _stage_g_finalize_manifest(
         self,
         run_context: JsonDict,
@@ -1684,6 +2263,17 @@ class RCAReasoningOrchestrator:
         reentry_hook: Optional[JsonDict] = None,
         chroma_archive: Optional[JsonDict] = None,
         signal_evidence: Optional[JsonDict] = None,
+        telemetry_summary: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        protection_logic_context: Optional[JsonDict] = None,
+        configuration_change_records: Optional[JsonDict] = None,
+        environmental_monitoring: Optional[JsonDict] = None,
+        vendor_supply_chain_records: Optional[JsonDict] = None,
+        training_records: Optional[JsonDict] = None,
+        event: Optional[JsonDict] = None,
+        pre_computed_allen_map: Optional[JsonDict] = None,
+        pre_computed_similar_event_list: Optional[JsonDict] = None,
     ) -> JsonDict:
         reentry_hook = reentry_hook or self._compute_reentry_hook(
             causality_candidates_pre_refine=causality_candidates_pre_refine,
@@ -1725,18 +2315,97 @@ class RCAReasoningOrchestrator:
             stage_health=stage_health,
             chroma_archive=chroma_archive,
         )
+        coverage_summary = self._build_data_coverage_summary(
+            kg_context=kg_context,
+            tskr_patterns=tskr_patterns,
+            evidence_bundle=evidence_bundle,
+            causality_candidates=causality_candidates,
+            run_context=run_context,
+            telemetry_summary=telemetry_summary,
+            soe_log=soe_log,
+            alarm_log=alarm_log,
+            protection_logic_context=protection_logic_context,
+            configuration_change_records=configuration_change_records,
+            environmental_monitoring=environmental_monitoring,
+            vendor_supply_chain_records=vendor_supply_chain_records,
+            training_records=training_records,
+        )
+        scope_revision_summary = self._build_scope_revision_summary(run_context)
+
+        # Phase 3b — build scope-expansion summary for manifest (must precede _compute_review_hooks)
+        all_expansion_suggestions = (
+            ((run_context or {}).get("scope_management") or {}).get("expansion_suggestions") or []
+        )
+        pending_suggestions = [s for s in all_expansion_suggestions if s.get("analyst_decision") == "pending"]
+        scope_expansion_summary: JsonDict = {
+            "total_signals": len(all_expansion_suggestions),
+            "pending_analyst_decision": len(pending_suggestions),
+            "by_trigger_type": {},
+        }
+        for sig in all_expansion_suggestions:
+            tt = str(sig.get("trigger_type") or "unknown")
+            scope_expansion_summary["by_trigger_type"][tt] = (
+                scope_expansion_summary["by_trigger_type"].get(tt, 0) + 1
+            )
+
         review_hooks = self._compute_review_hooks(
             rca_card=rca_card,
             output_validation=output_validation,
             pipeline_health=pipeline_health,
+            coverage_summary=coverage_summary,
             reentry_hook=reentry_hook,
             stage_health=stage_health,
             event_severity=(run_context.get("input_refs") or {}).get("event_severity"),
+            scope_expansion_summary=scope_expansion_summary,
         )
         ap913_completeness = self._compute_ap913_completeness(
             rca_card=rca_card,
             causality_candidates=causality_candidates,
             cmms_context=cmms_context,
+        )
+        applicability_summary = copy.deepcopy(causality_candidates.get("applicability_summary") or {})
+        uncertainty_summary = copy.deepcopy(causality_candidates.get("uncertainty_summary") or {})
+        decision_posture = copy.deepcopy(causality_candidates.get("decision_posture") or {})
+        replayability_signature = self._build_replayability_signature(
+            causality_candidates=causality_candidates,
+            stage_health=stage_health,
+            decision_posture=decision_posture,
+            uncertainty_summary=uncertainty_summary,
+            review_hooks=review_hooks,
+        )
+
+        allen_relation_map = pre_computed_allen_map or self._build_allen_relation_map(
+            event=event,
+            telemetry_summary=telemetry_summary,
+            alarm_log=alarm_log,
+            soe_log=soe_log,
+        )
+
+        # Step 2d — use pre-computed list (built before synthesize in run())
+        similar_event_list = pre_computed_similar_event_list or self._build_similar_event_list(
+            event=event or {},
+            kg_context=kg_context,
+            causality_candidates=causality_candidates,
+        )
+
+        # Step 3.5 — Signal Lessons Learned
+        signal_lessons_learned = self._build_signal_lessons_learned(
+            tskr_patterns=tskr_patterns,
+            alarm_log=alarm_log,
+            soe_log=soe_log,
+            run_context=run_context,
+        )
+
+        # Step 5 — Sensitivity Table
+        sensitivity_table = RuleBasedCausalityEngineV32._build_sensitivity_table(
+            candidates=(causality_candidates.get("candidates") or []),
+            coverage_summary=coverage_summary,
+        )
+
+        # WS6 — Annotate top candidates with matched OE similar events
+        self._annotate_candidates_with_oe_evidence(
+            causality_candidates=causality_candidates,
+            similar_event_list=similar_event_list,
         )
 
         return {
@@ -1765,6 +2434,23 @@ class RCAReasoningOrchestrator:
                 ),
                 "top_k_candidates": self.config.top_k_candidates,
                 "top_k_evidence": self.config.top_k_evidence,
+                "metamodel_compliance_level": str(
+                    ((causality_candidates.get("metamodel_compliance") or {}).get("level") or "partial")
+                ),
+                "metamodel_decision_log_version": "april_25_locked_v1",
+                "near_tie_delta": float((self.config.extra or {}).get("near_tie_delta", 0.05)),
+                "critical_stream_floor": float((self.config.extra or {}).get("critical_stream_floor", 0.30)),
+                "oe_reinstatement_threshold": float((self.config.extra or {}).get("oe_reinstatement_threshold", 0.65)),
+                "metamodel_migration": {
+                    "phase": (
+                        "wave4"
+                        if str(((causality_candidates.get("metamodel_compliance") or {}).get("level") or "partial")).lower() == "full"
+                        else "wave3"
+                    ),
+                    "compatibility_mode": (
+                        str(((causality_candidates.get("metamodel_compliance") or {}).get("level") or "partial")).lower() != "full"
+                    ),
+                },
                 "tskr_runtime": self._tskr_runtime_snapshot(),
                 "strict_input_guard_enforcement": bool((self.config.extra or {}).get("strict_input_guard_enforcement", False)),
                 "input_guard_hard_stop_on_any_flag": bool((self.config.extra or {}).get("input_guard_hard_stop_on_any_flag", False)),
@@ -1788,6 +2474,8 @@ class RCAReasoningOrchestrator:
                     "issues": ["Chroma archive stage did not run."],
                 },
                 "stage_policy_hooks": (self.config.extra or {}).get("stage_policy_hooks"),
+                "scope_runtime": scope_revision_summary,
+                "temporal_search": (kg_context.get("seed_context") or {}).get("temporal_search_summary") or {},
             },
             "artifacts": {
                 "kg_context": {"present": True},
@@ -1844,6 +2532,49 @@ class RCAReasoningOrchestrator:
                     "sister_count": len((cmms_context or {}).get("sister_components", [])),
                     "adapter": (cmms_context or {}).get("adapter"),
                 },
+                "allen_relation_map": {
+                    "present": allen_relation_map is not None,
+                    "total_nodes": int((allen_relation_map or {}).get("summary", {}).get("total_nodes", 0)),
+                    "causal_nodes": int((allen_relation_map or {}).get("summary", {}).get("causal_nodes", 0)),
+                    "timeline_consistent": bool((allen_relation_map or {}).get("summary", {}).get("timeline_consistent", True)),
+                },
+                "similar_event_list": {
+                    "present": True,
+                    "status": (similar_event_list or {}).get("status", "partial"),
+                    "plant_count": int(((similar_event_list or {}).get("summary") or {}).get("plant_count", 0)),
+                    "fleet_count": int(((similar_event_list or {}).get("summary") or {}).get("fleet_count", 0)),
+                    "industry_count": int(((similar_event_list or {}).get("summary") or {}).get("industry_count", 0)),
+                    "total_count": int(((similar_event_list or {}).get("summary") or {}).get("total_count", 0)),
+                    "any_plant_match": bool(((similar_event_list or {}).get("summary") or {}).get("any_plant_match", False)),
+                    "degraded_tiers": list(((similar_event_list or {}).get("summary") or {}).get("degraded_tiers") or []),
+                },
+                "signal_lessons_learned": {
+                    "present": True,
+                    "total_matched": int((signal_lessons_learned.get("summary") or {}).get("total_matched", 0)),
+                    "novel_pattern_flag": bool((signal_lessons_learned.get("summary") or {}).get("novel_pattern_flag", False)),
+                    "n_novel_patterns": int((signal_lessons_learned.get("summary") or {}).get("n_novel_patterns", 0)),
+                    "input_sources": (signal_lessons_learned.get("summary") or {}).get("input_sources") or [],
+                },
+                "sensitivity_table": {
+                    "present": True,
+                    "any_ranking_change_possible": bool(
+                        (sensitivity_table.get("summary") or {}).get("any_ranking_change_possible", False)
+                    ),
+                    "missing_sources_checked": list(
+                        (sensitivity_table.get("summary") or {}).get("missing_sources_checked") or []
+                    ),
+                    "top_n_candidates": int(
+                        (sensitivity_table.get("summary") or {}).get("top_n_candidates", 0)
+                    ),
+                    "row_count": len(sensitivity_table.get("rows") or []),
+                },
+                "scope_filter": (run_context.get("pipeline_runtime") or {}).get("scope_filter") or {
+                    "applied": False,
+                    "approved_scope_version": 0,
+                    "approved_boundary_size": 0,
+                    "filtered_count": 0,
+                    "filtered_component_ids": [],
+                },
                 "pm_compliance": {
                     "present": bool((run_context.get("input_refs") or {}).get("has_pm_compliance", False)),
                     "source": ((run_context.get("pipeline_runtime") or {}).get("pm_compliance") or {}).get("source"),
@@ -1877,6 +2608,23 @@ class RCAReasoningOrchestrator:
             },
             "analyst_attention_flags": list(
                 ((rca_card.get("executive_summary") or {}).get("analyst_attention_flags") or [])
+            ) + (
+                ["SENSITIVITY: missing data could alter candidate ranking — review sensitivity_table"]
+                if bool((sensitivity_table.get("summary") or {}).get("any_ranking_change_possible", False))
+                else []
+            ),
+            "coverage_summary": coverage_summary,
+            "applicability_summary": applicability_summary,
+            "uncertainty_summary": uncertainty_summary,
+            "decision_posture": decision_posture,
+            "replayability_signature": replayability_signature,
+            "analyst_checkpoints": self._build_analyst_checkpoints(
+                rca_card=rca_card,
+                stage_health=stage_health,
+            ),
+            "decision_trail": self._build_decision_trail(
+                causality_candidates=causality_candidates,
+                rca_card=rca_card,
             ),
             "pipeline_health": pipeline_health,
             "stage_health": stage_health,
@@ -1890,6 +2638,12 @@ class RCAReasoningOrchestrator:
                 "optional_artifacts_degraded": bool(optional_artifact_failures),
             },
             "review_hooks": review_hooks,
+            "scope_revision_summary": scope_revision_summary,
+            "scope_expansion_summary": scope_expansion_summary,
+            "allen_relation_map": allen_relation_map,
+            "similar_event_list": similar_event_list,
+            "signal_lessons_learned": signal_lessons_learned,
+            "sensitivity_table": sensitivity_table,
         }
 
     @staticmethod
@@ -2029,6 +2783,1145 @@ class RCAReasoningOrchestrator:
 
         return stage_health
 
+    # ------------------------------------------------------------------
+    # Step 3.5 — Signal Lessons Learned
+    # ------------------------------------------------------------------
+    # Step 2d — Similar Event Identification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _annotate_candidates_with_oe_evidence(
+        *,
+        causality_candidates: JsonDict,
+        similar_event_list: Optional[JsonDict],
+    ) -> None:
+        """Inject matched similar events into each candidate's oe_reinstatement_evidence.
+
+        Mutates candidates in-place.  Matches on component_id OR failure_mode_id overlap.
+        Only events with confidence_weight ≥ 0.30 are cited.
+        """
+        events = (similar_event_list or {}).get("events") or []
+        if not events:
+            return
+
+        for cand in (causality_candidates.get("candidates") or []):
+            if not isinstance(cand, dict):
+                continue
+            cand_cid = str(cand.get("component_id") or "")
+            cand_fmid = str(
+                cand.get("failure_mode_id")
+                or (cand.get("canonical_tuple") or {}).get("failure_mode")
+                or ""
+            )
+            matched = []
+            for ev in events:
+                if not isinstance(ev, dict):
+                    continue
+                cw = float(ev.get("confidence_weight") or 0.0)
+                if cw < 0.30:
+                    continue
+                ev_cid = str(ev.get("component_id") or "")
+                ev_fmsig = str(ev.get("failure_signature") or ev.get("root_cause_label") or "")
+                if (cand_cid and ev_cid and cand_cid == ev_cid) or (
+                    cand_fmid and ev_fmsig and cand_fmid == ev_fmsig
+                ):
+                    matched.append({
+                        "event_id": ev.get("event_id"),
+                        "source_level": ev.get("source_level"),
+                        "confidence_weight": cw,
+                        "source_db": ev.get("source_db"),
+                        "date": ev.get("date"),
+                        "summary": ev.get("summary"),
+                        "lessons_learned_ref": ev.get("lessons_learned_ref"),
+                    })
+            if matched:
+                existing = cand.setdefault("oe_reinstatement_evidence", [])
+                seen_ids = {e.get("event_id") for e in existing if isinstance(e, dict)}
+                for m in matched:
+                    if m.get("event_id") not in seen_ids:
+                        existing.append(m)
+                        seen_ids.add(m.get("event_id"))
+
+    @staticmethod
+    def _query_plant_past_events(
+        *,
+        event: JsonDict,
+        kg_context: Optional[JsonDict],
+        causality_candidates: Optional[JsonDict],
+        top_n: int = 5,
+    ) -> List[JsonDict]:
+        """Score kg_context.past_events against current event dimensions.
+
+        Returns top-N plant-tier SimilarEvent records sorted by
+        confidence_weight descending.
+        """
+        past_events: List[JsonDict] = (
+            (kg_context or {}).get("past_events") or []
+        )
+        if not past_events:
+            return []
+
+        # Build query term sets from top retained candidates
+        cand_list: List[JsonDict] = (
+            (causality_candidates or {}).get("candidates") or []
+        )
+        top_fm_ids: set = set()
+        for c in cand_list[:5]:
+            fmid = c.get("failure_mode_id") or (
+                (c.get("canonical_tuple") or {}).get("failure_mode")
+            )
+            if fmid:
+                top_fm_ids.add(str(fmid))
+
+        current_event_type = str(event.get("event_type") or "")
+        current_actuation_type = str(event.get("actuation_type") or "")
+
+        SCORE_COMPONENT   = 0.40
+        SCORE_FM          = 0.25
+        SCORE_EVENT_TYPE  = 0.15
+        SCORE_ACTUATION   = 0.10
+        SCORE_WIN_BOOST   = 0.10
+        TIER_MULTIPLIER   = TIER_CONFIDENCE_MULTIPLIERS["plant"]
+
+        results: List[JsonDict] = []
+        for pe in past_events:
+            if not isinstance(pe, dict):
+                continue
+            matched_cids: set = set(pe.get("matched_component_ids") or [])
+            matched_fms:  set = set(pe.get("matched_failure_mode_ids") or [])
+
+            dim_component  = SCORE_COMPONENT  if matched_cids else 0.0
+            dim_fm         = SCORE_FM         if (top_fm_ids & matched_fms) else 0.0
+            dim_event_type = SCORE_EVENT_TYPE if (
+                current_event_type and str(pe.get("event_type") or "") == current_event_type
+            ) else 0.0
+            dim_actuation  = SCORE_ACTUATION  if (
+                current_actuation_type
+                and str(pe.get("actuation_type") or "") == current_actuation_type
+            ) else 0.0
+            dim_window     = SCORE_WIN_BOOST  if pe.get("in_precursor_window") else 0.0
+
+            raw_score = dim_component + dim_fm + dim_event_type + dim_actuation + dim_window
+            confidence_weight = round(min(1.0, raw_score * TIER_MULTIPLIER), 6)
+
+            ts = str(pe.get("timestamp_start") or "")
+            date_str: Optional[str] = ts[:10] if ts else None
+
+            results.append({
+                "event_id": str(pe.get("event_id") or ""),
+                "source_level": "plant",
+                "confidence_weight": confidence_weight,
+                "component_id": pe.get("component_id"),
+                "failure_signature": pe.get("fm_id"),
+                "source_db": "plant_kg",
+                "date": date_str,
+                "summary": None,
+                "actuation_type": pe.get("actuation_type"),
+                "window_tier": pe.get("window_tier"),
+                "root_cause_label": pe.get("fm_id"),
+                "resolution": (
+                    str(pe.get("resolved"))
+                    if pe.get("resolved") is not None
+                    else None
+                ),
+                "lessons_learned_ref": None,
+                "contributing_categories": [],
+                "match_dimensions": {
+                    "component_match":  dim_component,
+                    "fm_match":         dim_fm,
+                    "event_type_match": dim_event_type,
+                    "actuation_match":  dim_actuation,
+                    "window_boost":     dim_window,
+                    "raw_score":        raw_score,
+                },
+            })
+
+        results.sort(key=lambda r: r["confidence_weight"], reverse=True)
+        return results[:top_n]
+
+    def _build_similar_event_list(
+        self,
+        *,
+        event: JsonDict,
+        kg_context: Optional[JsonDict],
+        causality_candidates: Optional[JsonDict],
+    ) -> JsonDict:
+        """Build the Step 2d similar_event_list artifact.
+
+        Plant tier always runs (in-memory, zero latency).
+        Fleet and industry tiers run when self.similar_event_adapter is set.
+        """
+        extra = (self.config.extra or {})
+        plant_top_n: int = int(extra.get("step2d_plant_top_n", 5) or 5)
+        query_top_n: int = int(extra.get("step2d_query_top_n_candidates", 3) or 3)
+
+        # --- Build query terms (for auditability) -----------------------
+        cand_list: List[JsonDict] = (
+            (causality_candidates or {}).get("candidates") or []
+        )
+        top_cands = cand_list[:query_top_n]
+        component_ids: List[str] = list({
+            str(c.get("component_id") or "")
+            for c in top_cands
+            if c.get("component_id")
+        })
+        failure_mode_ids: List[str] = list({
+            str(
+                c.get("failure_mode_id")
+                or (c.get("canonical_tuple") or {}).get("failure_mode")
+                or ""
+            )
+            for c in top_cands
+            if (
+                c.get("failure_mode_id")
+                or (c.get("canonical_tuple") or {}).get("failure_mode")
+            )
+        })
+        query_terms: JsonDict = {
+            "asset_id": event.get("asset_id"),
+            "component_ids": component_ids,
+            "failure_mode_ids": failure_mode_ids,
+            "event_type": event.get("event_type"),
+            "actuation_type": event.get("actuation_type"),
+        }
+
+        # --- Plant tier -------------------------------------------------
+        plant_events = self._query_plant_past_events(
+            event=event,
+            kg_context=kg_context,
+            causality_candidates=causality_candidates,
+            top_n=plant_top_n,
+        )
+
+        # --- Fleet / Industry tiers ------------------------------------
+        fleet_events:    List[JsonDict] = []
+        industry_events: List[JsonDict] = []
+        degraded_tiers:  List[str]      = []
+        adapter_name:    Optional[str]  = None
+
+        adapter = self.similar_event_adapter
+        if adapter is not None:
+            adapter_name = type(adapter).__name__
+            for level in ("fleet", "industry"):
+                try:
+                    raw = adapter.query(
+                        level=level,
+                        asset_id=str(event.get("asset_id") or ""),
+                        component_ids=component_ids,
+                        failure_mode_ids=failure_mode_ids,
+                        event_type=event.get("event_type"),
+                        actuation_type=event.get("actuation_type"),
+                        max_results=5,
+                        timeout_seconds=10.0,
+                    )
+                    if getattr(adapter, "degraded", False):
+                        degraded_tiers.append(level)
+                    else:
+                        mult = TIER_CONFIDENCE_MULTIPLIERS.get(level, 1.0)
+                        for rec in (raw or []):
+                            if isinstance(rec, dict):
+                                rec["source_level"] = level
+                                rec["confidence_weight"] = round(
+                                    min(1.0, float(rec.get("confidence_weight") or 0.5) * mult),
+                                    6,
+                                )
+                        if level == "fleet":
+                            fleet_events = raw or []
+                        else:
+                            industry_events = raw or []
+                except Exception:
+                    degraded_tiers.append(level)
+
+        all_events = plant_events + fleet_events + industry_events
+
+        plant_count    = len(plant_events)
+        fleet_count    = len(fleet_events)
+        industry_count = len(industry_events)
+
+        # status: complete only when adapter was present and ran without degrades
+        if adapter is None:
+            status = "partial"
+        elif degraded_tiers:
+            status = "partial"
+        else:
+            status = "complete"
+
+        return {
+            "status": status,
+            "query_terms": query_terms,
+            "summary": {
+                "plant_count":     plant_count,
+                "fleet_count":     fleet_count,
+                "industry_count":  industry_count,
+                "total_count":     plant_count + fleet_count + industry_count,
+                "degraded_tiers":  degraded_tiers,
+                "any_plant_match": plant_count > 0,
+            },
+            "events": all_events,
+            "provenance": {
+                "note": (
+                    "Plant tier: kg_context.past_events. "
+                    + (
+                        f"Fleet/industry: {adapter_name}."
+                        if adapter_name
+                        else "Fleet/industry: no adapter injected."
+                    )
+                ),
+                "generated_by": "RCAReasoningOrchestrator",
+                "adapter": adapter_name,
+                "degraded_tiers": degraded_tiers,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_signal_lessons_learned(
+        *,
+        tskr_patterns: JsonDict,
+        alarm_log: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        run_context: Optional[JsonDict] = None,
+        history_score_threshold: float = 0.20,
+    ) -> JsonDict:
+        """Build the Step-3.5 signal_lessons_learned artifact from tskr_patterns.
+
+        Separates patterns into:
+        - ``matched_patterns``:  historical support exists (recurrence_count > 0 OR
+          history_score >= threshold).  Causal/resolution text attached when available
+          from the pattern's recurrence profile.
+        - ``novel_patterns``:    novel_pattern == True (no history, no match).
+
+        Returns a dict conforming to signal_lessons_learned.json schema.
+        """
+        event_id = str(tskr_patterns.get("event_id") or "")
+        patterns: List[JsonDict] = tskr_patterns.get("patterns") or []
+
+        # Count input window sources from summary
+        summary_in = tskr_patterns.get("summary") or {}
+        n_anomaly = int(summary_in.get("anomaly_point_count") or 0)
+
+        # Count alarm + SOE windows from logs
+        n_alarm = len((alarm_log or {}).get("alarms") or []) if isinstance(alarm_log, dict) else 0
+        n_soe = len((soe_log or {}).get("records") or []) if isinstance(soe_log, dict) else 0
+
+        input_sources: List[str] = []
+        if n_anomaly > 0:
+            input_sources.append("telemetry")
+        if n_alarm > 0:
+            input_sources.append("alarm_log")
+        if n_soe > 0:
+            input_sources.append("soe_log")
+
+        matched: List[JsonDict] = []
+        novel: List[JsonDict] = []
+
+        for pat in patterns:
+            if not isinstance(pat, dict):
+                continue
+            is_novel = bool(pat.get("novel_pattern", False))
+            recurrence_count = int(pat.get("recurrence_count") or 0)
+            history_score_approx = float(pat.get("support") or 0.0)
+
+            # Build a minimal causal/resolution hint from available recurrence data
+            causal_explanation: Optional[str] = None
+            resolution_summary: Optional[str] = None
+            trend = pat.get("recurrence_trend")
+            if recurrence_count > 0 and trend:
+                causal_explanation = (
+                    f"Recurrence detected ({recurrence_count} prior event(s); trend: {trend}). "
+                    f"See KG past events for failure mode '{pat.get('target_id')}'."
+                )
+            if pat.get("unresolved_recurrence_count", 0) > 0:
+                resolution_summary = (
+                    f"{pat['unresolved_recurrence_count']} prior occurrence(s) unresolved — "
+                    f"corrective action traceability review required."
+                )
+
+            entry: JsonDict = {
+                "pattern_id":         str(pat.get("pattern_id") or pat.get("target_id") or f"pat_{len(matched)+len(novel)}"),
+                "target_id":          pat.get("target_id"),
+                "component_id":       pat.get("component_id"),
+                "confidence":         float(pat.get("confidence") or pat.get("support") or 0.0),
+                "support":            float(pat.get("support") or 0.0),
+                "recurrence_count":   recurrence_count,
+                "recurrence_trend":   trend,
+                "novel_pattern":      is_novel,
+                "relation":           pat.get("relation"),
+                "mean_lag_hours":     pat.get("mean_lag_hours"),
+                "causal_explanation": causal_explanation,
+                "resolution_summary": resolution_summary,
+            }
+
+            if is_novel:
+                novel.append(entry)
+            elif recurrence_count > 0 or history_score_approx >= history_score_threshold:
+                matched.append(entry)
+
+        novel_flag = len(novel) > 0
+        total_matched = len(matched)
+
+        return {
+            "event_id": event_id,
+            "generated_at": utcnow_iso(),
+            "summary": {
+                "total_matched": total_matched,
+                "novel_pattern_flag": novel_flag,
+                "n_novel_patterns": len(novel),
+                "n_alarm_windows": n_alarm,
+                "n_soe_windows": n_soe,
+                "n_anomaly_windows": n_anomaly,
+                "input_sources": input_sources,
+            },
+            "matched_patterns": matched,
+            "novel_pattern_flag": novel_flag,
+            "novel_patterns": novel,
+            "provenance": {
+                "generated_by": "RCAReasoningOrchestrator._build_signal_lessons_learned",
+                "run_id": (run_context or {}).get("run_id"),
+                "tskr_pattern_count": len(patterns),
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Step 2c — Allen Relation Map
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _build_allen_relation_map(
+        *,
+        event: Optional[JsonDict],
+        telemetry_summary: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        epsilon_hours: float = 0.5,
+        max_soe_nodes: int = 200,
+    ) -> Optional[JsonDict]:
+        """Build a Step-2c Allen-relation map for anomalies, alarm entries, and SOE records.
+
+        Returns None when the event interval cannot be determined.
+        """
+        # ── 1. Anchor interval ──────────────────────────────────────────────
+        if not isinstance(event, dict):
+            return None
+        ev_start = parse_dt(event.get("timestamp_start") or event.get("timestamp"))
+        if ev_start is None:
+            return None
+        ev_end_raw = event.get("timestamp_end") or event.get("timestamp_resolved")
+        ev_end = parse_dt(ev_end_raw) if ev_end_raw else ev_start
+        if ev_end is None:
+            ev_end = ev_start
+        event_interval = Interval(start=ev_start, end=ev_end)
+        event_interval_dict: JsonDict = {
+            "start": ev_start.isoformat(),
+            "end": ev_end.isoformat() if ev_end != ev_start else None,
+        }
+
+        # ── 2. Quality flags ────────────────────────────────────────────────
+        soe_clock_ok: Optional[bool] = None
+        alarm_clock_ok: Optional[bool] = None
+        soe_capped = False
+        if isinstance(soe_log, dict):
+            q = soe_log.get("quality") or {}
+            soe_clock_ok = bool(q.get("clock_sync_ok")) if "clock_sync_ok" in q else None
+        if isinstance(alarm_log, dict):
+            q = alarm_log.get("quality") or {}
+            alarm_clock_ok = bool(q.get("clock_sync_ok")) if "clock_sync_ok" in q else None
+
+        nodes: List[JsonDict] = []
+
+        # ── 3. Anomaly nodes (from telemetry_summary) ───────────────────────
+        if isinstance(telemetry_summary, dict):
+            for sig in (telemetry_summary.get("signals") or []):
+                if not isinstance(sig, dict):
+                    continue
+                sensor_id = str(sig.get("sensor_id") or sig.get("signal_id") or "")
+                component_id = sig.get("component_id")
+                aw = sig.get("anomaly_window") or {}
+                ano_start = parse_dt(aw.get("start") or sig.get("anomaly_start"))
+                ano_end_raw = aw.get("end") or sig.get("anomaly_end")
+                ano_end = parse_dt(ano_end_raw) if ano_end_raw else ano_start
+                if ano_start is None:
+                    continue
+                if ano_end is None:
+                    ano_end = ano_start
+                a_itvl = Interval(start=ano_start, end=ano_end)
+                rel, score = allen_relation(a_itvl, event_interval, epsilon_hours=epsilon_hours)
+                nodes.append({
+                    "node_id": f"anomaly::{sensor_id}",
+                    "node_type": "anomaly",
+                    "source_id": sensor_id,
+                    "component_id": component_id,
+                    "interval_start": ano_start.isoformat(),
+                    "interval_end": ano_end.isoformat() if ano_end != ano_start else None,
+                    "is_point_event": (ano_start == ano_end),
+                    "allen_relation_to_event": rel,
+                    "allen_base_score": round(score, 4),
+                    "causal_candidate": rel in {PRECEDES, OVERLAPS, CONTAINS},
+                    "severity": sig.get("severity"),
+                    "priority": None,
+                    "transition": None,
+                    "is_protection_signal": None,
+                    "system": None,
+                })
+
+        # ── 4. Alarm nodes ───────────────────────────────────────────────────
+        if isinstance(alarm_log, dict):
+            for alm in (alarm_log.get("alarms") or []):
+                if not isinstance(alm, dict):
+                    continue
+                alarm_id = str(alm.get("alarm_id") or "")
+                comp = alm.get("component_id") or alm.get("tag")
+                alm_start = parse_dt(alm.get("activated_at") or alm.get("timestamp"))
+                alm_end_raw = alm.get("acknowledged_at") or alm.get("cleared_at")
+                alm_end = parse_dt(alm_end_raw) if alm_end_raw else alm_start
+                if alm_start is None:
+                    continue
+                if alm_end is None:
+                    alm_end = alm_start
+                is_point = (alm_start == alm_end)
+                if alarm_clock_ok is False:
+                    rel, score = "unknown", 0.0
+                else:
+                    a_itvl = Interval(start=alm_start, end=alm_end)
+                    rel, score = allen_relation(a_itvl, event_interval, epsilon_hours=epsilon_hours)
+                nodes.append({
+                    "node_id": f"alarm::{alarm_id}",
+                    "node_type": "alarm",
+                    "source_id": alarm_id,
+                    "component_id": comp,
+                    "interval_start": alm_start.isoformat(),
+                    "interval_end": alm_end.isoformat() if not is_point else None,
+                    "is_point_event": is_point,
+                    "allen_relation_to_event": rel,
+                    "allen_base_score": round(score, 4),
+                    "causal_candidate": rel in {PRECEDES, OVERLAPS, CONTAINS},
+                    "severity": alm.get("severity"),
+                    "priority": alm.get("priority"),
+                    "transition": None,
+                    "is_protection_signal": None,
+                    "system": alm.get("system"),
+                })
+
+        # ── 5. SOE record nodes ──────────────────────────────────────────────
+        if isinstance(soe_log, dict):
+            records = soe_log.get("records") or []
+            if len(records) > max_soe_nodes:
+                soe_capped = True
+                records = records[:max_soe_nodes]
+            for rec in records:
+                if not isinstance(rec, dict):
+                    continue
+                rec_id = str(rec.get("record_id") or rec.get("seq") or "")
+                comp = rec.get("component_id") or rec.get("tag")
+                ts = parse_dt(rec.get("timestamp"))
+                if ts is None:
+                    continue
+                # SOE records are point events (instantaneous transitions)
+                a_itvl = Interval(start=ts, end=ts)
+                if soe_clock_ok is False:
+                    rel, score = "unknown", 0.0
+                else:
+                    rel, score = allen_relation(a_itvl, event_interval, epsilon_hours=epsilon_hours)
+                nodes.append({
+                    "node_id": f"soe_record::{rec_id}",
+                    "node_type": "soe_record",
+                    "source_id": rec_id,
+                    "component_id": comp,
+                    "interval_start": ts.isoformat(),
+                    "interval_end": None,
+                    "is_point_event": True,
+                    "allen_relation_to_event": rel,
+                    "allen_base_score": round(score, 4),
+                    "causal_candidate": rel in {PRECEDES, OVERLAPS, CONTAINS},
+                    "severity": None,
+                    "priority": rec.get("priority"),
+                    "transition": rec.get("transition") or rec.get("state_change"),
+                    "is_protection_signal": rec.get("is_protection_signal"),
+                    "system": None,
+                })
+
+        # ── 6. Summary ───────────────────────────────────────────────────────
+        n_by_type: Dict[str, int] = {"anomaly": 0, "alarm": 0, "soe_record": 0}
+        causal_nodes = 0
+        contradiction_nodes = 0
+        unknown_nodes = 0
+        earliest_causal: Optional[datetime] = None
+        causal_by_type: Dict[str, int] = {"anomaly": 0, "alarm": 0, "soe_record": 0}
+        for nd in nodes:
+            nt = nd["node_type"]
+            n_by_type[nt] = n_by_type.get(nt, 0) + 1
+            if nd["causal_candidate"]:
+                causal_nodes += 1
+                causal_by_type[nt] = causal_by_type.get(nt, 0) + 1
+                nd_ts = parse_dt(nd["interval_start"])
+                if nd_ts and (earliest_causal is None or nd_ts < earliest_causal):
+                    earliest_causal = nd_ts
+            elif nd["allen_relation_to_event"] == "follows":
+                contradiction_nodes += 1
+            elif nd["allen_relation_to_event"] == "unknown":
+                unknown_nodes += 1
+
+        dominant_causal_type: Optional[str] = None
+        if causal_by_type:
+            best = max(causal_by_type, key=lambda k: causal_by_type[k])
+            if causal_by_type[best] > 0:
+                dominant_causal_type = best
+
+        summary: JsonDict = {
+            "total_nodes": len(nodes),
+            "node_type_counts": n_by_type,
+            "causal_nodes": causal_nodes,
+            "contradiction_nodes": contradiction_nodes,
+            "unknown_relation_nodes": unknown_nodes,
+            "timeline_consistent": (contradiction_nodes == 0),
+            "dominant_causal_type": dominant_causal_type,
+            "earliest_causal_onset": earliest_causal.isoformat() if earliest_causal else None,
+        }
+        quality_flags: JsonDict = {
+            "soe_clock_sync_ok": soe_clock_ok,
+            "alarm_clock_sync_ok": alarm_clock_ok,
+            "soe_nodes_capped": soe_capped,
+        }
+
+        return {
+            "event_id": str(event.get("event_id") or event.get("id") or ""),
+            "generated_at": utcnow_iso(),
+            "event_interval": event_interval_dict,
+            "quality_flags": quality_flags,
+            "summary": summary,
+            "nodes": nodes,
+            "provenance": {
+                "generated_by": "RCAReasoningOrchestrator._build_allen_relation_map",
+                "epsilon_hours": epsilon_hours,
+                "max_soe_nodes": max_soe_nodes,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Phase 3b — Scope-Expansion Signal Detection
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _detect_scope_expansion_signals(
+        *,
+        run_context: JsonDict,
+        allen_relation_map: Optional[JsonDict] = None,
+        signal_evidence: Optional[JsonDict] = None,
+        tskr_patterns: Optional[JsonDict] = None,
+    ) -> List[JsonDict]:
+        """Scan pipeline outputs and emit scope-expansion suggestion signals.
+
+        Each signal identifies a component or pattern that is either
+        (a) causally implicated but outside the current scope boundary, or
+        (b) flagged as a novel pattern with no historical precedent.
+
+        Returns a (possibly empty) list of signal dicts ready to be merged
+        into ``run_context.scope_management.expansion_suggestions``.
+        """
+        signals: List[JsonDict] = []
+
+        # Current scope component list from the latest accepted revision
+        scope_mgmt = (run_context or {}).get("scope_management") or {}
+        revisions = scope_mgmt.get("scope_revisions") or []
+        # Walk backwards to find the latest accepted revision
+        latest_accepted: JsonDict = {}
+        for rev in reversed(revisions):
+            if isinstance(rev, dict) and rev.get("analyst_decision") == "accepted":
+                latest_accepted = rev
+                break
+        in_scope_components: Set[str] = set()
+        in_scope_assets: Set[str] = set()
+        snapshot = latest_accepted.get("scope_snapshot") or {}
+        for cid in (snapshot.get("component_ids") or []):
+            if cid:
+                in_scope_components.add(str(cid).strip().lower())
+        for aid in (snapshot.get("asset_ids") or []):
+            if aid:
+                in_scope_assets.add(str(aid).strip().lower())
+
+        # ── Source 1: Allen relation map ───────────────────────────────────
+        # Causal candidate nodes whose component is NOT in scope
+        if isinstance(allen_relation_map, dict):
+            for node in (allen_relation_map.get("nodes") or []):
+                if not isinstance(node, dict):
+                    continue
+                if not node.get("causal_candidate", False):
+                    continue
+                comp = node.get("component_id")
+                if not comp:
+                    continue
+                comp_norm = str(comp).strip().lower()
+                if in_scope_components and comp_norm not in in_scope_components:
+                    signals.append({
+                        "signal_id": f"SEX::ALLEN::{node.get('node_id', comp)}",
+                        "source_stage": "step_2c_allen_relation_map",
+                        "trigger_type": "out_of_scope_causal_component",
+                        "suggested_component_ids": [comp],
+                        "allen_relation": node.get("allen_relation_to_event"),
+                        "node_type": node.get("node_type"),
+                        "severity": "warning",
+                        "rationale": (
+                            f"Component '{comp}' has Allen relation "
+                            f"'{node.get('allen_relation_to_event')}' to the event "
+                            f"(causal candidate) but is not in the current scope boundary."
+                        ),
+                        "analyst_decision": "pending",
+                        "detected_at": utcnow_iso(),
+                    })
+
+        # ── Source 2: Signal evidence propagation chains ───────────────────
+        # Chain components that are outside scope
+        if isinstance(signal_evidence, dict):
+            for chain in (signal_evidence.get("propagation_chains") or []):
+                if not isinstance(chain, dict):
+                    continue
+                for comp in (chain.get("component_ids") or []):
+                    if not comp:
+                        continue
+                    comp_norm = str(comp).strip().lower()
+                    if in_scope_components and comp_norm not in in_scope_components:
+                        chain_id = chain.get("chain_id") or chain.get("id") or "unknown"
+                        signals.append({
+                            "signal_id": f"SEX::CHAIN::{chain_id}::{comp}",
+                            "source_stage": "step_3_5_signal_evidence",
+                            "trigger_type": "out_of_scope_propagation_component",
+                            "suggested_component_ids": [comp],
+                            "allen_relation": None,
+                            "node_type": "propagation_chain",
+                            "severity": "warning",
+                            "rationale": (
+                                f"Component '{comp}' appears in propagation chain "
+                                f"'{chain_id}' but is not in the current scope boundary."
+                            ),
+                            "analyst_decision": "pending",
+                            "detected_at": utcnow_iso(),
+                        })
+
+        # ── Source 3: TSKR novel patterns ─────────────────────────────────
+        # Patterns without any historical match are potential scope drivers
+        if isinstance(tskr_patterns, dict):
+            for pat in (tskr_patterns.get("patterns") or []):
+                if not isinstance(pat, dict):
+                    continue
+                if not (pat.get("novel_pattern") or pat.get("no_historical_match") or
+                        pat.get("match_count", 1) == 0):
+                    continue
+                comp = pat.get("component_id") or pat.get("component")
+                signals.append({
+                    "signal_id": f"SEX::NOVEL::{pat.get('pattern_id', 'unknown')}",
+                    "source_stage": "step_3_5_tskr_patterns",
+                    "trigger_type": "novel_signal_pattern",
+                    "suggested_component_ids": [comp] if comp else [],
+                    "allen_relation": None,
+                    "node_type": "tskr_pattern",
+                    "severity": "info",
+                    "rationale": (
+                        f"TSKR pattern '{pat.get('pattern_id', 'unknown')}' has no "
+                        f"historical match — may indicate an event class outside the "
+                        f"current investigation scope."
+                    ),
+                    "analyst_decision": "pending",
+                    "detected_at": utcnow_iso(),
+                })
+
+        # De-duplicate by signal_id (keep first occurrence)
+        seen: Set[str] = set()
+        unique: List[JsonDict] = []
+        for sig in signals:
+            sid = sig["signal_id"]
+            if sid not in seen:
+                seen.add(sid)
+                unique.append(sig)
+        return unique
+
+    @staticmethod
+    def _inject_scope_expansion_signals(
+        run_context: JsonDict,
+        signals: List[JsonDict],
+    ) -> JsonDict:
+        """Merge new scope-expansion signals into run_context.scope_management.
+
+        Existing signals with the same ``signal_id`` are NOT overwritten
+        (idempotent — supports re-runs).
+        Returns the mutated run_context (in-place update on the same dict).
+        """
+        scope_mgmt = run_context.setdefault("scope_management", {})
+        existing: List[JsonDict] = scope_mgmt.setdefault("expansion_suggestions", [])
+        existing_ids: Set[str] = {s.get("signal_id", "") for s in existing if isinstance(s, dict)}
+        for sig in signals:
+            if sig.get("signal_id") not in existing_ids:
+                existing.append(sig)
+                existing_ids.add(sig["signal_id"])
+        return run_context
+
+    # ------------------------------------------------------------------
+    # Scope-revision downstream propagation helpers (Step 0 → Step 4)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_approved_scope_boundary(
+        run_context: JsonDict,
+    ) -> Optional[FrozenSet[str]]:
+        """Return the approved component-ID boundary from the latest accepted
+        scope revision, or None when the pipeline is in discovery mode.
+
+        Returns None when:
+        - ``active_scope_version == 0`` (initial run, no analyst decisions yet).
+        - The latest accepted revision has an empty ``component_ids`` list.
+
+        The returned frozenset is lower-cased and stripped so it can be compared
+        directly against ``candidate["component_id"].strip().lower()``.
+        """
+        scope_mgmt = (run_context or {}).get("scope_management") or {}
+        active_version = int(scope_mgmt.get("active_scope_version") or 0)
+        if active_version == 0:
+            return None
+
+        revisions = scope_mgmt.get("scope_revisions") or []
+        latest_accepted: JsonDict = {}
+        for rev in reversed(revisions):
+            if isinstance(rev, dict) and str(rev.get("analyst_decision") or "").lower() == "accepted":
+                latest_accepted = rev
+                break
+
+        if not latest_accepted:
+            return None
+
+        component_ids = (latest_accepted.get("scope_snapshot") or {}).get("component_ids") or []
+        normalised = frozenset(
+            str(cid).strip().lower()
+            for cid in component_ids
+            if cid
+        )
+        return normalised if normalised else None
+
+    @staticmethod
+    def _apply_scope_boundary_filter(
+        candidates: JsonDict,
+        approved_boundary: FrozenSet[str],
+        scope_version: int,
+    ) -> JsonDict:
+        """Move out-of-scope candidates to ``candidates['ruled_out']``.
+
+        Candidates whose ``component_id`` is NOT in *approved_boundary* are
+        soft-filtered: they are appended to ``ruled_out[]`` with
+        ``reason_code = "scope_filtered"`` and removed from ``candidates[]``.
+
+        Candidates that carry no ``component_id`` are left untouched — we
+        never silently discard candidates for which the boundary check is
+        ambiguous.
+
+        Mutates *candidates* in-place and returns it.
+        """
+        kept: List[JsonDict] = []
+        filtered_cids: List[str] = []
+        ruled_out: List[JsonDict] = list(candidates.get("ruled_out") or [])
+
+        for cand in (candidates.get("candidates") or []):
+            if not isinstance(cand, dict):
+                kept.append(cand)
+                continue
+            cid = cand.get("component_id")
+            if not cid:
+                kept.append(cand)
+                continue
+            cid_norm = str(cid).strip().lower()
+            if cid_norm in approved_boundary:
+                kept.append(cand)
+            else:
+                filtered_cids.append(cid)
+                ruled_out.append({
+                    "candidate_id": cand.get("candidate_id", f"FM::{cid}"),
+                    "component_id": cid,
+                    "reason_code": "scope_filtered",
+                    "reason": (
+                        f"Component '{cid}' is not in the analyst-approved scope "
+                        f"boundary (version {scope_version}). "
+                        "Widen the scope via resolve_expansion_suggestion to reinstate."
+                    ),
+                    "hard_gate": False,
+                    "scope_version": scope_version,
+                    "original_composite_score": cand.get("composite_score"),
+                    "original_candidate_id": cand.get("candidate_id"),
+                })
+
+        candidates["candidates"] = kept
+        candidates["ruled_out"] = ruled_out
+        candidates["scope_filter_applied"] = True
+        candidates["scope_filter_version"] = scope_version
+        candidates["scope_filter_filtered_count"] = len(filtered_cids)
+        candidates["scope_filter_filtered_component_ids"] = filtered_cids
+        return candidates
+
+    @staticmethod
+    def _build_data_coverage_summary(
+        *,
+        kg_context: JsonDict,
+        tskr_patterns: JsonDict,
+        evidence_bundle: JsonDict,
+        causality_candidates: JsonDict,
+        run_context: Optional[JsonDict] = None,
+        telemetry_summary: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        protection_logic_context: Optional[JsonDict] = None,
+        configuration_change_records: Optional[JsonDict] = None,
+        environmental_monitoring: Optional[JsonDict] = None,
+        vendor_supply_chain_records: Optional[JsonDict] = None,
+        training_records: Optional[JsonDict] = None,
+    ) -> JsonDict:
+        def status_from_counts(*, required_hits: List[bool], optional_hits: List[bool]) -> str:
+            if not any(required_hits) and not any(optional_hits):
+                return "missing"
+            if all(required_hits):
+                return "complete"
+            return "partial"
+
+        # ── Core families (always assessed) ─────────────────────────────────
+        component_count = len((kg_context.get("components") or []))
+        failure_mode_count = len((kg_context.get("failure_modes") or []))
+        past_event_count = len((kg_context.get("past_events") or []))
+        kg_status = status_from_counts(
+            required_hits=[component_count > 0, failure_mode_count > 0],
+            optional_hits=[past_event_count > 0],
+        )
+
+        evidence_result_count = len((evidence_bundle.get("results") or []))
+        chroma_status = "complete" if evidence_result_count >= 3 else "partial" if evidence_result_count > 0 else "missing"
+
+        pattern_count = len((tskr_patterns.get("patterns") or []))
+        anomaly_status = "complete" if pattern_count > 0 else "missing"
+
+        # ── Telemetry detail family ──────────────────────────────────────────
+        telemetry_status: str
+        telemetry_metrics: JsonDict = {}
+        signals: List[JsonDict] = []
+        if isinstance(telemetry_summary, dict):
+            signals = [s for s in (telemetry_summary.get("signals") or []) if isinstance(s, dict)]
+        if not signals:
+            telemetry_status = "missing"
+        else:
+            degraded_signals: List[str] = []
+            total_missing_frac = 0.0
+            for sig in signals:
+                dq = sig.get("data_quality") or {}
+                missing_frac = float(dq.get("missing_fraction", 0) or 0)
+                total_missing_frac += missing_frac
+                if (
+                    missing_frac > 0.15
+                    or bool(dq.get("flatline_detected"))
+                    or float(dq.get("outlier_fraction", 0) or 0) > 0.20
+                ):
+                    degraded_signals.append(str(sig.get("tag_id") or sig.get("signal_id") or "unknown"))
+            avg_missing_frac = total_missing_frac / len(signals)
+            telemetry_status = "complete" if not degraded_signals else "partial"
+            telemetry_metrics = {
+                "signal_count": len(signals),
+                "degraded_signal_count": len(degraded_signals),
+                "avg_missing_fraction": round(avg_missing_frac, 4),
+                "degraded_signal_ids": degraded_signals[:5],
+            }
+
+        # ── SOE log family (conditional) ─────────────────────────────────────
+        input_refs = (run_context or {}).get("input_refs") or {}
+        has_soe = bool(input_refs.get("has_soe_log")) or isinstance(soe_log, dict)
+        soe_status: str
+        soe_metrics: JsonDict = {}
+        if not has_soe:
+            soe_status = "not_assessed"
+        else:
+            soe_quality = (soe_log or {}).get("quality") or {}
+            clock_ok = bool(soe_quality.get("clock_sync_ok", True))
+            dropped = int(soe_quality.get("dropped_record_count", 0) or 0)
+            duplicates = int(soe_quality.get("duplicate_record_count", 0) or 0)
+            record_count = len((soe_log or {}).get("records") or []) if isinstance(soe_log, dict) else 0
+            if clock_ok and dropped == 0:
+                soe_status = "complete"
+            elif dropped > 0 or not clock_ok:
+                soe_status = "partial"
+            else:
+                soe_status = "complete"
+            soe_metrics = {
+                "record_count": record_count,
+                "clock_sync_ok": clock_ok,
+                "dropped_record_count": dropped,
+                "duplicate_record_count": duplicates,
+            }
+
+        # ── Alarm log family (conditional) ───────────────────────────────────
+        has_alarm = bool(input_refs.get("has_alarm_log")) or isinstance(alarm_log, dict)
+        alarm_status: str
+        alarm_metrics: JsonDict = {}
+        if not has_alarm:
+            alarm_status = "not_assessed"
+        else:
+            alarm_quality = (alarm_log or {}).get("quality") or {}
+            alarm_clock_ok = bool(alarm_quality.get("clock_sync_ok", True))
+            alarm_missing_frac = float(alarm_quality.get("missing_fraction", 0) or 0)
+            alarm_count = len((alarm_log or {}).get("alarms") or []) if isinstance(alarm_log, dict) else 0
+            if alarm_clock_ok and alarm_missing_frac <= 0.05:
+                alarm_status = "complete"
+            elif alarm_missing_frac > 0.20 or not alarm_clock_ok:
+                alarm_status = "partial"
+            else:
+                alarm_status = "complete"
+            alarm_metrics = {
+                "alarm_count": alarm_count,
+                "clock_sync_ok": alarm_clock_ok,
+                "missing_fraction": alarm_missing_frac,
+            }
+
+        # ── Protection logic context (conditional, paired with SOE) ──────────
+        has_plc = bool(input_refs.get("has_protection_logic_context")) or isinstance(protection_logic_context, dict)
+        plc_status: str
+        if not has_soe and not has_plc:
+            plc_status = "not_assessed"
+        elif has_plc:
+            plc_status = "complete"
+        else:
+            # SOE present but PLC absent — paired requirement not satisfied
+            plc_status = "missing"
+
+        # ── Configuration change records (conditional) ───────────────────────
+        has_ccr = bool(input_refs.get("has_configuration_change_records")) or isinstance(configuration_change_records, dict)
+        ccr_status: str
+        ccr_metrics: JsonDict = {}
+        if not has_ccr:
+            ccr_status = "not_assessed"
+        else:
+            ccr_quality = (configuration_change_records or {}).get("quality") or {}
+            coverage_s = str(ccr_quality.get("coverage_status") or "").strip().lower()
+            if coverage_s in {"complete", "partial", "missing"}:
+                ccr_status = coverage_s
+            else:
+                record_count_ccr = len((configuration_change_records or {}).get("records") or []) if isinstance(configuration_change_records, dict) else 0
+                ccr_status = "complete" if record_count_ccr > 0 else "partial"
+            ccr_metrics = {"coverage_status_raw": coverage_s or "not_reported"}
+
+        # ── Environmental monitoring (Category F — external hazards) ──────────
+        has_env = bool(input_refs.get("has_environmental_monitoring")) or isinstance(environmental_monitoring, dict)
+        env_status: str
+        env_metrics: JsonDict = {}
+        if not has_env:
+            env_status = "not_assessed"
+        else:
+            env_quality = (environmental_monitoring or {}).get("quality") or {}
+            env_source_count = len((environmental_monitoring or {}).get("sources") or []) if isinstance(environmental_monitoring, dict) else 0
+            env_missing = float(env_quality.get("missing_fraction", 0) or 0)
+            env_status = "complete" if env_source_count > 0 and env_missing <= 0.10 else "partial"
+            env_metrics = {
+                "source_count": env_source_count,
+                "missing_fraction": env_missing,
+            }
+
+        # ── Vendor / supply-chain records (Category K) ───────────────────────
+        has_vsc = bool(input_refs.get("has_vendor_supply_chain_records")) or isinstance(vendor_supply_chain_records, dict)
+        vsc_status: str
+        vsc_metrics: JsonDict = {}
+        if not has_vsc:
+            vsc_status = "not_assessed"
+        else:
+            record_count_vsc = len((vendor_supply_chain_records or {}).get("records") or []) if isinstance(vendor_supply_chain_records, dict) else 0
+            vsc_status = "complete" if record_count_vsc > 0 else "partial"
+            vsc_metrics = {"record_count": record_count_vsc}
+
+        # ── Training records (Category L — systemic/organisational) ──────────
+        has_tr = bool(input_refs.get("has_training_records")) or isinstance(training_records, dict)
+        tr_status: str
+        tr_metrics: JsonDict = {}
+        if not has_tr:
+            tr_status = "not_assessed"
+        else:
+            record_count_tr = len((training_records or {}).get("records") or []) if isinstance(training_records, dict) else 0
+            tr_status = "complete" if record_count_tr > 0 else "partial"
+            tr_metrics = {"record_count": record_count_tr}
+
+        # ── Paired data checks ───────────────────────────────────────────────
+        if not has_soe and not has_plc:
+            soe_plc_pairing = "not_applicable"
+        elif has_soe and has_plc:
+            soe_plc_pairing = "ok"
+        elif has_soe and not has_plc:
+            soe_plc_pairing = "violated"   # paired requirement not met
+        else:
+            soe_plc_pairing = "ok"
+
+        paired_data_checks = {
+            "soe_protection_logic_pairing": soe_plc_pairing,
+        }
+
+        # ── Overall status: aggregate only assessed families ─────────────────
+        order = {"missing": 0, "partial": 1, "complete": 2, "not_assessed": 3}
+        assessed_statuses = [
+            s for s in [kg_status, chroma_status, anomaly_status, telemetry_status, soe_status, alarm_status, plc_status, ccr_status]
+            if s != "not_assessed"
+        ]
+        if assessed_statuses:
+            overall_status = min(assessed_statuses, key=lambda x: order.get(str(x), 0))
+        else:
+            overall_status = "complete"
+
+        source_families: JsonDict = {
+            "kg_context": {
+                "status": kg_status,
+                "metrics": {
+                    "component_count": component_count,
+                    "failure_mode_count": failure_mode_count,
+                    "past_event_count": past_event_count,
+                },
+            },
+            "chroma_corpus": {
+                "status": chroma_status,
+                "metrics": {
+                    "evidence_result_count": evidence_result_count,
+                },
+            },
+            "upstream_anomaly_inputs": {
+                "status": anomaly_status,
+                "metrics": {
+                    "pattern_count": pattern_count,
+                },
+            },
+            "telemetry_detail": {
+                "status": telemetry_status,
+                "metrics": telemetry_metrics,
+            },
+            "soe_log": {
+                "status": soe_status,
+                "metrics": soe_metrics,
+            },
+            "alarm_log": {
+                "status": alarm_status,
+                "metrics": alarm_metrics,
+            },
+            "protection_logic_context": {
+                "status": plc_status,
+                "metrics": {},
+            },
+            "configuration_change_records": {
+                "status": ccr_status,
+                "metrics": ccr_metrics,
+            },
+            "environmental_monitoring": {
+                "status": env_status,
+                "metrics": env_metrics,
+            },
+            "vendor_supply_chain_records": {
+                "status": vsc_status,
+                "metrics": vsc_metrics,
+            },
+            "training_records": {
+                "status": tr_status,
+                "metrics": tr_metrics,
+            },
+        }
+
+        return {
+            "overall_status": overall_status,
+            "source_families": source_families,
+            "paired_data_checks": paired_data_checks,
+            # Keep category coverage present for backward-compatible consumers.
+            "category_coverage": copy.deepcopy(causality_candidates.get("category_coverage") or {}),
+        }
+
     @staticmethod
     def _compute_ap913_completeness(
         *,
@@ -2062,9 +3955,11 @@ class RCAReasoningOrchestrator:
         rca_card: JsonDict,
         output_validation: Optional[JsonDict],
         pipeline_health: Optional[JsonDict] = None,
+        coverage_summary: Optional[JsonDict] = None,
         reentry_hook: Optional[JsonDict] = None,
         stage_health: Optional[JsonDict] = None,
         event_severity=None,
+        scope_expansion_summary: Optional[JsonDict] = None,
     ) -> JsonDict:
         rca_status = rca_card.get("validation_status") or {}
         analyst_review = rca_card.get("analyst_review") or {}
@@ -2078,11 +3973,28 @@ class RCAReasoningOrchestrator:
         decision_required = bool(analyst_review.get("decision_required", True))
         writeback_recommendation = analyst_review.get("writeback_recommendation")
         decision_status = executive_summary.get("decision_status")
+        coverage_overall_status = str((coverage_summary or {}).get("overall_status") or "complete").strip().lower()
+        coverage_degraded = coverage_overall_status in {"partial", "missing"}
+        coverage_acknowledged = bool(
+            analyst_review.get("coverage_degraded_acknowledged", False)
+            or analyst_review.get("degraded_data_acknowledged", False)
+        )
+        coverage_ack_required = bool(coverage_degraded and not coverage_acknowledged)
         degraded_reasons: List[str] = []
+        if coverage_ack_required:
+            degraded_reasons.append(
+                "Coverage degraded (partial/missing) and analyst acknowledgement is required before progression."
+            )
         if str((pipeline_health or {}).get("status") or "green").lower() in {"yellow", "red"}:
             degraded_reasons.extend([str(x) for x in ((pipeline_health or {}).get("issues") or []) if x])
         if bool((reentry_hook or {}).get("should_reenter")):
             degraded_reasons.append("Rank inversion detected; targeted KG re-entry review recommended.")
+        paired_checks = (coverage_summary or {}).get("paired_data_checks") or {}
+        if str(paired_checks.get("soe_protection_logic_pairing") or "") in {"warning", "violated"}:
+            degraded_reasons.append(
+                "Paired-data requirement not met: SOE log present but protection logic context absent. "
+                "Barrier logic gate runs with degraded signal coverage."
+            )
         stage_policy = self._evaluate_stage_policy_hooks(stage_health=stage_health)
         for v in (stage_policy.get("violations") or []):
             line = str(v.get("message") or "").strip()
@@ -2112,6 +4024,24 @@ class RCAReasoningOrchestrator:
         else:
             severity_floor = 0.35
             passed_severity_gate = True
+
+        # Scope-expansion signals requiring analyst decision
+        pending_expansion = int((scope_expansion_summary or {}).get("pending_analyst_decision", 0))
+        analyst_decisions_required: List[str] = []
+        if pending_expansion > 0:
+            analyst_decisions_required.append(
+                f"{pending_expansion} scope-expansion signal(s) are pending analyst decision "
+                f"(accept/defer/reject) at the next human decision checkpoint."
+            )
+            degraded_reasons.append(
+                f"Scope-expansion suggestions pending ({pending_expansion}): analyst boundary review required."
+            )
+        # Paired-data violation requires analyst action before writeback
+        if str((paired_checks or {}).get("soe_protection_logic_pairing") or "") in {"warning", "violated"}:
+            analyst_decisions_required.append(
+                "SOE log present but protection_logic_context absent — provide PLC data or "
+                "explicitly accept barrier-gate degradation before writeback."
+            )
 
         writeback_ready = bool(
             outputs_ok
@@ -2161,6 +4091,10 @@ class RCAReasoningOrchestrator:
             "decision_required": decision_required,
             "decision_status": decision_status,
             "writeback_recommendation": writeback_recommendation,
+            "coverage_status": coverage_overall_status,
+            "coverage_degraded": coverage_degraded,
+            "coverage_acknowledgement_required": coverage_ack_required,
+            "coverage_acknowledged": coverage_acknowledged,
             "degraded_run": bool(degraded_reasons),
             "degraded_reasons": degraded_reasons,
             "reentry_hook": reentry_hook or {"should_reenter": False, "reason": "none"},
@@ -2170,6 +4104,8 @@ class RCAReasoningOrchestrator:
             "stage_hard_stop_required": stage_hard_stop_required,
             "stage_policy_violations": stage_policy.get("violations") or [],
             "stage_remediation_playbooks": stage_policy.get("playbooks") or {},
+            "analyst_decisions_required": analyst_decisions_required,
+            "scope_expansion_signals": scope_expansion_summary or {},
         }
 
     def _evaluate_stage_policy_hooks(self, *, stage_health: Optional[JsonDict]) -> JsonDict:
@@ -2611,6 +4547,68 @@ class RCAReasoningOrchestrator:
         if msg2 not in flags:
             flags.append(msg2)
 
+    @staticmethod
+    def _apply_metamodel_coverage_attention_flags(
+        rca_card: JsonDict,
+        causality_candidates: Optional[JsonDict],
+    ) -> None:
+        coverage = (causality_candidates or {}).get("category_coverage") or {}
+        applicability = (causality_candidates or {}).get("applicability_assessment") or {}
+        if not isinstance(coverage, dict):
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        coverage_flags = ex.setdefault("category_coverage_flags", [])
+        if not isinstance(flags, list) or not isinstance(coverage_flags, list):
+            return
+        unresolved = [
+            cat for cat, row in coverage.items()
+            if isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "unknown"
+        ]
+        if unresolved:
+            msg = (
+                "Metamodel category coverage remains unknown for categories: "
+                + ", ".join(sorted(unresolved))
+                + "."
+            )
+            if msg not in coverage_flags:
+                coverage_flags.append(msg)
+            if msg not in flags:
+                flags.append(msg)
+        high_impact_unknown = []
+        for cat in ("B", "F", "I", "L"):
+            row = applicability.get(cat) if isinstance(applicability, dict) else None
+            if isinstance(row, dict) and str(row.get("status") or "").strip().lower() == "unknown":
+                high_impact_unknown.append(cat)
+        if high_impact_unknown:
+            msg = (
+                "High-impact category applicability unresolved for: "
+                + ", ".join(high_impact_unknown)
+                + "."
+            )
+            if msg not in coverage_flags:
+                coverage_flags.append(msg)
+            if msg not in flags:
+                flags.append(msg)
+        external_oe_unavailable = bool((causality_candidates or {}).get("external_oe_unavailable", False))
+        ex["external_oe_unavailable"] = external_oe_unavailable
+        if external_oe_unavailable:
+            msg = "Fleet/industry OE unavailable; OE stream posture treated as insufficient data."
+            if msg not in flags:
+                flags.append(msg)
+        decision_posture = (causality_candidates or {}).get("decision_posture") or {}
+        if bool(decision_posture.get("near_tie", False)):
+            msg = "Top hypotheses are near-tied; analyst tie-break is required before writeback."
+            if msg not in flags:
+                flags.append(msg)
+        blocked = int(decision_posture.get("contradiction_blocked_count", 0) or 0)
+        if blocked > 0:
+            msg = (
+                f"{blocked} candidate(s) blocked from automatic primary selection due to contradiction gate."
+            )
+            if msg not in flags:
+                flags.append(msg)
+
     def _build_workflow_dispatch(
         self,
         *,
@@ -2718,6 +4716,189 @@ class RCAReasoningOrchestrator:
             "contextual_count": contextual_count,
             "supporting_ids": supporting_ids[:5],
         }
+
+    @staticmethod
+    def _build_analyst_checkpoints(
+        *,
+        rca_card: JsonDict,
+        stage_health: Optional[JsonDict] = None,
+    ) -> List[JsonDict]:
+        review = (rca_card.get("analyst_review") or {}) if isinstance(rca_card, dict) else {}
+        decision_required = bool(review.get("decision_required", False))
+        writeback = str(review.get("writeback_recommendation") or "").strip().lower()
+        stage_health = stage_health or {}
+        stage_b_status = str(((stage_health.get("stage_b_kg_context") or {}).get("status") or "green")).lower()
+        stage_c_status = str(((stage_health.get("stage_c_temporal") or {}).get("status") or "green")).lower()
+        stage_d_status = str(((stage_health.get("stage_d_causality") or {}).get("status") or "green")).lower()
+        stage_e_status = str(((stage_health.get("stage_e_evidence") or {}).get("status") or "green")).lower()
+        stage_g_status = str(((stage_health.get("stage_g_structuring") or {}).get("status") or "green")).lower()
+        step5_stage_status = "red" if stage_d_status == "red" or stage_e_status == "red" else "green"
+        status_lookup = {
+            "1": stage_b_status,
+            "2": (
+                "red"
+                if stage_b_status == "red" or stage_c_status == "red"
+                else "green"
+            ),
+            "3": stage_e_status,
+            "3.5": stage_c_status,
+            "4": stage_d_status,
+            "5": step5_stage_status,
+            "6": (
+                "red"
+                if stage_g_status == "red" or step5_stage_status == "red"
+                else "green"
+            ),
+        }
+        names = [
+            ("0", "scoping"),
+            ("1", "data_management"),
+            ("2", "kg_expansion"),
+            ("3", "pattern_recognition_documentary"),
+            ("3.5", "pattern_recognition_signal"),
+            ("4", "candidate_generation"),
+            ("5", "ranking_and_evidence_assessment"),
+            ("6", "conclusion"),
+        ]
+        checkpoints: List[JsonDict] = []
+        for step_id, name in names:
+            stage_status = status_lookup.get(step_id, "green")
+            checkpoint_status = "pending" if stage_status == "red" else "completed"
+            gate_required = step_id in {"5", "6"} and decision_required and checkpoint_status == "completed"
+            checkpoints.append(
+                {
+                    "step_id": step_id,
+                    "step_name": name,
+                    "status": checkpoint_status,
+                    "decision_required": gate_required,
+                    "decision_state": (
+                        "hold_until_review"
+                        if gate_required and writeback == "hold_until_review"
+                        else "ready_if_accepted"
+                        if gate_required and writeback == "ready_if_accepted"
+                        else "completed"
+                    ),
+                }
+            )
+        return checkpoints
+
+    @staticmethod
+    def _build_replayability_signature(
+        *,
+        causality_candidates: JsonDict,
+        stage_health: JsonDict,
+        decision_posture: JsonDict,
+        uncertainty_summary: JsonDict,
+        review_hooks: JsonDict,
+    ) -> JsonDict:
+        ranked_rows = []
+        for idx, row in enumerate((causality_candidates.get("candidates") or []), start=1):
+            if not isinstance(row, dict):
+                continue
+            ranked_rows.append(
+                {
+                    "rank": idx,
+                    "candidate_id": row.get("candidate_id"),
+                    "composite_score": row.get("composite_score"),
+                    "quality_multiplier": row.get("quality_multiplier"),
+                    "primary_eligibility": row.get("primary_eligibility"),
+                    "evidence_posture": row.get("evidence_posture"),
+                    "reinstatement_status": row.get("reinstatement_status"),
+                    "near_tie_with": row.get("near_tie_with") or [],
+                    "ruleout_reason_code": ((row.get("ruleout") or {}).get("reason_code")),
+                }
+            )
+        replay_payload = {
+            "ranked_candidates": ranked_rows,
+            "stage_health": stage_health or {},
+            "decision_posture": decision_posture or {},
+            "uncertainty_summary": uncertainty_summary or {},
+            "review_hooks": {
+                "next_step": (review_hooks or {}).get("next_step"),
+                "writeback_ready": bool((review_hooks or {}).get("writeback_ready", False)),
+                "coverage_status": (review_hooks or {}).get("coverage_status"),
+                "coverage_degraded": bool((review_hooks or {}).get("coverage_degraded", False)),
+                "hard_abort_required": bool((review_hooks or {}).get("hard_abort_required", False)),
+            },
+        }
+        canonical = json.dumps(replay_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return {
+            "algorithm": "sha256",
+            "digest": digest,
+            "candidate_count": len(ranked_rows),
+            "canonical_payload_version": "v1",
+        }
+
+    @staticmethod
+    def _build_decision_trail(
+        *,
+        causality_candidates: JsonDict,
+        rca_card: JsonDict,
+    ) -> List[JsonDict]:
+        trail: List[JsonDict] = []
+        candidate_rows = []
+        for key in ("candidates", "filtered_out_candidates"):
+            candidate_rows.extend(
+                [row for row in (causality_candidates.get(key) or []) if isinstance(row, dict)]
+            )
+        for row in candidate_rows:
+            candidate_id = row.get("candidate_id")
+            if not candidate_id:
+                continue
+            ruleout = row.get("ruleout")
+            if isinstance(ruleout, dict):
+                trail.append(
+                    {
+                        "event_type": "ruleout",
+                        "candidate_id": candidate_id,
+                        "reason_code": ruleout.get("reason_code"),
+                        "reason_detail": ruleout.get("reason_detail"),
+                        "ruled_out_by": ruleout.get("ruled_out_by"),
+                        "ruled_out_at": ruleout.get("ruled_out_at"),
+                    }
+                )
+            reinstatement_status = row.get("reinstatement_status")
+            if reinstatement_status:
+                evidence_refs = []
+                for key in ("supporting_evidence_refs", "contextual_evidence_refs", "contradicting_evidence_refs"):
+                    for ref in (row.get(key) or []):
+                        txt = str(ref).strip()
+                        if txt and txt not in evidence_refs:
+                            evidence_refs.append(txt)
+                reason_detail = str(
+                    row.get("reinstatement_rationale")
+                    or row.get("reinstatement_reason")
+                    or "Candidate reinstated after supplementary evidence/provenance review."
+                ).strip()
+                reinstated_at = str(row.get("reinstated_at") or utcnow_iso()).strip()
+                trail.append(
+                    {
+                        "event_type": "reinstatement_status",
+                        "candidate_id": candidate_id,
+                        "status": reinstatement_status,
+                        "reason_detail": reason_detail,
+                        "evidence_refs": evidence_refs,
+                        "reinstated_at": reinstated_at,
+                    }
+                )
+
+        primary = (rca_card.get("primary_hypothesis") or {}) if isinstance(rca_card, dict) else {}
+        summary = (rca_card.get("executive_summary") or {}) if isinstance(rca_card, dict) else {}
+        if primary.get("candidate_id"):
+            decision_status = str(summary.get("decision_status") or "review_required")
+            confidence_label = str(primary.get("confidence_label") or "").strip().lower()
+            if confidence_label not in {"high", "medium", "low", "speculative"}:
+                confidence_label = "speculative"
+            trail.append(
+                {
+                    "event_type": "final_decision",
+                    "candidate_id": primary.get("candidate_id"),
+                    "decision_status": decision_status,
+                    "confidence_label": confidence_label,
+                }
+            )
+        return trail
 
     # ------------------------------------------------------------------
     # validation helpers
