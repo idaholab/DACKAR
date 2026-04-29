@@ -196,6 +196,12 @@ class OrchestratorConfig:
     run_label: Optional[str] = None
     top_k_candidates: int = 5
     top_k_evidence: int = 10
+    # Semantic document recurrence parameters (§4.5)
+    enable_semantic_recurrence: bool = False
+    semantic_similarity_threshold: float = 0.75
+    near_match_window: float = 0.10
+    fm_id_resolution_threshold: float = 0.80
+    top_k_semantic: int = 5
     extra: JsonDict = field(default_factory=dict)
 
 
@@ -215,11 +221,16 @@ class RCAReasoningOrchestrator:
     cmms_adapter: Optional[Any] = None
     cmms_context_builder_config: Optional[Any] = None
     similar_event_adapter: Optional[Any] = None
+    doc_extraction_store: Optional[Any] = None
     config: OrchestratorConfig = field(default_factory=OrchestratorConfig)
 
     def set_similar_event_adapter(self, adapter: Any) -> None:
         """Inject a SimilarEventAdapter for fleet/industry OE queries."""
         self.similar_event_adapter = adapter
+
+    def set_doc_extraction_store(self, store: Any) -> None:
+        """Inject a DocExtractionStore for semantic recurrence queries."""
+        self.doc_extraction_store = store
 
     def run(
         self,
@@ -320,6 +331,23 @@ class RCAReasoningOrchestrator:
         self._validate_and_persist(run_id, "kg_context", kg_context)
         kg_governance = self._compute_kg_governance(event=event, kg_context=kg_context)
         self._enforce_kg_governance_policy(run_id=run_id, kg_governance=kg_governance)
+
+        # Step C — resolve fm_id_candidate for extraction records (§3.3 Step C)
+        # Must run after kg_context is available so we have the FM list for the asset neighborhood.
+        if self.doc_extraction_store is not None and self.config.enable_semantic_recurrence:
+            try:
+                fm_list = [
+                    (str(fm.get("fm_id") or ""), str(fm.get("name") or fm.get("label") or ""))
+                    for fm in (kg_context.get("failure_modes") or [])
+                    if fm.get("fm_id") and (fm.get("name") or fm.get("label"))
+                ]
+                if fm_list:
+                    self.doc_extraction_store.resolve_fm_candidates(
+                        fm_list,
+                        resolution_threshold=self.config.fm_id_resolution_threshold,
+                    )
+            except Exception as exc:
+                LOGGER.warning("fm_id_candidate resolution failed — pipeline continues: %s", exc)
 
         # Stage 5B — live CMMS context (event-scoped CRs and WOs)
         cmms_context: Optional[JsonDict] = None
@@ -565,6 +593,7 @@ class RCAReasoningOrchestrator:
         )
         self._apply_kg_governance_attention_flags(rca_card, kg_governance)
         self._apply_recurrence_match_quality_attention_flags(rca_card, tskr_patterns)
+        self._apply_near_match_pattern_attention_flags(rca_card, tskr_patterns)
         self._apply_signal_evidence_attention_flags(rca_card, signal_evidence)
         self._apply_out_of_boundary_attention_flags(rca_card, kg_context)
         self._apply_metamodel_coverage_attention_flags(rca_card, causality_candidates)
@@ -760,16 +789,27 @@ class RCAReasoningOrchestrator:
             return
         extra = self.config.extra or {}
         override = extra.get("tskr_simultaneous_epsilon_hours")
-        if override is None:
-            return
-        try:
-            value = float(override)
-        except Exception:
-            return
-        if value < 0.0:
-            return
-        if hasattr(cfg, "simultaneous_epsilon_hours"):
-            setattr(cfg, "simultaneous_epsilon_hours", value)
+        if override is not None:
+            try:
+                value = float(override)
+                if value >= 0.0 and hasattr(cfg, "simultaneous_epsilon_hours"):
+                    setattr(cfg, "simultaneous_epsilon_hours", value)
+            except Exception:
+                pass
+
+        # Propagate semantic recurrence settings from OrchestratorConfig → scorer config
+        if hasattr(cfg, "enable_semantic_recurrence"):
+            cfg.enable_semantic_recurrence = self.config.enable_semantic_recurrence
+        if hasattr(cfg, "semantic_similarity_threshold"):
+            cfg.semantic_similarity_threshold = self.config.semantic_similarity_threshold
+        if hasattr(cfg, "near_match_window"):
+            cfg.near_match_window = self.config.near_match_window
+        if hasattr(cfg, "top_k_semantic"):
+            cfg.top_k_semantic = self.config.top_k_semantic
+
+        # Inject the doc_extraction_store into the scorer if available
+        if self.doc_extraction_store is not None and hasattr(scorer, "doc_extraction_store"):
+            scorer.doc_extraction_store = self.doc_extraction_store
 
     def _tskr_runtime_snapshot(self) -> JsonDict:
         scorer = self.tskr_temporal_scorer
@@ -779,6 +819,30 @@ class RCAReasoningOrchestrator:
         return {
             "simultaneous_epsilon_hours": getattr(cfg, "simultaneous_epsilon_hours", None),
             "min_confidence_for_support": getattr(cfg, "min_confidence_for_support", None),
+        }
+
+    def _build_semantic_recurrence_provenance(
+        self, tskr_patterns: Optional[JsonDict]
+    ) -> JsonDict:
+        """Summarise semantic recurrence usage across all TSKR patterns for run_manifest provenance."""
+        patterns = (tskr_patterns or {}).get("patterns") or []
+        semantic_used = self.config.enable_semantic_recurrence and self.doc_extraction_store is not None
+        total_semantic_matches = sum(int(p.get("semantic_match_count") or 0) for p in patterns)
+        total_near_matches = sum(int(p.get("near_match_count") or 0) for p in patterns)
+        near_match_fm_ids = [
+            str(p.get("target_id") or "")
+            for p in patterns
+            if bool(p.get("near_match_pattern", False))
+        ]
+        return {
+            "semantic_recurrence_used": semantic_used,
+            "semantic_match_count": total_semantic_matches,
+            "near_match_count": total_near_matches,
+            "near_match_fm_ids": near_match_fm_ids,
+            "store_present": self.doc_extraction_store is not None,
+            "similarity_threshold": self.config.semantic_similarity_threshold,
+            "near_match_window": self.config.near_match_window,
+            "top_k_semantic": self.config.top_k_semantic,
         }
 
     def _build_signal_evidence(
@@ -1391,6 +1455,78 @@ class RCAReasoningOrchestrator:
         if eid.startswith("CMMS::WO::"):
             return "cmms_wo"
         return "kg"
+
+    @staticmethod
+    def _source_doc_id_from_event_id(event_id: str) -> Optional[str]:
+        """Derive source document ID from a CMMS-injected past event's event_id.
+
+        CMMS past events use format ``"CMMS::CR::<doc_id>"`` or ``"CMMS::WO::<doc_id>"``.
+        Returns None for KG-native events that have no corresponding extraction record.
+        """
+        for prefix in ("CMMS::CR::", "CMMS::WO::"):
+            if event_id.startswith(prefix):
+                return event_id[len(prefix):]
+        return None
+
+    def _build_doc_id_semantic_scores(
+        self,
+        *,
+        kg_context: Optional[JsonDict],
+        causality_candidates: Optional[JsonDict],
+        query_top_n: int,
+    ) -> Optional[Dict[str, float]]:
+        """Query DocExtractionStore for top FM candidates; return doc_id → max_similarity map.
+
+        Returns None when semantic recurrence is disabled or store is absent.
+        When returned as a dict (possibly empty), ``_query_plant_past_events`` switches
+        to renormalized weights and adds the semantic dimension to plant-tier scoring.
+        """
+        if self.doc_extraction_store is None or not self.config.enable_semantic_recurrence:
+            return None
+
+        cand_list = (causality_candidates or {}).get("candidates") or []
+        top_cands = cand_list[:query_top_n]
+        if not top_cands:
+            return {}
+
+        fm_by_id: Dict[str, JsonDict] = {
+            str(fm.get("fm_id") or ""): fm
+            for fm in ((kg_context or {}).get("failure_modes") or [])
+            if fm.get("fm_id")
+        }
+
+        doc_sim: Dict[str, float] = {}
+        for cand in top_cands:
+            fm_id = str(
+                cand.get("failure_mode_id")
+                or (cand.get("canonical_tuple") or {}).get("failure_mode")
+                or ""
+            )
+            if not fm_id:
+                continue
+            fm = fm_by_id.get(fm_id, {})
+            fm_name = fm.get("name") or fm.get("label") or ""
+            fm_symptoms = fm.get("expected_symptoms") or ""
+            query_text = " | ".join(t for t in (fm_name, fm_symptoms) if t)
+            if not query_text.strip():
+                continue
+            try:
+                matches, near_matches = self.doc_extraction_store.query(
+                    query_text,
+                    top_k=self.config.top_k_semantic,
+                    similarity_threshold=self.config.semantic_similarity_threshold,
+                    near_match_window=self.config.near_match_window,
+                )
+                for m in matches + near_matches:
+                    if m.similarity_score > doc_sim.get(m.doc_id, 0.0):
+                        doc_sim[m.doc_id] = m.similarity_score
+            except Exception as exc:
+                LOGGER.warning(
+                    "Step 2d semantic store query failed for fm %s: %s — skipping",
+                    fm_id, exc,
+                )
+
+        return doc_sim
 
     def _enrich_past_events_temporal_metadata(
         self,
@@ -2452,6 +2588,7 @@ class RCAReasoningOrchestrator:
                     ),
                 },
                 "tskr_runtime": self._tskr_runtime_snapshot(),
+                "semantic_recurrence": self._build_semantic_recurrence_provenance(tskr_patterns),
                 "strict_input_guard_enforcement": bool((self.config.extra or {}).get("strict_input_guard_enforcement", False)),
                 "input_guard_hard_stop_on_any_flag": bool((self.config.extra or {}).get("input_guard_hard_stop_on_any_flag", False)),
                 "input_guard_blocking_flags": (
@@ -2849,11 +2986,19 @@ class RCAReasoningOrchestrator:
         kg_context: Optional[JsonDict],
         causality_candidates: Optional[JsonDict],
         top_n: int = 5,
+        doc_id_semantic_scores: Optional[Dict[str, float]] = None,
     ) -> List[JsonDict]:
         """Score kg_context.past_events against current event dimensions.
 
         Returns top-N plant-tier SimilarEvent records sorted by
         confidence_weight descending.
+
+        When ``doc_id_semantic_scores`` is provided (not None), a semantic
+        similarity dimension is added at weight 0.10 and the other five
+        dimensions are renormalized (× 0.90) so the total remains 1.0.
+        Only CMMS-sourced past events (event_id starting with ``CMMS::CR::``
+        or ``CMMS::WO::``) carry a ``source_doc_id`` that can be looked up in
+        the semantic store; KG-native events receive semantic score 0.0.
         """
         past_events: List[JsonDict] = (
             (kg_context or {}).get("past_events") or []
@@ -2876,12 +3021,24 @@ class RCAReasoningOrchestrator:
         current_event_type = str(event.get("event_type") or "")
         current_actuation_type = str(event.get("actuation_type") or "")
 
-        SCORE_COMPONENT   = 0.40
-        SCORE_FM          = 0.25
-        SCORE_EVENT_TYPE  = 0.15
-        SCORE_ACTUATION   = 0.10
-        SCORE_WIN_BOOST   = 0.10
-        TIER_MULTIPLIER   = TIER_CONFIDENCE_MULTIPLIERS["plant"]
+        # Weight set: renormalized (×0.90) when semantic dim is present, original otherwise
+        if doc_id_semantic_scores is not None:
+            SCORE_COMPONENT   = 0.36
+            SCORE_FM          = 0.225
+            SCORE_EVENT_TYPE  = 0.135
+            SCORE_ACTUATION   = 0.09
+            SCORE_WIN_BOOST   = 0.09
+            SCORE_SEMANTIC    = 0.10
+        else:
+            SCORE_COMPONENT   = 0.40
+            SCORE_FM          = 0.25
+            SCORE_EVENT_TYPE  = 0.15
+            SCORE_ACTUATION   = 0.10
+            SCORE_WIN_BOOST   = 0.10
+            SCORE_SEMANTIC    = 0.0
+
+        TIER_MULTIPLIER = TIER_CONFIDENCE_MULTIPLIERS["plant"]
+        _sem = doc_id_semantic_scores or {}
 
         results: List[JsonDict] = []
         for pe in past_events:
@@ -2901,7 +3058,17 @@ class RCAReasoningOrchestrator:
             ) else 0.0
             dim_window     = SCORE_WIN_BOOST  if pe.get("in_precursor_window") else 0.0
 
-            raw_score = dim_component + dim_fm + dim_event_type + dim_actuation + dim_window
+            # Semantic dimension: continuous [0, SCORE_SEMANTIC] for CMMS-sourced events
+            source_doc_id = RCAReasoningOrchestrator._source_doc_id_from_event_id(
+                str(pe.get("event_id") or "")
+            )
+            sem_sim = float(_sem.get(source_doc_id, 0.0)) if source_doc_id else 0.0
+            dim_semantic = SCORE_SEMANTIC * sem_sim
+
+            raw_score = (
+                dim_component + dim_fm + dim_event_type
+                + dim_actuation + dim_window + dim_semantic
+            )
             confidence_weight = round(min(1.0, raw_score * TIER_MULTIPLIER), 6)
 
             ts = str(pe.get("timestamp_start") or "")
@@ -2926,12 +3093,15 @@ class RCAReasoningOrchestrator:
                 ),
                 "lessons_learned_ref": None,
                 "contributing_categories": [],
+                "semantic_similarity_score": round(sem_sim, 4),
+                "source_doc_id": source_doc_id,
                 "match_dimensions": {
                     "component_match":  dim_component,
                     "fm_match":         dim_fm,
                     "event_type_match": dim_event_type,
                     "actuation_match":  dim_actuation,
                     "window_boost":     dim_window,
+                    "semantic_match":   round(dim_semantic, 6),
                     "raw_score":        raw_score,
                 },
             })
@@ -2985,12 +3155,20 @@ class RCAReasoningOrchestrator:
             "actuation_type": event.get("actuation_type"),
         }
 
+        # --- Semantic doc-id scores for plant-tier augmentation (Phase 3b) ------
+        doc_id_semantic_scores = self._build_doc_id_semantic_scores(
+            kg_context=kg_context,
+            causality_candidates=causality_candidates,
+            query_top_n=query_top_n,
+        )
+
         # --- Plant tier -------------------------------------------------
         plant_events = self._query_plant_past_events(
             event=event,
             kg_context=kg_context,
             causality_candidates=causality_candidates,
             top_n=plant_top_n,
+            doc_id_semantic_scores=doc_id_semantic_scores,
         )
 
         # --- Fleet / Industry tiers ------------------------------------
@@ -3060,7 +3238,9 @@ class RCAReasoningOrchestrator:
             "events": all_events,
             "provenance": {
                 "note": (
-                    "Plant tier: kg_context.past_events. "
+                    "Plant tier: kg_context.past_events"
+                    + (" + semantic store scoring." if doc_id_semantic_scores is not None else ".")
+                    + " "
                     + (
                         f"Fleet/industry: {adapter_name}."
                         if adapter_name
@@ -3070,6 +3250,8 @@ class RCAReasoningOrchestrator:
                 "generated_by": "RCAReasoningOrchestrator",
                 "adapter": adapter_name,
                 "degraded_tiers": degraded_tiers,
+                "semantic_scoring_applied": doc_id_semantic_scores is not None,
+                "semantic_doc_count": len(doc_id_semantic_scores) if doc_id_semantic_scores is not None else 0,
             },
         }
 
@@ -4461,6 +4643,34 @@ class RCAReasoningOrchestrator:
         msg = (
             "High CR-to-failure-mode match failure rate in recurrence pool "
             f"({unmatched}/{total}, rate={round(rate, 3)}); recurrence ranking may be understated."
+        )
+        if msg not in flags:
+            flags.append(msg)
+
+    @staticmethod
+    def _apply_near_match_pattern_attention_flags(
+        rca_card: JsonDict,
+        tskr_patterns: Optional[JsonDict],
+    ) -> None:
+        """Add attention flag when any pattern is a near-match but not a full semantic match (§4.3)."""
+        patterns = (tskr_patterns or {}).get("patterns") or []
+        near_match_ids = [
+            str(p.get("target_id") or p.get("pattern_id") or "")
+            for p in patterns
+            if bool(p.get("near_match_pattern", False))
+        ]
+        if not near_match_ids:
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        ids_str = ", ".join(near_match_ids[:5])
+        msg = (
+            f"Near-match documentary pattern detected for {len(near_match_ids)} failure mode(s) "
+            f"({ids_str}{'...' if len(near_match_ids) > 5 else ''}): "
+            "similar historical documents found below the semantic similarity threshold. "
+            "Review near-match records before finalizing a novel-pattern designation."
         )
         if msg not in flags:
             flags.append(msg)

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import math
+
+logger = logging.getLogger(__name__)
 
 from orchestrators.temporal_relations import (
     Interval,
@@ -52,6 +55,11 @@ class TSKRTemporalScorerConfig:
     tone_watch_min_minutes: float = 5.0
     tone_alert_min_minutes: float = 10.0
     tone_trip_min_minutes: float = 2.0
+    # Semantic recurrence parameters (§4.3 / §4.5)
+    enable_semantic_recurrence: bool = False
+    semantic_similarity_threshold: float = 0.75
+    near_match_window: float = 0.10
+    top_k_semantic: int = 5
 
 
 @dataclass
@@ -99,8 +107,13 @@ class TSKRTemporalScorerV1:
       - tskr_patterns artifact aligned to tskr_patterns.json schema
     """
 
-    def __init__(self, config: Optional[TSKRTemporalScorerConfig] = None):
+    def __init__(
+        self,
+        config: Optional[TSKRTemporalScorerConfig] = None,
+        doc_extraction_store: Optional[Any] = None,
+    ) -> None:
         self.config = config or TSKRTemporalScorerConfig()
+        self.doc_extraction_store = doc_extraction_store
 
     # ------------------------------------------------------------------ #
     # Public entry point                                                    #
@@ -819,6 +832,35 @@ class TSKRTemporalScorerV1:
             base += 0.05
         return clamp01(base)
 
+    def _score_from_effective_count(
+        self, effective_count: float, profile: RecurrenceProfile
+    ) -> float:
+        """Score from effective (exact + semantic) recurrence count (§4.3).
+
+        Uses floor(effective_count) for threshold bracketing so that fractional
+        semantic contributions require at least 0.5 cumulative weight to cross
+        into the next tier.
+        """
+        count_floor = int(effective_count)
+        if count_floor == 0:
+            base = 0.0
+        elif count_floor == 1:
+            base = 0.35
+        elif count_floor <= 3:
+            base = 0.55
+        elif count_floor <= 6:
+            base = 0.70
+        else:
+            base = 0.80
+
+        if profile.trend == "increasing":
+            base += 0.15
+        if profile.unresolved_count > 0:
+            base += 0.10
+        if profile.most_recent_days_ago is not None and profile.most_recent_days_ago < 90:
+            base += 0.05
+        return clamp01(base)
+
     def _score_history_support(
         self,
         *,
@@ -889,6 +931,47 @@ class TSKRTemporalScorerV1:
             past_events=past_events,
         )
 
+        # Semantic recurrence augmentation (§4.3)
+        semantic_match_count = 0
+        near_match_count = 0
+        effective_recurrence_count: float = float(recurrence_profile.count)
+        near_match_pattern = False
+
+        if (
+            self.doc_extraction_store is not None
+            and self.config.enable_semantic_recurrence
+        ):
+            fm_name = fm.get("name") or fm.get("label") or ""
+            fm_symptoms = fm.get("expected_symptoms") or ""
+            query_text = " | ".join(t for t in (fm_name, fm_symptoms) if t)
+            if query_text.strip():
+                try:
+                    sem_matches, sem_near = self.doc_extraction_store.query(
+                        query_text,
+                        top_k=self.config.top_k_semantic,
+                        similarity_threshold=self.config.semantic_similarity_threshold,
+                        near_match_window=self.config.near_match_window,
+                    )
+                    semantic_contributions = sum(m.semantic_contribution for m in sem_matches)
+                    effective_recurrence_count = recurrence_profile.count + semantic_contributions
+                    semantic_match_count = len(sem_matches)
+                    near_match_count = len(sem_near)
+                    # Re-score history using the effective count
+                    if semantic_contributions > 0:
+                        history_score = self._score_from_effective_count(
+                            effective_recurrence_count, recurrence_profile
+                        )
+                    near_match_pattern = (
+                        recurrence_profile.count == 0
+                        and not sem_matches
+                        and bool(sem_near)
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "DocExtractionStore query failed for fm %s: %s — semantic recurrence skipped",
+                        fm_id, exc,
+                    )
+
         chain_pos = float(chain_position_score or 0.0)
         if str(chain_position_type or "absent") == "convergence_confluence":
             chain_pos = 0.0
@@ -949,17 +1032,21 @@ class TSKRTemporalScorerV1:
             "temporal_contradiction": temporal_contradiction,
             "stage_b_allen_relation": stage_b_allen_relation,
             "stage_b_temporal_contradiction": stage_b_temporal_contradiction,
-            # Recurrence fields (new)
+            # Recurrence fields
             "recurrence_count":            recurrence_profile.count,
+            "effective_recurrence_count":  round(effective_recurrence_count, 4),
             "recurrence_trend":            recurrence_profile.trend,
             "unresolved_recurrence_count": recurrence_profile.unresolved_count,
+            "semantic_match_count":        semantic_match_count,
+            "near_match_count":            near_match_count,
             # Step 3.5 — novel pattern flag: True when this pattern has no historical support
-            # and no anomaly evidence aligns with the failure mode.
+            # (exact or semantic) and no anomaly evidence aligns with the failure mode.
             "novel_pattern": bool(
-                recurrence_profile.count == 0
+                effective_recurrence_count == 0
                 and history_score < 0.20
                 and not bool(signal_ids)
             ),
+            "near_match_pattern": near_match_pattern,
         }
 
     # ------------------------------------------------------------------ #
