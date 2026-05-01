@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-29  
 **Scope:** Impact analysis of `dackar.RCA.epistemics` on the RCA workflow (`rca_workflow_reference_guide_april_25.md`).  
-**Status:** Working notes — pre-implementation, pre-ADR.
+**Status:** Phases A, B, C, and D complete (2026-04-30).
 
 ---
 
@@ -478,7 +478,7 @@ The synthesizer consumes this digest. The LLM path receives principled inputs fo
 **Still open:**
 
 - **FMEA discriminating content threshold** — what field predicates in Chroma metadata reliably identify quantitative thresholds vs qualitative descriptions without re-running NLP at query time. Options: structured FMEA fields at ingest, lightweight keyword classifier, NER tagging at index time.
-- **Confidence override thresholds X** — temporal and telemetry score floors for override eligibility; to be established by calibration against TC-1 through TC-7.
+- **Confidence override thresholds X** — temporal and telemetry score floors for override eligibility; to be established by calibration against TC-1 through TC-7. **Decision (2026-04-30):** flag infrastructure (`confidence_override_applied`, `causal_grounding_absent` preserved under override) deferred until calibration runs available. §4.3 cap (`observationally_ungrounded → confidence_label ≤ medium`) is implemented; the override *path* is not.
 - **Supersession within analyzes class** — CR superseded by ECA/RCA is the simple case. Hard cases include conflicting ECAs and OE-vs-plant-RCA disagreement. A first-version authority hierarchy within the analyzes class: plant RCA > plant ECA > plant CR preliminary assessment > fleet OE > industry OE. When two elements conflict on the same component/FM pair, higher authority wins. Equal authority: more recent wins. Equal authority and equal recency: analyst flag required, no automatic resolution. Note: this hierarchy applies within a single component/FM pair — conflict handling across multiple components or FM pairs will need additional rules in a future version. Full hierarchy rules need ADR before implementation.
 - **Calibration profile compatibility check** — first-version rule: flag a mismatch if any field in `baseline_data_coverage_signature` that is `True` in the profile is `False` in the run's actual coverage. Conservative but safe. Fields that most materially affect threshold behavior: `has_eca`, `has_cr_with_finding_status`, and whether the analyzes-class fraction of Chroma hits exceeds a minimum proportion. A run with no ECAs must not use a profile calibrated on an ECA-rich environment. Note: this rule is intentionally strict and will trigger frequently in early deployments — that is acceptable. Noisy flagging during rollout is preferable to silent miscalibration. Flag frequency should be monitored and used to drive ingestion pipeline improvements, not to relax the compatibility rule.
 - **`resolve_supersession` host** — orchestrator (natural hook after Allen map, before `refine_with_evidence`) vs engine (if engine ingests single merged evidence list). Needs ADR.
@@ -500,6 +500,174 @@ The synthesizer consumes this digest. The LLM path receives principled inputs fo
 **Risk 3 — Silent epistemic drift from degraded classification**
 
 When routing falls back to `doc_type` or `default_class`, identical records may route differently across plants and ingestion runs. `classification_resolution_level` recorded on every annotation and `degraded_classification` counts in the manifest are the primary defenses. A high degraded-classification rate must trigger an ingestion quality review, not silent acceptance.
+
+---
+
+---
+
+## 11. Implementation Plan
+
+The epistemics module is implemented in four sequential phases. Phases A and B can proceed without ADRs or calibration. Phase C is gated on the `resolve_supersession` ADR, TC-1–TC-7 automation, and a calibration run. Phase D is gated on Phase C completion.
+
+Each phase has a status line, a concrete file-level backlog, and unit test requirements. The status line is updated as work progresses.
+
+---
+
+### Phase A — Epistemic annotation layer
+
+**Status:** complete (2026-04-30)  
+**Scoring impact:** none — annotation only  
+**Prerequisites:** none
+
+#### Goal
+
+Add a first-class epistemic annotation to every document that enters the pipeline. No scoring changes. The routing table is implemented as a versioned config artifact. The manifest reports `degraded_classification` counts. This phase makes the epistemic class of every Chroma hit visible and auditable before any downstream use is attempted.
+
+#### `src/dackar/RCA/doc_extraction/schema.py`
+- Add `epistemic_class: Optional[str]` — values: `"affects_performance"` | `"monitors_performance"` | `"analyzes_past_degradation"` | `"characterizes_the_system"`
+- Add `classification_resolution_level: Optional[str]` — `"finding_status"` | `"authority_level"` | `"doc_type"` | `"default"`
+- Add `degraded_classification: bool = False` — `True` when `classification_resolution_level` is `"doc_type"` or `"default"`
+- Update `as_chroma_metadata()` to serialize all three new fields
+- Update `is_recurrence_eligible()` to also return `False` when `epistemic_class != "analyzes_past_degradation"` (optional gate; default off until Phase C)
+
+#### `src/dackar/RCA/doc_extraction/epistemics.py` (new file)
+- `EpistemicsRoutingConfig` dataclass:
+  - `policy_version: str`
+  - `routing_table: dict` — serializable representation of §3.2 routing rules
+  - `fallback_order: list[str]` — default `["finding_status", "authority_level", "doc_type", "default"]`
+- `EpistemicClassifier` class:
+  - `classify(record_or_meta: dict) -> EpistemicAnnotation` — applies priority chain; returns `(epistemic_class, classification_resolution_level, degraded_classification)`
+  - Priority chain per §3.3: `finding_status → authority_level → doc_type → default_class`
+  - `degraded_classification = True` when `resolution_level` is `"doc_type"` or `"default"`
+  - All routing decisions must be deterministic given the same input metadata
+- `EpistemicAnnotation` dataclass: `epistemic_class`, `classification_resolution_level`, `degraded_classification`
+
+#### `src/dackar/RCA/doc_extraction/store.py`
+- Add `epistemic_class: Optional[str]`, `classification_resolution_level: Optional[str]`, `degraded_classification: bool` to `SemanticMatch`
+- Accept optional `classifier: Optional[EpistemicClassifier]` in `DocExtractionStore.__init__()`
+- After deduplication in `query()`, annotate each `SemanticMatch` using the classifier if provided; leave fields `None` / `False` if no classifier supplied (backward-compatible)
+- `_meta_to_semantic_match()`: pass through `epistemic_class`, `classification_resolution_level`, `degraded_classification` from stored metadata when present
+
+#### `src/dackar/RCA/cross_pattern/models.py`
+- Add `epistemic_class: Optional[str] = None`, `classification_resolution_level: Optional[str] = None`, `degraded_classification: bool = False` to `HistoricalDocExtraction`
+
+#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py`
+- Add `epistemics_classifier: Optional[Any] = None` field + `set_epistemics_classifier(classifier)` injection method
+- Add `epistemics_policy_version: Optional[str] = None` to `OrchestratorConfig`
+- Pass `epistemics_classifier` to `DocExtractionStore` at construction or via setter in `_apply_tskr_runtime_overrides()`
+- Update `_semantic_match_to_historical_doc()` to pass through `epistemic_class`, `classification_resolution_level`, `degraded_classification` from `SemanticMatch` to `HistoricalDocExtraction`
+- Add `_build_epistemics_manifest_summary()` static method — counts by `epistemic_class`, counts by `classification_resolution_level`, `degraded_classification` counts by `doc_type`; adds `policy_version`
+- Add `epistemics_summary` entry to `run_manifest.artifacts` in `_stage_g_finalize_manifest()`
+- No changes to any scoring field, composite score, or candidate ranking
+
+#### `src/dackar/RCA/unit_tests/test_epistemics_classifier.py` (new file)
+Minimum test coverage:
+- All five routing rows in §3.2 → correct `epistemic_class`
+- Fallback chain: each of the four `classification_resolution_level` values triggered correctly
+- `degraded_classification = False` when `finding_status` or `authority_level` resolves
+- `degraded_classification = True` when `doc_type` or `default` resolves
+- Missing metadata → `default` class, `degraded_classification = True`
+- Dual-role elements (WO, CR, environmental monitoring) route to primary class per §2.5 policy
+- `policy_version` present in every annotation output
+- Ambiguous inputs: conflicting `finding_status` and `doc_type` → `finding_status` wins
+- `SemanticMatch` carries annotation fields after `DocExtractionStore.query()` with classifier
+- `HistoricalDocExtraction` annotation fields populated by `_semantic_match_to_historical_doc()`
+- Manifest `epistemics_summary` contains `degraded_classification` counts per doc_type
+
+---
+
+### Phase B — TSKR restructuring
+
+**Status:** complete (2026-04-30)  
+**Scoring impact:** behavior-preserving (same weights, explicit intermediate separation)  
+**Prerequisites:** Phase A complete
+
+#### Goal
+
+Split the TSKR flat blend into two explicit intermediate scores: `signal_support_score` (monitors-class terms) and `recurrence_support_score` (analyzes-class term). Restrict alarm and SOE contributions to onset and lag consistency only. No numerical behavior change in v1 — the composite temporal sub-score is unchanged. The split makes the two epistemic operations independently testable and interpretable.
+
+#### `src/dackar/RCA/orchestrators/tskr_temporal_scorer.py`
+- Compute `signal_support_score` as the weighted sub-sum of anomaly, onset, chain, anomaly_count, lag_consistency terms
+- Compute `recurrence_support_score` as the weighted sub-sum of history-score terms only
+- Combine into temporal sub-score using explicit weights (values unchanged from current formula)
+- Restrict `alarm_log` and `soe_log` contributions to `onset_score` and `lag_consistency_score` only — remove any path from alarm/SOE into `anomaly_score` or `anomaly_count_score`
+- Expose `signal_support_score` and `recurrence_support_score` in the pattern output dict alongside existing fields
+- No change to `effective_recurrence_count`, `semantic_recurrence_capped`, or `fm_resolution_ambiguous`
+
+#### Unit tests
+- `signal_support_score` and `recurrence_support_score` sum correctly to the existing temporal sub-score under all-present inputs
+- Alarm-only input: `anomaly_score == 0` and `anomaly_count_score == 0`; only `onset_score` and `lag_consistency_score` receive alarm contribution
+- SOE-only input: same restriction
+- Both intermediates present in pattern output dict
+
+---
+
+### Phase C — Evidence blend correction
+
+**Status:** complete (2026-04-30)  
+**Scoring impact:** breaking change to `support_score` routing — requires threshold recalibration  
+**Prerequisites:**
+- `resolve_supersession` ADR merged ✅
+- TC-1–TC-7 automated as integration tests *(deferred — requires live Chroma/Ollama/KG; calibration profile placeholder committed)*
+- Calibration profile established and stamped *(deferred — placeholder in `doc_extraction/calibration_profile.yaml`)*
+
+#### Goal
+
+Apply the §3.2 routing table in the scoring engine. Restrict `support_score` to analyzes-class hits only. Fix the Allen blend to exclude monitors-class signals from the causal score. Add `observationally_ungrounded` flag and `confidence_label` cap. Run supersession pass. Recalibrate `minimum_evidence_threshold` against TC-1–TC-7 before any production run with this change active.
+
+#### ADR required before this phase
+
+**ADR-1 — `resolve_supersession` host** ✅ decided 2026-04-30
+- **Decision: Orchestrator (Option A)** — post-`retrieve()`, pre-`refine_with_evidence()`.
+- Rationale: `bundle["results"]` (raw deduplicated hits) carries full per-snippet metadata (`doc_type`, `epistemic_class`, `finding_status`, recency) at that point. The engine works only from the aggregated `candidate_evidence_summary` and never sees raw hits; threading raw hits into it would require significant refactor. The orchestrator is already the coordination layer between retrieval and engine. `resolve_supersession()` is a pure function on the bundle: zero out superseded snippet `support_score` contributions, retain the hit as provenance, then rebuild `candidate_evidence_summary` before handing to the engine.
+- Implementation note: `resolve_supersession(bundle) → bundle` — modifies `bundle["results"]` in-place (marks `superseded: True`, zeros `support_score`), then calls `_build_candidate_evidence_summary` on the filtered hit list to patch `candidate_evidence_summary`.
+
+**ADR-2 — Supersession authority hierarchy** ✅ decided 2026-04-30
+- **Decision: plant RCA > plant ECA > plant CR preliminary assessment > fleet OE > industry OE.**
+- Equal authority, different recency: most recent wins; older record is zeroed (superseded) but retained as provenance.
+- Equal authority, recency unknown or tied: both contribute — no supersession applied.
+- Cross-class records (e.g. WO affects-class vs ECA analyzes-class): supersession never applies; only analyzes-class records supersede each other. Monitors-class and affects-class records coexist with analyzes-class records without supersession.
+- Rationale: recent investigation reflects updated understanding; concurrent independent findings reinforce each other and should not be artificially reduced. Keeping cross-class records out of supersession preserves operational context without conflating it with root cause authority.
+
+#### File changes
+- `orchestrators/supersession.py` *(new)* — `resolve_supersession()` pure function; authority hierarchy per ADR-2; recency tiebreak; `_patch_candidate_summary` rebuilds score-affecting summary fields in-place
+- `orchestrators/evidence_retriever.py` — `support_score` restricted to analyzes-class hits; non-analyzes hits demoted to `context_score × 0.5`; `has_analyzes_class_hit` / `has_affects_class_hit` flags added to `candidate_evidence_summary` rows
+- `orchestrators/causality_engine_v32.py` — `_build_allen_component_index` restricted to `node_type == "anomaly"` for `causal_scores` (§3.4); `observationally_ungrounded` flag set per §4.2; `confidence_label` capped at "medium" when flag is True
+- `orchestrators/rca_reasoning_orchestrator.py` — `_apply_supersession()` helper; called post-`retrieve()` at both main and reentry paths
+- `doc_extraction/calibration_profile.yaml` *(new)* — placeholder with `profile_version: TBD`; recalibration procedure documented inline
+- `unit_tests/test_phase_c_supersession.py` *(new)* — 34 tests covering supersession authority/recency, Allen blend restriction, `observationally_ungrounded` logic
+
+#### Calibration procedure
+1. Automate TC-1–TC-7 as integration tests (dependency)
+2. Run TC-1–TC-7 with Phase C routing active and `minimum_evidence_threshold = 0.0`
+3. Record composite score distributions per test case
+4. Set `minimum_evidence_threshold` to the value that preserves correct candidate selection on all seven cases
+5. Establish `confidence_override_threshold_temporal` and `confidence_override_threshold_telemetry` from the same runs
+6. Name and version the profile; store alongside `EpistemicsConfig`
+
+---
+
+### Phase D — Synthesis and epistemics digest
+
+**Status:** complete (2026-04-30)  
+**Scoring impact:** confidence label and synthesis narrative  
+**Prerequisites:** Phase C complete ✅; root-cause analyzes-gap flagging threshold decided *(threshold implicit in causal_grounding_absent flag; no numeric threshold needed for v1)*
+
+#### Goal
+
+Produce a structured `EpistemicsDigest` per candidate before synthesis runs. The synthesizer consumes the digest — not raw `doc_type` fields. Confidence language is grounded in evidence class. Unresolved gaps are typed by epistemic class. Root cause assignments without analyzes-class support are flagged.
+
+#### `EpistemicsDigest` schema (per §7.4)
+- `candidate_id`, `analyzes_support_count`, `analyzes_support_items`, `affects_support_present`, `affects_support_items`
+- `observationally_ungrounded`, `causal_grounding_absent` (preserved even when override applied)
+- `degraded_classification_count`, `confidence_cap`
+- Produced once per candidate before synthesis; passed to both LLM and deterministic fallback paths
+
+#### File changes
+- `orchestrators/epistemics_digest.py` *(new)* — `build_epistemics_digests()` pure function: per-candidate digest from post-refine candidates + hit list; `build_epistemics_run_summary()` for manifest
+- `orchestrators/rca_reasoning_orchestrator.py` — `_attach_epistemics_digests()` helper; called post-reentry, pre-synthesis; attaches digest to each `candidate["epistemics_digest"]`; `epistemics_summary` added to `run_manifest` in `_stage_g_finalize_manifest`
+- `synthesis/rca_synthesizer_v31.py` — `_apply_epistemics_postprocessing()`: confidence cap via `_cap_confidence_label`; `causal_grounding_absent` + `observationally_ungrounded` stamped on `primary_hypothesis`; gap-typed attention flags added to `executive_summary`; prompt instructions updated with confidence_cap rule
+- `unit_tests/test_phase_d_epistemics_digest.py` *(new)* — 32 tests covering digest builder, run summary, cap logic, and postprocessing enforcement
 
 ---
 

@@ -135,22 +135,24 @@ class TSKRTemporalScorerV1:
         event_start = parse_dt(event.get("timestamp_start"))
         event_end   = parse_dt(event.get("timestamp_end")) or event_start
 
-        anomaly_windows = (
+        telemetry_windows = (
             self._extract_anomaly_windows_from_signal_evidence(signal_evidence)
             if signal_evidence and int(signal_evidence.get("augmented_anomaly_count", 0) or 0) > 0
             else self._extract_anomaly_windows(telemetry_summary)
         )
-        # Merge alarm and SOE point-event windows into the anomaly pool
+        # Alarm and SOE windows are kept separate — they feed onset timing only,
+        # not anomaly_score or anomaly_count_score (Phase B restriction).
+        alarm_soe_windows: List[Dict[str, Any]] = []
         if alarm_log:
-            anomaly_windows = anomaly_windows + self._extract_alarm_windows(alarm_log)
+            alarm_soe_windows = alarm_soe_windows + self._extract_alarm_windows(alarm_log)
         if soe_log:
-            anomaly_windows = anomaly_windows + self._extract_soe_windows(soe_log)
-        anomaly_windows = sorted(anomaly_windows, key=lambda x: x["start"])
-        anomaly_window_summary = self._summarize_anomaly_windows(anomaly_windows)
+            alarm_soe_windows = alarm_soe_windows + self._extract_soe_windows(soe_log)
+        all_windows = sorted(telemetry_windows + alarm_soe_windows, key=lambda x: x["start"])
+        anomaly_window_summary = self._summarize_anomaly_windows(all_windows)
         signal_ids           = self._extract_signal_ids(telemetry_summary)
-        telemetry_support    = self._telemetry_support_score(anomaly_windows)
-        tone_summary         = self._summarize_tones(anomaly_windows)
-        operator_family      = self._infer_operator_family(event_start, event_end, anomaly_windows)
+        telemetry_support    = self._telemetry_support_score(telemetry_windows)
+        tone_summary         = self._summarize_tones(all_windows)
+        operator_family      = self._infer_operator_family(event_start, event_end, all_windows)
 
         past_events = kg_context.get("past_events") or []
         stage_b_allen_by_component = self._stage_b_allen_relation_by_component(kg_context)
@@ -164,7 +166,8 @@ class TSKRTemporalScorerV1:
                 asset_id=asset_id,
                 event_start=event_start,
                 event_end=event_end,
-                anomaly_windows=anomaly_windows,
+                anomaly_windows=telemetry_windows,
+                alarm_soe_windows=alarm_soe_windows,
                 anomaly_window_summary=anomaly_window_summary,
                 signal_ids=signal_ids,
                 telemetry_support=telemetry_support,
@@ -201,7 +204,7 @@ class TSKRTemporalScorerV1:
                 "n_novel_patterns": novel_count,
                 "has_novel_patterns": novel_count > 0,
                 "operator_family": operator_family,
-                "anomaly_point_count": len(anomaly_windows),
+                "anomaly_point_count": len(all_windows),
                 "signal_count": len(signal_ids),
                 "avg_confidence": round(avg_conf, 4),
                 "top_supported_targets": [
@@ -885,6 +888,7 @@ class TSKRTemporalScorerV1:
         event_start: Optional[datetime],
         event_end: Optional[datetime],
         anomaly_windows: List[JsonDict],
+        alarm_soe_windows: Optional[List[JsonDict]] = None,
         anomaly_window_summary: JsonDict,
         signal_ids: List[str],
         telemetry_support: float,
@@ -901,6 +905,7 @@ class TSKRTemporalScorerV1:
         fm_id        = fm.get("fm_id")
         component_id = fm.get("component_id")
 
+        # anomaly_score and anomaly_count_score: telemetry windows only
         relation, mean_lag, std_lag, anomaly_score = self._score_against_anomalies(
             event_start=event_start,
             event_end=event_end,
@@ -909,7 +914,18 @@ class TSKRTemporalScorerV1:
 
         effective_count      = self._effective_anomaly_count(anomaly_windows)
         anomaly_count_score  = self._anomaly_count_score(effective_count)
-        lag_consistency_score = self._lag_consistency_score(std_lag)
+
+        # lag_consistency_score: include alarm/SOE onset timing (Phase B)
+        if alarm_soe_windows:
+            _timing_windows = sorted(anomaly_windows + alarm_soe_windows, key=lambda x: x["start"])
+            _, _, _std_lag_all, _ = self._score_against_anomalies(
+                event_start=event_start,
+                event_end=event_end,
+                anomaly_windows=_timing_windows,
+            )
+            lag_consistency_score = self._lag_consistency_score(_std_lag_all)
+        else:
+            lag_consistency_score = self._lag_consistency_score(std_lag)
 
         latency_details = self._latency_alignment_details(
             mean_lag_hours=mean_lag,
@@ -936,6 +952,19 @@ class TSKRTemporalScorerV1:
         near_match_count = 0
         effective_recurrence_count: float = float(recurrence_profile.count)
         near_match_pattern = False
+        semantic_recurrence_capped = False
+        fm_resolution_ambiguous = False
+
+        # Collect exact doc IDs from past_events for the double-counting guard.
+        # Past events carry source doc references under common field names; if none
+        # are present yet, the guard is a no-op (empty set) until past_events are enriched.
+        exact_doc_ids: set = set()
+        for _pe in (past_events or []):
+            for _field in ("source_doc_id", "cr_id", "wo_id", "event_ref", "source_cr_id", "source_wo_id"):
+                _val = _pe.get(_field)
+                if _val:
+                    exact_doc_ids.add(str(_val))
+        exact_doc_ids_count = len(exact_doc_ids)
 
         if (
             self.doc_extraction_store is not None
@@ -951,12 +980,21 @@ class TSKRTemporalScorerV1:
                         top_k=self.config.top_k_semantic,
                         similarity_threshold=self.config.semantic_similarity_threshold,
                         near_match_window=self.config.near_match_window,
+                        exact_doc_ids=exact_doc_ids,
                     )
                     semantic_contributions = sum(m.semantic_contribution for m in sem_matches)
                     effective_recurrence_count = recurrence_profile.count + semantic_contributions
                     semantic_match_count = len(sem_matches)
                     near_match_count = len(sem_near)
-                    # Re-score history using the effective count
+
+                    # Tier cap: when there are no exact matches, semantic contributions
+                    # must not elevate the effective count into tier-1 (floor >= 1).
+                    # Cap to 0.99 so _score_from_effective_count stays at base = 0.0.
+                    if recurrence_profile.count == 0 and effective_recurrence_count >= 1.0:
+                        effective_recurrence_count = 0.99
+                        semantic_recurrence_capped = True
+
+                    # Re-score history using the (possibly capped) effective count
                     if semantic_contributions > 0:
                         history_score = self._score_from_effective_count(
                             effective_recurrence_count, recurrence_profile
@@ -965,6 +1003,10 @@ class TSKRTemporalScorerV1:
                         recurrence_profile.count == 0
                         and not sem_matches
                         and bool(sem_near)
+                    )
+                    fm_resolution_ambiguous = any(
+                        getattr(m, "fm_resolution_status", None) == "ambiguous"
+                        for m in sem_matches
                     )
                 except Exception as exc:
                     logger.warning(
@@ -975,6 +1017,16 @@ class TSKRTemporalScorerV1:
         chain_pos = float(chain_position_score or 0.0)
         if str(chain_position_type or "absent") == "convergence_confluence":
             chain_pos = 0.0
+
+        # Phase B intermediates: monitors-class vs analyzes-class sub-scores
+        signal_support_score = self._normalized_weighted_sum([
+            (max(anomaly_score, telemetry_support), self.config.anomaly_weight),
+            (latency_score, self.config.latency_weight),
+            (chain_pos, self.config.chain_weight),
+            (anomaly_count_score, self.config.anomaly_count_weight),
+            (lag_consistency_score, self.config.lag_consistency_weight),
+        ])
+        recurrence_support_score = clamp01(history_score)
 
         confidence_base = self._normalized_weighted_sum([
             (max(anomaly_score, telemetry_support), self.config.anomaly_weight),
@@ -1007,6 +1059,8 @@ class TSKRTemporalScorerV1:
             "std_lag_hours":  round(std_lag, 4)  if std_lag  is not None else None,
             "support":    round(support, 4),
             "confidence": round(confidence, 4),
+            "signal_support_score":     round(signal_support_score, 4),
+            "recurrence_support_score": round(recurrence_support_score, 4),
             "matching_signal_ids": signal_ids,
             "anomaly_count": len(anomaly_windows),
             "lag_consistency": round(lag_consistency_score, 4),
@@ -1037,8 +1091,12 @@ class TSKRTemporalScorerV1:
             "effective_recurrence_count":  round(effective_recurrence_count, 4),
             "recurrence_trend":            recurrence_profile.trend,
             "unresolved_recurrence_count": recurrence_profile.unresolved_count,
+            "exact_doc_ids_count":         exact_doc_ids_count,
             "semantic_match_count":        semantic_match_count,
+            "semantic_doc_ids_count":      semantic_match_count,
             "near_match_count":            near_match_count,
+            "semantic_recurrence_capped":  semantic_recurrence_capped,
+            "fm_resolution_ambiguous":     fm_resolution_ambiguous,
             # Step 3.5 — novel pattern flag: True when this pattern has no historical support
             # (exact or semantic) and no anomaly evidence aligns with the failure mode.
             "novel_pattern": bool(

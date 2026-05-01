@@ -325,7 +325,7 @@ def assert_data_coverage_status(
     ``"partial"``, ``"violated"``.
     """
     cov = _safe_get(
-        result, "run_manifest", "artifacts", "data_coverage_summary"
+        result, "run_manifest", "coverage_summary", "source_families"
     ) or {}
     entry = cov.get(source)
     actual = entry.get("status") if isinstance(entry, dict) else entry
@@ -339,9 +339,9 @@ def assert_all_required_coverage_present(
     *,
     msg_prefix: str = "",
 ) -> None:
-    """Assert that every source in *required_sources* has status ``"present"``."""
+    """Assert that every source in *required_sources* has status ``"complete"``."""
     for src in required_sources:
-        assert_data_coverage_status(result, src, "present", msg_prefix=msg_prefix)
+        assert_data_coverage_status(result, src, "complete", msg_prefix=msg_prefix)
 
 
 # ---------------------------------------------------------------------------
@@ -692,7 +692,15 @@ def assert_ishikawa_category_present(
     ``"management"``, ``"environment"``.
     """
     im = result.get("ishikawa_matrix") or {}
-    rows = im.get(category) or []
+    # matrix may be stored as flat dict keyed by category OR as {categories: [{category:..., rows:[]}]}
+    cats_list = im.get("categories") or []
+    if cats_list:
+        rows = next(
+            (c.get("rows", []) for c in cats_list if isinstance(c, dict) and c.get("category") == category),
+            []
+        ) or []
+    else:
+        rows = im.get(category) or []
     label = (
         f"{msg_prefix}ishikawa_matrix['{category}'] has >= {min_entries} row(s)"
     )

@@ -199,6 +199,7 @@ def build_fixture_orchestrator(
                 max_evidence_in_prompt=top_k_evidence,
             ),
         ),
+        config=orchestrator_config,
     )
 
 
@@ -350,7 +351,7 @@ def summarise_result(result: Dict[str, Any]) -> None:
     primary  = rca_card.get("primary_hypothesis") or {}
     exec_sum = rca_card.get("executive_summary") or {}
     artifacts = run_manifest.get("artifacts") or {}
-    cov      = artifacts.get("data_coverage_summary") or {}
+    cov      = (run_manifest.get("coverage_summary") or {}).get("source_families") or {}
 
     print("\n" + "="*60)
     print("  RCA RUN SUMMARY")
@@ -371,10 +372,13 @@ def summarise_result(result: Dict[str, Any]) -> None:
     print(f"    retained      : {len(cand_list)}")
     for i, c in enumerate(cand_list[:5]):
         scores = c.get("scores") or {}
+        composite = float(c.get("composite_score", 0.0) or 0.0)
+        gates = c.get("hard_gates") or {}
+        gate_pass = all(v.get("passed", True) for v in gates.values() if isinstance(v, dict))
         print(
             f"    [{i+1}] {c.get('failure_mode_id', '?'):30s} "
-            f"composite={scores.get('composite', '?'):.3f}  "
-            f"gates={'PASS' if c.get('hard_gates', {}).get('all_passed') else 'FAIL'}"
+            f"composite={composite:.3f}  "
+            f"gates={'PASS' if gate_pass else 'FAIL'}"
         )
 
     print("\n  DATA COVERAGE")

@@ -1251,6 +1251,228 @@ def test_score_summary_zero_unmatched_when_no_cr_history():
     assert summary["high_cr_match_failure_rate"] is False
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Phase B — signal_support_score / recurrence_support_score / alarm-SOE restriction
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _alarm_log(start_h: float, severity: str = "HIGH", clock_ok: bool = True) -> dict:
+    """Minimal alarm_log dict with one alarm activation."""
+    return {
+        "quality": {"clock_sync_ok": clock_ok},
+        "alarms": [{"activated_at": h(start_h).isoformat(), "severity": severity}],
+    }
+
+
+def _soe_log(start_h: float, is_protection: bool = False, clock_ok: bool = True) -> dict:
+    """Minimal soe_log dict with one SOE record."""
+    return {
+        "quality": {"clock_sync_ok": clock_ok},
+        "records": [{"timestamp": h(start_h).isoformat(), "is_protection_signal": is_protection}],
+    }
+
+
+def test_phase_b_intermediates_present_in_output():
+    """signal_support_score and recurrence_support_score must appear in pattern dict."""
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[win(-3, -1, "high")],
+        anomaly_window_summary=sc()._summarize_anomaly_windows([win(-3, -1, "high")]),
+        signal_ids=["S1"],
+        telemetry_support=0.7,
+        operator_family="interval_interval",
+        fm=_make_fm(),
+        past_events=[],
+    )
+    assert "signal_support_score" in pattern
+    assert "recurrence_support_score" in pattern
+    assert 0.0 <= pattern["signal_support_score"] <= 1.0
+    assert 0.0 <= pattern["recurrence_support_score"] <= 1.0
+
+
+def test_phase_b_alarm_only_zero_anomaly_count():
+    """Alarm-only input must not contribute to anomaly_count (telemetry restriction)."""
+    alarm_wins = sc()._extract_alarm_windows(_alarm_log(-3.0))
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[],            # no telemetry
+        alarm_soe_windows=alarm_wins,
+        anomaly_window_summary=sc()._summarize_anomaly_windows(alarm_wins),
+        signal_ids=[],
+        telemetry_support=0.0,
+        operator_family="interval_interval",
+        fm=_make_fm(),
+        past_events=[],
+    )
+    assert pattern["anomaly_count"] == 0
+
+
+def test_phase_b_soe_only_zero_anomaly_count():
+    """SOE-only input must not contribute to anomaly_count (telemetry restriction)."""
+    soe_wins = sc()._extract_soe_windows(_soe_log(-2.0, is_protection=True))
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[],
+        alarm_soe_windows=soe_wins,
+        anomaly_window_summary=sc()._summarize_anomaly_windows(soe_wins),
+        signal_ids=[],
+        telemetry_support=0.0,
+        operator_family="interval_interval",
+        fm=_make_fm(),
+        past_events=[],
+    )
+    assert pattern["anomaly_count"] == 0
+
+
+def test_phase_b_telemetry_count_excludes_alarm_windows():
+    """With telemetry + alarm, anomaly_count reflects only telemetry windows."""
+    alarm_wins = sc()._extract_alarm_windows(_alarm_log(-4.0))
+    telemetry_wins = [win(-3, -1, "high"), win(-5, -4, "medium")]
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=telemetry_wins,
+        alarm_soe_windows=alarm_wins,
+        anomaly_window_summary=sc()._summarize_anomaly_windows(telemetry_wins + alarm_wins),
+        signal_ids=["S1"],
+        telemetry_support=0.7,
+        operator_family="interval_interval",
+        fm=_make_fm(),
+        past_events=[],
+    )
+    assert pattern["anomaly_count"] == len(telemetry_wins)
+
+
+def test_phase_b_alarm_contributes_to_lag_consistency():
+    """Alarm onset timing tightens lag spread → lag_consistency != no-window default."""
+    # No telemetry, alarm at -2h (causal PRECEDES)
+    alarm_wins = sc()._extract_alarm_windows(_alarm_log(-2.0))
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[],
+        alarm_soe_windows=alarm_wins,
+        anomaly_window_summary=sc()._summarize_anomaly_windows(alarm_wins),
+        signal_ids=[],
+        telemetry_support=0.0,
+        operator_family="interval_interval",
+        fm=_make_fm(),
+        past_events=[],
+    )
+    # With a single causal alarm window std_lag = 0 → lag_consistency = 1.0
+    assert pattern["lag_consistency"] == 1.0
+
+
+def test_phase_b_no_history_recurrence_score_zero():
+    """No past events → recurrence_support_score == 0."""
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[win(-3, -1, "high")],
+        anomaly_window_summary=sc()._summarize_anomaly_windows([win(-3, -1, "high")]),
+        signal_ids=["S1"],
+        telemetry_support=0.7,
+        operator_family="interval_interval",
+        fm=_make_fm(),
+        past_events=[],
+    )
+    assert pattern["recurrence_support_score"] == 0.0
+
+
+def test_phase_b_with_history_recurrence_score_positive():
+    """Past events matching the FM → recurrence_support_score > 0."""
+    past = [{"matched_failure_mode_ids": ["FM-01"], "component_id": None,
+             "timestamp_start": h(-720).isoformat(), "resolved": True, "time_distance_days": 30}]
+    pattern = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[win(-3, -1, "high")],
+        anomaly_window_summary=sc()._summarize_anomaly_windows([win(-3, -1, "high")]),
+        signal_ids=["S1"],
+        telemetry_support=0.7,
+        operator_family="interval_interval",
+        fm=_make_fm(),
+        past_events=past,
+    )
+    assert pattern["recurrence_support_score"] > 0.0
+
+
+def test_phase_b_signal_support_increases_with_telemetry():
+    """Adding strong telemetry should increase signal_support_score."""
+    pattern_no_tel = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[],
+        anomaly_window_summary=sc()._summarize_anomaly_windows([]),
+        signal_ids=[],
+        telemetry_support=0.0,
+        operator_family=None,
+        fm=_make_fm(),
+        past_events=[],
+    )
+    pattern_tel = sc()._score_failure_mode_pattern(
+        event_id="E1", asset_id="A1",
+        event_start=h(0), event_end=h(10),
+        anomaly_windows=[win(-3, -1, "high")] * 4,
+        anomaly_window_summary=sc()._summarize_anomaly_windows([win(-3, -1, "high")]),
+        signal_ids=["S1"],
+        telemetry_support=0.9,
+        operator_family="interval_interval",
+        fm=_make_fm(latency_min=1.0, latency_max=5.0),
+        past_events=[],
+    )
+    assert pattern_tel["signal_support_score"] > pattern_no_tel["signal_support_score"]
+
+
+def test_phase_b_score_entry_point_alarm_only_anomaly_count_zero():
+    """score() with alarm_log only (no telemetry anomalies) → pattern anomaly_count == 0."""
+    ts = {"asset_id": "ASSET-01", "signals": []}  # no telemetry anomalies
+    result = sc().score(
+        event=_make_event(),
+        telemetry_summary=ts,
+        kg_context=_make_kg_context("FM-01"),
+        operational_context=None,
+        run_context={"run_id": "R-alarm"},
+        alarm_log=_alarm_log(-3.0),
+    )
+    pattern = result["patterns"][0]
+    assert pattern["anomaly_count"] == 0
+    # alarm should still be visible in total window count
+    assert result["summary"]["anomaly_point_count"] == 1
+
+
+def test_phase_b_score_entry_point_soe_only_anomaly_count_zero():
+    """score() with soe_log only (no telemetry anomalies) → pattern anomaly_count == 0."""
+    ts = {"asset_id": "ASSET-01", "signals": []}
+    result = sc().score(
+        event=_make_event(),
+        telemetry_summary=ts,
+        kg_context=_make_kg_context("FM-01"),
+        operational_context=None,
+        run_context={"run_id": "R-soe"},
+        soe_log=_soe_log(-2.0),
+    )
+    pattern = result["patterns"][0]
+    assert pattern["anomaly_count"] == 0
+    assert result["summary"]["anomaly_point_count"] == 1
+
+
+def test_phase_b_intermediates_both_present_in_score_output():
+    """score() output patterns include both Phase B intermediates."""
+    result = sc().score(
+        event=_make_event(),
+        telemetry_summary=_make_telemetry(-3, -1, "high"),
+        kg_context=_make_kg_context("FM-01"),
+        operational_context=None,
+        run_context={"run_id": "R-001"},
+    )
+    pattern = result["patterns"][0]
+    assert "signal_support_score" in pattern
+    assert "recurrence_support_score" in pattern
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

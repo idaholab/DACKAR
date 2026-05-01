@@ -823,6 +823,17 @@ class ChromaEvidenceRetriever:
         if support_role == "supporting" and doc_type in _PRESCRIPTIVE_DOC_TYPES:
             support_role = "contextual"
 
+        # Phase C: restrict support_score to analyzes-class hits only.
+        # When Phase A epistemic_class annotation is present and the hit is not
+        # analyzes_past_degradation, zero support_score — the hit contributes
+        # as context only.  Absent annotation: no change (old documents unaffected).
+        _ep_class = str(meta.get("epistemic_class") or "").strip().lower()
+        if _ep_class and _ep_class != "analyzes_past_degradation":
+            context_score = max(context_score, round(support_score * 0.5, 6))
+            support_score = 0.0
+            if support_role == "supporting":
+                support_role = "contextual"
+
         evidence_score = round(max(support_score, contradiction_score, context_score), 6)
 
         return {
@@ -975,6 +986,9 @@ class ChromaEvidenceRetriever:
                     # NER entity accumulators for normalization
                     "_entity_mechanisms": [],
                     "_entity_outcomes": [],
+                    # Phase C: epistemic class presence flags (for observationally_ungrounded)
+                    "has_analyzes_class_hit": False,
+                    "has_affects_class_hit": False,
                 },
             )
 
@@ -1002,6 +1016,20 @@ class ChromaEvidenceRetriever:
                 group["best_context_score"] = max(group["best_context_score"], float(h.get("context_score", 0.0)))
                 if snippet_id:
                     group["contextual_snippet_ids"].append(snippet_id)
+
+            # Phase C: track epistemic class presence for observationally_ungrounded flag.
+            # Prefer explicit Phase A annotation; fall back to doc_type.
+            _ep = str(meta.get("epistemic_class") or "").strip().lower()
+            if not _ep:
+                _dt = str(meta.get("doc_type") or "").upper().strip()
+                if _dt in {"RCA", "ECA", "OE", "LER"}:
+                    _ep = "analyzes_past_degradation"
+                elif _dt == "WO":
+                    _ep = "affects_performance"
+            if _ep == "analyzes_past_degradation":
+                group["has_analyzes_class_hit"] = True
+            elif _ep == "affects_performance":
+                group["has_affects_class_hit"] = True
 
             # Accumulate spaCy annotation signals from all hits for this candidate
             cf = meta.get("spacy_conjecture_fraction")

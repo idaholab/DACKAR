@@ -200,8 +200,15 @@ class OrchestratorConfig:
     enable_semantic_recurrence: bool = False
     semantic_similarity_threshold: float = 0.75
     near_match_window: float = 0.10
-    fm_id_resolution_threshold: float = 0.80
+    fm_id_resolution_threshold: float = 0.88
     top_k_semantic: int = 5
+    # Signal episode retrieval parameters (Step 2d extension, Phase 1)
+    enable_signal_episode_search: bool = False
+    signal_episode_staleness_window_days: int = 30
+    # Cross-pattern linkage parameters (Phase 2)
+    enable_cross_pattern_linkage: bool = False
+    # Epistemics module parameters (Phase A)
+    epistemics_policy_version: Optional[str] = None
     extra: JsonDict = field(default_factory=dict)
 
 
@@ -222,6 +229,9 @@ class RCAReasoningOrchestrator:
     cmms_context_builder_config: Optional[Any] = None
     similar_event_adapter: Optional[Any] = None
     doc_extraction_store: Optional[Any] = None
+    pattern_searcher: Optional[Any] = None
+    cross_pattern_linker: Optional[Any] = None
+    epistemics_classifier: Optional[Any] = None
     config: OrchestratorConfig = field(default_factory=OrchestratorConfig)
 
     def set_similar_event_adapter(self, adapter: Any) -> None:
@@ -231,6 +241,54 @@ class RCAReasoningOrchestrator:
     def set_doc_extraction_store(self, store: Any) -> None:
         """Inject a DocExtractionStore for semantic recurrence queries."""
         self.doc_extraction_store = store
+
+    def set_pattern_searcher(self, searcher: Any) -> None:
+        """Inject a PatternSearcher for Step 2d signal episode retrieval."""
+        self.pattern_searcher = searcher
+
+    def set_cross_pattern_linker(self, linker: Any) -> None:
+        """Inject a CrossPatternLinker for Phase 2 cross-pattern linkage."""
+        self.cross_pattern_linker = linker
+
+    def set_epistemics_classifier(self, classifier: Any) -> None:
+        """Inject an EpistemicClassifier for Phase A epistemic annotation."""
+        self.epistemics_classifier = classifier
+        if self.doc_extraction_store is not None:
+            self.doc_extraction_store.epistemics_classifier = classifier
+
+    def _attach_epistemics_digests(
+        self, causality_candidates: JsonDict, evidence_bundle: JsonDict
+    ) -> None:
+        """Phase D — Build per-candidate EpistemicsDigests and attach in-place.
+
+        Runs post-refine_with_evidence() so that observationally_ungrounded
+        (set by Phase C) is already present on each candidate.
+        """
+        try:
+            from orchestrators.epistemics_digest import build_epistemics_digests
+            digests = build_epistemics_digests(
+                causality_candidates=causality_candidates,
+                results=evidence_bundle.get("results") or [],
+            )
+            for cand in (causality_candidates.get("candidates") or []):
+                cid = str(cand.get("candidate_id") or "")
+                if cid and cid in digests:
+                    cand["epistemics_digest"] = digests[cid]
+        except Exception:
+            pass
+
+    def _apply_supersession(self, evidence_bundle: JsonDict) -> JsonDict:
+        """Apply Phase C supersession pass to an evidence bundle (ADR-1, 2026-04-30).
+
+        Lazy-imports resolve_supersession so the orchestrator does not hard-depend
+        on the supersession module when Phase C is not active.
+        """
+        try:
+            from orchestrators.supersession import resolve_supersession
+            policy_version = getattr(self.config, "epistemics_policy_version", None)
+            return resolve_supersession(evidence_bundle, epistemics_policy_version=policy_version)
+        except Exception:
+            return evidence_bundle
 
     def run(
         self,
@@ -452,6 +510,7 @@ class RCAReasoningOrchestrator:
                 operational_context=operational_context,
                 run_context=run_context,
             )
+        evidence_bundle = self._apply_supersession(evidence_bundle)
         self._validate_and_persist(run_id, "evidence_bundle", evidence_bundle)
 
         causality_candidates_pre_refine: Optional[JsonDict] = None
@@ -574,6 +633,47 @@ class RCAReasoningOrchestrator:
             causality_candidates=causality_candidates,
         )
 
+        # Step 2d extension — Signal episode retrieval (pattern_search subsystem, Phase 1)
+        # Produces historical_signal_episodes.json; used as Phase 2 cross-pattern linker input.
+        historical_signal_episodes: Optional[JsonDict] = None
+        if self.pattern_searcher is not None and self.config.enable_signal_episode_search:
+            try:
+                historical_signal_episodes = self._build_historical_signal_episodes(
+                    event=event,
+                    telemetry_summary=telemetry_summary,
+                    alarm_log=alarm_log,
+                    soe_log=soe_log,
+                )
+                if historical_signal_episodes:
+                    self._validate_and_persist(
+                        run_id, "historical_signal_episodes", historical_signal_episodes
+                    )
+            except Exception as exc:
+                LOGGER.warning(
+                    "Signal episode search failed — pipeline continues: %s", exc
+                )
+
+        # Phase 2 — Cross-pattern linkage
+        cross_pattern_evidence: Optional[JsonDict] = None
+        if (
+            self.cross_pattern_linker is not None
+            and self.config.enable_cross_pattern_linkage
+            and historical_signal_episodes is not None
+        ):
+            try:
+                cross_pattern_evidence = self._build_cross_pattern_evidence(
+                    historical_signal_episodes=historical_signal_episodes,
+                    causality_candidates=causality_candidates,
+                    event=event,
+                )
+                if cross_pattern_evidence:
+                    self._validate_and_persist(run_id, "cross_pattern_evidence", cross_pattern_evidence)
+            except Exception as exc:
+                LOGGER.warning("Cross-pattern linkage failed — pipeline continues: %s", exc)
+
+        # Phase D — attach EpistemicsDigest to each candidate before synthesis
+        self._attach_epistemics_digests(causality_candidates, evidence_bundle)
+
         rca_card = self.rca_synthesizer.synthesize(
             event=event,
             telemetry_summary=telemetry_summary,
@@ -594,6 +694,13 @@ class RCAReasoningOrchestrator:
         self._apply_kg_governance_attention_flags(rca_card, kg_governance)
         self._apply_recurrence_match_quality_attention_flags(rca_card, tskr_patterns)
         self._apply_near_match_pattern_attention_flags(rca_card, tskr_patterns)
+        self._apply_fm_resolution_ambiguity_flags(rca_card, tskr_patterns)
+        self._apply_signal_episode_index_attention_flags(rca_card, historical_signal_episodes)
+        self._apply_cross_pattern_attention_flags(rca_card, cross_pattern_evidence, causality_candidates)
+        rca_card["cross_pattern_summary"] = self._build_rca_card_cross_pattern_summary(
+            cross_pattern_evidence
+        )
+        _assert_cross_pattern_non_intrusion(cross_pattern_evidence, causality_candidates)
         self._apply_signal_evidence_attention_flags(rca_card, signal_evidence)
         self._apply_out_of_boundary_attention_flags(rca_card, kg_context)
         self._apply_metamodel_coverage_attention_flags(rca_card, causality_candidates)
@@ -664,6 +771,8 @@ class RCAReasoningOrchestrator:
             event=event,
             pre_computed_allen_map=pre_refine_allen_map,
             pre_computed_similar_event_list=similar_event_list_pre,
+            historical_signal_episodes=historical_signal_episodes,
+            cross_pattern_evidence=cross_pattern_evidence,
         )
         workflow_dispatch = self._build_workflow_dispatch(
             run_context=run_context,
@@ -806,6 +915,16 @@ class RCAReasoningOrchestrator:
             cfg.near_match_window = self.config.near_match_window
         if hasattr(cfg, "top_k_semantic"):
             cfg.top_k_semantic = self.config.top_k_semantic
+        # Propagate FM resolution threshold so the store uses the same boundary as the orchestrator
+        if self.doc_extraction_store is not None and hasattr(self.doc_extraction_store, "fm_resolution_threshold"):
+            self.doc_extraction_store.fm_resolution_threshold = self.config.fm_id_resolution_threshold
+        # Propagate epistemics classifier to the store (Phase A)
+        if (
+            self.epistemics_classifier is not None
+            and self.doc_extraction_store is not None
+            and hasattr(self.doc_extraction_store, "epistemics_classifier")
+        ):
+            self.doc_extraction_store.epistemics_classifier = self.epistemics_classifier
 
         # Inject the doc_extraction_store into the scorer if available
         if self.doc_extraction_store is not None and hasattr(scorer, "doc_extraction_store"):
@@ -1354,6 +1473,7 @@ class RCAReasoningOrchestrator:
                 operational_context=operational_context,
                 run_context=run_context,
             )
+            evidence_bundle = self._apply_supersession(evidence_bundle)
             self._validate_and_persist(run_id, "evidence_bundle", evidence_bundle)
 
             causality_candidates_pre_refine = copy.deepcopy(causality_candidates)
@@ -2410,6 +2530,8 @@ class RCAReasoningOrchestrator:
         event: Optional[JsonDict] = None,
         pre_computed_allen_map: Optional[JsonDict] = None,
         pre_computed_similar_event_list: Optional[JsonDict] = None,
+        historical_signal_episodes: Optional[JsonDict] = None,
+        cross_pattern_evidence: Optional[JsonDict] = None,
     ) -> JsonDict:
         reentry_hook = reentry_hook or self._compute_reentry_hook(
             causality_candidates_pre_refine=causality_candidates_pre_refine,
@@ -2543,6 +2665,20 @@ class RCAReasoningOrchestrator:
             causality_candidates=causality_candidates,
             similar_event_list=similar_event_list,
         )
+
+        # Phase D — epistemics run summary for manifest
+        epistemics_summary: JsonDict = {}
+        try:
+            from orchestrators.epistemics_digest import build_epistemics_run_summary
+            epistemics_summary = build_epistemics_run_summary(
+                causality_candidates=causality_candidates,
+                results=evidence_bundle.get("results") or [],
+                evidence_bundle=evidence_bundle,
+                calibration_profile_name=getattr(self.config, "epistemics_policy_version", None),
+                calibration_profile_version=None,
+            )
+        except Exception:
+            pass
 
         return {
             "run_id": run_context["run_id"],
@@ -2685,6 +2821,12 @@ class RCAReasoningOrchestrator:
                     "any_plant_match": bool(((similar_event_list or {}).get("summary") or {}).get("any_plant_match", False)),
                     "degraded_tiers": list(((similar_event_list or {}).get("summary") or {}).get("degraded_tiers") or []),
                 },
+                "historical_signal_episodes": _summarize_signal_episodes(historical_signal_episodes),
+                "cross_pattern_evidence": _summarize_cross_pattern_evidence(cross_pattern_evidence),
+                "epistemics": _build_epistemics_manifest_summary(
+                    cross_pattern_evidence=cross_pattern_evidence,
+                    policy_version=self.config.epistemics_policy_version,
+                ),
                 "signal_lessons_learned": {
                     "present": True,
                     "total_matched": int((signal_lessons_learned.get("summary") or {}).get("total_matched", 0)),
@@ -2781,6 +2923,7 @@ class RCAReasoningOrchestrator:
             "similar_event_list": similar_event_list,
             "signal_lessons_learned": signal_lessons_learned,
             "sensitivity_table": sensitivity_table,
+            "epistemics_summary": epistemics_summary,
         }
 
     @staticmethod
@@ -3363,6 +3506,389 @@ class RCAReasoningOrchestrator:
                 "tskr_pattern_count": len(patterns),
             },
         }
+
+    # ------------------------------------------------------------------
+    # Step 2d extension — Signal episode retrieval
+    # ------------------------------------------------------------------
+
+    def _build_historical_signal_episodes(
+        self,
+        *,
+        event: JsonDict,
+        telemetry_summary: JsonDict,
+        alarm_log: Optional[JsonDict],
+        soe_log: Optional[JsonDict],
+    ) -> Optional[JsonDict]:
+        """Build the historical_signal_episodes artifact via PatternSearcher.
+
+        Constructs a query IncidentFingerprint from the current event's alarm,
+        SOE, and anomaly data, then runs PatternSearcher.search() against the
+        pre-built episode index.
+
+        Returns a JSON-serializable artifact dict, or None on unrecoverable failure.
+        """
+        try:
+            from dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor import IncidentExtractor
+            from dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor import _parse_ts
+        except ImportError as exc:
+            LOGGER.warning("PatternSearch extractor import failed: %s", exc)
+            return None
+
+        event_id   = str(event.get("event_id") or event.get("id") or "query")
+        asset_id   = str(event.get("asset_id") or "")
+        ts_start   = _parse_ts(event.get("timestamp_start"))
+        ts_end     = _parse_ts(event.get("timestamp_end")) or ts_start
+
+        if ts_start is None:
+            LOGGER.warning(
+                "_build_historical_signal_episodes: event has no parseable timestamp_start; skipping."
+            )
+            return None
+
+        cfg = getattr(self.pattern_searcher, "config", None)
+        search_cfg = getattr(cfg, "search_config", cfg) if cfg is not None else None
+
+        from dackar.RCA.log_pattern_recognition.rca_pattern_search.config import SearchConfig
+        if not isinstance(search_cfg, SearchConfig):
+            search_cfg = SearchConfig()
+
+        extractor = IncidentExtractor(search_cfg)
+        query_fp = extractor.extract(
+            alarm_log=alarm_log or {},
+            soe_log=soe_log or {},
+            telemetry_summaries=[telemetry_summary] if telemetry_summary else [],
+            incident_id=event_id,
+            window_start=ts_start,
+            window_end=ts_end,
+            metadata={"asset_id": asset_id},
+        )
+
+        episodes = self.pattern_searcher.search(
+            query_fp,
+            staleness_window_days=self.config.signal_episode_staleness_window_days,
+        )
+
+        serialized = [_serialize_signal_episode(ep) for ep in episodes]
+        summary_status = episodes[0].index_status if episodes else "no_episodes_indexed"
+        any_no_data = any(e.index_status == "no_episodes_indexed" for e in episodes)
+        any_stale   = any(e.index_status == "stale" for e in episodes)
+        top_sim     = max((e.similarity_to_current for e in episodes if e.episode_id), default=0.0)
+
+        index_obj = getattr(self.pattern_searcher, "index", None)
+        built_at   = getattr(index_obj, "build_timestamp", None)
+
+        return {
+            "episodes": serialized,
+            "summary": {
+                "total_episodes": len([e for e in episodes if e.episode_id]),
+                "index_status": summary_status,
+                "any_no_data": any_no_data,
+                "any_stale": any_stale,
+                "top_similarity": round(top_sim, 4),
+                "query_asset_id": asset_id,
+                "index_built_at": built_at.isoformat() if built_at else None,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Phase 2 — Cross-pattern linkage
+    # ------------------------------------------------------------------
+
+    def _build_cross_pattern_evidence(
+        self,
+        *,
+        historical_signal_episodes: JsonDict,
+        causality_candidates: JsonDict,
+        event: JsonDict,
+    ) -> Optional[JsonDict]:
+        """Build cross_pattern_evidence artifact via CrossPatternLinker.
+
+        Converts historical_signal_episodes["episodes"] dicts back to
+        HistoricalSignalEpisode objects, queries DocExtractionStore for doc
+        extractions, then calls CrossPatternLinker.run().
+
+        Returns a JSON-serializable dict or None on unrecoverable failure.
+        """
+        try:
+            from dackar.RCA.log_pattern_recognition.rca_pattern_search.models import (
+                HistoricalSignalEpisode,
+            )
+        except ImportError as exc:
+            LOGGER.warning("CrossPattern: HistoricalSignalEpisode import failed: %s", exc)
+            return None
+
+        # Reconstruct HistoricalSignalEpisode objects from serialized dicts
+        raw_episodes = historical_signal_episodes.get("episodes") or []
+        episodes = []
+        for ep_dict in raw_episodes:
+            try:
+                window_start_raw = ep_dict.get("window_start")
+                window_end_raw = ep_dict.get("window_end")
+                ep = HistoricalSignalEpisode(
+                    episode_id=str(ep_dict.get("episode_id") or ""),
+                    asset_id=str(ep_dict.get("asset_id") or ""),
+                    window_start=parse_dt(window_start_raw) if window_start_raw else None,
+                    window_end=parse_dt(window_end_raw) if window_end_raw else None,
+                    source_types=list(ep_dict.get("source_types") or []),
+                    event_set=frozenset(ep_dict.get("event_set") or []),
+                    event_seq=list(ep_dict.get("event_seq") or []),
+                    freq_vec=dict(ep_dict.get("freq_vec") or {}),
+                    similarity_to_current=float(ep_dict.get("similarity_to_current") or 0.0),
+                    jaccard_score=float(ep_dict.get("jaccard_score") or 0.0),
+                    nlcs_score=float(ep_dict.get("nlcs_score") or 0.0),
+                    emd_score=float(ep_dict.get("emd_score") or 0.0),
+                    weight_profile=str(ep_dict.get("weight_profile") or ""),
+                    matched_events=set(ep_dict.get("matched_events") or []),
+                    query_only_events=set(ep_dict.get("query_only_events") or []),
+                    episode_only_events=set(ep_dict.get("episode_only_events") or []),
+                    episode_density=float(ep_dict.get("episode_density") or 0.0),
+                    known_rca=ep_dict.get("known_rca"),
+                    linked_doc_ids=list(ep_dict.get("linked_doc_ids") or []),
+                    index_status=str(ep_dict.get("index_status") or "no_episodes_indexed"),
+                )
+                episodes.append(ep)
+            except Exception as exc:
+                LOGGER.debug("CrossPattern: skipping malformed episode dict: %s", exc)
+
+        # Query DocExtractionStore for doc extractions
+        doc_extractions = []
+        if self.doc_extraction_store is not None:
+            asset_id = str(event.get("asset_id") or "")
+            query_text = asset_id or "failure mode document extraction"
+            try:
+                matches, near_matches = self.doc_extraction_store.query(
+                    query_text,
+                    top_k=200,
+                    similarity_threshold=0.0,   # broad — let linker filter
+                    near_match_window=0.0,
+                )
+                all_matches = list(matches) + list(near_matches)
+                for sm in all_matches:
+                    doc = self._semantic_match_to_historical_doc(sm)
+                    doc_extractions.append(doc)
+            except Exception as exc:
+                LOGGER.warning(
+                    "CrossPattern: DocExtractionStore query failed — continuing without docs: %s",
+                    exc,
+                )
+
+        # Build candidates list from causality_candidates
+        candidates_raw = causality_candidates.get("candidates") or []
+        candidates: List[JsonDict] = []
+        for c in candidates_raw:
+            cand_id = str(c.get("candidate_id") or c.get("id") or "")
+            comp_id = str(
+                c.get("component_id") or
+                (c.get("component") or {}).get("component_id") or ""
+            )
+            fm_id = str(
+                c.get("fm_id") or
+                (c.get("failure_mode") or {}).get("fm_id") or ""
+            )
+            if cand_id:
+                candidates.append({
+                    "candidate_id": cand_id,
+                    "component_id": comp_id,
+                    "fm_id": fm_id,
+                })
+
+        return self.cross_pattern_linker.run(episodes, doc_extractions, candidates)
+
+    @staticmethod
+    def _semantic_match_to_historical_doc(sm: Any) -> Any:
+        """Convert a SemanticMatch to a HistoricalDocExtraction.
+
+        SemanticMatch (as currently defined in doc_extraction/store.py) has:
+          record_id, doc_id, chain_index, identified_effect, assessed_cause,
+          inferred_fm_label, fm_id_candidate, confidence (ConfidenceLevel),
+          cause_is_symptom, similarity_score, fm_resolution_status,
+          doc_type, finding_status, authority_level,
+          epistemic_class, classification_resolution_level, degraded_classification
+
+        Fields not present on SemanticMatch are defaulted safely.
+        """
+        from dackar.RCA.cross_pattern.models import HistoricalDocExtraction
+
+        confidence_raw = getattr(sm, "confidence", None)
+        if hasattr(confidence_raw, "value"):
+            confidence_str = confidence_raw.value
+        elif isinstance(confidence_raw, str):
+            confidence_str = confidence_raw
+        else:
+            confidence_str = "low"
+
+        fm_resolution_status = str(getattr(sm, "fm_resolution_status", None) or "unresolved")
+        if not fm_resolution_status or fm_resolution_status == "None":
+            fm_resolution_status = "unresolved"
+
+        doc_type = str(getattr(sm, "doc_type", "") or "")
+
+        return HistoricalDocExtraction(
+            doc_id=str(getattr(sm, "doc_id", "") or ""),
+            doc_type=doc_type or "unknown",
+            asset_id=None,                              # not available on SemanticMatch
+            event_time_start=None,                      # not available on SemanticMatch
+            event_time_end=None,                        # not available on SemanticMatch
+            event_time_confidence="absent",             # no temporal info → temporal linkage skipped
+            identified_effect=getattr(sm, "identified_effect", None),
+            assessed_cause=getattr(sm, "assessed_cause", None),
+            inferred_fm_label=getattr(sm, "inferred_fm_label", None),
+            fm_id_candidate=getattr(sm, "fm_id_candidate", None) or None,
+            fm_id_candidate_alt=getattr(sm, "fm_id_candidate_alt", None) or None,
+            fm_resolution_status=fm_resolution_status,
+            fm_resolution_score=getattr(sm, "fm_resolution_score", None),
+            confidence=confidence_str,
+            cause_is_symptom=bool(getattr(sm, "cause_is_symptom", False)),
+            epistemic_class=getattr(sm, "epistemic_class", None) or None,
+            classification_resolution_level=getattr(sm, "classification_resolution_level", None) or None,
+            degraded_classification=bool(getattr(sm, "degraded_classification", False)),
+        )
+
+    @staticmethod
+    def _apply_cross_pattern_attention_flags(
+        rca_card: JsonDict,
+        cross_pattern_evidence: Optional[JsonDict],
+        causality_candidates: Optional[JsonDict],
+    ) -> None:
+        """Add analyst attention flags derived from cross-pattern evidence (Phase 2)."""
+        if cross_pattern_evidence is None:
+            return
+
+        try:
+            from dackar.RCA.cross_pattern.models import CandidateCrossPatternEvidence
+            from dackar.RCA.cross_pattern.summary import get_cross_pattern_attention_flags
+
+            candidate_evidence_dicts = cross_pattern_evidence.get("candidate_evidence") or []
+            candidates_raw = (causality_candidates or {}).get("candidates") or []
+
+            # Reconstruct CandidateCrossPatternEvidence objects for summary helper
+            # (lightweight: only top-level fields needed, not full evidence_paths)
+            from dackar.RCA.cross_pattern.models import CrossPatternLink
+            evidences = []
+            for ced in candidate_evidence_dicts:
+                paths = []
+                for lnk_d in (ced.get("evidence_paths") or []):
+                    try:
+                        paths.append(CrossPatternLink(
+                            link_id=str(lnk_d.get("link_id") or ""),
+                            episode_id=str(lnk_d.get("episode_id") or ""),
+                            doc_id=str(lnk_d.get("doc_id") or ""),
+                            asset_match=bool(lnk_d.get("asset_match", False)),
+                            time_overlap_hours=lnk_d.get("time_overlap_hours"),
+                            temporal_link_skipped=bool(lnk_d.get("temporal_link_skipped", False)),
+                            linkage_precedence_level=int(lnk_d.get("linkage_precedence_level", 3)),
+                            component_overlap=list(lnk_d.get("component_overlap") or []),
+                            fm_alignment_score=lnk_d.get("fm_alignment_score"),
+                            signal_similarity_score=float(lnk_d.get("signal_similarity_score") or 0.0),
+                            document_similarity_score=lnk_d.get("document_similarity_score"),
+                            link_confidence=float(lnk_d.get("link_confidence") or 0.0),
+                            provenance=dict(lnk_d.get("provenance") or {}),
+                        ))
+                    except Exception:
+                        pass
+                try:
+                    evidences.append(CandidateCrossPatternEvidence(
+                        candidate_id=str(ced.get("candidate_id") or ""),
+                        component_id=str(ced.get("component_id") or ""),
+                        fm_id=str(ced.get("fm_id") or ""),
+                        linked_episode_ids=list(ced.get("linked_episode_ids") or []),
+                        linked_doc_ids=list(ced.get("linked_doc_ids") or []),
+                        best_link_score=float(ced.get("best_link_score") or 0.0),
+                        support_posture=str(ced.get("support_posture") or "unresolved"),
+                        reinforcement_strength=ced.get("reinforcement_strength"),
+                        linkage_outcome=str(ced.get("linkage_outcome") or "no_data"),
+                        evidence_paths=paths,
+                    ))
+                except Exception:
+                    pass
+
+            new_flags = get_cross_pattern_attention_flags(
+                candidate_evidences=evidences,
+                candidates=candidates_raw,
+                top_n_candidates=3,
+            )
+
+            ex = rca_card.setdefault("executive_summary", {})
+            flags = ex.setdefault("analyst_attention_flags", [])
+            if not isinstance(flags, list):
+                return
+            for flag in new_flags:
+                if flag not in flags:
+                    flags.append(flag)
+        except Exception as exc:
+            LOGGER.debug("_apply_cross_pattern_attention_flags failed silently: %s", exc)
+
+    @staticmethod
+    def _build_rca_card_cross_pattern_summary(
+        cross_pattern_evidence: Optional[JsonDict],
+    ) -> JsonDict:
+        """Build rca_card['cross_pattern_summary'] block (Phase 3).
+
+        Contains narrative text (§4.7 wording), linkage_outcome_distribution,
+        and a per-candidate summary. Never contains or modifies scoring fields.
+        """
+        if cross_pattern_evidence is None:
+            return {"present": False, "narrative": "", "per_candidate": []}
+
+        try:
+            from dackar.RCA.cross_pattern.models import CandidateCrossPatternEvidence, CrossPatternLink
+            from dackar.RCA.cross_pattern.summary import format_rca_card_cross_pattern_summary
+
+            summary_raw = cross_pattern_evidence.get("summary") or {}
+            outcome_dist = summary_raw.get("linkage_outcome_distribution") or {}
+            candidate_evidence_dicts = cross_pattern_evidence.get("candidate_evidence") or []
+
+            evidences = []
+            for ced in candidate_evidence_dicts:
+                try:
+                    evidences.append(CandidateCrossPatternEvidence(
+                        candidate_id=str(ced.get("candidate_id") or ""),
+                        component_id=str(ced.get("component_id") or ""),
+                        fm_id=str(ced.get("fm_id") or ""),
+                        linked_episode_ids=list(ced.get("linked_episode_ids") or []),
+                        linked_doc_ids=list(ced.get("linked_doc_ids") or []),
+                        best_link_score=float(ced.get("best_link_score") or 0.0),
+                        support_posture=str(ced.get("support_posture") or "unresolved"),
+                        reinforcement_strength=ced.get("reinforcement_strength"),
+                        linkage_outcome=str(ced.get("linkage_outcome") or "no_data"),
+                        evidence_paths=[],
+                    ))
+                except Exception:
+                    pass
+
+            narrative = format_rca_card_cross_pattern_summary(
+                candidate_evidences=evidences,
+                linkage_outcome_distribution={
+                    k: int(v) for k, v in outcome_dist.items()
+                },
+            )
+
+            per_candidate = [
+                {
+                    "candidate_id": ev.candidate_id,
+                    "fm_id": ev.fm_id,
+                    "linkage_outcome": ev.linkage_outcome,
+                    "support_posture": ev.support_posture,
+                    "reinforcement_strength": ev.reinforcement_strength,
+                    "best_link_score": round(ev.best_link_score, 4),
+                }
+                for ev in evidences
+            ]
+
+            return {
+                "present": True,
+                "narrative": narrative,
+                "linkage_outcome_distribution": {
+                    "linked": int(outcome_dist.get("linked", 0)),
+                    "no_data": int(outcome_dist.get("no_data", 0)),
+                    "no_match": int(outcome_dist.get("no_match", 0)),
+                    "below_threshold": int(outcome_dist.get("below_threshold", 0)),
+                },
+                "per_candidate": per_candidate,
+            }
+        except Exception as exc:
+            LOGGER.debug("_build_rca_card_cross_pattern_summary failed silently: %s", exc)
+            return {"present": False, "narrative": "", "per_candidate": []}
 
     # ------------------------------------------------------------------
     # Step 2c — Allen Relation Map
@@ -4676,6 +5202,63 @@ class RCAReasoningOrchestrator:
             flags.append(msg)
 
     @staticmethod
+    def _apply_signal_episode_index_attention_flags(
+        rca_card: JsonDict,
+        historical_signal_episodes: Optional[JsonDict],
+    ) -> None:
+        """Add attention flags when the signal episode index is missing or stale (§4.11)."""
+        if historical_signal_episodes is None:
+            return
+        summary = historical_signal_episodes.get("summary") or {}
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        if summary.get("any_no_data"):
+            msg = (
+                "No historical signal episodes indexed for this asset; "
+                "cross-pattern signal assessment is unavailable."
+            )
+            if msg not in flags:
+                flags.append(msg)
+        elif summary.get("any_stale"):
+            built_at = summary.get("index_built_at") or "unknown"
+            msg = (
+                f"Signal episode index is stale (built {built_at}); "
+                "cross-pattern results may not reflect recent plant history."
+            )
+            if msg not in flags:
+                flags.append(msg)
+
+    @staticmethod
+    def _apply_fm_resolution_ambiguity_flags(
+        rca_card: JsonDict,
+        tskr_patterns: Optional[JsonDict],
+    ) -> None:
+        """Add attention flag when any TSKR pattern has fm_resolution_ambiguous = True (§4.10)."""
+        patterns = (tskr_patterns or {}).get("patterns") or []
+        ambiguous_ids = [
+            str(p.get("target_id") or p.get("pattern_id") or "")
+            for p in patterns
+            if bool(p.get("fm_resolution_ambiguous", False))
+        ]
+        if not ambiguous_ids:
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        ids_str = ", ".join(ambiguous_ids[:5])
+        msg = (
+            f"FM resolution ambiguous for {len(ambiguous_ids)} failure mode(s) "
+            f"({ids_str}{'...' if len(ambiguous_ids) > 5 else ''}): "
+            "semantic similarity in the [0.80, 0.88) range. "
+            "Analyst review required before these records contribute to recurrence counting."
+        )
+        if msg not in flags:
+            flags.append(msg)
+
+    @staticmethod
     def _apply_ishikawa_skip_attention_flag(
         rca_card: JsonDict,
         ishikawa_matrix: Optional[JsonDict],
@@ -5461,6 +6044,187 @@ class RCAReasoningOrchestrator:
                 )
 
         return cmms_context
+
+
+def _serialize_signal_episode(ep: Any) -> JsonDict:
+    """Convert a HistoricalSignalEpisode to a JSON-serializable dict."""
+    return {
+        "episode_id": ep.episode_id,
+        "asset_id": ep.asset_id,
+        "window_start": ep.window_start.isoformat() if ep.window_start else None,
+        "window_end": ep.window_end.isoformat() if ep.window_end else None,
+        "source_types": list(ep.source_types),
+        "event_set": sorted(ep.event_set),
+        "event_seq": list(ep.event_seq),
+        "freq_vec": dict(ep.freq_vec),
+        "similarity_to_current": round(ep.similarity_to_current, 4),
+        "jaccard_score": round(ep.jaccard_score, 4),
+        "nlcs_score": round(ep.nlcs_score, 4),
+        "emd_score": round(ep.emd_score, 4),
+        "weight_profile": ep.weight_profile,
+        "matched_events": sorted(ep.matched_events),
+        "query_only_events": sorted(ep.query_only_events),
+        "episode_only_events": sorted(ep.episode_only_events),
+        "episode_density": round(ep.episode_density, 6),
+        "known_rca": ep.known_rca,
+        "linked_doc_ids": list(ep.linked_doc_ids),
+        "index_status": ep.index_status,
+    }
+
+
+def _summarize_signal_episodes(historical_signal_episodes: Optional[JsonDict]) -> JsonDict:
+    """Build the run_manifest artifacts summary for historical_signal_episodes."""
+    if historical_signal_episodes is None:
+        return {"present": False}
+    summary = historical_signal_episodes.get("summary") or {}
+    return {
+        "present": True,
+        "index_status": summary.get("index_status", "unknown"),
+        "total_episodes": int(summary.get("total_episodes", 0)),
+        "any_no_data": bool(summary.get("any_no_data", False)),
+        "any_stale": bool(summary.get("any_stale", False)),
+        "top_similarity": float(summary.get("top_similarity", 0.0)),
+        "query_asset_id": str(summary.get("query_asset_id") or ""),
+        "index_built_at": summary.get("index_built_at"),
+    }
+
+
+def _summarize_cross_pattern_evidence(cross_pattern_evidence: Optional[JsonDict]) -> JsonDict:
+    """Build the run_manifest artifacts summary for cross_pattern_evidence.
+
+    Delegates to build_manifest_cross_pattern_summary() for full detail including
+    precedence_level_distribution, temporal_link_skipped_count, and per-candidate
+    summaries (§4.9).
+    """
+    if cross_pattern_evidence is None:
+        return {"present": False}
+
+    try:
+        from dackar.RCA.cross_pattern.models import CandidateCrossPatternEvidence, CrossPatternLink
+        from dackar.RCA.cross_pattern.summary import build_manifest_cross_pattern_summary
+
+        summary_raw = cross_pattern_evidence.get("summary") or {}
+        candidate_evidence_dicts = cross_pattern_evidence.get("candidate_evidence") or []
+
+        evidences = []
+        for ced in candidate_evidence_dicts:
+            paths = []
+            for lnk_d in (ced.get("evidence_paths") or []):
+                try:
+                    paths.append(CrossPatternLink(
+                        link_id=str(lnk_d.get("link_id") or ""),
+                        episode_id=str(lnk_d.get("episode_id") or ""),
+                        doc_id=str(lnk_d.get("doc_id") or ""),
+                        asset_match=bool(lnk_d.get("asset_match", False)),
+                        time_overlap_hours=lnk_d.get("time_overlap_hours"),
+                        temporal_link_skipped=bool(lnk_d.get("temporal_link_skipped", False)),
+                        linkage_precedence_level=int(lnk_d.get("linkage_precedence_level", 3)),
+                        component_overlap=list(lnk_d.get("component_overlap") or []),
+                        fm_alignment_score=lnk_d.get("fm_alignment_score"),
+                        signal_similarity_score=float(lnk_d.get("signal_similarity_score") or 0.0),
+                        document_similarity_score=lnk_d.get("document_similarity_score"),
+                        link_confidence=float(lnk_d.get("link_confidence") or 0.0),
+                        provenance=dict(lnk_d.get("provenance") or {}),
+                    ))
+                except Exception:
+                    pass
+            try:
+                evidences.append(CandidateCrossPatternEvidence(
+                    candidate_id=str(ced.get("candidate_id") or ""),
+                    component_id=str(ced.get("component_id") or ""),
+                    fm_id=str(ced.get("fm_id") or ""),
+                    linked_episode_ids=list(ced.get("linked_episode_ids") or []),
+                    linked_doc_ids=list(ced.get("linked_doc_ids") or []),
+                    best_link_score=float(ced.get("best_link_score") or 0.0),
+                    support_posture=str(ced.get("support_posture") or "unresolved"),
+                    reinforcement_strength=ced.get("reinforcement_strength"),
+                    linkage_outcome=str(ced.get("linkage_outcome") or "no_data"),
+                    evidence_paths=paths,
+                ))
+            except Exception:
+                pass
+
+        return build_manifest_cross_pattern_summary(
+            candidate_evidences=evidences,
+            total_episodes=int(summary_raw.get("total_episodes", 0)),
+            total_docs=int(summary_raw.get("total_doc_extractions", 0)),
+            total_links=int(summary_raw.get("total_links_built", 0)),
+            links_above_threshold=int(summary_raw.get("links_above_threshold", 0)),
+        )
+    except Exception as exc:
+        LOGGER.debug("_summarize_cross_pattern_evidence fallback: %s", exc)
+        summary = cross_pattern_evidence.get("summary") or {}
+        return {
+            "present": True,
+            "total_episodes": int(summary.get("total_episodes", 0)),
+            "total_doc_extractions": int(summary.get("total_doc_extractions", 0)),
+            "total_links_built": int(summary.get("total_links_built", 0)),
+            "links_above_threshold": int(summary.get("links_above_threshold", 0)),
+        }
+
+
+# Scoring fields that cross-pattern logic must never touch (§4.8 non-intrusion boundary)
+_SCORING_FIELDS_PROTECTED: frozenset = frozenset({
+    "composite_score", "score_rationale", "hard_gate", "gate_outcome",
+    "rank", "score_breakdown", "evidence_score", "causal_score",
+})
+
+
+def _build_epistemics_manifest_summary(
+    cross_pattern_evidence: Optional[JsonDict],
+    policy_version: Optional[str],
+) -> JsonDict:
+    """Delegate to build_epistemics_manifest_summary() in doc_extraction/epistemics.py."""
+    try:
+        from dackar.RCA.doc_extraction.epistemics import build_epistemics_manifest_summary
+        return build_epistemics_manifest_summary(cross_pattern_evidence, policy_version)
+    except Exception:
+        return {
+            "present": False,
+            "policy_version": policy_version or "not_configured",
+            "epistemic_class_distribution": {},
+            "classification_resolution_level_distribution": {},
+            "degraded_classification_by_doc_type": {},
+            "degraded_classification_total": 0,
+        }
+
+
+def _assert_cross_pattern_non_intrusion(
+    cross_pattern_evidence: Optional[JsonDict],
+    causality_candidates: Optional[JsonDict],
+) -> None:
+    """Runtime guard: verify cross_pattern_evidence does not contain protected scoring fields.
+
+    Logs a warning if any scoring field is detected inside cross_pattern_evidence.
+    Does not raise — cross-pattern failures must never abort the pipeline.
+    """
+    if cross_pattern_evidence is None:
+        return
+    try:
+        all_keys: set = set()
+        _collect_keys(cross_pattern_evidence, all_keys, depth=0, max_depth=3)
+        violations = all_keys & _SCORING_FIELDS_PROTECTED
+        if violations:
+            LOGGER.warning(
+                "_assert_cross_pattern_non_intrusion: protected scoring fields found in "
+                "cross_pattern_evidence — this violates the Phase 1 non-intrusion boundary "
+                "(§4.8). Fields: %s", sorted(violations)
+            )
+    except Exception:
+        pass
+
+
+def _collect_keys(obj: Any, out: set, depth: int, max_depth: int) -> None:
+    """Recursively collect dict keys up to max_depth."""
+    if depth >= max_depth:
+        return
+    if isinstance(obj, dict):
+        out.update(obj.keys())
+        for v in obj.values():
+            _collect_keys(v, out, depth + 1, max_depth)
+    elif isinstance(obj, list):
+        for item in obj:
+            _collect_keys(item, out, depth + 1, max_depth)
 
 
 def build_dev_orchestrator(

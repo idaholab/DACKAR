@@ -12,6 +12,7 @@ can switch weight profiles or analyse individual signals without re-running.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 import pandas as pd
@@ -19,9 +20,13 @@ import pandas as pd
 from .config import SearchConfig
 from .indexer import IncidentIndex, _coerce_ts
 from .metrics import combined_score, emd_similarity, jaccard, nlcs
-from .models import IncidentFingerprint, SearchResult
+from .models import HistoricalSignalEpisode, IncidentFingerprint, SearchResult
 
 _log = logging.getLogger(__name__)
+
+_INDEX_STATUS_INDEXED = "indexed"
+_INDEX_STATUS_NO_DATA = "no_episodes_indexed"
+_INDEX_STATUS_STALE   = "stale"
 
 
 class PatternSearcher:
@@ -48,36 +53,42 @@ class PatternSearcher:
         self,
         query: IncidentFingerprint,
         weight_profile: Optional[str] = None,
-    ) -> list[SearchResult]:
+        staleness_window_days: Optional[int] = None,
+    ) -> list[HistoricalSignalEpisode]:
         """
         Retrieves top-k most similar historical episodes for a query fingerprint.
 
-        Args:
-            query:          IncidentFingerprint for the query incident.
-                            Derived by IncidentExtractor.extract().
-            weight_profile: Weight profile for the combined score.
-                            One of: "equal" | "flooding" | "cascade" | "custom".
-                            None falls back to config.weight_profile.
+        Returns list[HistoricalSignalEpisode] with index_status populated on every
+        result (§4.11):
+          - "indexed"             — normal result from a current, populated index
+          - "no_episodes_indexed" — index is empty; returns a single sentinel episode
+          - "stale"               — index is older than staleness_window_days; results
+                                    returned but flagged; link_confidence capped downstream
 
-        Returns:
-            List of SearchResult sorted by combined_score descending.
-            Length <= config.top_k.  Empty if no candidates survive the
-            Jaccard pre-filter.
+        Args:
+            query:                 IncidentFingerprint for the query incident.
+            weight_profile:        Weight profile override; None → config.weight_profile.
+            staleness_window_days: If set and index.build_timestamp is known, episodes
+                                   from an index older than this are marked "stale".
+                                   None disables the staleness check.
 
         Notes:
-            - matched_events, query_only_events, episode_only_events are
-              derived from event_set comparison, not event_seq or freq_vec.
-            - All three metric scores are always computed and stored, so
-              downstream code can compare profiles without re-searching.
+            - All three metric scores (jaccard, nlcs, emd) are individually visible
+              on every returned HistoricalSignalEpisode (§5).
+            - matched_events, query_only_events, episode_only_events are derived from
+              event_set comparison.
         """
         if self.index.episodes_df.empty:
-            return []
+            return [_make_no_data_sentinel(query.asset_id)]
+
+        # --- Determine index_status ------------------------------------------
+        index_status = _compute_index_status(self.index, staleness_window_days)
 
         # --- Step 1: Inverted-index candidate lookup -------------------------
         candidate_ids = self.index.get_candidates(query.event_set)
         if not candidate_ids:
             _log.debug("search(): no candidates share event types with query.")
-            return []
+            return [_make_no_data_sentinel(query.asset_id, index_status=_INDEX_STATUS_NO_DATA)]
 
         # Build an episode_id → row mapping for O(1) lookup per candidate.
         ep_lookup: dict[str, pd.Series] = {}
@@ -101,7 +112,7 @@ class PatternSearcher:
                 "search(): all %d candidates filtered out by Jaccard threshold %.2f.",
                 len(candidate_ids), self.config.min_jaccard,
             )
-            return []
+            return [_make_no_data_sentinel(query.asset_id, index_status=_INDEX_STATUS_NO_DATA)]
 
         # --- Resolve weights -------------------------------------------------
         profile = weight_profile if weight_profile is not None else self.config.weight_profile
@@ -118,45 +129,51 @@ class PatternSearcher:
             norm_factor = self.index.emd_normalization_factor
 
         # --- Steps 3–5: NLCS, EMD, combined score ----------------------------
-        results: list[SearchResult] = []
+        episodes: list[HistoricalSignalEpisode] = []
         for ep_id, row, j_score in survivors:
             ep_set   = frozenset(row["event_set"])
             ep_seq   = list(row["event_seq"])
             ep_fvec  = {k: int(v) for k, v in dict(row["freq_vec"]).items()}
+            ep_src   = list(row["source_types"]) if "source_types" in row.index else []
 
             n_score = nlcs(query.event_seq, ep_seq)
             e_score = emd_similarity(query.freq_vec, ep_fvec, normalization_factor=norm_factor)
             c_score = combined_score(j_score, n_score, e_score, alpha, beta_w, gamma)
 
             rca = row.get("known_rca")
-            results.append(
-                SearchResult(
+            episodes.append(
+                HistoricalSignalEpisode(
                     episode_id=ep_id,
+                    asset_id=str(row.get("asset_id", "")),
+                    window_start=_coerce_ts(row["window_start"]),
+                    window_end=_coerce_ts(row["window_end"]),
+                    source_types=ep_src,
+                    event_set=ep_set,
+                    event_seq=ep_seq,
+                    freq_vec=ep_fvec,
+                    similarity_to_current=c_score,
                     jaccard_score=j_score,
                     nlcs_score=n_score,
                     emd_score=e_score,
-                    combined_score=c_score,
                     weight_profile=profile,
-                    episode_window=(
-                        _coerce_ts(row["window_start"]),
-                        _coerce_ts(row["window_end"]),
-                    ),
-                    episode_density=float(row["density"]),
                     matched_events=set(query.event_set & ep_set),
                     query_only_events=set(query.event_set - ep_set),
                     episode_only_events=set(ep_set - query.event_set),
+                    episode_density=float(row["density"]),
                     known_rca=rca if (rca is not None and pd.notna(rca)) else None,
+                    linked_doc_ids=[],
+                    index_status=index_status,
                 )
             )
 
         # --- Step 6: rank and truncate ---------------------------------------
-        results.sort(key=lambda r: r.combined_score, reverse=True)
-        top = results[: self.config.top_k]
+        episodes.sort(key=lambda e: e.similarity_to_current, reverse=True)
+        top = episodes[: self.config.top_k]
 
         _log.debug(
             "search(): %d candidates → %d survivors → returning %d results "
-            "(profile=%r, top_k=%d).",
-            len(candidate_ids), len(survivors), len(top), profile, self.config.top_k,
+            "(profile=%r, top_k=%d, index_status=%r).",
+            len(candidate_ids), len(survivors), len(top), profile, self.config.top_k, index_status,
         )
         return top
 
@@ -171,3 +188,51 @@ class PatternSearcher:
             ValueError for unrecognised profile names.
         """
         return self.config.resolve_weights(weight_profile)
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+def _compute_index_status(index: IncidentIndex, staleness_window_days: Optional[int]) -> str:
+    """Return the index_status string for a given index and staleness window."""
+    if staleness_window_days is not None and index.build_timestamp is not None:
+        now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+        built = index.build_timestamp.replace(tzinfo=None) if index.build_timestamp.tzinfo else index.build_timestamp
+        age_days = (now - built).total_seconds() / 86400.0
+        if age_days > staleness_window_days:
+            return _INDEX_STATUS_STALE
+    return _INDEX_STATUS_INDEXED
+
+
+def _make_no_data_sentinel(
+    asset_id: str,
+    index_status: str = _INDEX_STATUS_NO_DATA,
+) -> HistoricalSignalEpisode:
+    """Return a sentinel HistoricalSignalEpisode for the no-data case.
+
+    Callers must check index_status before attempting cross-pattern linkage.
+    A sentinel has episode_id == "" and similarity_to_current == 0.0.
+    """
+    return HistoricalSignalEpisode(
+        episode_id="",
+        asset_id=asset_id,
+        window_start=None,
+        window_end=None,
+        source_types=[],
+        event_set=frozenset(),
+        event_seq=[],
+        freq_vec={},
+        similarity_to_current=0.0,
+        jaccard_score=0.0,
+        nlcs_score=0.0,
+        emd_score=0.0,
+        weight_profile="",
+        matched_events=set(),
+        query_only_events=set(),
+        episode_only_events=set(),
+        episode_density=0.0,
+        known_rca=None,
+        linked_doc_ids=[],
+        index_status=index_status,
+    )

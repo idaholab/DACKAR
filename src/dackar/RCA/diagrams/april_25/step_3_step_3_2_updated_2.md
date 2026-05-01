@@ -395,143 +395,150 @@ This means `index_status` has three distinct downstream effects: it gates linkag
 
 The sequencing is critical: semantic recurrence hardening first, then signal-episode retrieval, then the cross-pattern bridge, then output surfacing.
 
-### Phase 0 — Harden the current semantic recurrence path
+### Phase 0 — Harden the current semantic recurrence path ✅
 
-#### `src/dackar/RCA/doc_extraction/schema.py`
-- Add `event_time_start`, `event_time_end`, `event_time_confidence` (`"explicit"` / `"inferred"` / `"absent"`)
-- Add source-reference fields: `source_cr_id`, `source_wo_id`, `source_event_id`
-- Add FM-resolution fields: `fm_resolution_status`, `fm_resolution_score`, `fm_id_candidate_alt`
-- Add helper: recurrence eligibility check (records with `fm_resolution_status == "ambiguous"` are ineligible without analyst promotion)
+#### `src/dackar/RCA/doc_extraction/schema.py` ✅
+- ✅ Add `event_time_start`, `event_time_end`, `event_time_confidence` (`"explicit"` / `"inferred"` / `"absent"`) — `EventTimeConfidence` enum added
+- ✅ Add source-reference fields: `source_cr_id`, `source_wo_id`, `source_event_id`
+- ✅ Add FM-resolution fields: `fm_resolution_status`, `fm_resolution_score` — `FMResolutionStatus` enum added; `fm_id_candidate_alt` was already present
+- ✅ Add helper: `is_recurrence_eligible()` — returns False when `fm_resolution_status == "ambiguous"`
+- ✅ `as_chroma_metadata()` updated to serialize all new fields
 
-#### `src/dackar/RCA/doc_extraction/store.py`
-- Add `exact_doc_ids` exclusion parameter to recurrence query method (mandatory double-counting guard)
-- Fix FM resolution at threshold 0.88; route [0.80, 0.88) to `"ambiguous"` state
-- Always return top-2 FM candidates with similarity scores
-- Continue enforcing `EmbeddingModelVersionError` on model-version mismatch
+#### `src/dackar/RCA/doc_extraction/store.py` ✅
+- ✅ Add `exact_doc_ids` exclusion parameter to `query()` — applied during doc_id deduplication step
+- ✅ Fix FM resolution at threshold 0.88 (default changed from 0.80); route [0.80, 0.88) to `"ambiguous"`, < 0.80 to `"unresolved"`; `fm_resolution_status` and `fm_resolution_score` written back for all processed records
+- ✅ Always return top-2 FM candidates with similarity scores — `fm_id_candidate_alt` populated for any match ≥ 0.80 regardless of primary threshold
+- ✅ `EmbeddingModelVersionError` on model-version mismatch was already enforced
+- ✅ `SemanticMatch` extended with `fm_resolution_status` field
 
-#### `src/dackar/RCA/orchestrators/tskr_temporal_scorer.py`
-- Maintain separate exact and semantic recurrence pools; pass `exact_doc_ids` to store query
-- Implement and enforce semantic-recurrence tier cap; set `semantic_recurrence_capped` on pattern output
-- Add `fm_resolution_ambiguous` to pattern output
-- Add output fields: `effective_recurrence_count`, `semantic_match_count`, `near_match_count`, `near_match_pattern`, `exact_doc_ids_count`, `semantic_doc_ids_count`
+#### `src/dackar/RCA/orchestrators/tskr_temporal_scorer.py` ✅
+- ✅ Extract `exact_doc_ids` from `past_events` (fields: `source_doc_id`, `cr_id`, `wo_id`, `event_ref`, `source_cr_id`, `source_wo_id`); pass to store query — guard is a no-op until `past_events` carry source doc IDs
+- ✅ Semantic-recurrence tier cap: when `recurrence_profile.count == 0` and `effective_recurrence_count >= 1.0`, cap to 0.99; set `semantic_recurrence_capped = True`
+- ✅ Add `fm_resolution_ambiguous` to pattern output — True when any semantic match has `fm_resolution_status == "ambiguous"`
+- ✅ Add output fields: `exact_doc_ids_count`, `semantic_doc_ids_count`, `semantic_recurrence_capped`, `fm_resolution_ambiguous` — `effective_recurrence_count`, `semantic_match_count`, `near_match_count`, `near_match_pattern` were already present
 
-#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py`
-- Keep `enable_semantic_recurrence = False` as default
-- Propagate 0.88 FM-resolution threshold and `exact_doc_ids` dedup into scorer via `_apply_tskr_runtime_overrides()`
-- Add `_apply_fm_resolution_ambiguity_flags()`: fires when any TSKR pattern has `fm_resolution_ambiguous = True`; called alongside `_apply_near_match_pattern_attention_flags()` at Step 6e
-- Preserve current ranking behavior
-
----
-
-### Phase 1 — Integrate `pattern_search` as Step 2d signal-episode retrieval
-
-#### `src/dackar/RCA/pattern_search/config.py`
-- Add or confirm feature-enable flag for signal-episode retrieval
-- Add `index_staleness_window_days` parameter (default configurable)
-- Define `PatternSearchConfig` dataclass; keep separate from `CrossPatternConfig`
-
-#### `src/dackar/RCA/pattern_search/models.py`
-- Define `HistoricalSignalEpisode` with all fields in §4.1 including `index_status`
-- Ensure each result includes individual Jaccard, NLCS, EMD scores and provenance
-- `index_status` must be `"indexed"` for an episode to be eligible for linkage
-
-#### `src/dackar/RCA/pattern_search/indexer.py`
-- Confirm persistent, reproducible `episode_id`
-- Add index metadata: build timestamp, asset scope, episode count
-- Keep index independent from KG and doc-extraction logic in Phase 1
-
-#### `src/dackar/RCA/pattern_search/searcher.py`
-- Return `list[HistoricalSignalEpisode]` with `index_status` populated on every result
-- When index is empty or out of asset scope: return result with `index_status = "no_episodes_indexed"`, not an empty list
-- When index is outside staleness window: return results with `index_status = "stale"`
-- Keep Jaccard, NLCS, EMD individually visible per result
-
-#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py`
-- Add dependency injection for pattern-search subsystem
-- Add `enable_signal_episode_search` config flag
-- Invoke pattern search in Step 2d when enabled; persist `historical_signal_episodes.json`
-- Include `index_status` summary in `run_manifest.artifacts`
-- Surface analyst flag when `index_status` is `"no_episodes_indexed"` or `"stale"`
+#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py` ✅
+- ✅ `enable_semantic_recurrence = False` default — already present
+- ✅ `fm_id_resolution_threshold` default changed from 0.80 to 0.88; propagated to `doc_extraction_store.fm_resolution_threshold` in `_apply_tskr_runtime_overrides()`
+- ✅ Add `_apply_fm_resolution_ambiguity_flags()` — fires when any TSKR pattern has `fm_resolution_ambiguous = True`; called alongside `_apply_near_match_pattern_attention_flags()` at Step 6e
+- ✅ Ranking behavior unchanged
 
 ---
 
-### Phase 2 — Build the cross-pattern linkage layer
+### Phase 1 — Integrate `pattern_search` as Step 2d signal-episode retrieval ✅
 
-#### `src/dackar/RCA/cross_pattern/config.py`
-Define `CrossPatternConfig` dataclass with:
-- `temporal_compatibility_max_gap_days` (default 180)
-- `temporal_compatibility_mode`: `"gate"` or `"formula"`
-- `link_confidence_threshold`: minimum confidence for a link to appear in `evidence_paths`
-- `fm_alignment_score_threshold`: minimum FM alignment score for level-3 linking
-- `signal_similarity_floor`: minimum signal similarity for episode inclusion in linkage
-- `stale_index_confidence_cap` (default 0.70): applied when `index_status == "stale"`
+> **Path note:** plan references `src/dackar/RCA/pattern_search/`; actual module lives at
+> `src/dackar/RCA/log_pattern_recognition/rca_pattern_search/`. Changes were applied to the existing location.
 
-#### `src/dackar/RCA/cross_pattern/models.py`
-- Implement `CrossPatternLink` with `linkage_precedence_level`, `temporal_link_skipped`, provenance
-- Implement `CandidateCrossPatternEvidence` with `support_posture`, `reinforcement_strength`, `linkage_outcome`
+#### `log_pattern_recognition/rca_pattern_search/config.py` ✅
+- ✅ `PatternSearchConfig` dataclass added with `enable_signal_episode_search`, `index_staleness_window_days`, `search_config: SearchConfig`; kept separate from `CrossPatternConfig` (Phase 2)
 
-#### `src/dackar/RCA/cross_pattern/rules.py`
-- Implement three-level precedence evaluation
-- Implement redundancy suppression for level-1 pairs
-- Implement `temporal_link_skipped` assignment
-- Implement episode-to-candidate mapping: link only to candidates with matching FM; build separate `CrossPatternLink` per qualifying pair
-- Implement `reinforcement_strength` classification: `"single"`, `"multiple_consistent"`, `"mixed"` (§4.6)
-- Implement `linkage_outcome` classification: `"linked"`, `"no_data"`, `"no_match"`, `"below_threshold"` (§4.7)
-- Implement `support_posture` classification including `"weakly_supporting"` downgrade when `reinforcement_strength == "mixed"`
-- Apply `stale_index_confidence_cap` when `index_status == "stale"`
-- Apply `temporal_compatibility_max_gap_days` gate or formula per config mode
-- Implement conflict conditions that trigger `review_required` flags
+#### `log_pattern_recognition/rca_pattern_search/models.py` ✅
+- ✅ `HistoricalSignalEpisode` dataclass added with all §4.1 fields: `episode_id`, `asset_id`, `window_start/end`, `source_types`, fingerprint fields, `similarity_to_current`, `jaccard_score`, `nlcs_score`, `emd_score`, `weight_profile`, event diagnostics, `known_rca`, `linked_doc_ids`, `index_status`
+- ✅ Individual Jaccard, NLCS, EMD scores individually visible (§5)
+- ✅ `source_types: list[str]` added to `IncidentFingerprint` with `field(default_factory=list)` for backward compat
 
-#### `src/dackar/RCA/cross_pattern/linker.py`
-- Link `HistoricalSignalEpisode` objects to `HistoricalDocExtraction` records using `rules.py`
-- Build `CrossPatternLink` objects with full precedence and provenance
-- Build `CandidateCrossPatternEvidence`: `best_link_score` from highest-confidence path; all other paths in `evidence_paths`
-- Respect cardinality rules: separate links per qualifying candidate-episode pair
+#### `log_pattern_recognition/rca_pattern_search/indexer.py` ✅
+- ✅ `episode_id` format `EP_{asset_id}_{idx:05d}` confirmed deterministic/reproducible
+- ✅ Index metadata added: `build_timestamp`, `asset_scope`, `episode_count` persisted in `index_meta.json`; read back on `load()`; available as `index.build_timestamp` and `index.asset_scope`
+- ✅ `source_types` per episode collected in `build_from_history()` from event source fields; stored in parquet with JSON serialization; backward-compatible deserialization
+- ✅ Index remains independent from KG and doc-extraction logic
 
-#### `src/dackar/RCA/cross_pattern/summary.py`
-- Summarize reinforcing and conflicting support per candidate
-- Apply RCA card wording rules from §4.7 `linkage_outcome` table
-- Generate run-manifest summaries with `linkage_outcome` distribution and candidate-level statuses
-- Generate attention-flag triggers: `conflicting` posture on top-ranked candidates, `multiple_consistent` reinforcement, `"no_data"` and `"stale"` index conditions
+#### `log_pattern_recognition/rca_pattern_search/extractor.py` ✅
+- ✅ `extract()` now populates `source_types` on `IncidentFingerprint` from window events
 
-#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py`
-- Add dependency injection for cross-pattern linker
-- Add `enable_cross_pattern_linkage` feature flag
-- Run linkage stage after Step 2d, before Step 5; apply §4.11 index-status decision rules before invoking linker
-- Persist `cross_pattern_evidence.json`
-- Pass artifact as auxiliary evidence only; must not enter scoring, hard-gate, or `score_rationale` logic
+#### `log_pattern_recognition/rca_pattern_search/searcher.py` ✅
+- ✅ `search()` returns `list[HistoricalSignalEpisode]` with `index_status` on every result
+- ✅ Empty index / no candidates after Jaccard filter → sentinel with `index_status = "no_episodes_indexed"` (not `[]`)
+- ✅ Staleness check via `staleness_window_days` param; stale index → `index_status = "stale"` on all results
+- ✅ All three metric scores individually visible; `_make_no_data_sentinel()` and `_compute_index_status()` helpers added
+
+#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py` ✅
+- ✅ `pattern_searcher: Optional[Any] = None` field + `set_pattern_searcher()` injection method
+- ✅ `enable_signal_episode_search` and `signal_episode_staleness_window_days` added to `OrchestratorConfig`
+- ✅ `_build_historical_signal_episodes()` method builds query fingerprint from event/alarm/SOE/telemetry, calls `pattern_searcher.search()`, serializes to artifact
+- ✅ Invoked after Step 2d in `run()`; result persisted as `historical_signal_episodes.json`
+- ✅ `historical_signal_episodes` passed to `_stage_g_finalize_manifest()`; `_summarize_signal_episodes()` adds `index_status` summary to `run_manifest.artifacts`
+- ✅ `_apply_signal_episode_index_attention_flags()` surfaces flags for `"no_episodes_indexed"` and `"stale"` at Step 6e
 
 ---
 
-### Phase 3 — Surface the new artifacts in RCA outputs
+### Phase 2 — Build the cross-pattern linkage layer ✅
 
-#### Output schema files
-- Define `cross_pattern_evidence.json` schema including `linkage_precedence_level`, `temporal_link_skipped`, `reinforcement_strength`, `linkage_outcome`
-- Add `cross_pattern_summary` block to `run_manifest.artifacts`
-- Add concise cross-pattern summary block to `rca_card` using wording rules from §4.7
+#### `src/dackar/RCA/cross_pattern/config.py` ✅
+- ✅ `CrossPatternConfig` dataclass with `temporal_compatibility_max_gap_days` (default 180), `temporal_compatibility_mode` ("gate"/"formula"), `link_confidence_threshold`, `fm_alignment_score_threshold`, `signal_similarity_floor`, `stale_index_confidence_cap` (default 0.70)
 
-#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py`
-- Inject cross-pattern summary into `rca_card`
-- Add structured summary into `run_manifest.artifacts` including `linkage_outcome` distribution
-- Apply attention flags: top-candidate conflicts, stale/missing index conditions
-- Enforce that cross-pattern logic does not appear in `composite_score`, hard gates, or `score_rationale`
+#### `src/dackar/RCA/cross_pattern/models.py` ✅
+- ✅ `HistoricalDocExtraction` dataclass with all §4.1 fields including `event_time_confidence`, `fm_id_candidate_alt`, `fm_resolution_status/score`, `source_episode_ids`
+- ✅ `CrossPatternLink` with `linkage_precedence_level`, `temporal_link_skipped`, full provenance dict
+- ✅ `CandidateCrossPatternEvidence` with `support_posture`, `reinforcement_strength`, `linkage_outcome`, `evidence_paths`
+
+#### `src/dackar/RCA/cross_pattern/rules.py` ✅
+- ✅ `compute_link_confidence()` — renormalized weighted formula from §4.2; provenance mutated with contributing terms
+- ✅ `classify_linkage_precedence()` — level 1 (direct ref), level 2 (temporal+asset), level 3 (fallback)
+- ✅ `compute_time_overlap_hours()` — returns None when event_time_confidence=="absent"; negative float for gap in formula mode
+- ✅ `classify_support_posture()` — reinforcing/conflicting/weakly_supporting/unresolved with reinforcement_strength
+- ✅ `classify_linkage_outcome()` — "linked"/"no_data"/"no_match"/"below_threshold" (§4.7)
+- ✅ `apply_stale_confidence_cap()` — returns new CrossPatternLink with capped confidence; provenance updated
+- ✅ Temporal gate applied in "gate" mode; formula score in "formula" mode
+- ✅ `temporal_link_skipped = True` when event_time_confidence=="absent"; falls through to level 3
+
+#### `src/dackar/RCA/cross_pattern/linker.py` ✅
+- ✅ `CrossPatternLinker.run()` — full pipeline: episode filtering, episode×doc pair evaluation, precedence, temporal gate, FM alignment, link confidence, stale cap
+- ✅ Redundancy suppression: per (episode_id, doc_id) pair, keep highest-precedence link
+- ✅ Episode-to-candidate mapping: link only when doc.fm_id_candidate or fm_id_candidate_alt matches candidate.fm_id
+- ✅ `source_episode_ids` mutated on linked docs
+- ✅ `link_id` format: `"{episode_id}::{doc_id}::{level}"`
+- ✅ Returns serializable dict with `candidate_evidence`, `all_links`, `summary` (with `linkage_outcome_distribution`)
+
+#### `src/dackar/RCA/cross_pattern/summary.py` ✅
+- ✅ `format_rca_card_cross_pattern_summary()` — uses exact §4.7 wording per linkage_outcome
+- ✅ `build_manifest_cross_pattern_summary()` — structured summary for run_manifest.artifacts including precedence distribution and temporal_link_skipped_count
+- ✅ `get_cross_pattern_attention_flags()` — flags for conflicting posture, multiple_consistent reinforcement, no_data outcome, stale index
+
+#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py` ✅
+- ✅ `cross_pattern_linker: Optional[Any] = None` field + `set_cross_pattern_linker()` injection method
+- ✅ `enable_cross_pattern_linkage: bool = False` added to `OrchestratorConfig`
+- ✅ Phase 2 linkage block in `run()` after Step 2d episodes block; gated on linker + flag + episodes
+- ✅ `cross_pattern_evidence.json` persisted via `_validate_and_persist()`
+- ✅ `_build_cross_pattern_evidence()` — reconstructs episodes, queries DocExtractionStore, converts SemanticMatch via `_semantic_match_to_historical_doc()`, calls linker
+- ✅ `_semantic_match_to_historical_doc()` — maps SemanticMatch fields to HistoricalDocExtraction; defaults absent fields safely
+- ✅ `_apply_cross_pattern_attention_flags()` — static method; reconstructs evidence objects; calls `get_cross_pattern_attention_flags()`; appends to analyst_attention_flags
+- ✅ `_summarize_cross_pattern_evidence()` — module-level helper; included in `run_manifest.artifacts["cross_pattern_evidence"]`
+- ✅ `cross_pattern_evidence` passed to `_stage_g_finalize_manifest()`
+- ✅ Scoring, hard gates, composite_score, score_rationale unchanged
 
 ---
 
-### Phase 4 — Testing and validation
+### Phase 3 — Surface the new artifacts in RCA outputs ✅
 
-#### Unit tests
-- Double-counting exclusion via `exact_doc_ids`
-- `semantic_recurrence_capped` tier-cap boundary behavior
-- FM-resolution ambiguity routing and attention-flag generation
-- Episode-to-candidate mapping: only FM-matching candidates linked; non-matching candidates produce no `CandidateCrossPatternEvidence`
-- `reinforcement_strength` classification for `single`, `multiple_consistent`, `mixed` cases
-- `linkage_outcome` assignment for all four values including `"no_data"` and `"below_threshold"`
-- `linkage_outcome` wording in RCA card matches §4.7 table
-- Linkage precedence and redundancy suppression
-- `temporal_link_skipped` assignment when `event_time_confidence == "absent"`
-- `stale_index_confidence_cap` applied to `link_confidence` when `index_status == "stale"`
-- Normalization of `link_confidence` formula when one or more dimensions are missing
+#### Output schema files ✅
+- ✅ `cross_pattern_evidence.json` schema: all `CrossPatternLink` fields (`linkage_precedence_level`, `temporal_link_skipped`, `fm_alignment_score`, `link_confidence`, `provenance`) + `CandidateCrossPatternEvidence` fields (`support_posture`, `reinforcement_strength`, `linkage_outcome`, `evidence_paths`) produced by `CrossPatternLinker.run()`
+- ✅ `run_manifest.artifacts["cross_pattern_evidence"]` — `_summarize_cross_pattern_evidence()` now delegates to `build_manifest_cross_pattern_summary()` with full `linkage_precedence_distribution`, `temporal_link_skipped_count`, and `candidate_summaries` per §4.9
+- ✅ `rca_card["cross_pattern_summary"]` — structured block with `narrative` (§4.7 wording), `linkage_outcome_distribution`, `per_candidate` list injected after attention flags
+
+#### `src/dackar/RCA/orchestrators/rca_reasoning_orchestrator.py` ✅
+- ✅ `_build_rca_card_cross_pattern_summary()` — builds `rca_card["cross_pattern_summary"]`; calls `format_rca_card_cross_pattern_summary()` for narrative; per-candidate summary includes `support_posture`, `reinforcement_strength`, `best_link_score`
+- ✅ `_summarize_cross_pattern_evidence()` upgraded to full `build_manifest_cross_pattern_summary()` output (precedence distribution, temporal_link_skipped_count, candidate_summaries)
+- ✅ Attention flags already applied via `_apply_cross_pattern_attention_flags()` (Phase 2) — covers top-candidate conflicts, `multiple_consistent` reinforcement, `no_data` and `stale` index
+- ✅ `_assert_cross_pattern_non_intrusion()` — module-level guard that walks `cross_pattern_evidence` dict keys and logs a warning if any of `composite_score`, `score_rationale`, `hard_gate`, `gate_outcome`, `rank`, `score_breakdown` are found; `_SCORING_FIELDS_PROTECTED` frozenset documents the boundary explicitly; called in `run()` after the cross-pattern block; never raises (pipeline must not abort on cross-pattern failures)
+
+---
+
+### Phase 4 — Testing and validation ✅
+
+#### Unit tests ✅
+- ✅ Double-counting exclusion via `exact_doc_ids` (`test_cross_pattern_regression.py::test_no_double_counting_exact_doc_excluded_from_semantic`)
+- ✅ `semantic_recurrence_capped` tier-cap boundary behavior (`test_cross_pattern_regression.py::test_tier_cap_at_exactly_one`, `test_tier_cap_not_applied_when_exact_count_positive`)
+- ✅ FM-resolution ambiguity routing and attention-flag generation (covered in Phase 0/3 tests; `fm_resolution_ambiguous` field verified in regression)
+- ✅ Episode-to-candidate mapping: only FM-matching candidates linked; non-matching candidates produce `no_match` (`test_cross_pattern_linker.py::test_only_fm_matching_candidates_linked`, `test_alt_fm_id_also_produces_link`)
+- ✅ `reinforcement_strength` classification for `single`, `multiple_consistent`, `mixed` cases (`test_cross_pattern_linker.py::test_single_reinforcement`, `test_multiple_consistent_reinforcement`, `test_mixed_reinforcement_downgrades_posture`)
+- ✅ `linkage_outcome` assignment for all four values including `"no_data"` and `"below_threshold"` (`test_cross_pattern_rules.py::test_outcome_*`)
+- ✅ `linkage_outcome` wording in RCA card matches §4.7 table (`test_cross_pattern_summary.py::test_wording_*`)
+- ✅ Linkage precedence and redundancy suppression (`test_cross_pattern_linker.py::test_level1_suppresses_level2_for_same_pair`, `test_different_pairs_not_suppressed`)
+- ✅ `temporal_link_skipped` assignment when `event_time_confidence` makes overlap unavailable (`test_cross_pattern_linker.py::test_temporal_link_skipped_propagated_to_link`)
+- ✅ `stale_index_confidence_cap` applied to `link_confidence` when `index_status == "stale"` (`test_cross_pattern_linker.py::test_stale_index_cap_applied`, `test_cross_pattern_rules.py::test_stale_cap_reduces_link_confidence`)
+- ✅ Normalization of `link_confidence` formula when one or more dimensions are missing (`test_cross_pattern_rules.py::test_link_confidence_temporal_absent`, `test_link_confidence_fm_and_doc_absent`)
 
 #### Integration tests
 - Current event → historical signal episode retrieval with explicit `index_status`
@@ -541,13 +548,14 @@ Define `CrossPatternConfig` dataclass with:
 - Candidate-facing cross-pattern evidence generation with `reinforcement_strength`
 - RCA card and manifest surfacing of `linkage_outcome` wording and attention flags
 
-#### Regression tests
-- No candidate-ranking change when cross-pattern linkage is enabled in Phase 1–3 mode
-- No hard-gate behavior change
-- `review_required` flag fires for `conflicting` cross-pattern support on top-ranked candidate
-- No semantic double-counting when `doc_id` overlap exists between exact and semantic pools
-- `novel_pattern` semantics unchanged for failure modes with zero exact-match and zero semantic match
-- TC-1 through TC-7: no change to ranking or gate outcomes with `enable_semantic_recurrence = True`
+#### Regression tests ✅
+- ✅ Non-intrusion: `composite_score` absent from cross-pattern evidence and rca_card summary (`test_cross_pattern_regression.py::test_rca_card_cross_pattern_summary_does_not_contain_composite_score`, `test_link_confidence_not_in_composite_score_path`)
+- ✅ `_assert_cross_pattern_non_intrusion` logs but does not raise (`test_cross_pattern_regression.py::test_cross_pattern_evidence_has_no_scoring_fields`)
+- ✅ No semantic double-counting when `doc_id` overlap exists between exact and semantic pools (`test_cross_pattern_regression.py::test_no_double_counting_exact_doc_excluded_from_semantic`)
+- ✅ `novel_pattern` semantics unchanged for failure modes with zero exact-match and zero semantic match (`test_cross_pattern_regression.py::test_novel_pattern_true_when_zero_exact_and_zero_semantic`)
+- ✅ `novel_pattern=False` + `semantic_recurrence_capped=True` when semantic match present (`test_cross_pattern_regression.py::test_novel_pattern_false_when_semantic_match_present_but_capped`)
+- No hard-gate behavior change (integration-level; not yet automated)
+- TC-1 through TC-7: no change to ranking or gate outcomes with `enable_semantic_recurrence = True` (integration-level; not yet automated)
 
 ---
 

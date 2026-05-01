@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from ..config import SearchConfig
 from ..indexer import IncidentIndex
-from ..models import IncidentFingerprint, SearchResult
+from ..models import HistoricalSignalEpisode, IncidentFingerprint
 from ..searcher import PatternSearcher
 
 
@@ -99,31 +99,43 @@ class TestResolveWeights:
 # search() — empty / no-candidate paths
 # ---------------------------------------------------------------------------
 
+def _is_no_data_sentinel(result: list) -> bool:
+    """True when the result is a single sentinel with index_status != 'indexed'."""
+    return (
+        len(result) == 1
+        and isinstance(result[0], HistoricalSignalEpisode)
+        and result[0].episode_id == ""
+        and result[0].index_status != "indexed"
+    )
+
+
 class TestSearchEdgeCases:
-    def test_empty_index_returns_empty(self):
+    def test_empty_index_returns_sentinel(self):
         idx = IncidentIndex(CFG)
         s = PatternSearcher(idx, CFG)
         q = _fp("Q", ["A", "B"])
-        assert s.search(q) == []
+        result = s.search(q)
+        assert _is_no_data_sentinel(result)
+        assert result[0].index_status == "no_episodes_indexed"
 
-    def test_no_shared_event_types_returns_empty(self):
+    def test_no_shared_event_types_returns_sentinel(self):
         idx = _build_index(_fp("EP_1", ["X", "Y"]))
         s = PatternSearcher(idx, CFG)
         q = _fp("Q", ["A", "B"])
-        assert s.search(q) == []
+        assert _is_no_data_sentinel(s.search(q))
 
-    def test_below_jaccard_threshold_filtered(self):
+    def test_below_jaccard_threshold_filtered_returns_sentinel(self):
         # EP_1 shares 1/4 events with query → Jaccard = 1/4 = 0.25 < min_jaccard=0.3
         idx = _build_index(_fp("EP_1", ["A", "B", "C", "D"]))
         s = PatternSearcher(idx, CFG)
         q = _fp("Q", ["A"])    # Jaccard({A}, {A,B,C,D}) = 1/4 = 0.25
-        assert s.search(q) == []
+        assert _is_no_data_sentinel(s.search(q))
 
-    def test_empty_query_event_set_returns_empty(self):
+    def test_empty_query_event_set_returns_sentinel(self):
         idx = _build_index(_fp("EP_1", ["A"]))
         s = PatternSearcher(idx, CFG)
         q = _fp("Q", [])
-        assert s.search(q) == []
+        assert _is_no_data_sentinel(s.search(q))
 
 
 # ---------------------------------------------------------------------------
@@ -131,13 +143,13 @@ class TestSearchEdgeCases:
 # ---------------------------------------------------------------------------
 
 class TestSearchResults:
-    def test_returns_search_result_objects(self):
+    def test_returns_historical_signal_episode_objects(self):
         idx = _build_index(_fp("EP_1", ["A", "B"]))
         s = PatternSearcher(idx, CFG_NO_FILTER)
         q = _fp("Q", ["A", "B"])
         results = s.search(q)
         assert len(results) == 1
-        assert isinstance(results[0], SearchResult)
+        assert isinstance(results[0], HistoricalSignalEpisode)
 
     def test_identical_query_scores_one(self):
         idx = _build_index(_fp("EP_1", ["A", "B"], freq=3))
@@ -148,7 +160,7 @@ class TestSearchResults:
         assert r.jaccard_score == pytest.approx(1.0)
         assert r.nlcs_score == pytest.approx(1.0)
         assert r.emd_score == pytest.approx(1.0)
-        assert r.combined_score == pytest.approx(1.0)
+        assert r.similarity_to_current == pytest.approx(1.0)
 
     def test_matched_and_exclusive_events(self):
         idx = _build_index(_fp("EP_1", ["A", "B", "C"]))
@@ -180,7 +192,8 @@ class TestSearchResults:
         s = PatternSearcher(idx, CFG_NO_FILTER)
         q = _fp("Q", ["A"])
         results = s.search(q)
-        assert results[0].episode_window == (T0, T0 + timedelta(hours=1))
+        r = results[0]
+        assert (r.window_start, r.window_end) == (T0, T0 + timedelta(hours=1))
 
     def test_weight_profile_stored_in_result(self):
         idx = _build_index(_fp("EP_1", ["A", "B"]))
@@ -204,7 +217,7 @@ class TestRankingAndTopK:
         s = PatternSearcher(idx, CFG_NO_FILTER)
         q = _fp("Q", ["A", "B", "C"])
         results = s.search(q)
-        scores = [r.combined_score for r in results]
+        scores = [r.similarity_to_current for r in results]
         assert scores == sorted(scores, reverse=True)
 
     def test_top_k_limit_respected(self):
@@ -314,7 +327,7 @@ class TestWeightProfiles:
                 assert r.jaccard_score is not None
                 assert r.nlcs_score is not None
                 assert r.emd_score is not None
-                assert r.combined_score is not None
+                assert r.similarity_to_current is not None
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +371,7 @@ class TestEmdNormalizationModes:
         query = _fp("q", ["A"], freq=5)
         results = searcher.search(query)
         assert len(results) == 2
-        assert results[0].combined_score > 0.0
+        assert results[0].similarity_to_current > 0.0
 
     def test_empirical_max_mode_requires_factor(self):
         cfg = SearchConfig(emd_normalization_mode="empirical_max", weight_profile="equal")
@@ -384,7 +397,7 @@ class TestEmdNormalizationModes:
         query = _fp("q", ["A"], freq=5)
         results = searcher.search(query)
         assert len(results) == 2
-        assert results[0].combined_score > 0.0
+        assert results[0].similarity_to_current > 0.0
 
     def test_empirical_max_scores_differ_from_tv(self):
         cfg_tv = SearchConfig(emd_normalization_mode="tv", weight_profile="equal")

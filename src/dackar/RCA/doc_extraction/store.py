@@ -41,6 +41,15 @@ class SemanticMatch:
     confidence: ConfidenceLevel
     cause_is_symptom: bool
     similarity_score: float  # cosine similarity [0, 1]; higher = more similar
+    fm_resolution_status: Optional[str] = None  # FMResolutionStatus value; None = not yet resolved
+    # Epistemic annotation fields — populated by EpistemicClassifier when a
+    # classifier is attached to DocExtractionStore (Phase A).
+    doc_type: str = ""
+    finding_status: Optional[str] = None
+    authority_level: Optional[str] = None
+    epistemic_class: Optional[str] = None
+    classification_resolution_level: Optional[str] = None
+    degraded_classification: bool = False
 
     @property
     def confidence_weight(self) -> float:
@@ -85,12 +94,14 @@ class DocExtractionStore:
         persist_directory: str,
         embed_model: str = "nomic-embed-text-v1.5",
         ollama_base_url: Optional[str] = None,
-        fm_resolution_threshold: float = 0.80,
+        fm_resolution_threshold: float = 0.88,
+        epistemics_classifier: Optional[Any] = None,
     ) -> None:
         self.persist_directory = persist_directory
         self.embed_model = embed_model
         self.ollama_base_url = ollama_base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.fm_resolution_threshold = fm_resolution_threshold
+        self.fm_resolution_threshold = fm_resolution_threshold  # 0.88 = auto_resolved boundary
+        self.epistemics_classifier = epistemics_classifier  # EpistemicClassifier | None
         self._collection = None  # lazy-initialized on first use
 
     @property
@@ -197,6 +208,7 @@ class DocExtractionStore:
         similarity_threshold: float = 0.75,
         near_match_window: float = 0.10,
         filter_meta: Optional[Dict[str, Any]] = None,
+        exact_doc_ids: Optional[set] = None,
     ) -> Tuple[List[SemanticMatch], List[SemanticMatch]]:
         """Query for semantically similar extraction records.
 
@@ -211,10 +223,13 @@ class DocExtractionStore:
             similarity_threshold: Minimum cosine similarity for inclusion in the main result set.
             near_match_window: Width of the soft zone below threshold that populates near_matches.
             filter_meta: Optional Chroma metadata pre-filter (e.g. ``{"doc_type": "CR"}``).
+            exact_doc_ids: Set of doc_ids already counted via exact-match recurrence (kg_context.past_events).
+                           Matching records are excluded from both matches and near_matches to prevent
+                           double-counting.  None or empty set disables the guard.
 
         Returns:
             (matches, near_matches) where:
-              - matches: similarity >= similarity_threshold, deduplicated, top_k max
+              - matches: similarity >= similarity_threshold, deduplicated, top_k max, exact_doc_ids excluded
               - near_matches: similarity in [similarity_threshold - near_match_window, similarity_threshold)
         """
         self._assert_model_version()
@@ -249,9 +264,13 @@ class DocExtractionStore:
             if match is not None:
                 candidates.append((sim, match))
 
-        # Deduplicate by doc_id: keep best similarity per document
+        # Deduplicate by doc_id: keep best similarity per document;
+        # exclude doc_ids already counted via exact-match recurrence (double-counting guard).
+        _exact = exact_doc_ids or set()
         best_per_doc: Dict[str, Tuple[float, SemanticMatch]] = {}
         for sim, match in candidates:
+            if match.doc_id in _exact:
+                continue
             existing = best_per_doc.get(match.doc_id)
             if existing is None or sim > existing[0]:
                 best_per_doc[match.doc_id] = (sim, match)
@@ -268,6 +287,13 @@ class DocExtractionStore:
                     matches.append(match)
             elif sim >= near_lower:
                 near_matches.append(match)
+
+        # Apply epistemic classifier when present
+        if self.epistemics_classifier is not None:
+            for m in matches:
+                self.epistemics_classifier.annotate_record(m)
+            for m in near_matches:
+                self.epistemics_classifier.annotate_record(m)
 
         return matches, near_matches
 
@@ -364,6 +390,10 @@ class DocExtractionStore:
 
         updated_ids: List[str] = []
         updated_metas: List[Dict[str, Any]] = []
+        resolved_count: int = 0  # only auto_resolved + ambiguous (non-empty fm_id_candidate)
+
+        # Ambiguity boundary: [ambiguity_floor, threshold) → "ambiguous"; < ambiguity_floor → "unresolved"
+        _AMBIGUITY_FLOOR = 0.80
 
         for label, label_emb in zip(unique_labels, label_embeddings):
             sims = [_cosine_similarity(label_emb, fm_emb) for fm_emb in fm_embeddings]
@@ -372,28 +402,44 @@ class DocExtractionStore:
             best_idx = sorted_indices[0]
             best_sim = sims[best_idx]
 
-            if best_sim < threshold:
-                continue  # below threshold — leave fm_id_candidate unresolved
-
-            best_fm_id = fm_ids[best_idx]
-            alt_fm_id = ""
-            if len(sorted_indices) > 1:
-                alt_idx = sorted_indices[1]
-                if sims[alt_idx] >= threshold:
-                    alt_fm_id = fm_ids[alt_idx]
+            # Determine resolution status per three-tier rule (§4.10)
+            if best_sim >= threshold:
+                resolution_status = "auto_resolved"
+                best_fm_id = fm_ids[best_idx]
+                alt_fm_id = ""
+                if len(sorted_indices) > 1:
+                    alt_idx = sorted_indices[1]
+                    if sims[alt_idx] >= _AMBIGUITY_FLOOR:
+                        alt_fm_id = fm_ids[alt_idx]
+            elif best_sim >= _AMBIGUITY_FLOOR:
+                resolution_status = "ambiguous"
+                best_fm_id = fm_ids[best_idx]
+                alt_fm_id = ""
+                if len(sorted_indices) > 1:
+                    alt_idx = sorted_indices[1]
+                    if sims[alt_idx] >= _AMBIGUITY_FLOOR:
+                        alt_fm_id = fm_ids[alt_idx]
+            else:
+                resolution_status = "unresolved"
+                best_fm_id = ""  # fm_id_candidate remains None/empty per spec
+                alt_fm_id = ""
 
             for record_id in label_to_ids[label]:
                 updated_ids.append(record_id)
                 updated_metas.append({
                     "fm_id_candidate": best_fm_id,
                     "fm_id_candidate_alt": alt_fm_id,
+                    "fm_resolution_status": resolution_status,
+                    "fm_resolution_score": round(best_sim, 6),
                 })
+                if best_fm_id:  # non-empty: auto_resolved or ambiguous
+                    resolved_count += 1
 
         if updated_ids:
             collection.update(ids=updated_ids, metadatas=updated_metas)
-            logger.info("resolve_fm_candidates: resolved %d records.", len(updated_ids))
+            logger.info("resolve_fm_candidates: resolved %d records.", resolved_count)
 
-        return len(updated_ids)
+        return resolved_count
 
     # ------------------------------------------------------------------
     # Utility
@@ -449,6 +495,7 @@ def _meta_to_semantic_match(
         confidence = ConfidenceLevel(confidence_raw)
     except ValueError:
         confidence = ConfidenceLevel.LOW
+    fm_resolution_status = meta.get("fm_resolution_status") or None
     return SemanticMatch(
         record_id=record_id,
         doc_id=doc_id,
@@ -460,4 +507,12 @@ def _meta_to_semantic_match(
         confidence=confidence,
         cause_is_symptom=bool(meta.get("cause_is_symptom", False)),
         similarity_score=similarity,
+        fm_resolution_status=fm_resolution_status,
+        # Epistemic fields — pass through from stored Chroma metadata when present
+        doc_type=meta.get("doc_type") or "",
+        finding_status=meta.get("finding_status") or None,
+        authority_level=meta.get("authority_level") or None,
+        epistemic_class=meta.get("epistemic_class") or None,
+        classification_resolution_level=meta.get("classification_resolution_level") or None,
+        degraded_classification=bool(meta.get("degraded_classification", False)),
     )

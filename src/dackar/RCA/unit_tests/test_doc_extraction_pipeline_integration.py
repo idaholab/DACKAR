@@ -346,7 +346,7 @@ def test_pattern_semantic_match_near_match_pattern_false_when_matches_present():
 
 
 def test_pattern_two_semantic_matches_contribution():
-    """Two matches: effective_count = sum of semantic_contribution values."""
+    """Two matches: uncapped sum would be 1.46, but tier cap clamps to 0.99 when exact count==0."""
     m1 = _FakeSemanticMatch(doc_id="CR-001", similarity_score=0.90)
     m2 = _FakeSemanticMatch(doc_id="CR-002", similarity_score=0.80, confidence_weight=0.7)
     store = _fake_store(matches=[m1, m2])
@@ -354,13 +354,14 @@ def test_pattern_two_semantic_matches_contribution():
     scorer = _minimal_scorer(cfg=cfg, store=store)
 
     pat = _run_pattern(scorer)
-    expected = 0.90 * 1.0 * 1.0 + 0.80 * 0.7 * 1.0
-    assert abs(pat["effective_recurrence_count"] - expected) < 1e-4
+    # Phase 0 tier cap: when recurrence_profile.count==0, effective_recurrence_count is capped at 0.99
+    # to prevent semantic-only contributions from reaching the first exact-match tier.
+    assert abs(pat["effective_recurrence_count"] - 0.99) < 1e-9
+    assert pat["semantic_recurrence_capped"] is True
 
 
 def test_pattern_semantic_match_rescores_history():
-    """When semantic contributions are added, history_score is re-computed."""
-    # Exact pool is empty (count=0), but semantic contribution ≥ 1 → floor=1 → base=0.35
+    """Semantic contributions are visible but capped below tier-1 when exact count==0."""
     m1 = _FakeSemanticMatch(doc_id="CR-001", similarity_score=0.90)
     m2 = _FakeSemanticMatch(doc_id="CR-002", similarity_score=0.85)
     store = _fake_store(matches=[m1, m2])
@@ -368,9 +369,9 @@ def test_pattern_semantic_match_rescores_history():
     scorer = _minimal_scorer(cfg=cfg, store=store)
 
     pat = _run_pattern(scorer)
-    # effective_count ≈ 0.90+0.85 = 1.75, floor=1, base=0.35
-    # (no trend/unresolved/recency bonuses)
-    assert pat["effective_recurrence_count"] > 1.0
+    # Phase 0 tier cap: uncapped sum ~1.75 is clamped to 0.99; semantic_recurrence_capped=True
+    assert abs(pat["effective_recurrence_count"] - 0.99) < 1e-9
+    assert pat["semantic_recurrence_capped"] is True
     # novel_pattern must be False because effective_count > 0
     assert pat["novel_pattern"] is False
 
@@ -499,7 +500,7 @@ def test_orchestrator_config_semantic_defaults():
     assert cfg.enable_semantic_recurrence is False
     assert cfg.semantic_similarity_threshold == 0.75
     assert cfg.near_match_window == 0.10
-    assert cfg.fm_id_resolution_threshold == 0.80
+    assert cfg.fm_id_resolution_threshold == 0.88
     assert cfg.top_k_semantic == 5
 
 

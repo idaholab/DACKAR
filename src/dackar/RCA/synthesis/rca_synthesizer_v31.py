@@ -169,6 +169,9 @@ class RuleValidatedRCASynthesizerV31:
         self._apply_metamodel_phase2_postprocessing(card, causality_candidates)
         self._enforce_recommended_action_depth_mapping(card, causality_candidates)
 
+        # Phase D — epistemics digest enforcement (confidence cap, grounding flags, gap typing)
+        self._apply_epistemics_postprocessing(card, causality_candidates)
+
         # Inject ccf_summary deterministically so both LLM and fallback cards carry it.
         # The LLM is not prompted to generate this block; the schema marks it optional.
         if "ccf_summary" not in card:
@@ -381,6 +384,10 @@ Rules:
   Open CRs or WOs on the same component strengthen immediate_corrective actions.
   Sister equipment CRs are weaker signal — note them as contextual, not primary evidence.
 - Be conservative. If evidence is weak, use confidence_label = speculative or low.
+- Each candidate may carry an epistemics_digest field. If epistemics_digest.confidence_cap is "medium",
+  confidence_label for that candidate must not exceed "medium" regardless of composite score.
+  If epistemics_digest.causal_grounding_absent is true, note in analyst_attention_flags that no
+  formal causal conclusion (RCA/ECA/CR/OE) covers this candidate.
 - Keep alternatives concise.
 - Recommended actions should be engineering-appropriate and tied to the selected hypothesis when possible.
 - Explicitly state why the primary hypothesis is stronger than the alternatives.
@@ -2510,6 +2517,71 @@ analyst_review = {
             "affected_candidate_ids": affected_candidate_ids,
             "rationale": rationale,
         }
+
+    # ------------------------------------------------------------------
+    # Phase D — Epistemics postprocessing
+    # ------------------------------------------------------------------
+
+    def _apply_epistemics_postprocessing(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        """Enforce epistemics digest rules on the card in-place.
+
+        1. Cap confidence_label at digest.confidence_cap when set.
+        2. Set causal_grounding_absent on primary_hypothesis.
+        3. Add gap-typed attention flags per §7.4 when ungrounded or absent analyzes support.
+        """
+        digest_by_cid: dict = {}
+        for cand in (causality_candidates.get("candidates") or []):
+            cid = str(cand.get("candidate_id") or "")
+            d = cand.get("epistemics_digest")
+            if cid and isinstance(d, dict):
+                digest_by_cid[cid] = d
+
+        primary = card.get("primary_hypothesis")
+        if not isinstance(primary, dict):
+            return
+
+        primary_id = str(primary.get("candidate_id") or "")
+        digest = digest_by_cid.get(primary_id)
+        if digest is None:
+            return
+
+        # 1 — confidence cap using existing _cap_confidence_label
+        confidence_cap = digest.get("confidence_cap")
+        if confidence_cap:
+            for target in (primary, card.get("executive_summary")):
+                if isinstance(target, dict) and target.get("confidence_label"):
+                    capped = self._cap_confidence_label(str(target["confidence_label"]), confidence_cap)
+                    if capped != target["confidence_label"]:
+                        target["confidence_label"] = capped
+                        target["confidence_label_cap_reason"] = "observationally_ungrounded"
+
+        # 2 — causal_grounding_absent flag preserved on primary_hypothesis
+        primary["causal_grounding_absent"] = bool(digest.get("causal_grounding_absent", False))
+        primary["observationally_ungrounded"] = bool(digest.get("observationally_ungrounded", False))
+
+        # 3 — gap-typed attention flags
+        exec_summary = card.get("executive_summary")
+        if not isinstance(exec_summary, dict):
+            return
+        flags: List[str] = list(exec_summary.get("analyst_attention_flags") or [])
+
+        if digest.get("observationally_ungrounded"):
+            flags.append(
+                "Candidate is observationally strong but causally ungrounded — "
+                "no affects-class precursor and no analyzes-class conclusion support this hypothesis. "
+                "Analyst acknowledgment required before primary hypothesis selection or write-back."
+            )
+        if digest.get("causal_grounding_absent"):
+            flags.append(
+                "Analyzes gap: no formal causal conclusion (RCA, ECA, CR, OE) covers this candidate. "
+                "Recommended action: CR closure investigation, ECA commissioning, or OE search."
+            )
+
+        exec_summary["analyst_attention_flags"] = flags
 
     def _fallback_card(
         self,

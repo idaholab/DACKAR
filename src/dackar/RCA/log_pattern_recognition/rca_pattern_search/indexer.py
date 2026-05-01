@@ -36,9 +36,11 @@ _EPISODES_PARQUET = "episodes.parquet"
 _INVERTED_INDEX_JSON = "inverted_index.json"
 # EMD normalization metadata file name inside the save directory.
 _EMD_META_JSON = "emd_meta.json"
+# Index metadata file name (build timestamp, asset scope, episode count).
+_INDEX_META_JSON = "index_meta.json"
 
 # Columns that store Python objects and need JSON serialisation for parquet.
-_COMPLEX_COLS = ("event_set", "event_seq", "freq_vec")
+_COMPLEX_COLS = ("event_set", "event_seq", "freq_vec", "source_types")
 
 
 class IncidentIndex:
@@ -57,6 +59,8 @@ class IncidentIndex:
         self.episodes_df: pd.DataFrame = pd.DataFrame()
         self._inverted_index: dict[str, set[str]] = {}
         self.emd_normalization_factor: Optional[float] = None
+        self.build_timestamp: Optional[datetime] = None   # set by build_from_history() and load()
+        self.asset_scope: list[str] = []                  # unique asset_ids indexed; set by build_from_history()
 
     # ------------------------------------------------------------------
     # Index build
@@ -132,6 +136,8 @@ class IncidentIndex:
             duration_s = (ep_e - ep_s).total_seconds()
             density = len(ep_events) / duration_s if duration_s > 0.0 else 0.0
 
+            source_types = sorted({ev.source for ev in ep_events if ev.source})
+
             fingerprints.append(
                 IncidentFingerprint(
                     episode_id=episode_id,
@@ -143,19 +149,24 @@ class IncidentIndex:
                     event_seq=event_seq,
                     freq_vec=freq_vec,
                     known_rca=None,
+                    source_types=source_types,
                 )
             )
 
         self.add_batch(fingerprints)
+        self.build_timestamp = datetime.utcnow()
+        self.asset_scope = sorted({fp.asset_id for fp in fingerprints if fp.asset_id})
         _log.info(
-            "build_from_history: detected %d boundaries, built %d fingerprints.",
-            len(boundaries), len(fingerprints),
+            "build_from_history: detected %d boundaries, built %d fingerprints (assets: %s).",
+            len(boundaries), len(fingerprints), self.asset_scope,
         )
 
     def reset(self) -> None:
         """Clears all stored episodes and the inverted index."""
         self.episodes_df = pd.DataFrame()
         self._inverted_index = {}
+        self.build_timestamp = None
+        self.asset_scope = []
 
     # ------------------------------------------------------------------
     # Add
@@ -337,10 +348,23 @@ class IncidentIndex:
             json.dump(emd_meta, f, indent=2)
         os.replace(tmp_emd, emd_path)
 
+        # --- index_meta.json -------------------------------------------------
+        meta_path = save_dir / _INDEX_META_JSON
+        tmp_meta = str(meta_path) + ".tmp"
+        index_meta = {
+            "build_timestamp": self.build_timestamp.isoformat() if self.build_timestamp else None,
+            "asset_scope": self.asset_scope,
+            "episode_count": len(self.episodes_df),
+        }
+        with open(tmp_meta, "w", encoding="utf-8") as f:
+            json.dump(index_meta, f, indent=2)
+        os.replace(tmp_meta, meta_path)
+
         _log.info(
-            "IncidentIndex saved to %s (%d episodes, emd_factor=%.1f).",
+            "IncidentIndex saved to %s (%d episodes, emd_factor=%.1f, built_at=%s).",
             path, len(self.episodes_df),
             self.emd_normalization_factor if self.emd_normalization_factor else 0.0,
+            self.build_timestamp.isoformat() if self.build_timestamp else "unknown",
         )
 
     @classmethod
@@ -394,10 +418,29 @@ class IncidentIndex:
             )
             index.emd_normalization_factor = None
 
+        # Load index metadata (build timestamp, asset scope, episode count).
+        meta_path = save_dir / _INDEX_META_JSON
+        if meta_path.exists():
+            with open(meta_path, encoding="utf-8") as f:
+                index_meta = json.load(f)
+            raw_ts = index_meta.get("build_timestamp")
+            if raw_ts:
+                try:
+                    index.build_timestamp = datetime.fromisoformat(raw_ts)
+                except (ValueError, TypeError):
+                    index.build_timestamp = None
+            index.asset_scope = list(index_meta.get("asset_scope") or [])
+        else:
+            _log.warning(
+                "Index metadata file not found at %s; build_timestamp and asset_scope unavailable. "
+                "Staleness checks will be skipped.", meta_path
+            )
+
         _log.info(
-            "IncidentIndex loaded from %s (%d episodes, emd_factor=%s).",
+            "IncidentIndex loaded from %s (%d episodes, emd_factor=%s, built_at=%s).",
             path, len(index.episodes_df),
             index.emd_normalization_factor if index.emd_normalization_factor else "None",
+            index.build_timestamp.isoformat() if index.build_timestamp else "unknown",
         )
         return index
 
@@ -462,10 +505,11 @@ def _fingerprint_to_row(fp: IncidentFingerprint) -> dict:
         "window_start": fp.window_start,
         "window_end": fp.window_end,
         "density": fp.density,
-        "event_set": fp.event_set,    # frozenset — stored as object column
-        "event_seq": fp.event_seq,    # list[str]
-        "freq_vec": fp.freq_vec,      # dict[str, int]
+        "event_set": fp.event_set,          # frozenset — stored as object column
+        "event_seq": fp.event_seq,          # list[str]
+        "freq_vec": fp.freq_vec,            # dict[str, int]
         "known_rca": fp.known_rca,
+        "source_types": fp.source_types,    # list[str]
     }
 
 
@@ -510,6 +554,10 @@ def _serialise_df(df: pd.DataFrame) -> pd.DataFrame:
         out["freq_vec"] = out["freq_vec"].apply(
             lambda x: json.dumps(x) if isinstance(x, dict) else x
         )
+    if "source_types" in out.columns:
+        out["source_types"] = out["source_types"].apply(
+            lambda x: json.dumps(list(x)) if isinstance(x, list) else x
+        )
     return out
 
 
@@ -533,5 +581,9 @@ def _deserialise_df(df: pd.DataFrame) -> pd.DataFrame:
             lambda x: {k: int(v) for k, v in json.loads(x).items()}
             if isinstance(x, str)
             else x
+        )
+    if "source_types" in out.columns:
+        out["source_types"] = out["source_types"].apply(
+            lambda x: json.loads(x) if isinstance(x, str) else (x if isinstance(x, list) else [])
         )
     return out

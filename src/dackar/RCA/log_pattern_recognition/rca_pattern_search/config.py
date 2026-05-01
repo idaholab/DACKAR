@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 _VALID_PROFILES = {"equal", "flooding", "cascade", "custom"}
@@ -118,7 +119,7 @@ class SearchConfig:
                 f"got {self.emd_normalization_mode!r}"
             )
 
-    def resolve_weights(self, profile: str | None = None) -> tuple[float, float, float]:
+    def resolve_weights(self, profile: Optional[str] = None) -> tuple[float, float, float]:
         """
         Returns (alpha, beta_w, gamma) for the given profile name.
 
@@ -131,3 +132,22 @@ class SearchConfig:
         if p == "custom":
             return (self.alpha, self.beta_w, self.gamma)
         return _PROFILE_WEIGHTS[p]
+
+
+@dataclass
+class PatternSearchConfig:
+    """Operational configuration for the pattern search subsystem.
+
+    Kept separate from SearchConfig (which tunes the similarity algorithm)
+    and from CrossPatternConfig (Phase 2).
+
+    enable_signal_episode_search: master switch; when False the subsystem
+        is completely bypassed and historical_signal_episodes.json is not written.
+    index_staleness_window_days: episode index older than this is flagged "stale";
+        links built against stale results are capped at confidence 0.70 (§4.11).
+    search_config: algorithm tuning (thresholds, weights, window expansion, etc.).
+    """
+
+    enable_signal_episode_search: bool = False
+    index_staleness_window_days: int = 30
+    search_config: SearchConfig = field(default_factory=SearchConfig)

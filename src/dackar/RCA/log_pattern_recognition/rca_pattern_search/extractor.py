@@ -129,6 +129,7 @@ class IncidentExtractor:
         )
 
         asset_id = metadata.get("asset_id") or _dominant_asset(window_events)
+        source_types = sorted({ev.source for ev in window_events if ev.source})
 
         return IncidentFingerprint(
             episode_id=incident_id,
@@ -140,6 +141,7 @@ class IncidentExtractor:
             event_seq=event_seq,
             freq_vec=freq_vec,
             known_rca=metadata.get("known_rca"),
+            source_types=source_types,
         )
 
     # ------------------------------------------------------------------

@@ -132,25 +132,28 @@ def test_index_follows_node_added_to_follow_ids():
 
 
 def test_index_multiple_nodes_same_component_takes_max():
+    """Phase C: only anomaly contributes — alarm score ignored; anomaly wins."""
     nodes = [
         _node("anomaly", "COMP-C", "precedes", 0.60),
         _node("alarm",   "COMP-C", "overlaps", 0.85),
     ]
     scores, relation, follows = ENGINE._build_allen_component_index(_allen_map(nodes))
-    assert abs(scores["COMP-C"] - 0.85) < 1e-6
-    assert relation["COMP-C"] == "overlaps"
+    assert abs(scores["COMP-C"] - 0.60) < 1e-6   # anomaly only; alarm excluded
+    assert relation["COMP-C"] == "precedes"
 
 
-def test_index_soe_clock_sync_false_applies_discount():
+def test_index_soe_node_excluded_from_causal_scores():
+    """Phase C: SOE nodes do not contribute to causal_scores regardless of clock sync."""
     nodes = [_node("soe_record", "COMP-D", "precedes", 1.00)]
     scores, _, _ = ENGINE._build_allen_component_index(_allen_map(nodes, soe_clock_ok=False))
-    assert abs(scores["COMP-D"] - 0.80) < 1e-6  # ×0.80 discount
+    assert "COMP-D" not in scores
 
 
-def test_index_alarm_node_not_discounted_by_soe_clock():
+def test_index_alarm_node_excluded_from_causal_scores():
+    """Phase C: alarm nodes do not contribute to causal_scores."""
     nodes = [_node("alarm", "COMP-E", "precedes", 1.00)]
     scores, _, _ = ENGINE._build_allen_component_index(_allen_map(nodes, soe_clock_ok=False))
-    assert abs(scores["COMP-E"] - 1.00) < 1e-6  # alarm not discounted
+    assert "COMP-E" not in scores
 
 
 def test_index_null_component_id_skipped():
@@ -278,23 +281,22 @@ def test_blend_past_event_candidate_matched_by_component():
     assert c["scores"]["allen_blend_applied"] is True
 
 
-def test_blend_alarm_node_contributes_to_index():
+def test_blend_alarm_node_excluded_from_causal_scores():
+    """Phase C: alarm node does not populate causal_scores; no Allen blend applied."""
     nodes = [_node("alarm", "COMP-G", "overlaps", 0.90)]
     scores, _, _ = ENGINE._build_allen_component_index(_allen_map(nodes))
-    assert "COMP-G" in scores
-    assert abs(scores["COMP-G"] - 0.90) < 1e-6
+    assert "COMP-G" not in scores
 
 
-def test_blend_soe_clock_degraded_still_blends_if_causal():
-    """Discounted SOE score (0.80 × base) still raises temporal when it's the best match."""
+def test_blend_soe_node_excluded_no_blend_applied():
+    """Phase C: SOE node absent from causal_scores; _apply_allen_temporal_blend skips blend."""
     nodes = [_node("soe_record", "COMP-H", "precedes", 0.90)]
     scores, rel, _ = ENGINE._build_allen_component_index(_allen_map(nodes, soe_clock_ok=False))
-    # Discounted: 0.90 × 0.80 = 0.72
-    assert abs(scores["COMP-H"] - 0.72) < 1e-6
+    assert "COMP-H" not in scores
     c = _candidate("COMP-H", temporal=0.20)
     ENGINE._apply_allen_temporal_blend(c, scores, rel, set(), _DEFAULT_WEIGHTS)
-    assert c["scores"]["allen_blend_applied"] is True
-    assert c["scores"]["temporal"] > 0.20
+    assert c["scores"]["allen_blend_applied"] is False
+    assert abs(c["scores"]["temporal"] - 0.20) < 1e-6  # unchanged
 
 
 # ===========================================================================

@@ -988,6 +988,13 @@ class RuleBasedCausalityEngineV32:
             # 0 means the retrieval layer returned nothing — "no_data", not "weak".
             retrieved_hit_count = int(ev.get("hit_count", 0) or 0)
 
+            # Phase C: observationally_ungrounded — True when no affects-class or
+            # analyzes-class evidence covers this candidate's component.
+            observationally_ungrounded = not (
+                bool(ev.get("has_affects_class_hit", False))
+                or bool(ev.get("has_analyzes_class_hit", False))
+            )
+
             # spaCy-derived aggregates from Tier 2 annotation
             mean_conjecture_fraction = float(ev.get("mean_conjecture_fraction", 0.0) or 0.0)
             dominant_temporal_relation = ev.get("dominant_temporal_relation")   # str | None
@@ -1151,7 +1158,13 @@ class RuleBasedCausalityEngineV32:
 
                 candidate["resolved_entity_matches"] = resolved_matches
 
+            candidate["observationally_ungrounded"] = observationally_ungrounded
             self._refresh_candidate_confidence_and_thresholds(candidate)
+            # Phase C: cap confidence_label at "medium" when no affects- or
+            # analyzes-class evidence grounds the candidate observationally.
+            if observationally_ungrounded and candidate.get("confidence_label") == "high":
+                candidate["confidence_label"] = "medium"
+                candidate["confidence_label_cap_reason"] = "observationally_ungrounded"
             self._apply_uncertainty_propagation(candidate)
             # Finding G — blend Allen interval-algebra temporal score
             self._apply_allen_temporal_blend(
@@ -1748,7 +1761,14 @@ class RuleBasedCausalityEngineV32:
             if relation == "follows":
                 follow_ids.add(cid)
 
-            if bool(node.get("causal_candidate")) and raw_score > 0.0:
+            # Phase C (§3.4): only affects-class (anomaly) nodes raise the causal
+            # temporal score.  Alarm and SOE nodes are monitors-class; they still
+            # contribute to follow_ids for contradiction detection but must not
+            # raise the Allen causal score.
+            if (
+                bool(node.get("causal_candidate")) and raw_score > 0.0
+                and str(node.get("node_type") or "anomaly") == "anomaly"
+            ):
                 if raw_score > causal_scores.get(cid, -1.0):
                     causal_scores[cid] = raw_score
                     causal_relation[cid] = relation
