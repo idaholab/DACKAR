@@ -677,6 +677,7 @@ class RCAReasoningOrchestrator:
                     historical_signal_episodes=historical_signal_episodes,
                     causality_candidates=causality_candidates,
                     event=event,
+                    kg_context=kg_context,
                 )
                 if cross_pattern_evidence:
                     self._validate_and_persist(run_id, "cross_pattern_evidence", cross_pattern_evidence)
@@ -1774,6 +1775,15 @@ class RCAReasoningOrchestrator:
             if isinstance(pe, dict)
         ]
         existing_ids = {str(pe.get("event_id")) for pe in existing if pe.get("event_id")}
+        # Risk 1 Tier 1: build a set of CR/WO doc ids already present in existing CMMS
+        # events so the same physical document is never injected twice via separate paths.
+        # (KG-native vs CMMS deduplication requires source_doc_refs on KG nodes — Phase 2.)
+        existing_cmms_doc_ids: set = {
+            doc_id
+            for pe in existing
+            for doc_id in [self._source_doc_id_from_event_id(str(pe.get("event_id") or ""))]
+            if doc_id
+        }
         asset_id = event.get("asset_id") or out.get("asset_id")
         injected: List[JsonDict] = []
         max_injected = int((self.config.extra or {}).get("cmms_past_event_injection_max", 12))
@@ -1783,8 +1793,13 @@ class RCAReasoningOrchestrator:
             pe = self._cmms_record_to_past_event(record=rec, record_type="cr", asset_id=asset_id)
             if not pe or pe["event_id"] in existing_ids:
                 continue
+            doc_id = self._source_doc_id_from_event_id(pe["event_id"])
+            if doc_id and doc_id in existing_cmms_doc_ids:
+                continue
             injected.append(pe)
             existing_ids.add(pe["event_id"])
+            if doc_id:
+                existing_cmms_doc_ids.add(doc_id)
             if len(injected) >= max_injected:
                 break
         if len(injected) < max_injected:
@@ -1794,8 +1809,13 @@ class RCAReasoningOrchestrator:
                 pe = self._cmms_record_to_past_event(record=rec, record_type="wo", asset_id=asset_id)
                 if not pe or pe["event_id"] in existing_ids:
                     continue
+                doc_id = self._source_doc_id_from_event_id(pe["event_id"])
+                if doc_id and doc_id in existing_cmms_doc_ids:
+                    continue
                 injected.append(pe)
                 existing_ids.add(pe["event_id"])
+                if doc_id:
+                    existing_cmms_doc_ids.add(doc_id)
                 if len(injected) >= max_injected:
                     break
         if not injected:
@@ -3638,6 +3658,7 @@ class RCAReasoningOrchestrator:
         historical_signal_episodes: JsonDict,
         causality_candidates: JsonDict,
         event: JsonDict,
+        kg_context: Optional[JsonDict] = None,
     ) -> Optional[JsonDict]:
         """Build cross_pattern_evidence artifact via CrossPatternLinker.
 
@@ -3688,7 +3709,18 @@ class RCAReasoningOrchestrator:
             except Exception as exc:
                 LOGGER.debug("CrossPattern: skipping malformed episode dict: %s", exc)
 
-        # Query DocExtractionStore for doc extractions
+        # Query DocExtractionStore for doc extractions.
+        # exact_doc_ids excludes CRs/WOs already counted in past_events (Risk 2 guard).
+        past_events_for_exclusion = [
+            pe for pe in ((kg_context or {}).get("past_events") or [])
+            if isinstance(pe, dict)
+        ]
+        exact_doc_ids: set = {
+            doc_id
+            for pe in past_events_for_exclusion
+            for doc_id in [self._source_doc_id_from_event_id(str(pe.get("event_id") or ""))]
+            if doc_id
+        }
         doc_extractions = []
         if self.doc_extraction_store is not None:
             asset_id = str(event.get("asset_id") or "")
@@ -3699,6 +3731,7 @@ class RCAReasoningOrchestrator:
                     top_k=200,
                     similarity_threshold=0.0,   # broad — let linker filter
                     near_match_window=0.0,
+                    exact_doc_ids=exact_doc_ids if exact_doc_ids else None,
                 )
                 all_matches = list(matches) + list(near_matches)
                 for sm in all_matches:
@@ -5158,6 +5191,14 @@ class RCAReasoningOrchestrator:
         if event_dt and snapshot_modified_at and snapshot_modified_at > event_dt:
             snapshot_newer_than_event = True
 
+        # FM link coverage — measured on KG-native past_events only (before CMMS augmentation)
+        past_events_kg = [pe for pe in (kg_context.get("past_events") or []) if isinstance(pe, dict)]
+        past_event_count = len(past_events_kg)
+        past_events_with_fm = sum(1 for pe in past_events_kg if pe.get("fm_id") is not None)
+        fm_link_coverage = past_events_with_fm / past_event_count if past_event_count > 0 else 0.0
+        fm_link_coverage_threshold = float(cfg.get("kg_governance_fm_link_coverage_threshold", 0.5))
+        fm_link_gap = past_event_count > 0 and fm_link_coverage < fm_link_coverage_threshold
+
         issues: List[str] = []
         status = "green"
         if too_few_failure_modes:
@@ -5184,6 +5225,13 @@ class RCAReasoningOrchestrator:
             issues.append(
                 f"{missing_revision_count} failure mode(s) missing fmea_revision_date metadata."
             )
+        if fm_link_gap:
+            if status == "green":
+                status = "yellow"
+            issues.append(
+                f"{past_event_count - past_events_with_fm} of {past_event_count} past KG event(s) "
+                f"carry no failure mode link — recurrence detection is partial."
+            )
 
         return {
             "status": status,
@@ -5197,6 +5245,10 @@ class RCAReasoningOrchestrator:
             "kg_snapshot_version": kg_context.get("kg_snapshot_version"),
             "kg_snapshot_modified_at": snapshot_modified_at.isoformat() if snapshot_modified_at else None,
             "snapshot_newer_than_event": snapshot_newer_than_event,
+            "past_event_count": past_event_count,
+            "past_events_with_fm": past_events_with_fm,
+            "fm_link_coverage": round(fm_link_coverage, 4),
+            "fm_link_gap": fm_link_gap,
         }
 
     @staticmethod
@@ -5211,13 +5263,35 @@ class RCAReasoningOrchestrator:
 
     @staticmethod
     def _apply_kg_governance_attention_flags(rca_card: JsonDict, kg_governance: JsonDict) -> None:
-        if str((kg_governance or {}).get("status") or "green").lower() == "green":
-            return
         summary = rca_card.setdefault("executive_summary", {})
         flags = summary.setdefault("analyst_attention_flags", [])
         if not isinstance(flags, list):
             return
-        for issue in (kg_governance.get("issues") or []):
+
+        gov = kg_governance or {}
+
+        # Distinguishing message for the past-event pool state — always evaluated,
+        # not conditional on governance status, because "no events" is informational.
+        past_event_count = gov.get("past_event_count")
+        if past_event_count == 0:
+            msg = "No prior KG events found for this asset — cannot assess recurrence."
+            if msg not in flags:
+                flags.append(msg)
+        elif gov.get("fm_link_gap"):
+            n_missing = past_event_count - gov.get("past_events_with_fm", 0)
+            msg = (
+                f"{n_missing} of {past_event_count} prior KG event(s) carry no failure mode link "
+                f"— recurrence detection is partial. Run CMMS FM enrichment or review KG data entry."
+            )
+            if msg not in flags:
+                flags.append(msg)
+
+        if str(gov.get("status") or "green").lower() == "green":
+            return
+        for issue in (gov.get("issues") or []):
+            # Skip fm_link_gap issue — already surfaced with the distinguishing message above
+            if "failure mode link" in issue:
+                continue
             msg = f"KG governance warning: {issue}"
             if msg not in flags:
                 flags.append(msg)

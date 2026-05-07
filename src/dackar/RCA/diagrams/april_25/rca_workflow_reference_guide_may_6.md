@@ -312,7 +312,7 @@ flowchart LR
 | **Semantic FM recurrence** | `enable_semantic_recurrence = True` | Step 1, after KG build | `DocExtractionStore.resolve_fm_candidates()` resolves failure mode ID candidates in extraction records using KG FM embeddings, improving cross-pattern FM alignment for Questions 2 and 6 (§2.4) |
 | **Evidence supersession (Phase C)** | `epistemics_policy_version` set | Step 5, after Chroma retrieval | `_apply_supersession()` applies an epistemic classification policy to re-rank evidence bundle items before refinement; only items with `epistemic_class = "analyzes_past_degradation"` contribute to the support score |
 | **Signal episode search** | `enable_signal_episode_search = True` | Step 6, before synthesis | `PatternSearcher` queries `IncidentIndex` for historical signal episodes matching the current anomaly fingerprint (Jaccard / NLCS / EMD); produces `historical_signal_episodes` artifact (Question 5, §2.4) |
-| **Cross-pattern documentary linkage** | `enable_cross_pattern_linkage = True` | Step 6, after episode search | `CrossPatternLinker` joins signal episodes with `DocExtractionStore` extraction records; produces `cross_pattern_evidence` with link confidence and support posture per candidate; feeds attention flags (Question 6, §2.4) |
+| **Cross-pattern documentary linkage** | `enable_cross_pattern_linkage = True` | Step 6, after episode search | `CrossPatternLinker` joins signal episodes with `DocExtractionStore` extraction records; produces `cross_pattern_evidence` with link confidence and support posture per candidate; feeds attention flags (Question 6, §2.4). CRs/WOs already counted in `past_events` are excluded from the `DocExtractionStore` query via the `exact_doc_ids` guard (Risk 2 fix — prevents double-counting in evidence scores). |
 | **Epistemics digests (Phase D)** | `epistemics_classifier` injected | Step 6, just before synthesis | Attaches per-candidate `epistemics_digest` summarizing the epistemic class distribution of retrieved evidence; embedded in run manifest under `epistemics_summary` |
 
 Analysts who encounter `historical_signal_episodes`, `cross_pattern_evidence`, or `epistemics_summary` in a run manifest can use §2.4 Questions 5–6 and §2.7.2 for interpretation.
@@ -492,12 +492,14 @@ The four interaction patterns are described below.
 
 #### 2.5.1 Reading attention flags
 
-After every run the `rca_card.executive_summary.analyst_attention_flags` list collects all conditions the pipeline could not resolve on its own. The analyst reads these flags as part of reviewing the card. The pipeline populates them from thirteen independent checks (the last three of the original eleven are raised only when the corresponding optional extension is enabled; the two new flags at the end are always evaluated):
+After every run the `rca_card.executive_summary.analyst_attention_flags` list collects all conditions the pipeline could not resolve on its own. The analyst reads these flags as part of reviewing the card. The pipeline populates them from fifteen independent checks (the last three of the original eleven are raised only when the corresponding optional extension is enabled; the flags marked "always" below fire on every run regardless of configuration):
 
 | Flag trigger | What it means for the analyst |
 |---|---|
 | **Rank inversion** — pre-evidence top candidate differs from post-evidence leader | Evidence quality or KG coverage may be distorting the ranking; verify both before accepting the card |
 | **KG governance warning** — equipment graph health is yellow or red | Hypothesis space may be incomplete or stale; check KG update status before writeback |
+| **No prior KG events** — `past_event_count == 0` in KG-native past-event pool *(always)* | The KG contains no historical `abnormal_event` records for this asset — recurrence and novelty analysis cannot be performed. This may be expected for new equipment; for established assets it indicates missing data entry. |
+| **FM link gap** — `fm_link_gap = True` in `kg_governance` (KG events exist but fewer than 50 % carry a failure mode link) *(always)* | Prior events are recorded but their failure mode links are missing — the FM-match branch of recurrence detection will undercount or miss genuine recurrences. Run CMMS FM enrichment (Phase 1) or manually populate `MAY_CAUSE` / `CONFIRMED_CAUSE` edges on the affected `abnormal_event` nodes. Threshold configurable via `kg_governance_fm_link_coverage_threshold` (default 0.5). |
 | **High CR match-failure rate** — recurrence pool has many unmatched condition records | Recurrence ranking is likely understated; check whether relevant past events are missing from the KG |
 | **Signal propagation cascade truncated** — feedback loop detected in Stage B.5 | Causal chain topology has concurrent-cause loops; review the chain manually before signing off |
 | **Out-of-boundary anomaly signals** — anomalies exist outside the current investigation boundary | Signals were excluded by scope; consider whether they represent upstream causes (see §2.5.3) |
@@ -528,6 +530,9 @@ After every run the `run_manifest.review_hooks` block tells the analyst what the
 | `hard_abort_required` | `true` | Strict red-state governance is active and the KG is in a red state; the run must not proceed until governance remediation is complete |
 
 If `writeback_ready` is `false` the analyst reads `degraded_reasons` (a plain-text list) to understand exactly which conditions are blocking writeback.
+
+**KG writeback via `orchestrator.commit(run_id)` (Phase 2, opt-in).**
+When `next_step = “writeback”` and `writeback_ready = True`, the analyst may call `orchestrator.commit(run_id)` to write the confirmed root-cause findings back to the Neo4j KG. This is a separate, explicit post-run call — it never executes automatically at the end of `run()`. Two independent gates must both pass before any Neo4j write occurs: (1) the **site gate** (`enable_kg_writeback = True` in orchestrator config, default `False` — opt-in because sites must validate their KG schema before enabling); and (2) the **run gate** (`writeback_ready = True` in the current run manifest). `commit()` is idempotent: re-running after a correction replaces existing edge properties rather than duplicating them. See §3.1 for what `commit()` writes to the KG.
 
 ---
 
@@ -873,11 +878,11 @@ The query scope is controlled by `KGContextBuilderConfig`: `max_hops` (default 2
 |---|---|
 | **Plant configuration engineers** | Create and maintain component hierarchy, FLOC/SAP IDs, monitored variable assignments, and connectivity edges in Neo4j. This is the authoritative source of equipment topology. |
 | **Reliability / RCM engineers** | Define and maintain failure modes: applicability to components, latency bounds, expected symptoms, RPN values. Gaps here directly limit the pipeline’s hypothesis space. |
-| **Plant event records staff** | Enter past events (`abnormal_event` nodes) and their causal links (`MAY_CAUSE`, `CONFIRMED_CAUSE`) after each RCA or CR closure. These feed the recurrence and pattern-recognition analyses. |
+| **Plant event records staff** | Enter past events (`abnormal_event` nodes) and their causal links (`MAY_CAUSE`, `CONFIRMED_CAUSE`) after each RCA or CR closure. These feed the recurrence and pattern-recognition analyses. *This manual step is the only current path to confirmed FM links on past events; automated writeback via `orchestrator.commit()` (Phase 2, opt-in) will supplement it once enabled at a site.* |
 | **Document control** | Maintain document reference nodes pointing to procedures, engineering evaluations, and bulletins. Full text lives in Chroma; the KG holds metadata and link pointers only. |
-| **KG governance process** | Periodically validates graph health (minimum failure mode count, stale snapshot detection). The pipeline reports governance status in `run_manifest.kg_governance`; a `”red”` state can trigger a hard-abort (see §2.5.2). |
+| **KG governance process** | Periodically validates graph health (minimum failure mode count, FMEA staleness, FM link coverage on past events). The pipeline reports governance status in `run_manifest.kg_governance`; a `”red”` state can trigger a hard-abort (see §2.5.2). The governance check now also reports `past_event_count`, `past_events_with_fm`, `fm_link_coverage`, and `fm_link_gap` so that “no prior events” and “events with missing FM links” can be distinguished. |
 
-**The pipeline does not write to the KG during a run.** Scope revision decisions (§2.5.3) update `run_context` only; they do not alter the graph.
+**The pipeline does not write to the KG during a run.** Scope revision decisions (§2.5.3) update `run_context` only; they do not alter the graph. The post-run `orchestrator.commit(run_id)` call (§2.5.2) is the one mechanism that writes to Neo4j, and only when both the site gate and the run gate are satisfied.
 
 ---
 
@@ -1096,9 +1101,24 @@ The pipeline executes four actions in sequence:
 
 1. **Build the KG context.** If a pre-built `kg_context` is not supplied, the pipeline queries the Neo4j knowledge graph to retrieve: the asset's component tree (up to `max_hops` hops from the seed component), associated failure modes, topology and dependency edges, safety function assignments, and the document and past-event neighborhoods (CRs, WOs, ECAs, RCAs within the look-back window). The result is the typed hypothesis space for the run — all candidate failure modes and components that the causality engine will consider come from this artifact. If a pre-built snapshot is supplied, this query is skipped and the snapshot is used as-is.
 
-2. **Assess KG governance.** The KG artifact is evaluated for data quality and coverage: are required node types populated, are relationships well-formed, are key attributes present? The result is a `kg_governance` record with a status of `green`, `amber`, or `red`. A **red** status means the KG is missing data critical to reliable scoring. A red-state abort requires both `strict_red_state_governance=True` (default) **and** `hard_abort_on_kg_red_state=True` (default) — either set to `False` disables the abort. When both are True, a red status aborts the run immediately and records the specific issues in the manifest. An amber status allows the run to continue with a flag that appears in the final RCA card (`rca_card.executive_summary.analyst_attention_flags`).
+2. **Assess KG governance.** The KG artifact is evaluated for data quality and coverage: are required node types populated, are relationships well-formed, are key attributes present? The result is a `kg_governance` record with a status of `green`, `yellow`, or `red`. A **red** status means the KG is missing data critical to reliable scoring. A red-state abort requires both `strict_red_state_governance=True` (default) **and** `hard_abort_on_kg_red_state=True` (default) — either set to `False` disables the abort. When both are True, a red status aborts the run immediately and records the specific issues in the manifest. A yellow status allows the run to continue with flags that appear in the final RCA card (`rca_card.executive_summary.analyst_attention_flags`).
+
+   The governance check is computed at this point — **before** CMMS augmentation — so it measures KG-native event quality only. This is intentional: CMMS-enriched events improve the recurrence pool at runtime but do not fix the underlying KG data gap that governance is meant to diagnose.
+
+   In addition to the existing checks (failure mode count, FMEA staleness, snapshot version), the governance record now includes:
+
+   | Field | Type | Meaning |
+   |-------|------|---------|
+   | `past_event_count` | int | Total KG-native `abnormal_event` records in the asset neighborhood |
+   | `past_events_with_fm` | int | Count of those events where `fm_id` is not None |
+   | `fm_link_coverage` | float `[0, 1]` | `past_events_with_fm / past_event_count`; 0.0 when no events |
+   | `fm_link_gap` | bool | True when `past_event_count > 0` and `fm_link_coverage < threshold` (default 0.5, configurable via `kg_governance_fm_link_coverage_threshold`) |
+
+   Two new attention flags are always evaluated and surfaced in `rca_card.executive_summary.analyst_attention_flags` (see §2.5.1): one when `past_event_count == 0` (no history at all), one when `fm_link_gap` is true (history exists but FM links are missing).
 
 3. **Augment with CMMS records (if configured).** If a CMMS adapter is configured, the pipeline fetches the event-scoped CR and WO records from the CMMS system and merges them into `kg_context` in two ways: (a) as documents added to the document neighborhood (alongside KG-sourced CRs and WOs), and (b) as past events added to the past-event pool (up to `cmms_past_event_injection_max` records). The merged `kg_context` is re-validated before proceeding. If the CMMS fetch fails for any reason, the failure is logged and the run continues with the KG-only context.
+
+   **CMMS injection deduplication (Risk 1 Tier 1 guard).** Before injecting a CR or WO record, the pipeline extracts its underlying document id via `_source_doc_id_from_event_id()` and checks whether that id is already present in any CMMS event already in `past_events`. If a match is found the record is suppressed — the same physical document cannot be counted twice via separate CMMS code paths. This guard prevents CMMS-vs-CMMS duplication. Detecting that a CMMS record is the same physical event as a KG-native `abnormal_event` node requires `source_doc_refs` on the KG node, which is populated by `orchestrator.commit()` (Phase 2).
 
 4. **Enrich past-event temporal metadata.** The KG query already supplies `days_before_current_event` for each past event. This enrichment step uses that field to add two new tags to each event: `in_precursor_window` (bool — whether the event falls within `precursor_window_days`, default 180) and `window_tier` (`"primary"` ≤ 180 d, `"extended"` ≤ 360 d, `"historical"` beyond, `"unknown"` when date is missing). It also builds a `per_component_past_events` index (top-N events per component by priority score) on `kg_context`. Step 2a uses `in_precursor_window` and `window_tier` to filter the past-event pool.
 
