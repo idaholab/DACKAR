@@ -95,6 +95,7 @@ class RuleValidatedRCASynthesizerV31:
         validation_errors: List[str] = []
         retry_count = 0
         fallback_used = False
+        _llm_repair_count = 0
 
         try:
             raw_output = self.llm_client.generate_json(
@@ -135,6 +136,12 @@ class RuleValidatedRCASynthesizerV31:
                     f"valid input candidate ID — LLM hallucination; discarding LLM output"
                 )
             if card is not None:
+                # Issue 10: strip LLM-hallucinated IDs from secondary sections before
+                # semantic validation, so contributing_causes / alternatives built on
+                # invented IDs are removed rather than just flagged.
+                _llm_repair_count = self._validate_and_repair_llm_sections(
+                    card, _all_input_candidate_ids
+                )
                 validation_errors.extend(self._validate_card_semantics(card))
 
         if (card is None or validation_errors) and self.config.allow_fallback_template_fill:
@@ -188,6 +195,12 @@ class RuleValidatedRCASynthesizerV31:
         card["validation_status"]["schema_valid"] = len(validation_errors) == 0
         card["validation_status"]["all_claims_cited"] = self._all_claims_cited(card)
         card["validation_status"]["passed_minimum_evidence_gate"] = self._passes_minimum_evidence_gate(card)
+        if fallback_used:
+            card["validation_status"]["synthesis_quality"] = "deterministic"
+        elif _llm_repair_count > 0:
+            card["validation_status"]["synthesis_quality"] = "partial_llm"
+        else:
+            card["validation_status"]["synthesis_quality"] = "full_llm"
 
         # Deterministically inject human_performance_assessment when absent (covers LLM path).
         if "human_performance_assessment" not in card:
@@ -550,6 +563,7 @@ analyst_review = {
                 "validation_errors": [],
                 "retry_count": 0,
                 "fallback_used": False,
+                "synthesis_quality": "full_llm",
             },
             "executive_summary": raw_output.get("executive_summary", {}),
             "primary_hypothesis": primary,
@@ -3026,6 +3040,7 @@ analyst_review = {
                 "validation_errors": prior_errors[:],
                 "retry_count": 0,
                 "fallback_used": True,
+                "synthesis_quality": "deterministic",
             },
             "executive_summary": executive_summary,
             "primary_hypothesis": primary,
@@ -3206,6 +3221,66 @@ analyst_review = {
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
+    @staticmethod
+    def _validate_and_repair_llm_sections(
+        card: JsonDict,
+        all_input_candidate_ids: set,
+    ) -> int:
+        """Remove LLM-hallucinated candidate IDs from secondary card sections.
+
+        Filters contributing_causes[] and alternatives[] by removing entries
+        whose candidate_id is not in all_input_candidate_ids.  Nullifies
+        linked_candidate_id on recommended_actions[] and evidence[] items that
+        reference an invented ID.  Does NOT touch primary_hypothesis (handled
+        by the hard-reject gate in synthesize()).
+
+        Returns the count of repaired (removed/nullified) items so the caller
+        can set synthesis_quality accordingly.
+        """
+        repaired = 0
+
+        valid_causes: List[JsonDict] = []
+        for cause in (card.get("contributing_causes") or []):
+            if not isinstance(cause, dict):
+                repaired += 1
+                continue
+            cid = cause.get("candidate_id")
+            if cid and cid not in all_input_candidate_ids:
+                repaired += 1
+                continue
+            valid_causes.append(cause)
+        card["contributing_causes"] = valid_causes
+
+        valid_alts: List[JsonDict] = []
+        for alt in (card.get("alternatives") or []):
+            if not isinstance(alt, dict):
+                repaired += 1
+                continue
+            cid = alt.get("candidate_id")
+            if cid and cid not in all_input_candidate_ids:
+                repaired += 1
+                continue
+            valid_alts.append(alt)
+        card["alternatives"] = valid_alts
+
+        for action in (card.get("recommended_actions") or []):
+            if not isinstance(action, dict):
+                continue
+            lcid = action.get("linked_candidate_id")
+            if lcid is not None and lcid not in all_input_candidate_ids:
+                action["linked_candidate_id"] = None
+                repaired += 1
+
+        for ev in (card.get("evidence") or []):
+            if not isinstance(ev, dict):
+                continue
+            lcid = ev.get("linked_candidate_id")
+            if lcid is not None and lcid not in all_input_candidate_ids:
+                ev["linked_candidate_id"] = None
+                repaired += 1
+
+        return repaired
+
     def _validate_card_semantics(self, card: JsonDict) -> List[str]:
         errors: List[str] = []
 

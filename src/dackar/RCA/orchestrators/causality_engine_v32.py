@@ -88,10 +88,46 @@ def parse_dt(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
+# Phase 4c Step 1 — SE-assessed default weight profiles, one per causal category.
+# Sites override individual profiles via CausalityEngineConfigV32(scoring_profiles={...}).
+# Every profile must sum to 1.0; validation runs at __post_init__ time.
+_DEFAULT_SCORING_PROFILES: Dict[str, Dict[str, float]] = {
+    # Equipment-origin (A–F): current static weights — structural and temporal
+    # are discriminating for component-level physical failure hypotheses.
+    "A": {"structural": 0.30, "temporal": 0.20, "telemetry": 0.20, "evidence": 0.20, "governance": 0.10},
+    "B": {"structural": 0.30, "temporal": 0.20, "telemetry": 0.20, "evidence": 0.20, "governance": 0.10},
+    "C": {"structural": 0.30, "temporal": 0.20, "telemetry": 0.20, "evidence": 0.20, "governance": 0.10},
+    "D": {"structural": 0.30, "temporal": 0.20, "telemetry": 0.20, "evidence": 0.20, "governance": 0.10},
+    "E": {"structural": 0.30, "temporal": 0.20, "telemetry": 0.20, "evidence": 0.20, "governance": 0.10},
+    "F": {"structural": 0.30, "temporal": 0.20, "telemetry": 0.20, "evidence": 0.20, "governance": 0.10},
+    # Human performance (G): documentary record dominates; structural/telemetry
+    # are not diagnostic for human-error hypotheses.
+    "G": {"structural": 0.05, "temporal": 0.10, "telemetry": 0.05, "evidence": 0.65, "governance": 0.15},
+    # Design deficiency (H): temporal guaranteed (latent flaw predates event) so
+    # uninformative; telemetry captures margin exceedances; evidence is primary.
+    "H": {"structural": 0.15, "temporal": 0.05, "telemetry": 0.20, "evidence": 0.45, "governance": 0.15},
+    # Change control (I): change date vs. event date is the key causal test —
+    # temporal weight raised relative to G; evidence still primary.
+    "I": {"structural": 0.05, "temporal": 0.25, "telemetry": 0.10, "evidence": 0.45, "governance": 0.15},
+    # Surveillance/testing (J): regulatory/OE record is the primary diagnostic
+    # source; individual event telemetry largely irrelevant.
+    "J": {"structural": 0.05, "temporal": 0.05, "telemetry": 0.05, "evidence": 0.55, "governance": 0.30},
+    # Vendor/procurement (K): traceability and industry OE dominate; temporal
+    # captures procurement-to-event interval.
+    "K": {"structural": 0.10, "temporal": 0.10, "telemetry": 0.05, "evidence": 0.50, "governance": 0.25},
+    # Organizational/systemic (L): no topology node, no telemetry signature;
+    # documentary evidence and governance record are the only signal sources.
+    "L": {"structural": 0.05, "temporal": 0.05, "telemetry": 0.05, "evidence": 0.60, "governance": 0.25},
+}
+
+_SCORING_PROFILE_DIMENSIONS = frozenset({"structural", "temporal", "telemetry", "evidence", "governance"})
+
+
 @dataclass
 class CausalityEngineConfigV32:
     top_k_candidates: int = 10
     weights: Dict[str, float] = None
+    scoring_profiles: Optional[Dict[str, Dict[str, float]]] = None
     minimum_evidence_threshold: float = 0.35
     minimum_pre_evidence_threshold: float = 0.10
     minimum_composite_threshold: float = 0.30
@@ -117,6 +153,22 @@ class CausalityEngineConfigV32:
                 f"CausalityEngineConfigV32.weights must sum to 1.0 (got {total:.4f}). "
                 f"Current weights: {self.weights}"
             )
+        if self.scoring_profiles is None:
+            self.scoring_profiles = {
+                cat: dict(profile) for cat, profile in _DEFAULT_SCORING_PROFILES.items()
+            }
+        for cat, profile in self.scoring_profiles.items():
+            if set(profile.keys()) != _SCORING_PROFILE_DIMENSIONS:
+                raise ValueError(
+                    f"CausalityEngineConfigV32.scoring_profiles['{cat}'] must have exactly "
+                    f"keys {sorted(_SCORING_PROFILE_DIMENSIONS)}."
+                )
+            total_p = sum(profile.values())
+            if abs(total_p - 1.0) > 0.001:
+                raise ValueError(
+                    f"CausalityEngineConfigV32.scoring_profiles['{cat}'] must sum to 1.0 "
+                    f"(got {total_p:.4f})."
+                )
         if self.metamodel_compliance_level not in {"partial", "full"}:
             raise ValueError(
                 "CausalityEngineConfigV32.metamodel_compliance_level must be 'partial' or 'full'."
@@ -149,6 +201,17 @@ class RuleBasedCausalityEngineV32:
         "K": ["vendor", "lot", "certification", "traceability", "counterfeit", "manufacturing defect"],
         "L": ["systemic", "latent", "training", "safety culture", "resource", "corrective action program", "recurrence"],
     }
+    _CATEGORY_PROFILE_NAMES: Dict[str, str] = {
+        "A": "equipment_origin", "B": "equipment_origin", "C": "equipment_origin",
+        "D": "equipment_origin", "E": "equipment_origin", "F": "equipment_origin",
+        "G": "human_performance",
+        "H": "design_deficiency",
+        "I": "change_control",
+        "J": "surveillance",
+        "K": "vendor_procurement",
+        "L": "organizational",
+    }
+
     _CATEGORY_REQUIRED_STREAMS: Dict[str, List[str]] = {
         "A": ["temporal", "logical", "documentary"],
         "B": ["temporal", "logical"],
@@ -437,7 +500,10 @@ class RuleBasedCausalityEngineV32:
                 governance_score=governance_base,
                 risk_significance_scalar=float(risk_ctx["scalar"]),
             )
-            fm_gov_weight = self._governance_weight_for_fm(fm.get("superclass"))
+            scoring_profile = self._scoring_profile_for_fm(primary_causal_category)
+            score_profile_name = self._CATEGORY_PROFILE_NAMES.get(
+                primary_causal_category, "equipment_origin"
+            )
             scores = {
                 "structural": structural,
                 "temporal": temporal_parts["temporal"],
@@ -446,7 +512,9 @@ class RuleBasedCausalityEngineV32:
                 "governance": governance_adjusted,
                 "governance_base": round(governance_base, 6),
                 "governance_risk_delta": round(governance_risk_delta, 6),
-                "governance_weight": fm_gov_weight,
+                "governance_weight": scoring_profile["governance"],
+                "score_profile_applied": score_profile_name,
+                "scoring_profile_weights": dict(scoring_profile),
                 "risk_significance_scalar": round(float(risk_ctx["scalar"]), 4),
                 "risk_significance_tier": risk_ctx["tier"],
                 "tskr_pattern_match": temporal_parts["tskr_pattern_match"],
@@ -461,7 +529,7 @@ class RuleBasedCausalityEngineV32:
                 "ccf_score": round(ccf_score_pre, 6),
                 "ccf_note": ccf_note,
             }
-            composite = self._combine_scores(scores, weights_override={"governance": fm_gov_weight})
+            composite = self._combine_scores(scores, weights_override=scoring_profile)
             meets_evidence_threshold = evidence >= self.config.minimum_pre_evidence_threshold
             # primary_causal_category already inferred above (Finding H reorder)
             chain_position, chain_reason = self._chain_position_for_candidate(
@@ -835,6 +903,7 @@ class RuleBasedCausalityEngineV32:
 
     def _compact_filtered_candidate(self, candidate: JsonDict) -> JsonDict:
         recurrence = candidate.get("recurrence") or {}
+        full_scores = candidate.get("scores") or {}
         return {
             "candidate_id": candidate.get("candidate_id"),
             "hard_gates": candidate.get("hard_gates"),
@@ -854,7 +923,14 @@ class RuleBasedCausalityEngineV32:
             "recurrence_score": float(recurrence.get("recurrence_score", 0.0)),
             "recurrence_confidence": recurrence.get("recurrence_confidence", "none"),
             "matched_past_event_ids": recurrence.get("matched_past_event_ids", []),
-
+            # Phase 4 diagnostic fields — preserved on compact form for output review
+            "scores": {
+                "score_profile_applied": full_scores.get("score_profile_applied"),
+                "scoring_profile_weights": full_scores.get("scoring_profile_weights"),
+                "temporal_score_quality": full_scores.get("temporal_score_quality"),
+                "governance_weight": full_scores.get("governance_weight"),
+            },
+            "score_confidence_interval": candidate.get("score_confidence_interval"),
         }
 
     def _historical_event_note(self, pe: JsonDict) -> str:
@@ -1201,6 +1277,9 @@ class RuleBasedCausalityEngineV32:
                 plc_sf_state=plc_sf_state,
             )
 
+        for candidate in candidates:
+            self._apply_score_confidence_interval(candidate)
+
         candidates.sort(key=lambda x: (-x["composite_score"], x["candidate_id"]))
 
         gap = float(self.config.review_alternative_gap)
@@ -1404,6 +1483,9 @@ class RuleBasedCausalityEngineV32:
 
     @classmethod
     def _infer_primary_category_for_failure_mode(cls, *, fm: JsonDict, event: JsonDict) -> Tuple[str, List[str]]:
+        curated = str(fm.get("causal_category") or "").strip().upper()
+        if curated in cls._CATEGORY_PROFILE_NAMES:
+            return curated, []
         text = " ".join(
             [
                 str(fm.get("name") or ""),
@@ -1803,15 +1885,17 @@ class RuleBasedCausalityEngineV32:
             candidate["scores"]["allen_relation"] = "follows"
             candidate["scores"]["allen_temporal_score"] = None
             candidate["scores"]["allen_blend_applied"] = False
+            candidate["scores"]["temporal_score_quality"] = "proxy"
             return
 
         allen_score = causal_scores.get(cid) if cid else None
 
         if allen_score is None:
-            # No causal Allen match — leave temporal unchanged
+            # No causal Allen match for this component — temporal score remains proxy-derived
             candidate["scores"]["allen_temporal_score"] = None
             candidate["scores"]["allen_relation"] = None
             candidate["scores"]["allen_blend_applied"] = False
+            candidate["scores"]["temporal_score_quality"] = "proxy"
             return
 
         old_temporal = float(candidate["scores"].get("temporal", 0.0) or 0.0)
@@ -1822,6 +1906,7 @@ class RuleBasedCausalityEngineV32:
         candidate["scores"]["allen_temporal_score"] = round(allen_score, 6)
         candidate["scores"]["allen_relation"] = causal_relation.get(cid)
         candidate["scores"]["allen_blend_applied"] = True
+        candidate["scores"]["temporal_score_quality"] = "full_allen"
 
         if new_temporal <= old_temporal:
             # No actual change after clamping — skip composite update
@@ -1842,6 +1927,58 @@ class RuleBasedCausalityEngineV32:
         q_mult = float(candidate.get("quality_multiplier", 1.0) or 1.0)
         new_composite = round(min(1.0, max(0.0, new_raw * q_mult)), 6)
         candidate["composite_score"] = new_composite
+
+    # ------------------------------------------------------------------
+    # Phase 4b — Score confidence interval (Issue 14)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_score_confidence_interval(candidate: JsonDict) -> None:
+        """Compute a per-candidate score confidence interval from data-degradation signals.
+
+        Five scoring dimensions are assessed; each contributes 1/5 to the interval
+        width when its primary data source is absent or proxy-derived:
+
+          structural — physical_plausibility gate ran in degraded mode
+          temporal   — temporal_score_quality is "proxy" (no Allen causal match)
+          telemetry  — telemetry sub-score is zero (no telemetry signal available)
+          evidence   — candidate is observationally_ungrounded (no affects-class evidence)
+          governance — barrier_logic gate ran in degraded mode
+
+        width = n_degraded / 5  (0.0 → narrow, 1.0 → very wide)
+        lower = max(0.0, composite_score − width/2)
+        upper = min(1.0, composite_score + width/2)
+
+        Writes candidate["score_confidence_interval"].
+        """
+        scores = candidate.get("scores") or {}
+        hard_gates = candidate.get("hard_gates") or {}
+
+        degraded_map = {
+            "structural": bool(
+                (hard_gates.get("physical_plausibility") or {}).get("degraded_mode", False)
+            ),
+            "temporal": str(scores.get("temporal_score_quality") or "proxy") == "proxy",
+            "telemetry": float(scores.get("telemetry") or 0.0) == 0.0,
+            "evidence": bool(candidate.get("observationally_ungrounded", False)),
+            "governance": bool(
+                (hard_gates.get("barrier_logic") or {}).get("degraded_mode", False)
+            ),
+        }
+
+        n_degraded = sum(1 for v in degraded_map.values() if v)
+        composite = float(candidate.get("composite_score") or 0.0)
+        width = round(n_degraded / 5, 6)
+        lower = round(max(0.0, composite - width / 2), 6)
+        upper = round(min(1.0, composite + width / 2), 6)
+
+        candidate["score_confidence_interval"] = {
+            "lower": lower,
+            "upper": upper,
+            "width": width,
+            "degraded_dimension_count": n_degraded,
+            "degraded_dimensions": [k for k, v in degraded_map.items() if v],
+        }
 
     # ------------------------------------------------------------------
     # Finding I — Protection logic context helpers
@@ -2441,6 +2578,17 @@ class RuleBasedCausalityEngineV32:
         if tokens & RuleBasedCausalityEngineV32._FM_EXTERNAL_CAUSE_KEYWORDS:
             return 0.02
         return 0.10
+
+    def _scoring_profile_for_fm(self, category: str) -> Dict[str, float]:
+        """Return the full weight profile for a causal category (Step 2 / Phase 4c).
+
+        Looks up self.config.scoring_profiles by category letter; falls back to
+        the 'A' (equipment_origin) profile when the category is unrecognised.
+        Returns a copy so callers cannot mutate the config.
+        """
+        cat = str(category or "A").strip().upper()
+        profiles = self.config.scoring_profiles
+        return dict(profiles.get(cat, profiles.get("A", {})))
 
     def _structural_score_for_fm(self, component_id, components):
         if component_id and component_id in components:
@@ -3382,6 +3530,7 @@ class RuleBasedCausalityEngineV32:
         same_asset_event_count,
         unresolved_fm_count: int = 0,
         unresolved_component_count: int = 0,
+        weighted_unresolved_fm_boost: Optional[float] = None,
     ):
         fm_score = min(1.0, float(same_failure_mode_event_count) / 2.0)
         component_score = min(1.0, float(same_component_event_count) / 2.0)
@@ -3390,9 +3539,13 @@ class RuleBasedCausalityEngineV32:
 
         # Unresolved past events are a qualitatively stronger causal signal than
         # resolved ones: the latent condition was never corrected and may persist.
-        # FM-level unresolved events carry more weight than component-level ones.
-        # Boosts are capped so that a single unresolved event cannot dominate.
-        unresolved_boost = min(0.20, 0.10 * unresolved_fm_count)
+        # When weighted_unresolved_fm_boost is provided (CMMS time-weighted quality),
+        # it replaces the flat count-based formula for FM-level unresolved events.
+        # Component-level count remains flat (time_distance_days not available there).
+        if weighted_unresolved_fm_boost is not None:
+            unresolved_boost = min(0.20, weighted_unresolved_fm_boost)
+        else:
+            unresolved_boost = min(0.20, 0.10 * unresolved_fm_count)
         unresolved_boost += min(0.10, 0.05 * unresolved_component_count)
 
         return round(min(max(base + unresolved_boost, 0.0), 1.0), 6)
@@ -3430,8 +3583,29 @@ class RuleBasedCausalityEngineV32:
 
         # resolved == False (explicit False) means the condition was never corrected.
         # None means unknown — do not count as unresolved.
-        unresolved_fm_count = sum(1 for pe in same_failure_mode_events if pe.get("resolved") is False)
+        unresolved_fm_events = [pe for pe in same_failure_mode_events if pe.get("resolved") is False]
+        unresolved_fm_count = len(unresolved_fm_events)
         unresolved_component_count = sum(1 for pe in same_component_events if pe.get("resolved") is False)
+
+        # Quality-weighted unresolved boost (Issue 8 / Phase 2):
+        # Weight each unresolved FM event by how long ago it occurred — a CR that has been
+        # open for > 1 year is a stronger root-cause-persistence signal than one open for weeks.
+        # time_distance_days = days before the current event this past event occurred.
+        # Falls back to flat count if time_distance_days is unavailable on any event.
+        weighted_fm_boost: Optional[float] = None
+        cmms_recurrence_quality = "flat"
+        if unresolved_fm_events:
+            weights = []
+            for pe in unresolved_fm_events:
+                days = pe.get("time_distance_days")
+                if days is None:
+                    weights = None
+                    break
+                days = float(days)
+                weights.append(1.0 if days > 365 else 0.4 if days > 90 else 0.1)
+            if weights is not None:
+                weighted_fm_boost = 0.10 * sum(weights)
+                cmms_recurrence_quality = "weighted"
 
         recurrence_score = self._recurrence_score_from_features(
             same_failure_mode_event_count=len(same_failure_mode_events),
@@ -3439,6 +3613,7 @@ class RuleBasedCausalityEngineV32:
             same_asset_event_count=len(same_asset_events),
             unresolved_fm_count=unresolved_fm_count,
             unresolved_component_count=unresolved_component_count,
+            weighted_unresolved_fm_boost=weighted_fm_boost,
         )
 
         return {
@@ -3450,6 +3625,7 @@ class RuleBasedCausalityEngineV32:
             "matched_past_event_ids": matched_event_ids[:3],
             "recurrence_score": recurrence_score,
             "recurrence_confidence": self._recurrence_confidence(recurrence_score),
+            "cmms_recurrence_quality": cmms_recurrence_quality,
         }
 
     def _apply_recurrence_to_candidate(
@@ -3917,9 +4093,16 @@ class RuleBasedCausalityEngineV32:
         return "speculative"
 
     def _refresh_candidate_confidence_and_thresholds(self, candidate: JsonDict) -> None:
-        stored_gov_weight = (candidate.get("scores") or {}).get("governance_weight")
-        gov_override = {"governance": stored_gov_weight} if stored_gov_weight is not None else None
-        candidate["composite_score"] = self._combine_scores(candidate.get("scores") or {}, weights_override=gov_override)
+        stored_scores = candidate.get("scores") or {}
+        stored_profile = stored_scores.get("scoring_profile_weights")
+        stored_gov_weight = stored_scores.get("governance_weight")
+        if stored_profile:
+            weights_override = dict(stored_profile)
+        elif stored_gov_weight is not None:
+            weights_override = {"governance": stored_gov_weight}
+        else:
+            weights_override = None
+        candidate["composite_score"] = self._combine_scores(candidate.get("scores") or {}, weights_override=weights_override)
         candidate["confidence_label"] = self._normalized_confidence_label(
             float(candidate.get("composite_score", 0.0) or 0.0)
         )

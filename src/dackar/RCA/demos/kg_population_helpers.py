@@ -5,6 +5,64 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
+# ---------------------------------------------------------------------------
+# Causal category assignment — shared across all KG population pipelines
+# ---------------------------------------------------------------------------
+
+# Keyword sets mirror RuleBasedCausalityEngineV32._CATEGORY_KEYWORDS so that
+# the inferred value here agrees with the engine's runtime inference.
+# A is the engine's default and has no keywords — it is selected when nothing
+# else matches.
+_CAUSAL_CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+    "B": ["power", "cool", "lubric", "seal", "instrument air", "control signal", "communication", "support"],
+    "C": ["inlet", "suction", "feed", "upstream", "flow starvation", "entrained", "quality"],
+    "D": ["backpressure", "discharge", "downstream", "recirculation", "blocked path"],
+    "E": ["overload", "off-design", "transient", "cycling", "start-stop", "standby", "runout"],
+    "F": ["seismic", "flood", "fire", "emi", "environment", "ambient", "disturbance"],
+    "G": ["operator", "maintenance error", "calibration error", "procedure not followed", "human"],
+    "H": ["undersized", "margin", "design", "specification", "material incompat", "thermal expansion"],
+    "I": ["configuration", "setpoint", "change control", "unauthorized", "temporary modification", "firmware"],
+    "J": ["surveillance", "inspection", "acceptance criteria", "interval", "test methodology"],
+    "K": ["vendor", "lot", "certification", "traceability", "counterfeit", "manufacturing defect"],
+    "L": ["systemic", "latent", "training", "safety culture", "resource", "corrective action program", "recurrence"],
+}
+
+_VALID_CAUSAL_CATEGORIES: frozenset = frozenset("ABCDEFGHIJKL")
+
+
+def assign_causal_category(fm_node: Dict[str, Any]) -> Tuple[str, str]:
+    """Assign a causal category letter to an FM node.
+
+    Returns ``(category, source)`` where:
+    - category  — single letter "A"–"L"
+    - source    — "curated" when ``fm_node["causal_category"]`` was already set
+                  by a qualified reviewer; "inferred" when derived by keyword
+                  matching from name/superclass/failure_mechanism text.
+
+    Call this during KG population so that ``causal_category`` and
+    ``causal_category_source`` are stored on every FM node before ingestion.
+    Any pipeline (demo helpers, production ETL, manual curation tool) should
+    call this function so the assignment logic lives in one place.
+    """
+    existing = str(fm_node.get("causal_category") or "").strip().upper()
+    if existing in _VALID_CAUSAL_CATEGORIES:
+        return existing, "curated"
+
+    text = " ".join([
+        str(fm_node.get("name") or ""),
+        str(fm_node.get("superclass") or ""),
+        str(fm_node.get("failure_mechanism") or ""),
+    ]).lower()
+
+    best_cat, best_score = "A", 0
+    for cat, keywords in _CAUSAL_CATEGORY_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in text)
+        if score > best_score:
+            best_cat, best_score = cat, score
+
+    return best_cat, "inferred"
+
+
 def find_enriched_jsonl_files(root: Path, globs: Sequence[str]) -> List[Path]:
     found: List[Path] = []
     seen = set()

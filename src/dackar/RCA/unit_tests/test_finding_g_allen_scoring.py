@@ -399,3 +399,77 @@ def test_refine_allen_follows_blocks_candidate_via_timeline_gate():
         f"Expected timeline gate to fail for COMP-B (Allen 'follows'). "
         f"hard_gates={hard_gates}, ruleout={ruleout}"
     )
+
+
+# ===========================================================================
+# Phase 4a — temporal_score_quality (Issue 1 / D1)
+# ===========================================================================
+
+def test_tsq_full_allen_when_component_matched():
+    """Causal Allen node found for component → temporal_score_quality = 'full_allen'."""
+    c = _candidate("COMP-A", temporal=0.20)
+    ENGINE._apply_allen_temporal_blend(
+        c, {"COMP-A": 0.80}, {"COMP-A": "precedes"}, set(), _DEFAULT_WEIGHTS
+    )
+    assert c["scores"]["temporal_score_quality"] == "full_allen"
+
+
+def test_tsq_proxy_when_no_component_match():
+    """No Allen node for component → temporal_score_quality = 'proxy'."""
+    c = _candidate("COMP-Z", temporal=0.50)
+    ENGINE._apply_allen_temporal_blend(
+        c, {"COMP-A": 0.80}, {"COMP-A": "precedes"}, set(), _DEFAULT_WEIGHTS
+    )
+    assert c["scores"]["temporal_score_quality"] == "proxy"
+
+
+def test_tsq_proxy_when_contradiction_follows():
+    """'follows' contradiction → blend not applied → temporal_score_quality = 'proxy'."""
+    c = _candidate("COMP-B", temporal=0.30)
+    ENGINE._apply_allen_temporal_blend(
+        c, {}, {}, {"COMP-B"}, _DEFAULT_WEIGHTS
+    )
+    assert c["scores"]["allen_blend_applied"] is False
+    assert c["scores"]["temporal_score_quality"] == "proxy"
+
+
+def test_tsq_proxy_when_no_allen_map():
+    """Empty causal_scores (no Allen map provided) → temporal_score_quality = 'proxy'."""
+    c = _candidate("COMP-A", temporal=0.40)
+    ENGINE._apply_allen_temporal_blend(c, {}, {}, set(), _DEFAULT_WEIGHTS)
+    assert c["scores"]["temporal_score_quality"] == "proxy"
+
+
+def test_tsq_full_allen_even_when_blend_clamped():
+    """Allen score equals existing temporal → score unchanged but quality = 'full_allen'."""
+    # Blend formula: 0.75*0.80 + 0.25*0.80 = 0.80 — no delta, but component was found.
+    c = _candidate("COMP-A", temporal=0.80)
+    ENGINE._apply_allen_temporal_blend(
+        c, {"COMP-A": 0.80}, {"COMP-A": "precedes"}, set(), _DEFAULT_WEIGHTS
+    )
+    assert c["scores"]["allen_blend_applied"] is True
+    assert c["scores"]["temporal_score_quality"] == "full_allen"
+
+
+def test_tsq_per_component_not_per_run():
+    """Two candidates in same run: one matches Allen index, one does not.
+    quality field is independent per candidate."""
+    c_match = _candidate("COMP-A", temporal=0.20)
+    c_miss = _candidate("COMP-X", temporal=0.20)
+    causal_scores = {"COMP-A": 0.80}
+    causal_rel = {"COMP-A": "precedes"}
+    ENGINE._apply_allen_temporal_blend(c_match, causal_scores, causal_rel, set(), _DEFAULT_WEIGHTS)
+    ENGINE._apply_allen_temporal_blend(c_miss, causal_scores, causal_rel, set(), _DEFAULT_WEIGHTS)
+    assert c_match["scores"]["temporal_score_quality"] == "full_allen"
+    assert c_miss["scores"]["temporal_score_quality"] == "proxy"
+
+
+def test_tsq_proxy_when_soe_node_excluded_from_index():
+    """SOE node is excluded from causal_scores by _build_allen_component_index.
+    The candidate for that component therefore gets temporal_score_quality = 'proxy'."""
+    nodes = [_node("soe_record", "COMP-H", "precedes", 0.90)]
+    scores, rel, _ = ENGINE._build_allen_component_index(_allen_map(nodes))
+    assert "COMP-H" not in scores
+    c = _candidate("COMP-H", temporal=0.20)
+    ENGINE._apply_allen_temporal_blend(c, scores, rel, set(), _DEFAULT_WEIGHTS)
+    assert c["scores"]["temporal_score_quality"] == "proxy"

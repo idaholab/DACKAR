@@ -1097,8 +1097,17 @@ class TSKRTemporalScorerV1:
             "near_match_count":            near_match_count,
             "semantic_recurrence_capped":  semantic_recurrence_capped,
             "fm_resolution_ambiguous":     fm_resolution_ambiguous,
-            # Step 3.5 — novel pattern flag: True when this pattern has no historical support
-            # (exact or semantic) and no anomaly evidence aligns with the failure mode.
+            # Step 3.5 — novel pattern decomposition (Issue 6 / Phase 2).
+            # documentary_novel: no CR/WO history regardless of signal alignment.
+            # signal_novel:      no signal IDs map to this failure mode.
+            # novel_pattern:     retained for backward compat (AND of both conditions).
+            # The dangerous case — documentary_novel=True, signal_novel=False — means
+            # the equipment is showing a known signal pattern with no prior RCA record.
+            "documentary_novel": bool(
+                effective_recurrence_count == 0
+                and history_score < 0.20
+            ),
+            "signal_novel": not bool(signal_ids),
             "novel_pattern": bool(
                 effective_recurrence_count == 0
                 and history_score < 0.20

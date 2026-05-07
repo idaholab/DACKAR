@@ -92,7 +92,7 @@
 
 ### E. Operating Context / Mission Demand
 
-*Equipment is operated outside its design envelope or in a manner that accelerates degradation. `operational_context.operating_point` is collected by the pipeline but consumed by no scoring stage — this entire category is currently ignored.*
+*Equipment is operated outside its design envelope or in a manner that accelerates degradation. Scoring is implemented via `_operating_point_score()` (7-mode base table: `power_ramp`=0.70 → `shutdown`=0.20). The operating-point delta (`op_delta = 0.12 × op_score`, capped at +0.12) is added to the structural sub-score for Category E candidates; `scores["operating_point_score"]` and `scores["operating_point_note"]` are stored on every candidate.*
 
 - Overload
 - Off-design operation

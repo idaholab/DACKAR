@@ -51,7 +51,7 @@ from orchestrators.llm_clients import LLMClient, DummyLLMClient, OllamaLLMClient
 from orchestrators.ishikawa_evaluator import HeuristicIshikawaEvaluatorV1
 from orchestrators.kg_context_builder import KGContextBuilderConfig, Neo4jKGContextBuilder
 from orchestrators.signal_evidence_builder import SignalEvidenceBuilder
-from adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS
+from adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS  # TIER_CONFIDENCE_MULTIPLIERS re-exported for backward compat
 from pm_compliance import PMComplianceConfig, build_pm_compliance
 from signal_evidence.historian_adapter import (
     InfileHistorianAdapter,
@@ -209,6 +209,18 @@ class OrchestratorConfig:
     enable_cross_pattern_linkage: bool = False
     # Epistemics module parameters (Phase A)
     epistemics_policy_version: Optional[str] = None
+    # Phase 1 — fast-transient Allen epsilon flag (Issue 5)
+    fast_transient_event_types: Set[str] = field(default_factory=lambda: {
+        "reactor_trip", "eccs_actuation", "turbine_trip", "loss_of_feedwater"
+    })
+    # Phase 1 — Category L organizational floor check (Issue 11)
+    category_l_score_floor: float = 0.20
+    # Phase 2 — site-configurable tier confidence multipliers (Issue 12)
+    tier_confidence_multipliers: Dict[str, float] = field(default_factory=lambda: {
+        "plant": 1.00,
+        "fleet": 0.80,
+        "industry": 0.60,
+    })
     extra: JsonDict = field(default_factory=dict)
 
 
@@ -705,7 +717,20 @@ class RCAReasoningOrchestrator:
         self._apply_out_of_boundary_attention_flags(rca_card, kg_context)
         self._apply_metamodel_coverage_attention_flags(rca_card, causality_candidates)
         self._apply_ishikawa_skip_attention_flag(rca_card, ishikawa_matrix)
+        self._apply_fast_transient_attention_flags(
+            rca_card,
+            event,
+            pre_refine_allen_map,
+            self.config.fast_transient_event_types,
+        )
+        self._apply_category_l_floor_attention_flags(
+            rca_card,
+            causality_candidates,
+            cmms_context,
+            self.config.category_l_score_floor,
+        )
         rca_card["barrier_analysis"] = self._barrier_summary_for_card(barrier_analysis)
+        self._apply_residual_anomaly_gaps(rca_card, pre_refine_allen_map, causality_candidates)
         self._validate_and_persist(run_id, "rca_card", rca_card)
 
         output_validation = self._validate_bundle(
@@ -2749,6 +2774,19 @@ class RCAReasoningOrchestrator:
                 "stage_policy_hooks": (self.config.extra or {}).get("stage_policy_hooks"),
                 "scope_runtime": scope_revision_summary,
                 "temporal_search": (kg_context.get("seed_context") or {}).get("temporal_search_summary") or {},
+                "tier_confidence_multipliers": dict(self.config.tier_confidence_multipliers),
+                "fast_transient_event_types": sorted(self.config.fast_transient_event_types),
+                "category_l_score_floor": self.config.category_l_score_floor,
+                "cmms_recurrence_quality": (
+                    lambda cands: (
+                        "weighted"
+                        if cands and all(
+                            str((c.get("recurrence") or {}).get("cmms_recurrence_quality") or "flat") == "weighted"
+                            for c in cands if isinstance(c, dict)
+                        )
+                        else "flat" if cands else "n/a"
+                    )
+                )((causality_candidates or {}).get("candidates") or []),
             },
             "artifacts": {
                 "kg_context": {"present": True},
@@ -3180,7 +3218,7 @@ class RCAReasoningOrchestrator:
             SCORE_WIN_BOOST   = 0.10
             SCORE_SEMANTIC    = 0.0
 
-        TIER_MULTIPLIER = TIER_CONFIDENCE_MULTIPLIERS["plant"]
+        TIER_MULTIPLIER = TIER_CONFIDENCE_MULTIPLIERS.get("plant", 1.00)
         _sem = doc_id_semantic_scores or {}
 
         results: List[JsonDict] = []
@@ -3338,7 +3376,7 @@ class RCAReasoningOrchestrator:
                     if getattr(adapter, "degraded", False):
                         degraded_tiers.append(level)
                     else:
-                        mult = TIER_CONFIDENCE_MULTIPLIERS.get(level, 1.0)
+                        mult = self.config.tier_confidence_multipliers.get(level, 1.0)
                         for rec in (raw or []):
                             if isinstance(rec, dict):
                                 rec["source_level"] = level
@@ -4146,8 +4184,24 @@ class RCAReasoningOrchestrator:
                 in_scope_assets.add(str(aid).strip().lower())
 
         # ── Source 1: Allen relation map ───────────────────────────────────
-        # Causal candidate nodes whose component is NOT in scope
+        # Causal candidate nodes whose component is NOT in scope.
+        # suggestion_confidence reflects the clock-sync and node-cap quality of
+        # the Allen map that produced the signal — a degraded map means the
+        # causal-candidate assignment is less trustworthy.
         if isinstance(allen_relation_map, dict):
+            allen_qf = allen_relation_map.get("quality_flags") or {}
+            soe_clock_ok = allen_qf.get("soe_clock_sync_ok")
+            alarm_clock_ok = allen_qf.get("alarm_clock_sync_ok")
+            soe_capped = bool(allen_qf.get("soe_nodes_capped", False))
+            allen_degraded_reason = None
+            if soe_clock_ok is False:
+                allen_degraded_reason = "soe_clock_sync_failed"
+            elif alarm_clock_ok is False:
+                allen_degraded_reason = "alarm_clock_sync_failed"
+            elif soe_capped:
+                allen_degraded_reason = "soe_nodes_capped"
+            allen_confidence = "low" if allen_degraded_reason else "medium"
+
             for node in (allen_relation_map.get("nodes") or []):
                 if not isinstance(node, dict):
                     continue
@@ -4166,6 +4220,8 @@ class RCAReasoningOrchestrator:
                         "allen_relation": node.get("allen_relation_to_event"),
                         "node_type": node.get("node_type"),
                         "severity": "warning",
+                        "suggestion_confidence": allen_confidence,
+                        "suggestion_confidence_reason": allen_degraded_reason,
                         "rationale": (
                             f"Component '{comp}' has Allen relation "
                             f"'{node.get('allen_relation_to_event')}' to the event "
@@ -4176,7 +4232,9 @@ class RCAReasoningOrchestrator:
                     })
 
         # ── Source 2: Signal evidence propagation chains ───────────────────
-        # Chain components that are outside scope
+        # Chain components that are outside scope.
+        # suggestion_confidence is "medium" — propagation chain quality flags
+        # are not surfaced at this level; the analyst should review chain provenance.
         if isinstance(signal_evidence, dict):
             for chain in (signal_evidence.get("propagation_chains") or []):
                 if not isinstance(chain, dict):
@@ -4195,6 +4253,8 @@ class RCAReasoningOrchestrator:
                             "allen_relation": None,
                             "node_type": "propagation_chain",
                             "severity": "warning",
+                            "suggestion_confidence": "medium",
+                            "suggestion_confidence_reason": None,
                             "rationale": (
                                 f"Component '{comp}' appears in propagation chain "
                                 f"'{chain_id}' but is not in the current scope boundary."
@@ -4204,7 +4264,10 @@ class RCAReasoningOrchestrator:
                         })
 
         # ── Source 3: TSKR novel patterns ─────────────────────────────────
-        # Patterns without any historical match are potential scope drivers
+        # Patterns without any historical match are potential scope drivers.
+        # suggestion_confidence is always "low" for novel patterns: by definition the
+        # evidence base is thin, and an expansion triggered by novelty alone carries
+        # higher circularity risk than one triggered by an Allen causal signal.
         if isinstance(tskr_patterns, dict):
             for pat in (tskr_patterns.get("patterns") or []):
                 if not isinstance(pat, dict):
@@ -4221,6 +4284,8 @@ class RCAReasoningOrchestrator:
                     "allen_relation": None,
                     "node_type": "tskr_pattern",
                     "severity": "info",
+                    "suggestion_confidence": "low",
+                    "suggestion_confidence_reason": "novel_pattern_sparse_evidence",
                     "rationale": (
                         f"TSKR pattern '{pat.get('pattern_id', 'unknown')}' has no "
                         f"historical match — may indicate an event class outside the "
@@ -4698,11 +4763,15 @@ class RCAReasoningOrchestrator:
         if bool((reentry_hook or {}).get("should_reenter")):
             degraded_reasons.append("Rank inversion detected; targeted KG re-entry review recommended.")
         paired_checks = (coverage_summary or {}).get("paired_data_checks") or {}
+        barrier_gate_ack = bool(analyst_review.get("barrier_gate_degraded_acknowledged", False))
         if str(paired_checks.get("soe_protection_logic_pairing") or "") in {"warning", "violated"}:
-            degraded_reasons.append(
-                "Paired-data requirement not met: SOE log present but protection logic context absent. "
-                "Barrier logic gate runs with degraded signal coverage."
-            )
+            if not barrier_gate_ack:
+                degraded_reasons.append(
+                    "Paired-data requirement not met: SOE log present but protection logic context absent. "
+                    "Barrier logic gate runs with degraded signal coverage. "
+                    "Set analyst_review.barrier_gate_degraded_acknowledged=true after reviewing barrier status "
+                    "via an alternate means (physical walkdown, PLC historian, or operator statement)."
+                )
         stage_policy = self._evaluate_stage_policy_hooks(stage_health=stage_health)
         for v in (stage_policy.get("violations") or []):
             line = str(v.get("message") or "").strip()
@@ -4746,10 +4815,12 @@ class RCAReasoningOrchestrator:
             )
         # Paired-data violation requires analyst action before writeback
         if str((paired_checks or {}).get("soe_protection_logic_pairing") or "") in {"warning", "violated"}:
-            analyst_decisions_required.append(
-                "SOE log present but protection_logic_context absent — provide PLC data or "
-                "explicitly accept barrier-gate degradation before writeback."
-            )
+            if not barrier_gate_ack:
+                analyst_decisions_required.append(
+                    "SOE log present but protection_logic_context absent — provide PLC data or "
+                    "set analyst_review.barrier_gate_degraded_acknowledged=true after verifying barrier status "
+                    "via physical walkdown, PLC historian query, or operator statement."
+                )
 
         writeback_ready = bool(
             outputs_ok
@@ -5401,6 +5472,190 @@ class RCAReasoningOrchestrator:
             )
             if msg not in flags:
                 flags.append(msg)
+
+    @staticmethod
+    def _apply_residual_anomaly_gaps(
+        rca_card: JsonDict,
+        allen_relation_map: Optional[JsonDict],
+        causality_candidates: Optional[JsonDict],
+    ) -> None:
+        """Issue 2 (residual variant) — Tag Allen map nodes as 'explained' or 'residual'.
+
+        After the primary hypothesis is selected, each causal-candidate Allen node is
+        classified relative to that hypothesis:
+        - 'explained':  node's component_id matches the primary candidate's component_id.
+        - 'residual':   node is a causal candidate but on a different component — it may
+                        indicate a co-existing cause, an upstream trigger, or a scope gap.
+
+        Residual nodes are written to rca_card['unresolved_gaps'] so the analyst has a
+        structured list of unexplained causal signals to investigate.
+
+        Nodes with relation 'follows' (temporal contradiction) are excluded — they are
+        already handled by the contradiction gate and are not causal residuals.
+        """
+        primary = (rca_card.get("primary_hypothesis") or {})
+        primary_component = str(primary.get("component_id") or "").strip().lower()
+
+        # Also collect the primary candidate's failure mode name/mechanism for label enrichment
+        primary_cand_id = str(primary.get("candidate_id") or "").strip()
+        primary_fm_name: Optional[str] = None
+        for c in ((causality_candidates or {}).get("candidates") or []):
+            if isinstance(c, dict) and str(c.get("candidate_id") or "").strip() == primary_cand_id:
+                primary_fm_name = str(c.get("failure_mode_name") or c.get("fm_name") or "")
+                break
+
+        nodes = (allen_relation_map or {}).get("nodes") or []
+        residual_nodes: List[JsonDict] = []
+        explained_count = 0
+
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            if not node.get("causal_candidate", False):
+                continue
+            if str(node.get("allen_relation_to_event") or "").lower() == "follows":
+                continue  # temporal contradiction — handled by gate, not a residual gap
+
+            node_comp = str(node.get("component_id") or "").strip().lower()
+            if primary_component and node_comp == primary_component:
+                explained_count += 1
+            else:
+                residual_nodes.append({
+                    "node_id": node.get("node_id"),
+                    "node_type": node.get("node_type"),
+                    "component_id": node.get("component_id"),
+                    "allen_relation_to_event": node.get("allen_relation_to_event"),
+                    "allen_score": node.get("allen_score"),
+                    "gap_label": (
+                        f"Causal signal on component '{node.get('component_id')}' "
+                        f"(Allen: {node.get('allen_relation_to_event')}) is not explained "
+                        f"by primary hypothesis{(' (' + primary_fm_name + ')') if primary_fm_name else ''}."
+                    ),
+                })
+
+        if not residual_nodes and not explained_count:
+            return  # no causal nodes at all — nothing to write
+
+        rca_card["unresolved_gaps"] = {
+            "explained_causal_node_count": explained_count,
+            "residual_causal_node_count": len(residual_nodes),
+            "residual_nodes": residual_nodes,
+            "assessment": (
+                "complete" if not residual_nodes
+                else "partial" if explained_count > 0
+                else "unexplained"
+            ),
+        }
+
+        if residual_nodes:
+            ex = rca_card.setdefault("executive_summary", {})
+            flags = ex.setdefault("analyst_attention_flags", [])
+            if isinstance(flags, list):
+                msg = (
+                    f"{len(residual_nodes)} causal signal(s) in the Allen relation map are not "
+                    f"explained by the primary hypothesis component. Review rca_card.unresolved_gaps "
+                    "for potential co-existing causes or scope gaps."
+                )
+                if msg not in flags:
+                    flags.append(msg)
+
+    @staticmethod
+    def _apply_fast_transient_attention_flags(
+        rca_card: JsonDict,
+        event: JsonDict,
+        allen_relation_map: Optional[JsonDict],
+        fast_transient_event_types: Set[str],
+    ) -> None:
+        """Issue 5 — Flag when Allen epsilon (0.5 h) is larger than the causal sequence duration.
+
+        Fires when event_type is a known fast-transient type AND the Allen map contains at least
+        one causal node, meaning temporal interval assignments were computed for signals whose
+        actual ordering may resolve within seconds rather than the 30-minute epsilon window.
+        """
+        event_type = str(event.get("event_type") or "").strip().lower()
+        if event_type not in fast_transient_event_types:
+            return
+        causal_nodes = int((allen_relation_map or {}).get("summary", {}).get("causal_nodes", 0) or 0)
+        if causal_nodes == 0:
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        msg = (
+            f"Fast-transient event detected (event_type={event_type!r}). "
+            f"Allen temporal epsilon (0.5 h) exceeds the causal sequence duration — "
+            f"interval relation assignments for {causal_nodes} causal signal(s) may be unreliable. "
+            "Verify causal ordering using SOE or PLC timestamps at sub-minute resolution before "
+            "accepting temporal-score contributions for this run."
+        )
+        if msg not in flags:
+            flags.append(msg)
+
+    @staticmethod
+    def _apply_category_l_floor_attention_flags(
+        rca_card: JsonDict,
+        causality_candidates: Optional[JsonDict],
+        cmms_context: Optional[JsonDict],
+        category_l_score_floor: float,
+    ) -> None:
+        """Issue 11 — Flag when no Category L (systemic/organizational) candidate clears the floor.
+
+        Fires when: (a) no L-category candidate has composite_score >= category_l_score_floor,
+        AND (b) the event has any recurrence signal (open CRs or unresolved prior events).
+        The flag forces the analyst to actively document why organizational root cause does not apply,
+        rather than letting it silently score low.
+        """
+        coverage = (causality_candidates or {}).get("category_coverage") or {}
+        l_row = coverage.get("L") if isinstance(coverage, dict) else None
+        l_status = str((l_row or {}).get("status") or "").strip().lower()
+
+        # Determine whether any L candidate clears the floor
+        candidates = (causality_candidates or {}).get("candidates") or []
+        l_candidates_above_floor = [
+            c for c in candidates
+            if isinstance(c, dict)
+            and str(c.get("primary_category") or "").strip().upper() == "L"
+            and float(c.get("composite_score") or 0.0) >= category_l_score_floor
+        ]
+        if l_candidates_above_floor:
+            return
+
+        # Determine recurrence signal from CMMS context and causality candidates
+        recurrence_summary = (causality_candidates or {}).get("recurrence_summary") or {}
+        any_recurrence = bool(
+            int(recurrence_summary.get("candidate_count_with_recurrence", 0) or 0) > 0
+        )
+        cmms_summary = (cmms_context or {}).get("recurrence_summary") or {}
+        open_cr_count = int(cmms_summary.get("open_cr_count", 0) or 0)
+        any_open_crs = open_cr_count > 0
+
+        if not any_recurrence and not any_open_crs:
+            return
+
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+
+        recurrence_detail = []
+        if any_recurrence:
+            recurrence_detail.append("recurrence history present in causality candidates")
+        if any_open_crs:
+            recurrence_detail.append(f"{open_cr_count} open CR(s) in CMMS")
+        recurrence_str = "; ".join(recurrence_detail)
+
+        l_note = (
+            f"(Category L coverage status: {l_status})" if l_status else "(Category L coverage status: not evaluated)"
+        )
+        msg = (
+            f"No Category L (systemic/organizational) candidate reached the score floor "
+            f"({category_l_score_floor:.2f}) despite a recurrence signal ({recurrence_str}). "
+            f"{l_note} "
+            "Document explicitly why organizational root cause does not apply before writeback."
+        )
+        if msg not in flags:
+            flags.append(msg)
 
     def _build_workflow_dispatch(
         self,
