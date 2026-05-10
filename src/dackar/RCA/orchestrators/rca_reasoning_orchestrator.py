@@ -468,6 +468,7 @@ class RCAReasoningOrchestrator:
                 signal_evidence=signal_evidence,
                 alarm_log=alarm_log,
                 soe_log=soe_log,
+                pm_compliance=pm_compliance,
             )
         self._validate_and_persist(run_id, "tskr_patterns", tskr_patterns)
 
@@ -708,6 +709,7 @@ class RCAReasoningOrchestrator:
         self._apply_recurrence_match_quality_attention_flags(rca_card, tskr_patterns)
         self._apply_near_match_pattern_attention_flags(rca_card, tskr_patterns)
         self._apply_fm_resolution_ambiguity_flags(rca_card, tskr_patterns)
+        self._apply_accelerating_recurrence_attention_flags(rca_card, tskr_patterns)
         self._apply_signal_episode_index_attention_flags(rca_card, historical_signal_episodes)
         self._apply_cross_pattern_attention_flags(rca_card, cross_pattern_evidence, causality_candidates)
         rca_card["cross_pattern_summary"] = self._build_rca_card_cross_pattern_summary(
@@ -884,6 +886,7 @@ class RCAReasoningOrchestrator:
         signal_evidence: Optional[JsonDict] = None,
         alarm_log: Optional[JsonDict] = None,
         soe_log: Optional[JsonDict] = None,
+        pm_compliance: Optional[JsonDict] = None,
     ) -> JsonDict:
         if self.tskr_temporal_scorer is not None:
             self._apply_tskr_runtime_overrides()
@@ -900,6 +903,8 @@ class RCAReasoningOrchestrator:
                 score_kwargs["alarm_log"] = alarm_log
             if "soe_log" in score_sig.parameters:
                 score_kwargs["soe_log"] = soe_log
+            if "pm_compliance" in score_sig.parameters:
+                score_kwargs["pm_compliance"] = pm_compliance
             return self.tskr_temporal_scorer.score(**score_kwargs)
         return {
             "event_id": event.get("event_id") or event.get("id"),
@@ -5400,6 +5405,33 @@ class RCAReasoningOrchestrator:
             f"({ids_str}{'...' if len(ambiguous_ids) > 5 else ''}): "
             "semantic similarity in the [0.80, 0.88) range. "
             "Analyst review required before these records contribute to recurrence counting."
+        )
+        if msg not in flags:
+            flags.append(msg)
+
+    @staticmethod
+    def _apply_accelerating_recurrence_attention_flags(
+        rca_card: JsonDict,
+        tskr_patterns: Optional[JsonDict],
+    ) -> None:
+        """Add attention flag when any TSKR pattern shows an accelerating recurrence trend."""
+        patterns = (tskr_patterns or {}).get("patterns") or []
+        accelerating_ids = [
+            str(p.get("target_id") or p.get("pattern_id") or "")
+            for p in patterns
+            if "accelerating_recurrence" in (p.get("attention_flags") or [])
+        ]
+        if not accelerating_ids:
+            return
+        ex = rca_card.setdefault("executive_summary", {})
+        flags = ex.setdefault("analyst_attention_flags", [])
+        if not isinstance(flags, list):
+            return
+        ids_str = ", ".join(accelerating_ids[:5])
+        msg = (
+            f"Accelerating recurrence trend detected for {len(accelerating_ids)} failure mode(s) "
+            f"({ids_str}{'...' if len(accelerating_ids) > 5 else ''}): "
+            "inter-event intervals are shrinking. Consider escalating PM frequency or initiating a proactive inspection."
         )
         if msg not in flags:
             flags.append(msg)

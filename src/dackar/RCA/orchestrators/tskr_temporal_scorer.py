@@ -72,6 +72,11 @@ class RecurrenceProfile:
     trend: str                           # "increasing"|"decreasing"|"stable"|"insufficient_data"
     unresolved_count: int                # events with resolved == False
     most_recent_days_ago: Optional[int]
+    contributing_event_ids: List[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.contributing_event_ids is None:
+            self.contributing_event_ids = []
 
 
 class TSKRTemporalScorerV1:
@@ -129,6 +134,7 @@ class TSKRTemporalScorerV1:
         signal_evidence: Optional[JsonDict] = None,
         alarm_log: Optional[JsonDict] = None,
         soe_log: Optional[JsonDict] = None,
+        pm_compliance: Optional[JsonDict] = None,
     ) -> JsonDict:
         event_id = event.get("event_id") or event.get("id")
         asset_id = event.get("asset_id")
@@ -154,13 +160,14 @@ class TSKRTemporalScorerV1:
         tone_summary         = self._summarize_tones(all_windows)
         operator_family      = self._infer_operator_family(event_start, event_end, all_windows)
 
-        past_events = kg_context.get("past_events") or []
+        past_events = self._normalize_past_events(kg_context.get("past_events") or [])
         stage_b_allen_by_component = self._stage_b_allen_relation_by_component(kg_context)
         chain_scores = (signal_evidence or {}).get("per_candidate_chain_score") or {}
         patterns: List[JsonDict] = []
         for fm in kg_context.get("failure_modes", []) or []:
             fm_component_id = fm.get("component_id") or fm.get("applies_to_component_id")
             fm_chain = chain_scores.get(str(fm.get("fm_id") or ""), {}) if isinstance(chain_scores, dict) else {}
+            fm_signal_ids = self._extract_signal_ids_for_fm(telemetry_summary, fm)
             pattern = self._score_failure_mode_pattern(
                 event_id=event_id,
                 asset_id=asset_id,
@@ -170,6 +177,7 @@ class TSKRTemporalScorerV1:
                 alarm_soe_windows=alarm_soe_windows,
                 anomaly_window_summary=anomaly_window_summary,
                 signal_ids=signal_ids,
+                fm_signal_ids=fm_signal_ids,
                 telemetry_support=telemetry_support,
                 operator_family=operator_family,
                 fm=fm,
@@ -179,6 +187,7 @@ class TSKRTemporalScorerV1:
                 chain_position_type=str(fm_chain.get("position_type") or "absent"),
                 contributing_cause_role=fm_chain.get("contributing_cause_role"),
                 confluence_component_id=fm_chain.get("confluence_component_id"),
+                pm_compliance=pm_compliance,
             )
             patterns.append(pattern)
 
@@ -402,16 +411,55 @@ class TSKRTemporalScorerV1:
             return "closed"
         return normalized
 
+    @staticmethod
+    def _normalize_past_events(past_events: List[JsonDict]) -> List[JsonDict]:
+        """Remap alternate field names produced by different KG schema versions.
+
+        Some KG exports use ``related_failure_modes`` / ``occurred_at`` instead of
+        the canonical ``matched_failure_mode_ids`` / ``timestamp_start``.  This
+        normalizer makes both schemas transparent to the rest of the scorer without
+        mutating caller-owned dicts.
+        """
+        normalized = []
+        for pe in past_events:
+            if not isinstance(pe, dict):
+                normalized.append(pe)
+                continue
+            needs_copy = (
+                ("related_failure_modes" in pe and "matched_failure_mode_ids" not in pe)
+                or ("occurred_at" in pe and "timestamp_start" not in pe)
+            )
+            if needs_copy:
+                pe = dict(pe)
+                if "related_failure_modes" in pe and "matched_failure_mode_ids" not in pe:
+                    pe["matched_failure_mode_ids"] = pe["related_failure_modes"]
+                if "occurred_at" in pe and "timestamp_start" not in pe:
+                    pe["timestamp_start"] = pe["occurred_at"]
+            normalized.append(pe)
+        return normalized
+
     @classmethod
     def _stage_b_allen_relation_by_component(cls, kg_context: JsonDict) -> Dict[str, str]:
+        # priority_rank: lower index = higher causal priority
+        priority_rank = {r: i for i, r in enumerate(CAUSAL_PRIORITY)}
         mapping: Dict[str, str] = {}
         for row in (kg_context.get("out_of_boundary_anomalies") or []):
             if not isinstance(row, dict):
                 continue
             comp = str(row.get("component_id") or row.get("related_component_id") or "").strip()
             relation = str(row.get("allen_relation") or "").strip().lower()
-            if comp and relation:
+            if not comp or not relation:
+                continue
+            existing = mapping.get(comp)
+            if existing is None:
                 mapping[comp] = relation
+            else:
+                # Keep whichever relation has higher causal priority (lower rank index).
+                # Unknown relations (not in priority_rank) are always displaced.
+                existing_rank = priority_rank.get(existing, len(CAUSAL_PRIORITY))
+                new_rank      = priority_rank.get(relation, len(CAUSAL_PRIORITY))
+                if new_rank < existing_rank:
+                    mapping[comp] = relation
         return mapping
 
     def _summarize_anomaly_windows(
@@ -441,6 +489,34 @@ class TSKRTemporalScorerV1:
                 continue
             sensor_id = sig.get("sensor_id")
             if sensor_id and sig.get("anomalies"):
+                ids.append(sensor_id)
+        return ids
+
+    def _extract_signal_ids_for_fm(
+        self, telemetry_summary: JsonDict, fm: JsonDict
+    ) -> List[str]:
+        """Return sensor IDs with anomalies that are relevant to this FM.
+
+        Relevance is determined by matching the signal's ``parameter`` field
+        against the FM's ``expected_symptom_types``.  When the FM carries no
+        symptom type information the method falls back to returning all
+        anomalous sensor IDs (same behaviour as the global extractor).
+        """
+        symptom_types = {
+            str(t).lower()
+            for t in (fm.get("expected_symptom_types") or [])
+            if t
+        }
+        ids: List[str] = []
+        for sig in telemetry_summary.get("signals", []) or []:
+            if not isinstance(sig, dict) or not sig.get("anomalies"):
+                continue
+            sensor_id = sig.get("sensor_id")
+            if not sensor_id:
+                continue
+            if not symptom_types:
+                ids.append(sensor_id)
+            elif str(sig.get("parameter") or "").lower() in symptom_types:
                 ids.append(sensor_id)
         return ids
 
@@ -729,6 +805,7 @@ class TSKRTemporalScorerV1:
         fm_id: Optional[str],
         component_id: Optional[str],
         past_events: List[JsonDict],
+        event_start: Optional[datetime] = None,
     ) -> RecurrenceProfile:
         """Build a RecurrenceProfile by matching past_events to the given
         failure mode / component and deriving recurrence statistics."""
@@ -736,9 +813,12 @@ class TSKRTemporalScorerV1:
         for pe in past_events:
             matched_fms  = set(pe.get("matched_failure_mode_ids") or [])
             matched_comp = pe.get("component_id")
-            if fm_id and fm_id in matched_fms:
-                matching.append(pe)
-            elif component_id and matched_comp == component_id:
+            fm_matched = bool(fm_id and fm_id in matched_fms)
+            # Fall back to component-level match only when the past event carries no
+            # FM attribution at all — prevents inflating scores when multiple FMs
+            # share the same component but only one is responsible.
+            comp_fallback = bool(component_id and matched_comp == component_id and not matched_fms)
+            if fm_matched or comp_fallback:
                 matching.append(pe)
 
         count = len(matching)
@@ -762,17 +842,41 @@ class TSKRTemporalScorerV1:
             sum(intervals_days) / len(intervals_days) if intervals_days else None
         )
 
-        # resolved == False (explicit False, not None) counts as unresolved
-        unresolved_count = sum(
-            1 for _, pe in dated if pe.get("resolved") is False
-        )
+        # resolved == False (explicit False, not None) counts as unresolved.
+        # Computed from the full matching set (not just dated) so count and
+        # unresolved_count share the same denominator.
+        unresolved_count = sum(1 for pe in matching if pe.get("resolved") is False)
 
-        # Recency from the most-recent matching event's time_distance_days field
+        # Recency: prefer computing from actual timestamps so the value is relative
+        # to the current event rather than a stale KG-snapshot field.
         most_recent_days_ago: Optional[int] = None
         if dated:
-            td = dated[-1][1].get("time_distance_days")
-            if isinstance(td, (int, float)):
-                most_recent_days_ago = int(td)
+            most_recent_ts = dated[-1][0]
+            if event_start is not None:
+                # Normalize timezone awareness so subtraction never raises.
+                es = event_start
+                mr = most_recent_ts
+                if es.tzinfo is None and mr.tzinfo is not None:
+                    from datetime import timezone as _tz
+                    es = es.replace(tzinfo=_tz.utc)
+                elif es.tzinfo is not None and mr.tzinfo is None:
+                    from datetime import timezone as _tz
+                    mr = mr.replace(tzinfo=_tz.utc)
+                delta = (es - mr).total_seconds() / 86400.0
+                most_recent_days_ago = max(0, int(delta))
+            else:
+                td = dated[-1][1].get("time_distance_days")
+                if isinstance(td, (int, float)):
+                    most_recent_days_ago = int(td)
+
+        # Collect IDs from all matched events for downstream traceability.
+        contributing_event_ids: List[str] = []
+        for pe in matching:
+            for field in ("event_id", "source_doc_id", "cr_id", "wo_id"):
+                val = pe.get(field)
+                if val and str(val) not in contributing_event_ids:
+                    contributing_event_ids.append(str(val))
+                    break
 
         return RecurrenceProfile(
             fm_id=fm_id,
@@ -782,27 +886,36 @@ class TSKRTemporalScorerV1:
             trend=self._recurrence_trend(intervals_days),
             unresolved_count=unresolved_count,
             most_recent_days_ago=most_recent_days_ago,
+            contributing_event_ids=contributing_event_ids,
         )
 
     @staticmethod
     def _recurrence_trend(intervals: List[float]) -> str:
-        """Compare first-half vs second-half inter-event intervals.
+        """Fit an OLS line to the inter-event interval sequence and classify the trend.
 
-        Shrinking intervals mean events are becoming more frequent
-        ("increasing" recurrence rate), which is a stronger causal signal.
-        Requires at least 3 intervals (4 events) for meaningful comparison.
+        A negative slope means intervals are shrinking (events accelerating) →
+        "increasing" recurrence rate, the stronger causal signal.  The slope is
+        normalised by the mean interval so the threshold is scale-independent.
+        Requires at least 3 intervals (4 events) for a meaningful fit.
         """
-        if len(intervals) < 3:
+        n = len(intervals)
+        if n < 3:
             return "insufficient_data"
-        mid         = len(intervals) // 2
-        first_mean  = sum(intervals[:mid]) / mid
-        second_mean = sum(intervals[mid:]) / (len(intervals) - mid)
-        if first_mean <= 0:
+        mean_y = sum(intervals) / n
+        if mean_y <= 0:
             return "insufficient_data"
-        ratio = second_mean / first_mean
-        if ratio < 0.75:
+        # OLS slope: cov(x, y) / var(x) with x = 0..n-1
+        mean_x = (n - 1) / 2.0
+        cov_xy = sum((i - mean_x) * (intervals[i] - mean_y) for i in range(n))
+        var_x  = sum((i - mean_x) ** 2 for i in range(n))
+        if var_x == 0:
+            return "stable"
+        slope = cov_xy / var_x
+        # Normalise by mean interval → relative change per step
+        norm_slope = slope / mean_y
+        if norm_slope < -0.10:
             return "increasing"   # intervals shrinking → accelerating recurrence
-        if ratio > 1.33:
+        if norm_slope > 0.10:
             return "decreasing"   # intervals growing → improving / resolved
         return "stable"
 
@@ -870,9 +983,11 @@ class TSKRTemporalScorerV1:
         fm_id: Optional[str],
         component_id: Optional[str],
         past_events: List[JsonDict],
+        event_start: Optional[datetime] = None,
     ) -> Tuple[float, RecurrenceProfile]:
         profile = self._build_recurrence_profile(
-            fm_id=fm_id, component_id=component_id, past_events=past_events
+            fm_id=fm_id, component_id=component_id, past_events=past_events,
+            event_start=event_start,
         )
         return self._score_from_recurrence_profile(profile), profile
 
@@ -891,6 +1006,7 @@ class TSKRTemporalScorerV1:
         alarm_soe_windows: Optional[List[JsonDict]] = None,
         anomaly_window_summary: JsonDict,
         signal_ids: List[str],
+        fm_signal_ids: Optional[List[str]] = None,
         telemetry_support: float,
         operator_family: Optional[str],
         fm: JsonDict,
@@ -900,7 +1016,11 @@ class TSKRTemporalScorerV1:
         chain_position_type: str = "absent",
         contributing_cause_role: Optional[str] = None,
         confluence_component_id: Optional[str] = None,
+        pm_compliance: Optional[JsonDict] = None,
     ) -> JsonDict:
+        # Per-FM signal IDs: filtered by FM's expected_symptom_types when available;
+        # falls back to the global signal_ids list when no FM-level filter is provided.
+        effective_signal_ids = fm_signal_ids if fm_signal_ids is not None else signal_ids
 
         fm_id        = fm.get("fm_id")
         component_id = fm.get("component_id")
@@ -945,6 +1065,7 @@ class TSKRTemporalScorerV1:
             fm_id=fm_id,
             component_id=component_id,
             past_events=past_events,
+            event_start=event_start,
         )
 
         # Semantic recurrence augmentation (§4.3)
@@ -1014,6 +1135,20 @@ class TSKRTemporalScorerV1:
                         fm_id, exc,
                     )
 
+        # PM overdue boost: overdue maintenance on this component is a latent
+        # contributor to failure recurrence; apply a small additive boost to
+        # history_score (+0.05 per overdue item, capped at +0.15).
+        pm_overdue_boost = 0.0
+        if pm_compliance and component_id:
+            overdue_items = pm_compliance.get("overdue_items") or pm_compliance.get("overdue_tasks") or []
+            matching_overdue = [
+                item for item in overdue_items
+                if isinstance(item, dict) and item.get("component_id") == component_id
+            ]
+            pm_overdue_boost = min(0.15, 0.05 * len(matching_overdue))
+            if pm_overdue_boost > 0:
+                history_score = clamp01(history_score + pm_overdue_boost)
+
         chain_pos = float(chain_position_score or 0.0)
         if str(chain_position_type or "absent") == "convergence_confluence":
             chain_pos = 0.0
@@ -1061,7 +1196,7 @@ class TSKRTemporalScorerV1:
             "confidence": round(confidence, 4),
             "signal_support_score":     round(signal_support_score, 4),
             "recurrence_support_score": round(recurrence_support_score, 4),
-            "matching_signal_ids": signal_ids,
+            "matching_signal_ids": effective_signal_ids,
             "anomaly_count": len(anomaly_windows),
             "lag_consistency": round(lag_consistency_score, 4),
             "source": "TSKRTemporalScorerV1",
@@ -1092,6 +1227,7 @@ class TSKRTemporalScorerV1:
             "recurrence_trend":            recurrence_profile.trend,
             "unresolved_recurrence_count": recurrence_profile.unresolved_count,
             "exact_doc_ids_count":         exact_doc_ids_count,
+            "contributing_event_ids":      recurrence_profile.contributing_event_ids,
             "semantic_match_count":        semantic_match_count,
             "semantic_doc_ids_count":      semantic_match_count,
             "near_match_count":            near_match_count,
@@ -1107,13 +1243,17 @@ class TSKRTemporalScorerV1:
                 effective_recurrence_count == 0
                 and history_score < 0.20
             ),
-            "signal_novel": not bool(signal_ids),
+            "signal_novel": not bool(effective_signal_ids),
             "novel_pattern": bool(
                 effective_recurrence_count == 0
                 and history_score < 0.20
-                and not bool(signal_ids)
+                and not bool(effective_signal_ids)
             ),
             "near_match_pattern": near_match_pattern,
+            "pm_overdue_boost": round(pm_overdue_boost, 4),
+            "attention_flags": (
+                ["accelerating_recurrence"] if recurrence_profile.trend == "increasing" else []
+            ),
         }
 
     # ------------------------------------------------------------------ #
