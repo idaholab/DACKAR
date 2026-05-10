@@ -2129,14 +2129,18 @@ analyst_review = {
         block for the RCA card.  When no such candidates are present, returns an
         ``applicable=False`` record so the field is always populated.
         """
-        HOP_CATEGORIES = {"H", "I", "J", "K"}
+        # G = human_performance in the v32 category scheme (operator/maintenance error);
+        # H-K cover the legacy synthesizer scheme and remain for backwards compatibility.
+        HOP_CATEGORIES = {"G", "H", "I", "J", "K"}
         PERFORMANCE_MODE: Dict[str, str] = {
+            "G": "execution_error",
             "H": "execution_error",
             "I": "procedure_gap",
             "J": "knowledge_gap",
             "K": "supervisory_gap",
         }
         REGULATORY_REF: Dict[str, str] = {
+            "G": "AP-913 §4.3 — Human Performance (maintenance execution)",
             "H": "AP-913 §4.3 — Human Performance (maintenance execution)",
             "I": "AP-913 §4.4 — Procedure Adequacy",
             "J": "AP-913 §4.5 — Training and Qualification",

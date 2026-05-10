@@ -732,6 +732,7 @@ class RCAReasoningOrchestrator:
         )
         rca_card["barrier_analysis"] = self._barrier_summary_for_card(barrier_analysis)
         self._apply_residual_anomaly_gaps(rca_card, pre_refine_allen_map, causality_candidates)
+        self._apply_pm_corrective_actions(rca_card, pm_compliance)
         self._validate_and_persist(run_id, "rca_card", rca_card)
 
         output_validation = self._validate_bundle(
@@ -5665,6 +5666,84 @@ class RCAReasoningOrchestrator:
         )
         if msg not in flags:
             flags.append(msg)
+
+    @staticmethod
+    def _apply_pm_corrective_actions(
+        rca_card: JsonDict,
+        pm_compliance: Optional[JsonDict],
+    ) -> None:
+        """Architecture §4 — inject deterministic ``pm_corrective`` recommended actions.
+
+        When the pm_compliance artifact carries scope gaps for the primary hypothesis
+        failure mode and KG PM↔FM linkage is available, a ``pm_corrective`` action is
+        appended to ``rca_card.recommended_actions`` for each affected component.
+
+        Priority rule (architecture §3.6):
+        - ``maintenance_induced_risk == "high"``  → ``priority: "high"`` (unconditional)
+        - otherwise                               → ``priority: "medium"``
+
+        Guards:
+        - No pm_compliance or no ``components`` → no-op.
+        - ``fmea_pm_linkage_available`` must be True; without KG linkage the scope
+          gaps are not reliable enough to generate a structured corrective action.
+        - Existing ``pm_corrective`` actions for a component are not duplicated.
+        """
+        if not pm_compliance:
+            return
+        if not pm_compliance.get("fmea_pm_linkage_available"):
+            return
+        components = pm_compliance.get("components") or []
+        if not components:
+            return
+
+        primary = rca_card.get("primary_hypothesis") or {}
+        primary_fm_id = str(primary.get("fm_id") or "").strip() or None
+        primary_candidate_id = str(primary.get("candidate_id") or "").strip() or None
+        risk = str((pm_compliance.get("summary") or {}).get("maintenance_induced_risk") or "low")
+        priority = "high" if risk == "high" else "medium"
+
+        actions: List[JsonDict] = rca_card.setdefault("recommended_actions", [])
+        existing_comp_ids = {
+            str(a.get("target_component_id") or "")
+            for a in actions
+            if a.get("action_type") == "pm_corrective"
+        }
+
+        for i, comp in enumerate(components):
+            gaps: List[str] = comp.get("scope_gaps") or []
+            if not gaps:
+                continue
+            comp_id = str(comp.get("component_id") or "_asset")
+
+            # When primary FM is known, only inject for components where it is in scope_gaps
+            if primary_fm_id and primary_fm_id not in gaps:
+                continue
+            # Skip if a pm_corrective action already exists for this component
+            if comp_id in existing_comp_ids:
+                continue
+
+            gap_str = ", ".join(sorted(gaps))
+            action: JsonDict = {
+                "action_id": f"PM-CORR-{i:02d}-{str(uuid.uuid4())[:6]}",
+                "action_type": "pm_corrective",
+                "description": (
+                    f"Establish or restore PM coverage for failure mode(s) [{gap_str}] "
+                    f"on component {comp_id}. Review PM task list to add preventing or "
+                    f"detecting tasks for the identified scope gap(s)."
+                ),
+                "priority": priority,
+                "target_component_id": comp_id,
+                "target_causal_depth": "root",
+                "rationale": (
+                    f"PM scope analysis identified no coverage for FM(s) [{gap_str}] "
+                    f"(fmea_pm_linkage_available=True). "
+                    f"maintenance_induced_risk={risk!r}."
+                    + (f" Primary hypothesis FM: {primary_fm_id}." if primary_fm_id else "")
+                ),
+            }
+            if primary_candidate_id:
+                action["linked_candidate_id"] = primary_candidate_id
+            actions.append(action)
 
     @staticmethod
     def _apply_category_l_floor_attention_flags(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
 
 class ConfidenceLevel(str, Enum):
@@ -138,6 +138,11 @@ class DocExtractionRecord:
 
     needs_human_review: bool = field(default=False)
 
+    # Ruled-out failure mechanism hypotheses from negated causal statements
+    # (e.g. "X was NOT caused by Y").  Stored as cause_text strings so Step 2d
+    # can penalise FM candidates whose label matches a ruled-out cause.
+    ruled_out_mechanisms: List[str] = field(default_factory=list)
+
     # Event-time fields (§4.1 Phase 0) — capture when the plant event occurred,
     # not document creation time.  Required for temporal cross-pattern linkage.
     event_time_start: Optional[datetime] = None
@@ -227,4 +232,6 @@ class DocExtractionRecord:
             "epistemic_class": self.epistemic_class or "",
             "classification_resolution_level": self.classification_resolution_level or "",
             "degraded_classification": self.degraded_classification,
+            # Semicolon-joined ruled-out cause texts for Step 2d FM penalisation
+            "ruled_out_mechanisms": "; ".join(self.ruled_out_mechanisms),
         }

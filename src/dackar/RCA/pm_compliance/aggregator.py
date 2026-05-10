@@ -8,7 +8,11 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from orchestrators.causality_engine_v32 import parse_dt, utcnow_iso
 from .config import PMComplianceConfig
 from .currency_checker import frequency_concern, mean_interval_from_tskr
-from .effectiveness_analyzer import analyze_degradation, collect_as_found_from_rows
+from .effectiveness_analyzer import (
+    analyze_degradation,
+    collect_as_found_from_rows,
+    compute_pm_found_defect_rate,
+)
 from .execution_verifier import PMExecutionVerifier
 from .scope_analyzer import analyze_scope
 from .types import JsonDict
@@ -105,14 +109,20 @@ def _compliance_status_md(
     missed_cycles: int,
     raw_compliance_status: Optional[str] = None,
 ) -> str:
-    """Narrative labels for ``pm_tasks[].compliance_status`` (architecture §5)."""
+    """Narrative labels for ``pm_tasks[].compliance_status`` (architecture §5).
+
+    ``"unknown"`` check status (no schedule dates in the export) returns
+    ``"undetermined"`` so analysts can distinguish it from a genuine pass.
+    The governance-scoring path (``checks[].status``) is unaffected — it still
+    carries ``"unknown"``; only the component narrative label changes.
+    """
     raw = str(raw_compliance_status or "").strip().lower()
     if raw in {"not_applicable", "n_a"}:
         return "not_applicable"
     if st == "pass":
         return "compliant"
     if st == "unknown":
-        return "compliant"  # narrative only; see checks[].status for raw gate
+        return "undetermined"  # §1.4 fix: was "compliant", which was misleading
     if st == "fail":
         if missed_cycles > 0:
             return "missed"
@@ -125,18 +135,28 @@ def _compliance_status_md(
 def _build_pm_tasks_per_component(
     raw_rows: List[JsonDict],
     checks: List[JsonDict],
+    check_to_coverage_type: Optional[Dict[str, str]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
-    """Architecture §5 — ``components[].pm_tasks`` (narrative) alongside pipeline ``checks``."""
+    """Architecture §5 — ``components[].pm_tasks`` (narrative) alongside pipeline ``checks``.
+
+    *check_to_coverage_type* (from ``analyze_scope``) maps check_id →
+    ``"preventive"`` | ``"detective"``.  When present, it overrides the export
+    row's ``coverage_type`` field, which defaults to ``"none"``.
+    """
     by: Dict[str, List[Dict[str, Any]]] = {}
     check_by_id = {c.get("check_id"): c for c in checks if c.get("check_id")}
+    cov_map = check_to_coverage_type or {}
     for r in raw_rows:
         cid = str(r.get("component_id") or "_asset")
+        task_code = str(r.get("task_code") or r.get("check_id") or "")
         ck = check_by_id.get(r.get("check_id") or r.get("task_code") or "")
         overdue = float((ck or {}).get("overdue_by_days") or 0.0)
         st = (ck or {}).get("status") or "unknown"
         mcy = int(r.get("missed_cycles") or 0)
+        # §2.3: KG-derived coverage_type takes precedence over export row value
+        coverage_type = cov_map.get(task_code) or r.get("coverage_type") or "none"
         task: Dict[str, Any] = {
-            "task_code": str(r.get("task_code") or r.get("check_id") or ""),
+            "task_code": task_code,
             "description": str(r.get("description") or r.get("task_description") or ""),
             "frequency_days": r.get("frequency_days"),
             "last_pm_date": r.get("last_pm_date") or r.get("completed_date"),
@@ -150,7 +170,7 @@ def _build_pm_tasks_per_component(
             ),
             "missed_cycles": mcy,
             "last_as_found": r.get("as_found_last") or r.get("as_found_condition"),
-            "coverage_type": r.get("coverage_type") or "none",
+            "coverage_type": coverage_type,
         }
         by.setdefault(cid, []).append(task)
     return by
@@ -237,15 +257,15 @@ def build_pm_compliance(
     checks, dq_notes = verifier.verify_rows(raw_rows)
     dq_notes = list(loader_notes) + list(dq_notes) + extra_notes
 
-    comp_views, fmea_kg, covered_fms, all_fms = analyze_scope(kg_context, checks)
+    comp_views, fmea_kg, covered_fms, all_fms, check_to_coverage_type = analyze_scope(kg_context, checks)
     if raw_rows and kg_context and not fmea_kg:
         if any(c.get("applicable_fm_ids") for c in checks):
             dq_notes.append(
                 "PM-to-FM coverage from export `applicable_fm_ids` only; no KG FMEA/PM task linkage (advisory, §3.3)"
             )
 
-    asf = collect_as_found_from_rows(raw_rows)
-    dqtrend = analyze_degradation(asf) if asf else "unknown"
+    asf = collect_as_found_from_rows(raw_rows, max_cycles=cfg.effectiveness_lookback_cycles)
+    dqtrend = analyze_degradation(asf, data_dir=cfg.data_dir) if asf else "unknown"
     for view in comp_views:
         view.setdefault("degradation_trend", dqtrend)
         cid = view.get("component_id")
@@ -257,7 +277,7 @@ def build_pm_compliance(
         )
         view.setdefault("pm_frequency_concern", False)
 
-    pm_by_comp = _build_pm_tasks_per_component(raw_rows, checks)
+    pm_by_comp = _build_pm_tasks_per_component(raw_rows, checks, check_to_coverage_type=check_to_coverage_type)
     for v in comp_views:
         key = str(v.get("component_id") or "_asset")
         v["pm_tasks"] = pm_by_comp.get(key, [])
@@ -279,6 +299,9 @@ def build_pm_compliance(
     m["overall_compliance"] = overall
     m["maintenance_induced_risk"] = risk
     m["has_scope_gaps_for_primary_fm"] = has_scope_gaps
+    defect_rate = compute_pm_found_defect_rate(raw_rows, data_dir=cfg.data_dir)
+    if defect_rate is not None:
+        m["pm_found_defect_rate"] = defect_rate
     dq_conf = "high" if not dq_notes and checks else "medium" if checks else "low"
     if any(c.get("status") == "unknown" for c in checks):
         dq_conf = "medium" if dq_conf == "high" else "low"
@@ -296,9 +319,16 @@ def build_pm_compliance(
     eid = event.get("event_id")
     if eid is not None:
         out["event_id"] = str(eid)
-    out["assessment_date"] = event_ts or utcnow_iso()
+    # assessment_date records when this artifact was built, not the event time.
+    # The event reference time is already captured in window.end.
+    out["assessment_date"] = utcnow_iso()
     out["look_back_window_days"] = cfg.look_back_window_days
     out["fmea_pm_linkage_available"] = bool(fmea_kg)
+    if primary_fm_id and not bool(fmea_kg):
+        dq_notes.append(
+            f"primary_fm_id '{primary_fm_id}' provided but KG PM↔FM linkage absent — "
+            f"scope gap for this FM is not evaluable; maintenance_induced_risk may be underestimated (architecture §3.3)"
+        )
     out["data_quality_notes"] = dq_notes
     if comp_views:
         out["components"] = comp_views

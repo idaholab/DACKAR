@@ -41,7 +41,7 @@ import os
 import re
 from datetime import datetime, timezone
 
-from causal_condition_adapter import extract_stage5_causal_condition
+from dackar.RCA.ner.causal_condition_adapter import extract_stage5_causal_condition
 
 from ..summarizers.reliability_summarizer import (
     detect_doc_type,
@@ -52,6 +52,52 @@ from ..summarizers.reliability_summarizer import (
     flatten_retrieval_summary_for_embedding,
     flatten_rca_frame_for_embedding,
 )
+
+# Lemma-based causal keyword patterns — mirrors adapter.py _CAUSAL_KEYWORD_PATTERNS.
+# Required so CausalSentence's sentence selector fires on documents where NERSeed
+# provides SSC entity texts (mechanisms/outcomes).  Without these, _matchedSents
+# is always empty and every chunk falls through to dep_fallback.
+_CAUSAL_KEYWORD_PATTERNS_SEED: List[Dict[str, Any]] = [
+    {"label": "causal", "pattern": [{"LEMMA": lemma}], "id": "causal"}
+    for lemma in [
+        "cause", "result", "lead", "trigger", "induce", "produce", "create",
+        "force", "drive", "contribute", "attribute", "accelerate", "activate",
+        "affect", "damage", "facilitate", "generate", "initiate", "originate",
+        "precipitate", "prevent", "promote", "prompt", "propagate", "spark",
+        "stimulate",
+    ]
+]
+
+
+# ---------------------------
+# NERSeed → CausalSentence bridge
+# ---------------------------
+
+def _make_ner_seed_cs_factory(ner_seed: "NERSeed") -> Optional[Any]:
+    """Build a causal_sentence_factory from NERSeed mechanisms/outcomes.
+
+    Parallel to adapter.py _make_ner_cs_factory, but operates on NERSeed string
+    lists rather than ResolvedSpan objects.  Returns None when the seed has no
+    mechanism/outcome texts so the caller falls back to dep_fallback unchanged.
+    """
+    ssc_texts = [
+        t.strip()
+        for t in (list(ner_seed.mechanisms or []) + list(ner_seed.outcomes or []))
+        if t.strip()
+    ]
+    if not ssc_texts:
+        return None
+
+    ssc_patterns = [{"label": "SSC", "pattern": t, "id": "SSC"} for t in dict.fromkeys(ssc_texts)]
+
+    def _factory(text: str, nlp: Any) -> Any:
+        from dackar.causal.CausalSentence import CausalSentence  # noqa: PLC0415
+        cs = CausalSentence(nlp)
+        cs.addEntityPattern("ner_seed_ssc_entities", ssc_patterns)
+        cs.addEntityPattern("ner_seed_causal_keywords", _CAUSAL_KEYWORD_PATTERNS_SEED)
+        return cs
+
+    return _factory
 
 
 # ---------------------------
@@ -350,6 +396,11 @@ def augment_chunks_with_structured_summaries(
 
             doc_id = str(c.get("doc_id") or ctx.doc_id)
 
+            # Bridge NERSeed entities into CausalSentence so it fires on the same
+            # surface forms the seed resolved, rather than always falling through to
+            # dep_fallback.  Returns None when seed has no mechanisms/outcomes.
+            cs_factory = _make_ner_seed_cs_factory(seed)
+
             stage5_payload = extract_stage5_causal_condition(
                 doc_id=doc_id,
                 chunk_index=chunk_index,
@@ -358,6 +409,7 @@ def augment_chunks_with_structured_summaries(
                 section_role=ctx.section_role,
                 nlp=stage5_nlp,
                 llm_cfg=stage5_llm_cfg,
+                causal_sentence_factory=cs_factory,
             )
 
             metadata = build_chunk_metadata(
@@ -507,11 +559,21 @@ def build_embedding_text(
     # Backfill causal spans into FM_LABELS so the embedding picks up event spans
     # that the gazetteer may have missed (Fix B: causal-slot backfill).
     causal_cause_spans, causal_effect_spans = _extract_causal_spans(stage5_payload)
+    # Include multi-hop chain nodes so propagation paths ("bearing wear → vibration
+    # → seal failure") are represented in the embedding even when individual
+    # statements were merged into the chain and no longer appear separately.
+    chain_nodes: List[str] = [
+        node
+        for chain in ((stage5_payload or {}).get("causal_chain") or [])
+        for node in chain.get("nodes", [])
+        if isinstance(node, str) and node.strip()
+    ]
     fm_labels = _uniq(
         list(ner_seed.mechanisms or [])
         + list(ner_seed.outcomes or [])
         + causal_cause_spans
         + causal_effect_spans
+        + chain_nodes
     )
     if fm_labels:
         parts.append("FM_LABELS: " + ", ".join(fm_labels))
@@ -625,8 +687,6 @@ def build_chunk_metadata(
     properties = _uniq((ner_seed.properties or []) + numbers_limits)
     tools = _uniq(ner_seed.tools or [])
 
-    stage5_flags = (stage5_payload or {}).get("summary_flags", {})
-
     return {
         "doc_type": ctx.doc_type,
         "authority_level": ctx.authority_level,
@@ -655,7 +715,7 @@ def build_chunk_metadata(
         "has_causal_language": bool(
             hypotheses
             or constraints
-            or stage5_flags.get("has_explicit_causal_statement", False)
+            or ((stage5_payload or {}).get("summary_flags") or {}).get("has_explicit_causal_statement", False)
         ),
         "has_diagnostics": bool(diagnostics or tests_to_confirm),
         "has_maintenance_action": bool(maintenance_actions),
@@ -723,6 +783,9 @@ def build_processed_text_record(
             ),
             "has_procedural_deviation": bool(
                 stage5_payload.get("summary_flags", {}).get("has_procedural_deviation", False)
+            ),
+            "has_ruled_out_mechanisms": bool(
+                stage5_payload.get("summary_flags", {}).get("has_ruled_out_mechanisms", False)
             ),
         },
 

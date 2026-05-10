@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -17,4 +19,12 @@ class PMComplianceConfig:
 
     pm_frequency_concern_ratio: float = 0.5
     """Flag PM frequency concern when pm_interval > ratio * mean_failure_interval (advisory)."""
+
+    data_dir: Optional[Path] = field(default=None, compare=False, hash=False)
+    """Path to the DACKAR data directory containing health-status keyword CSVs.
+
+    When set, ``analyze_degradation`` and ``compute_pm_found_defect_rate`` use the
+    curated vocabulary files (``health_status_keywords_negative/positive.csv``).
+    When ``None``, the original hardcoded stem fallback is used.
+    """
 

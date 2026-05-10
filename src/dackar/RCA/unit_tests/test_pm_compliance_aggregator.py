@@ -238,6 +238,325 @@ def test_loader_drops_rows_missing_required_identity_or_type_with_note():
     assert any("Dropped PM export row missing required" in n for n in art["data_quality_notes"])
 
 
+# ---------------------------------------------------------------------------
+# Wave 2 — vocabulary loader and pm_found_defect_rate
+# ---------------------------------------------------------------------------
+
+def _make_vocab_dir(tmp_path, neg_terms, pos_terms):
+    """Write minimal keyword CSVs into *tmp_path* and return the Path."""
+    import csv
+    for fname, terms in (
+        ("health_status_keywords_negative.csv", neg_terms),
+        ("health_status_keywords_positive.csv", pos_terms),
+    ):
+        with open(tmp_path / fname, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["Nouns", "Verbs", "Adjectives"])
+            writer.writeheader()
+            for t in terms:
+                writer.writerow({"Nouns": t, "Verbs": "", "Adjectives": ""})
+    return tmp_path
+
+
+def test_analyze_degradation_uses_vocabulary_csv(tmp_path):
+    """Vocabulary-driven matching must classify wear, leak, corrosion as degrading."""
+    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    PMVocabularyLoader.clear_cache()
+    data_dir = _make_vocab_dir(
+        tmp_path,
+        neg_terms=["wear", "leak", "corrosion", "crack", "vibration"],
+        pos_terms=["acceptable", "normal"],
+    )
+    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    assert analyze_degradation(["bearing wear observed"], data_dir=data_dir) == "degrading"
+    assert analyze_degradation(["leak found at seal"], data_dir=data_dir) == "degrading"
+    assert analyze_degradation(["corrosion on casing"], data_dir=data_dir) == "degrading"
+    assert analyze_degradation(["pump shaft cracked"], data_dir=data_dir) == "degrading"
+    assert analyze_degradation(["anomalous vibration"], data_dir=data_dir) == "degrading"
+    PMVocabularyLoader.clear_cache()
+
+
+def test_analyze_degradation_improving_not_shadowed_by_degrading(tmp_path):
+    """Improving beats stable but must NOT override an explicit degrading signal."""
+    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    PMVocabularyLoader.clear_cache()
+    data_dir = _make_vocab_dir(tmp_path, neg_terms=["leak"], pos_terms=["acceptable"])
+    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    # Improving with no degrading → improving
+    assert analyze_degradation(["found acceptable"], data_dir=data_dir) == "improving"
+    # Both improving and degrading → degrading wins
+    assert analyze_degradation(["acceptable but leak present"], data_dir=data_dir) == "degrading"
+    PMVocabularyLoader.clear_cache()
+
+
+def test_analyze_degradation_fallback_when_no_data_dir():
+    """Without data_dir, hardcoded fallback stems still work."""
+    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    assert analyze_degradation(["pump degraded significantly"]) == "degrading"
+    assert analyze_degradation(["no defect found"]) == "improving"
+    assert analyze_degradation(["pump running normally"]) == "improving"
+
+
+def test_word_boundary_prefix_matching():
+    """Prefix boundary matching: 'leak' matches 'leakage'; 'crack' matches 'cracks'.
+    A term must start at a word boundary — it must not match in the middle of a word.
+    """
+    from pm_compliance.vocabulary_loader import PMVocabularyLoader, matches_any
+    PMVocabularyLoader.clear_cache()
+    degrading_terms = frozenset({"leak", "crack"})
+    # Prefix of word — intentional matches
+    assert matches_any("leakage observed at seal", degrading_terms)
+    assert matches_any("several cracks on shaft", degrading_terms)
+    # Term in middle of longer word — must not match
+    assert not matches_any("bleak outlook", degrading_terms)    # 'leak' has no leading \b
+    assert not matches_any("firecracker residue", degrading_terms)  # 'crack' has no leading \b
+
+
+def test_pm_found_defect_rate_computed_correctly(tmp_path):
+    """pm_found_defect_rate must equal defect_rows / total_rows_with_asf."""
+    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    PMVocabularyLoader.clear_cache()
+    data_dir = _make_vocab_dir(tmp_path, neg_terms=["degraded", "leak"], pos_terms=["acceptable"])
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[
+            {"check_id": "PM-1", "check_type": "inspection", "compliance_status": "compliant",
+             "as_found_last": "component degraded"},     # defect
+            {"check_id": "PM-2", "check_type": "inspection", "compliance_status": "compliant",
+             "as_found_last": "leak at flange"},         # defect
+            {"check_id": "PM-3", "check_type": "inspection", "compliance_status": "compliant",
+             "as_found_last": "found acceptable"},       # no defect
+            {"check_id": "PM-4", "check_type": "inspection", "compliance_status": "compliant"},  # no asf
+        ],
+        config=PMComplianceConfig(data_dir=data_dir),
+    )
+    assert "pm_found_defect_rate" in art["summary"]
+    # 2 defects out of 3 rows with as-found data
+    assert abs(art["summary"]["pm_found_defect_rate"] - 2/3) < 1e-5
+    PMVocabularyLoader.clear_cache()
+
+
+def test_pm_found_defect_rate_absent_when_no_asf_data():
+    """pm_found_defect_rate must be absent (not 0.0) when no as-found data exists."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        export_rows=[{"check_id": "PM-1", "check_type": "inspection", "compliance_status": "compliant"}],
+    )
+    assert "pm_found_defect_rate" not in art["summary"]
+
+
+def test_schema_validates_artifact_with_pm_found_defect_rate(tmp_path):
+    """Schema must accept pm_found_defect_rate in summary."""
+    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    PMVocabularyLoader.clear_cache()
+    data_dir = _make_vocab_dir(tmp_path, neg_terms=["degraded"], pos_terms=["acceptable"])
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[
+            {"check_id": "PM-1", "check_type": "inspection", "compliance_status": "compliant",
+             "as_found_last": "component degraded"},
+        ],
+        config=PMComplianceConfig(data_dir=data_dir),
+    )
+    _schema_validator().validate(art)
+    PMVocabularyLoader.clear_cache()
+
+
+def test_real_data_dir_classifies_domain_texts():
+    """Smoke-test against the actual DACKAR data directory (skipped if absent)."""
+    import pytest
+    data_dir = Path(__file__).resolve().parents[4] / "data"
+    if not data_dir.exists():
+        pytest.skip("DACKAR data directory not found")
+    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    PMVocabularyLoader.clear_cache()
+    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    # From raw_text.txt / comp_testing_examples.txt observed conditions
+    assert analyze_degradation(["Rupture of pump bearings caused pump shaft degradation"], data_dir=data_dir) == "degrading"
+    assert analyze_degradation(["Several cracks on pump shaft were observed"], data_dir=data_dir) == "degrading"
+    # "Satisfactory" is in the positive CSV adjectives; "acceptable" is in the neutral CSV only
+    assert analyze_degradation(["Pump running in satisfactory condition"], data_dir=data_dir) == "improving"
+    PMVocabularyLoader.clear_cache()
+
+
+# ---------------------------------------------------------------------------
+# Wave 3 — coverage_type derivation and unknown narrative fix
+# ---------------------------------------------------------------------------
+
+def test_coverage_type_preventive_from_preventing_pm_task_ids():
+    """§2.3: task linked via preventing_pm_task_ids must get coverage_type='preventive'."""
+    kg = {
+        "components": [{"component_id": "COMP-1"}],
+        "failure_modes": [
+            {"fm_id": "FM-1", "preventing_pm_task_ids": ["PM-PREV"]},
+        ],
+    }
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context=kg,
+        export_rows=[
+            {"check_id": "PM-PREV", "check_type": "inspection",
+             "component_id": "COMP-1", "compliance_status": "compliant"},
+        ],
+    )
+    task = art["components"][0]["pm_tasks"][0]
+    assert task["coverage_type"] == "preventive"
+
+
+def test_coverage_type_detective_from_detecting_pm_task_ids():
+    """§2.3: task linked via detecting_pm_task_ids must get coverage_type='detective'."""
+    kg = {
+        "components": [{"component_id": "COMP-1"}],
+        "failure_modes": [
+            {"fm_id": "FM-1", "detecting_pm_task_ids": ["PM-DET"]},
+        ],
+    }
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context=kg,
+        export_rows=[
+            {"check_id": "PM-DET", "check_type": "surveillance_test",
+             "component_id": "COMP-1", "compliance_status": "compliant"},
+        ],
+    )
+    task = art["components"][0]["pm_tasks"][0]
+    assert task["coverage_type"] == "detective"
+
+
+def test_coverage_type_preventive_wins_over_detective_when_both_linked():
+    """§2.3: when a task appears in both preventing and detecting fields, 'preventive' wins."""
+    kg = {
+        "components": [{"component_id": "COMP-1"}],
+        "failure_modes": [
+            {
+                "fm_id": "FM-1",
+                "preventing_pm_task_ids": ["PM-BOTH"],
+                "detecting_pm_task_ids": ["PM-BOTH"],
+            },
+        ],
+    }
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context=kg,
+        export_rows=[
+            {"check_id": "PM-BOTH", "check_type": "inspection",
+             "component_id": "COMP-1", "compliance_status": "compliant"},
+        ],
+    )
+    task = art["components"][0]["pm_tasks"][0]
+    assert task["coverage_type"] == "preventive"
+
+
+def test_coverage_type_none_when_no_kg_linkage():
+    """§2.3: without KG linkage, coverage_type falls back to export row value or 'none'."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[
+            {"check_id": "PM-1", "check_type": "inspection", "compliance_status": "compliant"},
+        ],
+    )
+    task = art["components"][0]["pm_tasks"][0]
+    assert task["coverage_type"] == "none"
+
+
+def test_coverage_type_export_row_preserved_when_no_kg_linkage():
+    """§2.3: export row coverage_type is used when KG linkage is absent."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[
+            {"check_id": "PM-1", "check_type": "inspection",
+             "compliance_status": "compliant", "coverage_type": "detective"},
+        ],
+    )
+    task = art["components"][0]["pm_tasks"][0]
+    assert task["coverage_type"] == "detective"
+
+
+def test_unknown_status_shows_undetermined_in_narrative():
+    """§1.4: a check with no schedule dates must appear as 'undetermined', not 'compliant'."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[
+            # No dates → verifier marks status=unknown
+            {"check_id": "PM-NODATE", "check_type": "inspection"},
+        ],
+    )
+    assert art["checks"][0]["status"] == "unknown"          # governance path unchanged
+    task = art["components"][0]["pm_tasks"][0]
+    assert task["compliance_status"] == "undetermined"      # narrative fixed
+
+
+def test_assessment_date_is_build_time_not_event_time():
+    """§1.1 fix: assessment_date must differ from event timestamp so the staleness guard fires."""
+    event_ts = "2024-06-15T12:00:00+00:00"
+    art = build_pm_compliance({"asset_id": "A", "timestamp_start": event_ts})
+    assert art["assessment_date"] != event_ts, (
+        "assessment_date must be build time (utcnow), not the event timestamp"
+    )
+    # window.end still encodes the event reference time
+    assert art["window"]["end"].startswith("2024-06-15")
+
+
+def test_verifier_tz_naive_next_due_does_not_raise():
+    """§1.3 fix: tz-naive next_due_date must not cause TypeError when compared to tz-aware event_dt."""
+    v = PMExecutionVerifier(event_timestamp_iso="2024-06-15T12:00:00+00:00")
+    rows = [
+        {
+            "check_id": "PM-TZ",
+            "check_type": "inspection",
+            # tz-naive — would previously raise TypeError on comparison
+            "next_due_date": "2024-05-01T00:00:00",
+        }
+    ]
+    checks, _ = v.verify_rows(rows)
+    assert checks[0]["status"] == "fail"
+    assert checks[0]["overdue_by_days"] > 0
+
+
+def test_dq_note_emitted_when_primary_fm_id_given_but_no_kg_linkage():
+    """§2.4 fix: silent risk underestimation must surface as a data_quality_note."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"failure_modes": [{"fm_id": "FM-99"}], "components": []},
+        export_rows=[{"check_id": "PM-1", "check_type": "inspection", "compliance_status": "compliant"}],
+        primary_fm_id="FM-99",
+    )
+    assert art["fmea_pm_linkage_available"] is False
+    assert any("FM-99" in n and "not evaluable" in n for n in art["data_quality_notes"])
+
+
+def test_effectiveness_lookback_cycles_limits_rows_used():
+    """§3.1 fix: effectiveness_lookback_cycles must cap the as-found rows analysed."""
+    from pm_compliance import PMComplianceConfig
+    rows = [
+        {"check_id": f"PM-{i}", "check_type": "inspection", "compliance_status": "compliant",
+         "completed_date": f"2024-0{i}-01T00:00:00+00:00",
+         "as_found_last": "degraded" if i <= 2 else "acceptable"}
+        for i in range(1, 5)
+    ]
+    # With max 1 cycle (most recent = PM-4 with "acceptable") trend should not be "degrading"
+    art_1 = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=rows,
+        config=PMComplianceConfig(effectiveness_lookback_cycles=1),
+    )
+    assert art_1["components"][0]["degradation_trend"] in ("improving", "stable")
+
+    # With all 4 cycles, the two "degraded" rows drive the trend to "degrading"
+    art_4 = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2024-08-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=rows,
+        config=PMComplianceConfig(effectiveness_lookback_cycles=4),
+    )
+    assert art_4["components"][0]["degradation_trend"] == "degrading"
+
+
 if __name__ == "__main__":  # pragma: no cover
     test_build_minimal_compliant_artifact()
     test_build_with_overdue_inspection_fails_governance_relevance()

@@ -1052,6 +1052,9 @@ OPERATIONAL_CONTEXT: Dict[str, Any] = {
 
 PM_COMPLIANCE: Dict[str, Any] = {
     "asset_id": "U2-CONDENSER-MAIN",
+    "assessment_date": "2024-07-14T03:22:00Z",
+    "look_back_window_days": 104,
+    "fmea_pm_linkage_available": False,
     "window": {
         "start": "2024-04-01T00:00:00Z",
         "end": "2024-07-14T03:22:00Z",
@@ -1064,6 +1067,7 @@ PM_COMPLIANCE: Dict[str, Any] = {
             "status": "fail",
             "scheduled_date": "2024-04-01T00:00:00Z",
             "overdue_by_days": 104.0,
+            "component_id": "U2-CONDENSER-MAIN",
             "details": (
                 "Annual condenser expansion joint visual inspection overdue 104 days. "
                 "Deferred during last outage window due to scaffold unavailability. "
@@ -1079,6 +1083,7 @@ PM_COMPLIANCE: Dict[str, Any] = {
             "status": "fail",
             "scheduled_date": "2024-07-02T00:00:00Z",
             "overdue_by_days": 12.0,
+            "component_id": "U2-CONDENSER-MAIN",
             "details": (
                 "Quarterly air removal system performance surveillance overdue 12 days. "
                 "Test not completed due to outage scheduling conflict. Air ejector "
@@ -1095,6 +1100,7 @@ PM_COMPLIANCE: Dict[str, Any] = {
             "scheduled_date": "2024-06-23T00:00:00Z",
             "completed_date": "2024-06-23T16:00:00Z",
             "overdue_by_days": 0.0,
+            "component_id": "U2-CONDENSER-MAIN",
             "details": (
                 "Condenser tube inspection per WO-2024-11847. 847 tubes inspected. "
                 "0 tubes plugged. Tube sheet acceptable. No fouling, biological growth, "
@@ -1110,6 +1116,7 @@ PM_COMPLIANCE: Dict[str, Any] = {
             "status": "fail",
             "scheduled_date": "2024-05-15T00:00:00Z",
             "overdue_by_days": 60.0,
+            "component_id": "U2-CONDENSER-MAIN",
             "details": (
                 "HVAC fan motor bearing lubrication and vibration check overdue 60 days. "
                 "Fan motor bearing failure on 2024-07-10 resulted in trip on high vibration. "
@@ -1142,28 +1149,9 @@ PM_COMPLIANCE: Dict[str, Any] = {
             "source_ref": "PM-TASK-HVAC-BAY-MTR",
         },
     ],
-    "overdue_tasks": [
-        {
-            "check_id": "PM-U2-CND-EXPJOINT-INSP-A",
-            "check_type": "inspection",
-            "scheduled_date": "2024-04-01T00:00:00Z",
-            "overdue_by_days": 104.0,
-            "source_ref": "SOP-U2-CND-001 §4.3",
-        },
-        {
-            "check_id": "PM-U2-AIR-EJECTOR-SURV-Q",
-            "check_type": "surveillance_test",
-            "scheduled_date": "2024-07-02T00:00:00Z",
-            "overdue_by_days": 12.0,
-            "source_ref": "TECH-SPEC-3.7.2",
-        },
-        {
-            "check_id": "PM-U2-HVAC-PM-A",
-            "check_type": "scheduled_pm",
-            "scheduled_date": "2024-05-15T00:00:00Z",
-            "overdue_by_days": 60.0,
-            "source_ref": "PM-TASK-HVAC-BAY-MTR",
-        },
+    "data_quality_notes": [
+        "No KG FMEA/PM task linkage available — fmea_pm_linkage_available=false. "
+        "Governance scoring uses keyword fallback only. Scope gap analysis not performed.",
     ],
     "summary": {
         "total_checks": 4,
@@ -1174,6 +1162,10 @@ PM_COMPLIANCE: Dict[str, Any] = {
         "last_pm_date": "2024-06-23T16:00:00Z",
         "next_pm_date": "2024-10-01T00:00:00Z",
         "compliance_rate": 0.25,
+        "overall_compliance": "partial",
+        "maintenance_induced_risk": "medium",
+        "has_scope_gaps_for_primary_fm": False,
+        "data_quality_confidence": "medium",
         "notes": (
             "Three of four checks failed. All failed items are associated with "
             "pressure boundary monitoring (expansion joint inspection), non-condensable "

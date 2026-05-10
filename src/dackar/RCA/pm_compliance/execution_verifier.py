@@ -94,6 +94,15 @@ class PMExecutionVerifier:
 
         return checks, notes
 
+    @staticmethod
+    def _as_utc(dt: Optional[datetime]) -> Optional[datetime]:
+        """Ensure *dt* is tz-aware (UTC) so comparisons never raise TypeError."""
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
     def _derive_status(
         self,
         r: JsonDict,
@@ -101,14 +110,15 @@ class PMExecutionVerifier:
         notes: List[str],
         cid: str,
     ) -> Tuple[str, float]:
-        next_due = parse_dt(r.get("next_due_date") or r.get("next_due")) if (
+        next_due = self._as_utc(parse_dt(r.get("next_due_date") or r.get("next_due")) if (
             r.get("next_due_date") or r.get("next_due")
-        ) else None
-        last = parse_dt(r.get("last_pm_date") or r.get("completed_date") or r.get("last_completed"))
+        ) else None)
+        last = self._as_utc(parse_dt(r.get("last_pm_date") or r.get("completed_date") or r.get("last_completed")))
+        event_dt = self._as_utc(event_dt)  # type: ignore[assignment]
 
         if r.get("missed_cycles", 0) and int(r["missed_cycles"]) > 0:
             overdue = 0.0
-            if next_due and event_dt > next_due.replace(tzinfo=next_due.tzinfo or timezone.utc):
+            if next_due and event_dt > next_due:
                 overdue = (event_dt - next_due).total_seconds() / 86400.0
             return "fail", max(0.0, overdue)
 

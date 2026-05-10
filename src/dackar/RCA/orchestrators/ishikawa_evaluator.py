@@ -164,7 +164,9 @@ class HeuristicIshikawaEvaluatorV1:
         if not pm_compliance:
             return []
         rows: List[JsonDict] = []
-        overdue = pm_compliance.get("overdue_tasks") or []
+        # aggregator writes "overdue_items"; "overdue_tasks" is a legacy alias kept for
+        # backward compatibility with pre-Wave-2 fixtures
+        overdue = pm_compliance.get("overdue_items") or pm_compliance.get("overdue_tasks") or []
         if overdue:
             rows.append({
                 "factor_id": "maintenance::overdue_tasks",
@@ -177,7 +179,7 @@ class HeuristicIshikawaEvaluatorV1:
                 ],
                 "supporting_evidence_ids": [],
                 "strength": min(1.0, 0.3 + 0.1 * len(overdue)),
-                "notes": {"overdue_tasks": overdue},
+                "notes": {"overdue_items": overdue},
                 "temporal_relation": None,
                 "telemetry_signals": [],
                 "category": "maintenance_human_factors",
