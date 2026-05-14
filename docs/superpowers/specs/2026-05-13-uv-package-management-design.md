@@ -52,7 +52,7 @@ src/dackar/outage/pyproject.toml  # unchanged, standalone, not a workspace membe
 | `anomaly` | `stumpy` | When using `dackar.anomalies` (sklearn is already in core via quantulum3) |
 | `kg` | `neo4j`, `graphdatascience` | When running Neo4j workflows |
 | `viz` | `wordcloud` | When using `utils/visualize.py` word-cloud rendering |
-| `rca` | `langchain-chroma`, `langchain-community`, `langchain-core`, `chromadb`, `pdfplumber`, `panels`, `streamlit`, `nbformat`, `requests` | When running `src/dackar/RCA/demos` |
+| `rca` | `langchain-chroma`, `langchain-community`, `langchain-core`, `chromadb`, `pdfplumber`, `streamlit`, `nbformat`, `requests` | When running `src/dackar/RCA/demos` |
 | `docs` | `sphinx`, `sphinx_rtd_theme`, `nbsphinx`, `sphinx-copybutton`, `sphinx-autoapi` | When building documentation |
 | `dev` | `pytest`, `jupyterlab` | Tests and example notebooks |
 
