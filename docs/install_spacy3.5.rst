@@ -5,114 +5,84 @@ Installation
 Operating Environments
 ----------------------
 
-DACKAR can run on Microsoft Windows, Apple OSX and Linux platforms.
+DACKAR runs on Microsoft Windows, Apple macOS, and Linux. Python 3.10–3.12 is supported; CI tests on 3.11.
 
-Clone DACKAR
-------------
+1. Install uv
+-------------
 
-The HTTP cloning procedure uses the following clone command:
+.. code-block:: bash
+
+  # Linux / macOS
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+
+  # Windows (PowerShell)
+  powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+  # or via Homebrew on macOS
+  brew install uv
+
+2. Clone DACKAR
+---------------
 
 .. code-block:: bash
 
   git clone https://github.com/idaholab/DACKAR.git
+  cd DACKAR
 
-The SSH cloning procedure requires the user to create a SSH key (See: https://help.github.com/articles/connecting-to-github-with-ssh/).
-Once the SSH key has been created, to clone DACKAR the following command can be executed:
+For SSH cloning see https://help.github.com/articles/connecting-to-github-with-ssh/.
 
-.. code-block:: bash
+3. Install Dependencies
+-----------------------
 
-  git clone git@github.com:idaholab/DACKAR.git
-
-Install the Required Libraries
-------------------------------
+Pick the install profile that matches your workflow:
 
 .. code-block:: bash
 
-  conda create -n dackar_libs python=3.11
+  uv sync                                                       # core only
+  uv sync --group rca --group kg --group nlp-extra --group dev  # full RCA workflow
+  uv sync --all-groups                                          # everything
 
-  conda activate dackar_libs
+Available optional dependency groups:
 
-  pip install torch==2.8.0 spacy==3.5 stumpy textacy matplotlib nltk==3.8.1 coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
+============  =========================================================
+Group         Use when
+============  =========================================================
+nlp-extra     Optional NLP pipes (coreferee, pywsd, contextual spell check)
+anomaly       Using ``dackar.anomalies`` (matrix-profile, two-sample tests)
+kg            Loading data into Neo4j via ``dackar.knowledge_graph``
+viz           Word-cloud rendering in ``dackar.utils.visualize``
+rca           Running the AI-enhanced RCA demos under ``src/dackar/RCA/``
+docs          Building Sphinx documentation
+dev           Tests and notebook examples
+============  =========================================================
 
-..  conda install -c conda-forge pandas
-.. scikit-learn 1.2.2 is required for quantulum3
+4. Bootstrap Runtime Models
+---------------------------
 
-Install Additional Libraries
+.. code-block:: bash
+
+  uv run python scripts/bootstrap_models.py
+
+This downloads coreferee's English model (if ``nlp-extra`` is installed),
+the NLTK corpora used by similarity analysis, and retrains the
+quantulum3 classifier. The ``en_core_web_lg`` spaCy model is installed
+automatically as a project dependency.
+
+Behind a Corporate SSL Proxy
 ----------------------------
 
-Library ``neo4j`` is a Python module that is used to communicate with Neo4j database management system,
-and ``jupyterlab`` is used to execute notebook examples under ``./examples/`` folder.
+If model downloads fail with SSL errors, pass ``--insecure-ssl``:
 
 .. code-block:: bash
 
-  pip install neo4j jupyterlab
+  uv run python scripts/bootstrap_models.py --insecure-ssl
 
-Download Language Model from spaCy
-----------------------------------
+This disables HTTPS certificate verification for the bootstrap downloads only.
 
-.. code-block:: bash
-
-  python -m spacy download en_core_web_lg
-
-  python -m coreferee install en
-
-
-Required NLTK Data for Similarity Analysis
-------------------------------------------
+Running DACKAR
+--------------
 
 .. code-block:: bash
 
-  python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
-
-Retrain Quantulum3 Classifier (Optional)
-----------------------------------------
-
-.. code-block:: bash
-
-  quantulum3-training -s
-
-
-Different Approach When There is an Issue with SSLError
--------------------------------------------------------
-
-1. Download en_core_web_lg-3.5.0.whl_, then run
-
-.. code-block:: bash
-
-  python -m pip install ./en_core_web_lg-3.5.0.whl
-
-2. Download coreferee_, then run:
-
-.. code-block:: bash
-
-  python -m pip install ./coreferee_model_en.zip
-
-3. run script DACKAR/nltkDownloader.py to download nltk data:
-
-.. code-block:: bash
-
-  python nltkDownloader.py
-
-or check installing_nltk_data_ on how to manually install nltk data.
-For this project, users can also try these steps:
-
-.. code-block:: bash
-
-  cd ~
-  mkdir nltk_data
-  cd nltk_data
-  mkdir corpora
-  mkdir taggers
-  mkdir tokenizers
-  Dowload wordnet, averaged_perceptron_tagger, punkt, brown
-  cp -r wordnet ~/nltk_data/corpora/
-  cp -r averaged_perceptron_tagger ~/nltk_data/taggers/
-  cp -r punkt ~/nltk_data/tokenizers
-  cp -r brown ~/nltk_data/corpora
-
-.. _en_core_web_lg-3.5.0.whl: https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
-.. _coreferee: https://github.com/richardpaulhudson/coreferee/tree/master/models/coreferee_model_en.zip
-.. _installing_nltk_data: https://www.nltk.org/data.html
-
-
-
+  uv run python -m dackar.main -i system_tests/ner.toml
+  uv run pytest tests/
