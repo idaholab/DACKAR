@@ -3,17 +3,16 @@ run-name: ${{ github.actor }} is testing out DACKAR
 on: [push, pull_request]
 
 concurrency:
-  # Here the group is defined by the head_ref of the PR
   group: ${{ github.head_ref }}
-  # Here we specify that we'll cancel any "in progress" workflow of the same group. Thus if we push, ammend a commit and push
-  # again the previous workflow will be cancelled, thus saving us github action build minutes and avoid any conflicts
   cancel-in-progress: true
 
 jobs:
-  Test-DACKAR-Linux:
-    # runs-on: [self-hosted, ubuntu-latest]
-    # runs-on: ${{ fromJSON('["ubuntu-latest", "self-hosted"]')[github.repository == 'github/docs-internal'] }}
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Setup Conda
         uses: conda-incubator/setup-miniconda@v3
@@ -69,11 +68,7 @@ jobs:
       - name: Setup Conda
         uses: conda-incubator/setup-miniconda@v3
         with:
-          miniconda-version: "latest"
-          channels: conda-forge, defaults
-          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
-          auto-update-conda: true
-          auto-activate-base: true
+          enable-cache: true
 
       - name: Job Information
         run: |
