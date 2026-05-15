@@ -43,6 +43,7 @@ No external services are required — see "Stub backends" below.
 
 ```
 cd .../outage
+uv sync --group dev    # jupyterlab lives in the dev group
 uv run jupyter lab demos/unexpected_act_workflow_1/dackar_workflow_demo.ipynb
 ```
 
