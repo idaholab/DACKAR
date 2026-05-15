@@ -6,7 +6,7 @@ All outage pipeline tests run under the project uv environment.
 No LOGOS installation is required — Stage E tests use duck-typed mock Pert objects.
 
 ```bash
-uv sync --group rca        # install all dependencies including outage extras
+uv sync --group rca        # install the RCA dependency group
 uv run python --version    # expect Python 3.11.x
 ```
 
@@ -47,8 +47,13 @@ Expected baseline: **730 tests, 0 failures** (as of April 2026).
 
 Previously the project used a conda environment named `dackar_libs`.  That env
 had a spaCy 3.5.0 / Pydantic V2 incompatibility that prevented pytest collection.
-The project has since migrated to uv (see `pyproject.toml`); the spaCy version
-pinned in the `rca` group is ≥ 3.7, so this conflict no longer exists.
+The project has since migrated to uv (see `pyproject.toml`).  The conflict was
+resolved not by upgrading spaCy but by letting uv resolve all dependency groups
+together in a single pass: spaCy 3.5 in the core dependencies constrains the
+resolver to pydantic-v1-compatible versions, which is exactly what langchain in
+the `rca` group needs.  Mixing two separate pip install rounds (as the old conda
+workflow did) caused incompatible transitive requirements to collide; uv avoids
+this entirely.
 
 ## RCA tests
 
