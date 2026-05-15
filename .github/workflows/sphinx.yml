@@ -10,14 +10,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: conda-incubator/setup-miniconda@v3
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          miniconda-version: "latest"
-          channels: conda-forge, defaults
-          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
-          auto-update-conda: true
-          activate-environment: dackar_libs
-          auto-activate-base: false
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install
+      - name: Install docs dependencies
+        run: uv sync --group docs
       # - name: Use Pandoc
       #   uses: docker://pandoc/core:2.9
       #   with:
@@ -33,9 +33,8 @@ jobs:
       - run: |
           pwd
           ls -l
-          pip install sphinx sphinx_rtd_theme nbsphinx sphinx-copybutton sphinx-autoapi
           cd docs
-          make html
+          uv run make html
           cd ..
       # - name: Build HTML
       #   uses: ammaraskar/sphinx-action@master
