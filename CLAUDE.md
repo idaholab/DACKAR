@@ -54,7 +54,7 @@ cd docs && make html        # served via `python3 -m http.server` from docs/_bui
 cd docs && make latexpdf    # output at docs/_build/latex/dackar.pdf
 ```
 
-Requires `sphinx sphinx_rtd_theme nbsphinx sphinx-copybutton sphinx-autoapi` and pandoc (`conda install pandoc`).
+Requires the `docs` group (`uv sync --group docs`) plus pandoc (`brew install pandoc` on macOS, `sudo apt install pandoc` on Debian/Ubuntu).
 
 ## Architecture
 
