@@ -5800,7 +5800,7 @@ class RCAReasoningOrchestrator:
         l_candidates_above_floor = [
             c for c in candidates
             if isinstance(c, dict)
-            and str(c.get("primary_category") or "").strip().upper() == "L"
+            and str(c.get("primary_causal_category") or "").strip().upper() == "L"
             and float(c.get("composite_score") or 0.0) >= category_l_score_floor
         ]
         if l_candidates_above_floor:
