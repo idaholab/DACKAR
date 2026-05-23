@@ -320,6 +320,7 @@ class RCAReasoningOrchestrator:
         environmental_monitoring: Optional[JsonDict] = None,
         vendor_supply_chain_records: Optional[JsonDict] = None,
         training_records: Optional[JsonDict] = None,
+        initial_scope_management: Optional[JsonDict] = None,
     ) -> JsonDict:
         run_id = str(uuid.uuid4())
         self.artifact_store.save(run_id, "run_status", {
@@ -382,6 +383,12 @@ class RCAReasoningOrchestrator:
         )
         run_context.setdefault("pipeline_runtime", {})
         run_context["pipeline_runtime"]["pm_compliance"] = pm_compliance_build
+        # Allow callers to seed scope state from a prior run (two-run scenario).
+        # The provided dict is deep-copied so mutations during the run don't
+        # affect the caller's copy.  run_id and started_at are always fresh.
+        if isinstance(initial_scope_management, dict):
+            import copy as _copy
+            run_context["scope_management"] = _copy.deepcopy(initial_scope_management)
         self.artifact_store.save(run_id, "run_context", run_context)
         self._enforce_input_guard_policy(
             run_id=run_id,
@@ -545,6 +552,11 @@ class RCAReasoningOrchestrator:
                 evidence_bundle=evidence_bundle,
                 causality_candidates=causality_candidates,
                 run_context=run_context,
+                telemetry_summary=telemetry_summary,
+                soe_log=soe_log,
+                alarm_log=alarm_log,
+                protection_logic_context=protection_logic_context,
+                configuration_change_records=configuration_change_records,
                 environmental_monitoring=environmental_monitoring,
                 vendor_supply_chain_records=vendor_supply_chain_records,
                 training_records=training_records,
@@ -613,21 +625,43 @@ class RCAReasoningOrchestrator:
         if self.config.enable_ishikawa:
             if self.ishikawa_evaluator is None:
                 raise ValueError("Ishikawa is enabled, but no ishikawa_evaluator was provided.")
-            ishikawa_matrix = self.ishikawa_evaluator.evaluate(
-                 event=event,
-                 telemetry_summary=telemetry_summary,
-                 kg_context=kg_context,
-                 tskr_patterns=tskr_patterns,
-                 causality_candidates=causality_candidates,
-                 evidence_bundle=evidence_bundle,
-                 operational_context=operational_context,
-                 pm_compliance=pm_compliance,
-                 run_context=run_context,
-            )
-            self._validate_and_persist(
-                run_id, "ishikawa_matrix", ishikawa_matrix,
-                optional=True, optional_failures=optional_artifact_failures,
-            )
+            try:
+                ishikawa_matrix = self.ishikawa_evaluator.evaluate(
+                     event=event,
+                     telemetry_summary=telemetry_summary,
+                     kg_context=kg_context,
+                     tskr_patterns=tskr_patterns,
+                     causality_candidates=causality_candidates,
+                     evidence_bundle=evidence_bundle,
+                     operational_context=operational_context,
+                     pm_compliance=pm_compliance,
+                     run_context=run_context,
+                )
+                # Add category-keyed convenience index so callers can access
+                # ishikawa_matrix["process_procedure"] (etc.) directly rather
+                # than searching the categories list.
+                if isinstance(ishikawa_matrix, dict):
+                    for _cat_entry in (ishikawa_matrix.get("categories") or []):
+                        if isinstance(_cat_entry, dict):
+                            _cat_name = _cat_entry.get("category")
+                            if _cat_name and _cat_name not in ishikawa_matrix:
+                                ishikawa_matrix[_cat_name] = _cat_entry.get("rows") or []
+                self._validate_and_persist(
+                    run_id, "ishikawa_matrix", ishikawa_matrix,
+                    optional=True, optional_failures=optional_artifact_failures,
+                )
+            except Exception as _ish_exc:  # noqa: BLE001
+                LOGGER.warning(
+                    "Ishikawa evaluation failed — pipeline continues without Ishikawa matrix: %s",
+                    _ish_exc,
+                )
+                optional_artifact_failures.append({
+                    "phase": "ishikawa_evaluation",
+                    "artifact": "ishikawa_matrix",
+                    "error_type": type(_ish_exc).__name__,
+                    "error": repr(_ish_exc),
+                    "impact": "ishikawa_matrix artifact absent from this run",
+                })
 
         barrier_analysis = self._compute_barrier_analysis(
             event=event,
@@ -2898,6 +2932,13 @@ class RCAReasoningOrchestrator:
                     "n_novel_patterns": int((signal_lessons_learned.get("summary") or {}).get("n_novel_patterns", 0)),
                     "input_sources": (signal_lessons_learned.get("summary") or {}).get("input_sources") or [],
                 },
+                # Mirror data_coverage_summary.source_families directly into artifacts
+                # so downstream consumers can access coverage status without traversing
+                # the full coverage_summary path.
+                "data_coverage_summary": {
+                    fam: {"status": (entry or {}).get("status", "not_assessed")}
+                    for fam, entry in (coverage_summary.get("source_families") or {}).items()
+                },
                 "sensitivity_table": {
                     "present": True,
                     "any_ranking_change_possible": bool(
@@ -2910,6 +2951,7 @@ class RCAReasoningOrchestrator:
                         (sensitivity_table.get("summary") or {}).get("top_n_candidates", 0)
                     ),
                     "row_count": len(sensitivity_table.get("rows") or []),
+                    "rows": list(sensitivity_table.get("rows") or []),
                 },
                 "scope_filter": (run_context.get("pipeline_runtime") or {}).get("scope_filter") or {
                     "applied": False,
@@ -2980,6 +3022,7 @@ class RCAReasoningOrchestrator:
                 "optional_artifact_failures": optional_artifact_failures or [],
                 "optional_artifacts_degraded": bool(optional_artifact_failures),
             },
+            "pipeline_warnings": optional_artifact_failures or [],
             "review_hooks": review_hooks,
             "scope_revision_summary": scope_revision_summary,
             "scope_expansion_summary": scope_expansion_summary,

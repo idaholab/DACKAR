@@ -66,6 +66,12 @@ def build_input_guards(
     )
     eid = str((event or {}).get("event_id") or (event or {}).get("id") or "")
 
+    if event_ts is None:
+        flags.append("missing_event_timestamp")
+        notes.append(
+            "event.timestamp_start is null or absent — all temporal guard checks will be skipped (SE §3.4 / A1)."
+        )
+
     if event_ts and telemetry_summary:
         win = (telemetry_summary.get("window") or {}) if isinstance(telemetry_summary, dict) else {}
         wend = _parse(win.get("end"))

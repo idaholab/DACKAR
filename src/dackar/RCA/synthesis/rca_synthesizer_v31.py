@@ -192,6 +192,7 @@ class RuleValidatedRCASynthesizerV31:
         card["validation_status"]["validation_errors"] = validation_errors
         card["validation_status"]["retry_count"] = retry_count
         card["validation_status"]["fallback_used"] = fallback_used
+        card["fallback_used"] = fallback_used  # top-level alias for direct analyst access
         card["validation_status"]["schema_valid"] = len(validation_errors) == 0
         card["validation_status"]["all_claims_cited"] = self._all_claims_cited(card)
         card["validation_status"]["passed_minimum_evidence_gate"] = self._passes_minimum_evidence_gate(card)
@@ -1933,6 +1934,9 @@ analyst_review = {
             "contributing_causes": contributing_labels,
             "root_cause": root_cause or "unresolved",
             "depth_complete": depth_complete,
+            "proximate_covered": bool(proximate_primary and proximate_primary != "unresolved"),
+            "contributing_covered": bool(contributing_labels),
+            "root_cause_covered": bool(root_cause and root_cause != "unresolved"),
         }
         if depth_incomplete_reason:
             result["depth_incomplete_reason"] = depth_incomplete_reason
@@ -2640,6 +2644,9 @@ analyst_review = {
                     "contributing_causes": [],
                     "root_cause": "unresolved",
                     "depth_complete": False,
+                    "proximate_covered": False,
+                    "contributing_covered": False,
+                    "root_cause_covered": False,
                     "depth_incomplete_reason": (
                         "proximate cause layer (A–F category) unresolved; "
                         "contributing cause layer (G–K categories) unresolved; "

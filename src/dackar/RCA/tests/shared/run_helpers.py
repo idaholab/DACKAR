@@ -59,6 +59,8 @@ def build_fixture_orchestrator(
     top_k_evidence: int = 8,
     enable_ishikawa: bool = True,
     causality_engine_version: str = "v32",
+    llm_client: Optional[Any] = None,
+    ishikawa_evaluator: Optional[Any] = None,
 ) -> Any:
     """
     Build an ``RCAReasoningOrchestrator`` configured for offline/fixture-based
@@ -70,8 +72,10 @@ def build_fixture_orchestrator(
     - **Chroma / vector store** — ``InMemoryEvidenceStore`` is used.  The
       evidence retriever is bypassed when ``evidence_bundle`` is supplied
       to ``run_rca()``.
-    - **LLM** — ``DummyLLMClient`` is used; the synthesizer falls back to the
-      rule-based path (``fallback_used: true`` in the output).
+    - **LLM** — ``DummyLLMClient`` is used by default; the synthesizer falls
+      back to the rule-based path (``fallback_used: true`` in the output).
+      Pass a custom ``llm_client`` to override — use the mock clients in
+      ``tests/shared/mock_llm_clients.py`` for D11 resilience tests.
     - **TSKR scorer** — runs live unless ``tskr_patterns.json`` is present
       in the fixture directory (passed to ``run_rca()``).
 
@@ -86,9 +90,20 @@ def build_fixture_orchestrator(
     top_k_candidates, top_k_evidence:
         Pipeline size limits.
     enable_ishikawa:
-        Whether to run Ishikawa matrix population.
+        Whether to run Ishikawa matrix population (ignored when
+        ``ishikawa_evaluator`` is supplied explicitly).
     causality_engine_version:
         ``"v32"`` (default) or ``"v31"`` for the older baseline engine.
+    llm_client:
+        Optional LLM client to inject into the synthesizer.  When ``None``
+        (default), ``DummyLLMClient`` is used.  Supply one of the mock
+        clients from ``tests/shared/mock_llm_clients.py`` to exercise
+        synthesizer resilience (D11 checks).
+    ishikawa_evaluator:
+        Optional Ishikawa evaluator to inject.  When ``None`` (default),
+        uses ``HeuristicIshikawaEvaluatorV1`` when ``enable_ishikawa=True``
+        and ``None`` when ``enable_ishikawa=False``.  Supply a broken
+        evaluator to exercise optional-phase failure handling (D6-D).
 
     Returns
     -------
@@ -184,6 +199,13 @@ def build_fixture_orchestrator(
         },
     )
 
+    _llm = llm_client if llm_client is not None else DummyLLMClient()
+
+    if ishikawa_evaluator is not None:
+        _ishikawa = ishikawa_evaluator
+    else:
+        _ishikawa = HeuristicIshikawaEvaluatorV1() if enable_ishikawa else None
+
     return RCAReasoningOrchestrator(
         validator=validator,
         artifact_store=FileArtifactStore(output_dir),
@@ -191,9 +213,9 @@ def build_fixture_orchestrator(
         tskr_temporal_scorer=TSKRTemporalScorerV1(),
         causality_engine=causality_engine,
         evidence_retriever=evidence_retriever,
-        ishikawa_evaluator=HeuristicIshikawaEvaluatorV1() if enable_ishikawa else None,
+        ishikawa_evaluator=_ishikawa,
         rca_synthesizer=RuleValidatedRCASynthesizerV31(
-            llm_client=DummyLLMClient(),
+            llm_client=_llm,
             config=RCASynthesizerConfig(
                 max_candidates_in_prompt=top_k_candidates,
                 max_evidence_in_prompt=top_k_evidence,
@@ -278,7 +300,12 @@ def load_fixtures(fixture_dir: str | Path) -> Dict[str, Any]:
     }
 
 
-def run_rca(orchestrator: Any, fixtures: Dict[str, Any]) -> Dict[str, Any]:
+def run_rca(
+    orchestrator: Any,
+    fixtures: Dict[str, Any],
+    *,
+    initial_scope_management: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Execute ``orchestrator.run()`` using the pre-loaded *fixtures* dict.
 
@@ -292,6 +319,11 @@ def run_rca(orchestrator: Any, fixtures: Dict[str, Any]) -> Dict[str, Any]:
         ``build_fixture_orchestrator``).
     fixtures:
         Dict as returned by ``load_fixtures()``.
+    initial_scope_management:
+        Optional scope management state dict from a prior run's
+        ``run_context["scope_management"]``.  When supplied the orchestrator
+        seeds Run 2's scope boundary from this state rather than building it
+        fresh, enabling the two-run scope-state-transfer scenario (D12).
 
     Returns
     -------
@@ -312,6 +344,7 @@ def run_rca(orchestrator: Any, fixtures: Dict[str, Any]) -> Dict[str, Any]:
         environmental_monitoring=fixtures.get("environmental_monitoring"),
         vendor_supply_chain_records=fixtures.get("vendor_supply_chain_records"),
         training_records=fixtures.get("training_records"),
+        initial_scope_management=initial_scope_management,
     )
 
 

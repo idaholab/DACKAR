@@ -208,16 +208,24 @@ def test_blend_no_match_leaves_temporal_unchanged():
     assert c["composite_score"] == orig_composite
 
 
-def test_blend_allen_cannot_lower_temporal():
-    """Allen score below current temporal should not reduce temporal."""
+def test_blend_allen_can_lower_temporal():
+    """Allen score below current temporal should lower temporal (true weighted blend).
+
+    Updated 2026-05-23: the old max(old, blend) clamp was removed so that weak
+    Allen relations (low allen_base_score) correctly reduce the temporal score,
+    enabling discrimination between OVERLAPS and PRECEDES candidates.
+    """
     c = _candidate("COMP-A", temporal=0.90, composite=0.80)
     ENGINE._apply_allen_temporal_blend(
         c, {"COMP-A": 0.40}, {"COMP-A": "precedes"}, set(), _DEFAULT_WEIGHTS
     )
-    # 0.75*0.90 + 0.25*0.40 = 0.675 + 0.10 = 0.775 < 0.90 → clamped to 0.90
-    assert c["scores"]["temporal"] == 0.90
-    # No composite change either
-    assert c["scores"]["allen_blend_applied"] is True  # match found but no actual change
+    # 0.75*0.90 + 0.25*0.40 = 0.675 + 0.10 = 0.775 — blend lowers temporal
+    expected = round(0.75 * 0.90 + 0.25 * 0.40, 6)
+    assert abs(c["scores"]["temporal"] - expected) < 1e-6, (
+        f"temporal={c['scores']['temporal']:.6f}, expected {expected:.6f}. "
+        "Allen blend should produce a true weighted average, not be clamped."
+    )
+    assert c["scores"]["allen_blend_applied"] is True
 
 
 def test_blend_follows_sets_temporal_contradiction():

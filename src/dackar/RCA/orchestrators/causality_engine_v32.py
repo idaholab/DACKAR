@@ -1346,7 +1346,14 @@ class RuleBasedCausalityEngineV32:
                 best_failed["retained_as_review_alternative"] = True
 
         retained_candidates = passed_threshold[: self.config.top_k_candidates]
-        filtered_out_candidates = [self._compact_filtered_candidate(c) for c in failed_threshold]
+        # Preserve generate()-phase filtered candidates (e.g. modes that failed
+        # the pre-refine threshold and were never passed into refine_with_evidence)
+        # so that the final filtered_out_candidates list is a complete superset of
+        # every candidate that was generated but not retained.
+        pre_existing_filtered = list(payload.get("filtered_out_candidates") or [])
+        filtered_out_candidates = pre_existing_filtered + [
+            self._compact_filtered_candidate(c) for c in failed_threshold
+        ]
         for candidate in passed_threshold[self.config.top_k_candidates:]:
             compact = self._compact_filtered_candidate(candidate)
             compact["filter_reason"] = "excluded_by_top_k"
@@ -1870,7 +1877,11 @@ class RuleBasedCausalityEngineV32:
         Blend formula (α = 0.25):
             new_temporal = 0.75 × old_temporal + 0.25 × allen_score   (when match found)
 
-        Allen can only raise the temporal score, not lower it.
+        Allen can both raise and lower the temporal score depending on whether
+        the Allen base score is above or below the TSKR-derived baseline.  This
+        allows candidates with weak Allen relations (e.g. OVERLAPS with a low
+        allen_base_score) to score lower than candidates with strong relations
+        (e.g. PRECEDES with a high allen_base_score), as intended.
         When the component has a 'follows' node, temporal_contradiction is set True.
         composite_raw and composite_score are updated by the temporal weight delta.
         """
@@ -1900,16 +1911,14 @@ class RuleBasedCausalityEngineV32:
 
         old_temporal = float(candidate["scores"].get("temporal", 0.0) or 0.0)
         new_temporal = min(1.0, (1.0 - ALLEN_ALPHA) * old_temporal + ALLEN_ALPHA * allen_score)
-        # Allen only raises temporal — never lowers it
-        new_temporal = max(old_temporal, new_temporal)
 
         candidate["scores"]["allen_temporal_score"] = round(allen_score, 6)
         candidate["scores"]["allen_relation"] = causal_relation.get(cid)
         candidate["scores"]["allen_blend_applied"] = True
         candidate["scores"]["temporal_score_quality"] = "full_allen"
 
-        if new_temporal <= old_temporal:
-            # No actual change after clamping — skip composite update
+        if abs(new_temporal - old_temporal) < 1e-9:
+            # No meaningful change — skip composite update
             return
 
         candidate["scores"]["temporal"] = round(new_temporal, 6)

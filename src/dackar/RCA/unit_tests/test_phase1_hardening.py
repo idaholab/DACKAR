@@ -335,8 +335,8 @@ def make_candidates_with_l(l_score=0.10):
     """Return a causality_candidates dict with one L-category candidate at the given score."""
     return {
         "candidates": [
-            {"candidate_id": "CAND-001", "primary_category": "A", "composite_score": 0.72},
-            {"candidate_id": "CAND-002", "primary_category": "L", "composite_score": l_score},
+            {"candidate_id": "CAND-001", "primary_causal_category": "A", "composite_score": 0.72},
+            {"candidate_id": "CAND-002", "primary_causal_category": "L", "composite_score": l_score},
         ],
         "category_coverage": {
             "L": {"status": "low_confidence"},
@@ -349,7 +349,7 @@ def make_candidates_no_l():
     """No L-category candidate at all."""
     return {
         "candidates": [
-            {"candidate_id": "CAND-001", "primary_category": "A", "composite_score": 0.72},
+            {"candidate_id": "CAND-001", "primary_causal_category": "A", "composite_score": 0.72},
         ],
         "category_coverage": {
             "L": {"status": "no_supporting_data"},
@@ -362,7 +362,7 @@ def make_candidates_no_recurrence():
     """No L candidate and no recurrence signal."""
     return {
         "candidates": [
-            {"candidate_id": "CAND-001", "primary_category": "A", "composite_score": 0.72},
+            {"candidate_id": "CAND-001", "primary_causal_category": "A", "composite_score": 0.72},
         ],
         "category_coverage": {
             "L": {"status": "no_supporting_data"},
