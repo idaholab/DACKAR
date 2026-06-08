@@ -724,7 +724,7 @@ def plot_scenario_comparison(
                PALETTE["defer"], "#264653"]
 
     fig = plt.figure(figsize=figsize or (15, 6))
-    fig.suptitle(title or "Scenario Comparison — DACKAR Pipeline Output",
+    fig.suptitle(title or "Scenario Comparison — Pipeline Output",
                  fontsize=13, fontweight="bold")
 
     # ── Radar chart
@@ -767,9 +767,9 @@ def plot_scenario_comparison(
 
     for r, lbl, col in zip(results, labels, _COLORS):
         vals = _radar_values(r) + [_radar_values(r)[0]]
-        ax_radar.plot(angles, vals, color=col, lw=2, label=lbl[:20])
+        ax_radar.plot(angles, vals, color=col, lw=2, label=lbl[:30])
         ax_radar.fill(angles, vals, color=col, alpha=0.10)
-    ax_radar.legend(loc="upper right", bbox_to_anchor=(1.35, 1.15), fontsize=7)
+    ax_radar.legend(loc="upper right", bbox_to_anchor=(1.55, 1.20), fontsize=7)
     ax_radar.set_title("Risk Profile Radar", fontsize=10, pad=12)
 
     # ── Risk score bar chart
@@ -790,7 +790,7 @@ def plot_scenario_comparison(
         ax_bar.bar(
             x + (i - len(results) / 2 + 0.5) * w,
             [scores_d.get(o, 0) for o in all_opts],
-            w, label=lbl[:15], color=col, alpha=0.85,
+            w, label=lbl[:25], color=col, alpha=0.85,
         )
     ax_bar.set_xticks(x)
     ax_bar.set_xticklabels(all_opts, rotation=30, ha="right", fontsize=7.5)
@@ -825,7 +825,7 @@ def plot_scenario_comparison(
     row_names = ["Decision", "Emergence type", "Regulatory",
                  "Criticality", "CP drag", "Analog count",
                  "Confidence", "Analyst review"]
-    col_labels = ["Metric"] + [lbl[:14] for lbl in labels]
+    col_labels = ["Metric"] + [f"S{i+1}" for i in range(len(labels))]
     table_data = [[rn] + [_fmt(r)[i] for r in results]
                   for i, rn in enumerate(row_names)]
 
