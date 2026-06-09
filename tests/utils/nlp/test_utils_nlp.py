@@ -15,7 +15,7 @@ def test_display_ner(nlp_obj):
   doc = nlp_obj(content)
   df = utils.displayNER(doc)
   assert list(df['pos'].values) == ['DET', 'NOUN', 'AUX', 'VERB', 'ADV', 'DET', 'NOUN', 'NOUN']
-  assert list(df['dep'].values) == ['det', 'nsubjpass', 'auxpass', 'ROOT', 'prep', 'det', 'compound', 'pobj']
+  assert list(df['dep'].values) == ['det', 'nsubjpass', 'auxpass', 'ROOT', 'advmod', 'det', 'compound', 'dobj']
   assert list(df['lemma'].values) == ['the', 'oil', 'be', 'find', 'nearby', 'the', 'pump', 'motor']
 
 def test_reset_pipeline(nlp_obj):
