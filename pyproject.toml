@@ -19,8 +19,8 @@ classifiers = [
 
 dependencies = [
   # Core NLP — exact versions match CI's known-good install
-  "spacy==3.5.*",
-  "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl",
+  "spacy==3.8.*",
+  "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
   "numpy>=1.26,<2",
   "pandas",
   "pysbd",
@@ -79,24 +79,18 @@ explicit = true
 
 
 [dependency-groups]
-# Optional NLP pipes. coreferee and pywsd are already guarded by lazy/conditional
-# imports in src/dackar/pipelines/CustomPipelineComponents.py and similarity/synsetUtils.py
+# Optional NLP pipes. pywsd is guarded by lazy/conditional imports in
+# similarity/synsetUtils.py. coreferee was removed: it pinned spaCy <3.6 (the
+# pydantic-v1 ceiling) and was already inactive at runtime (its gate is spaCy <=3.3).
 nlp-extra = [
-  "coreferee",
   "contextualSpellCheck",
   "pywsd",
   "autocorrect",
   "pyspellchecker",
-  # setuptools 80+ dropped pkg_resources, which coreferee 1.4.1 still imports.
-  "setuptools<80",
-  # coreferee's install step calls `python -m pip install`; uv venvs omit pip by default.
-  "pip",
 ]
 
 # AI-enhanced RCA stack (src/dackar/RCA/demos and orchestrators).
-# The langchain stack resolves to pydantic-v1-compatible versions
-# naturally because spaCy 3.5 and quantulum3 hold the resolver to
-# pydantic <2. Add explicit upper bounds here if those pins move.
+# Resolves against pydantic v2 (spaCy 3.8). langchain 1.x is the pydantic-v2 line.
 rca = [
   "langchain-core",
   "langchain-community",
@@ -106,10 +100,12 @@ rca = [
   "streamlit",
   "nbformat",
   "requests",
+  # PDF parsing (dackar.RCA.doc_parsers.pdfParser). Compatible with spaCy 3.8 / pydantic v2.
+  "marker-pdf",
   # Small spaCy model needed by RCA/ner/hybrid_ner/generators/nounphrase_generator.py
   # (hardcoded spacy.load("en_core_web_sm"); no lg fallback). URL-pinned to match the
   # en_core_web_lg version in core deps.
-  "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl",
+  "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
 ]
 
 # Anomaly detection (dackar.anomalies). scikit-learn already pulled in by core via quantulum3[classifier].
