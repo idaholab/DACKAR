@@ -47,7 +47,7 @@ Available optional dependency groups:
 ============  =========================================================
 Group         Use when
 ============  =========================================================
-nlp-extra     Optional NLP pipes (coreferee, pywsd, contextual spell check)
+nlp-extra     Optional NLP pipes (pywsd, contextual spell check)
 anomaly       Using ``dackar.anomalies`` (matrix-profile, two-sample tests)
 kg            Loading data into Neo4j via ``dackar.knowledge_graph``
 viz           Word-cloud rendering in ``dackar.utils.visualize``
@@ -63,10 +63,9 @@ dev           Tests and notebook examples
 
   uv run python scripts/bootstrap_models.py
 
-This downloads coreferee's English model (if ``nlp-extra`` is installed),
-the NLTK corpora used by similarity analysis, and retrains the
-quantulum3 classifier. The ``en_core_web_lg`` spaCy model is installed
-automatically as a project dependency.
+This downloads the NLTK corpora used by similarity analysis and
+retrains the quantulum3 classifier. The ``en_core_web_lg`` spaCy model
+is installed automatically as a project dependency.
 
 Behind a Corporate SSL Proxy
 ----------------------------
