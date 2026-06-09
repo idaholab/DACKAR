@@ -1,7 +1,6 @@
 """Post-uv-sync model bootstrap.
 
-Handles the three runtime artifacts that uv cannot lock:
-  - coreferee's English model (if `nlp-extra` group is installed)
+Handles the runtime artifacts that uv cannot lock:
   - NLTK corpora (punkt, wordnet, averaged_perceptron_tagger, brown)
   - quantulum3 classifier retrain (`quantulum3-training -s`)
 
@@ -43,18 +42,6 @@ def _apply_insecure_ssl() -> None:
     except AttributeError:
         return
     ssl._create_default_https_context = _create_unverified
-
-
-def install_coreferee() -> None:
-    """`python -m coreferee install en` — only if coreferee is importable."""
-    if not _has_module("coreferee"):
-        logger.info("coreferee not installed (nlp-extra group missing); skipping")
-        return
-    logger.info("Installing coreferee English model")
-    subprocess.check_call([sys.executable, "-m", "coreferee", "install", "en"])
-
-
-STEPS["coreferee"] = install_coreferee
 
 
 def install_nltk_corpora() -> None:
