@@ -22,7 +22,7 @@ def _load_script():
 def test_script_exposes_expected_steps():
     """STEPS dict drives --only flag and ordering; both must be present."""
     mod = _load_script()
-    assert set(mod.STEPS) == {"coreferee", "nltk", "quantulum"}
+    assert set(mod.STEPS) == {"nltk", "quantulum"}
 
 
 def test_only_flag_accepts_known_steps():
@@ -40,11 +40,3 @@ def test_insecure_ssl_flag_is_off_by_default():
     parser = mod.build_parser()
     parsed = parser.parse_args([])
     assert parsed.insecure_ssl is False
-
-
-def test_coreferee_step_skips_when_module_missing(monkeypatch):
-    """If `nlp-extra` group not installed, the coreferee step is a no-op."""
-    mod = _load_script()
-    monkeypatch.setattr(mod, "_has_module", lambda name: False)
-    # Should return cleanly without raising, even though coreferee isn't importable.
-    mod.install_coreferee()
