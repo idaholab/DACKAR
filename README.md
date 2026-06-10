@@ -59,6 +59,14 @@ is installed automatically as a project dependency.
 
 ## Test
 
+Running the full suite requires all dependency groups (the `anomaly`, `kg`,
+and `viz` tests import packages like `stumpy`, `neo4j`, and `wordcloud`). Sync
+them first, otherwise those tests fail to import:
+
+```bash
+uv sync --all-groups                         # required for the full suite
+```
+
 ```bash
 uv run pytest tests/                         # full suite
 uv run pytest tests/pipelines/test_pipelines.py  # single file
