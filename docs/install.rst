@@ -2,7 +2,7 @@
 Installation with Spacy 3.1 (Archived)
 ======================================
 
-.. deprecated::
+.. deprecated:: 2026.06
    This page is historical. DACKAR no longer supports spaCy 3.1 or the
    conda+pip install flow. Use the current uv-based instructions in
    :doc:`install_spacy3.5` instead.
