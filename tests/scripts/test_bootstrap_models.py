@@ -13,7 +13,9 @@ import pytest
 def _load_script():
     """Load the script as a module (it's not a real package)."""
     path = pathlib.Path(__file__).parents[2] / "scripts" / "bootstrap_models.py"
+    assert path.is_file(), f"bootstrap script not found at {path}"
     spec = importlib.util.spec_from_file_location("bootstrap_models", path)
+    assert spec is not None and spec.loader is not None, f"could not build import spec for {path}"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

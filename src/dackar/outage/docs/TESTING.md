@@ -2,58 +2,62 @@
 
 ## Environment
 
-All outage pipeline tests run under the project uv environment.
-No LOGOS installation is required — Stage E tests use duck-typed mock Pert objects.
+All outage pipeline tests run under the **repo-root** uv environment. The
+`rca` (langchain) and `dev` (pytest) dependency groups are defined in the root
+`pyproject.toml`, not in `src/dackar/outage/pyproject.toml`, so sync from the
+repository root. No LOGOS installation is required — Stage E tests use
+duck-typed mock Pert objects.
 
 ```bash
-uv sync --group rca        # install the RCA dependency group
-uv run python --version    # expect Python 3.11.x
+# from the repository root
+uv sync --group rca --group dev    # RCA stack + pytest
+uv run python --version            # expect Python 3.11.x
 ```
 
 ## Running the tests
 
-All commands must be issued from the **outage package root**:
-
-```bash
-cd /Users/mandd/projects/DACKAR/src/dackar/outage
-```
+All commands are issued from the **repository root** via `uv run` so the
+root environment (with the `rca`/`dev` groups) is used:
 
 Run the full suite:
 
 ```bash
-python -m pytest tests/ -q
+uv run pytest src/dackar/outage/tests/ -q
 ```
 
 Run a single test file:
 
 ```bash
-python -m pytest tests/test_stage_b.py -v
-python -m pytest tests/test_stage_e.py -v
-python -m pytest tests/test_stages_a_c.py -v
-python -m pytest tests/test_stages_f_g.py -v
-python -m pytest tests/test_orchestrator_e2e.py -v
+uv run pytest src/dackar/outage/tests/test_stage_b.py -v
+uv run pytest src/dackar/outage/tests/test_stage_e.py -v
+uv run pytest src/dackar/outage/tests/test_stages_a_c.py -v
+uv run pytest src/dackar/outage/tests/test_stages_f_g.py -v
+uv run pytest src/dackar/outage/tests/test_orchestrator_e2e.py -v
 ```
 
 Run a single test class or method:
 
 ```bash
-python -m pytest tests/test_stage_e.py::TestCheckResourceConflictsEquipment -v
-python -m pytest tests/test_stages_f_g.py::TestAnalystReviewHighAbbrRate -v
+uv run pytest src/dackar/outage/tests/test_stage_e.py::TestCheckResourceConflictsEquipment -v
+uv run pytest src/dackar/outage/tests/test_stages_f_g.py::TestAnalystReviewHighAbbrRate -v
 ```
 
 Expected baseline: **730 tests, 0 failures** (as of April 2026).
 
 ## Historical note: the old `dackar_libs` conda environment
 
-Previously the project used a conda environment named `dackar_libs`.  That env
-had a spaCy 3.5.0 / Pydantic V2 incompatibility that prevented pytest collection.
-The project has since migrated to uv (see `pyproject.toml`).  The conflict was
-resolved not by upgrading spaCy but by letting uv resolve all dependency groups
-together in a single pass: spaCy 3.5 in the core dependencies constrains the
-resolver to pydantic-v1-compatible versions, which is exactly what langchain in
-the `rca` group needs.  Mixing two separate pip install rounds (as the old conda
-workflow did) caused incompatible transitive requirements to collide; uv avoids
-this entirely.
+Previously the project used a conda environment named `dackar_libs`, built from
+two separate `pip install` rounds. The project has since migrated to uv (see
+`pyproject.toml`), which resolves the core NLP stack and the heavier `rca`
+(langchain / marker-pdf) stack together in a single pass, so incompatible
+transitive requirements can no longer collide the way two ad-hoc pip rounds did.
+
+The original blocker was a `pydantic` conflict: the NLP stack was capped at
+`pydantic<2` (via `coreferee 1.4.1`, which required `spacy<3.6`), while
+`marker-pdf` needs `pydantic>=2.4.2`. It was resolved by bumping the NLP stack to
+spaCy 3.8 / pydantic v2 and removing `coreferee` (which was already inactive at
+runtime). spaCy is now pinned to `3.8.*` and the whole project, including the
+`rca` group, resolves on pydantic v2.
 
 ## RCA tests
 

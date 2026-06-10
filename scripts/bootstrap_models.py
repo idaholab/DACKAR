@@ -13,7 +13,6 @@ in pyproject.toml, so `uv sync` installs it directly.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import logging
 import ssl
 import subprocess
@@ -24,11 +23,6 @@ logger = logging.getLogger("dackar.bootstrap")
 
 # Step name -> function. Ordered for predictable output; --only picks one.
 STEPS: dict[str, Callable[[], None]] = {}
-
-
-def _has_module(name: str) -> bool:
-    """True if module is importable in the current environment."""
-    return importlib.util.find_spec(name) is not None
 
 
 def _apply_insecure_ssl() -> None:

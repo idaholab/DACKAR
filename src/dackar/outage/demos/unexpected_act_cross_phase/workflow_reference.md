@@ -102,7 +102,9 @@ Demo 3 imports from both demo modules without name collisions using `importlib.u
 
 ```python
 def _load_demo_plots(folder: Path):
-    spec = importlib.util.spec_from_file_location("demo_plots", folder / "demo_plots.py")
+    path = folder / "demo_plots.py"
+    spec = importlib.util.spec_from_file_location("demo_plots", path)
+    assert spec is not None and spec.loader is not None, f"could not build import spec for {path}"
     mod  = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
