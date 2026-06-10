@@ -1,3 +1,5 @@
+import pytest
+
 from dackar.text_processing.SpellChecker import SpellChecker
 
 class TestSpellChecker:
@@ -29,7 +31,12 @@ class TestSpellChecker:
     assert miss == {'presure', 'laek', 'revieled'}
 
   def test_miss_spelled_words_contextual_checker(self):
-    checker = self.get_spell_checker('ContextualSpellCheck')
+    # ContextualSpellCheck loads a BERT model from Hugging Face on first use.
+    # Skip (don't fail) when the model is neither cached nor downloadable.
+    try:
+      checker = self.get_spell_checker('ContextualSpellCheck')
+    except OSError as exc:
+      pytest.skip(f"ContextualSpellCheck model unavailable (Hugging Face unreachable / not cached): {exc}")
     miss = checker.getMisspelledWords(self.content)
     assert miss == {'presure', 'laek', 'revieled', '1A'}
     # can not handle '1A'
