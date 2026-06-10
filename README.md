@@ -13,13 +13,14 @@ DACKAR is structured by a set of workflows where each workflow is designed to pr
 
 ## Installation
 
-### 1. Install uv (one-time, per machine)
+### 1. Create a conda environment with uv
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh    # Linux/macOS
-# or: brew install uv
-# or on Windows: powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+conda create -n dackar python=3.11 uv pip
+conda activate dackar
 ```
+Activate the env (`conda activate dackar`) in any new shell before
+running the `uv` commands below.
 
 ### 2. Clone and install dependencies
 
