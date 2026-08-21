@@ -1,46 +1,141 @@
+[project]
+name = "dackar"
+version = "0.1.0"
+description = "Digital Analytics, Causal Knowledge Acquisition and Reasoning"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10,<3.13"
+authors = [
+  { name = "Diego Mandelli", email = "diego.mandelli@inl.gov" },
+  { name = "Congjian Wang",  email = "congjian.wang@inl.gov" },
+  { name = "Joshua J. Cogliati", email = "joshua.cogliati@inl.gov" },
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+  # Core NLP — exact versions match CI's known-good install
+  "spacy==3.8.*",
+  "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
+  "numpy>=1.26,<2",
+  "pandas",
+  "pysbd",
+  "quantulum3[classifier]",
+  "scikit-learn",
+  "textacy",
+  "numerizer",
+  "networkx",
+  "nltk==3.8.1",
+  "beautifulsoup4",
+  "matplotlib",
+  "plotly",
+  # Config / validation
+  "jsonschema",
+  "jsonpointer",
+  "python-dateutil",
+  "toml",
+  "tomli",
+  # Excel / spreadsheet I/O used in utils
+  "openpyxl",
+  "xlrd",
+  # Torch: platform-specific pins (Windows fix for pytorch issue #166628)
+  "torch==2.9.1 ; platform_system != 'Windows'",
+  "torch==2.8.0 ; platform_system == 'Windows'",
+]
+
+[project.urls]
+Homepage = "https://github.com/idaholab/DACKAR"
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-[project]
-name = "dackar"
-version = "0.1.0"
-authors = [
-  { name="Diego Mandelli", email="diego.mandelli@inl.gov" },
-  { name="Congjian Wang", email="congjian.wang@inl.gov" },
-  { name="Joshua J. Cogliati", email="joshua.cogliati@inl.gov" },
-]
-description = "Digital Analytics, Causal Knowledge Acquisition and Reasoning"
-readme = "README.md"
-license = {file="LICENSE"}
-requires-python = ">=3.7"
-dependencies = [
-  "spacy>=3.1",
-  "tomli",
-  "textacy",
-  "matplotlib",
-  "nltk",
-  "coreferee",
-  "beautifulsoup4",
-  "networkx",
-  "pysbd",
-  "numerizer",
-  "autocorrect",
-  "contextualSpellCheck",
-  "pywsd",
-  "jupyterlab",
-  "openpyxl",
-  "quantulum3",
-  "python>=3.9",
-  "plotly",
-  "xlrd"
-]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: Apache License",
-    "Operating System :: OS Independent",
-    "Topic :: Scientific/Engineering"
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", marker = "platform_system != 'Windows'" },
+  { index = "pytorch-cpu-win", marker = "platform_system == 'Windows'" },
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/idaholab/DACKAR"
+# Two named indexes pointing at the same URL because uv applies an index
+# selection per source, not per marker. The platform markers in
+# [tool.uv.sources] then route to the right named index per OS.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu-win"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+
+[dependency-groups]
+# Optional NLP pipes. pywsd is guarded by lazy/conditional imports in
+# similarity/synsetUtils.py. coreferee was removed: it pinned spaCy <3.6 (the
+# pydantic-v1 ceiling) and was already inactive at runtime (its gate is spaCy <=3.3).
+nlp-extra = [
+  "contextualSpellCheck",
+  "pywsd",
+  "autocorrect",
+  "pyspellchecker",
+]
+
+# AI-enhanced RCA stack (src/dackar/RCA/demos and orchestrators).
+# Resolves against pydantic v2 (spaCy 3.8). langchain 1.x is the pydantic-v2 line.
+rca = [
+  "langchain-core",
+  "langchain-community",
+  "langchain-chroma",
+  "chromadb",
+  "pdfplumber",
+  "streamlit",
+  "nbformat",
+  "requests",
+  # PDF parsing (dackar.RCA.doc_parsers.pdfParser). Compatible with spaCy 3.8 / pydantic v2.
+  "marker-pdf",
+  # Small spaCy model needed by RCA/ner/hybrid_ner/generators/nounphrase_generator.py
+  # (hardcoded spacy.load("en_core_web_sm"); no lg fallback). URL-pinned to match the
+  # en_core_web_lg version in core deps.
+  "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
+
+# Anomaly detection (dackar.anomalies). scikit-learn already pulled in by core via quantulum3[classifier].
+anomaly = [
+  "stumpy",
+]
+
+# Neo4j knowledge-graph backend (dackar.knowledge_graph).
+kg = [
+  "neo4j",
+  "graphdatascience",
+]
+
+# Word-cloud rendering in dackar.utils.visualize.
+viz = [
+  "wordcloud",
+]
+
+# Documentation build (cd docs && make html).
+docs = [
+  "sphinx",
+  "sphinx_rtd_theme",
+  "nbsphinx",
+  "sphinx-copybutton",
+  "sphinx-autoapi",
+]
+
+# Tests and notebook examples.
+dev = [
+  "pytest",
+  "jupyterlab",
+]
+

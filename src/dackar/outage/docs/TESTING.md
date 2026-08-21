@@ -2,76 +2,70 @@
 
 ## Environment
 
-All outage pipeline tests run under the **`base` conda environment**
-(Python 3.11, `/opt/anaconda3`).  No LOGOS installation is required — Stage E
-tests use duck-typed mock Pert objects.
+All outage pipeline tests run under the **repo-root** uv environment. The
+`rca` (langchain) and `dev` (pytest) dependency groups are defined in the root
+`pyproject.toml`, not in `src/dackar/outage/pyproject.toml`, so sync from the
+repository root. No LOGOS installation is required — Stage E tests use
+duck-typed mock Pert objects.
 
 ```bash
-conda activate base        # or just use the default shell if base is active
-python --version           # expect Python 3.11.x
+# from the repository root
+uv sync --group rca --group dev    # RCA stack + pytest
+uv run python --version            # expect Python 3.11.x
 ```
 
 ## Running the tests
 
-All commands must be issued from the **outage package root**:
-
-```bash
-cd /Users/mandd/projects/DACKAR/src/dackar/outage
-```
+All commands are issued from the **repository root** via `uv run` so the
+root environment (with the `rca`/`dev` groups) is used:
 
 Run the full suite:
 
 ```bash
-python -m pytest tests/ -q
+uv run pytest src/dackar/outage/tests/ -q
 ```
 
 Run a single test file:
 
 ```bash
-python -m pytest tests/test_stage_b.py -v
-python -m pytest tests/test_stage_e.py -v
-python -m pytest tests/test_stages_a_c.py -v
-python -m pytest tests/test_stages_f_g.py -v
-python -m pytest tests/test_orchestrator_e2e.py -v
+uv run pytest src/dackar/outage/tests/test_stage_b.py -v
+uv run pytest src/dackar/outage/tests/test_stage_e.py -v
+uv run pytest src/dackar/outage/tests/test_stages_a_c.py -v
+uv run pytest src/dackar/outage/tests/test_stages_f_g.py -v
+uv run pytest src/dackar/outage/tests/test_orchestrator_e2e.py -v
 ```
 
 Run a single test class or method:
 
 ```bash
-python -m pytest tests/test_stage_e.py::TestCheckResourceConflictsEquipment -v
-python -m pytest tests/test_stages_f_g.py::TestAnalystReviewHighAbbrRate -v
+uv run pytest src/dackar/outage/tests/test_stage_e.py::TestCheckResourceConflictsEquipment -v
+uv run pytest src/dackar/outage/tests/test_stages_f_g.py::TestAnalystReviewHighAbbrRate -v
 ```
 
 Expected baseline: **730 tests, 0 failures** (as of April 2026).
 
-## Why NOT the `dackar_libs` environment
+## Historical note: the old `dackar_libs` conda environment
 
-The `dackar_libs` conda env contains `spacy 3.5.0`, which depends on
-`pydantic.v1.ConstrainedStr` — a symbol removed in Pydantic V2.  When pytest
-collects tests it walks up the directory tree and imports
-`dackar/__init__.py`, which triggers the spacy import chain and raises
-`ImportError: cannot import name 'ConstrainedStr' from 'pydantic'`.
+Previously the project used a conda environment named `dackar_libs`, built from
+two separate `pip install` rounds. The project has since migrated to uv (see
+`pyproject.toml`), which resolves the core NLP stack and the heavier `rca`
+(langchain / marker-pdf) stack together in a single pass, so incompatible
+transitive requirements can no longer collide the way two ad-hoc pip rounds did.
 
-**Fix options (not yet applied):**
-- Upgrade spacy to ≥ 3.7 in `dackar_libs` (recommended), or
-- Downgrade pydantic to < 2 in `dackar_libs`.
+The original blocker was a `pydantic` conflict: the NLP stack was capped at
+`pydantic<2` (via `coreferee 1.4.1`, which required `spacy<3.6`), while
+`marker-pdf` needs `pydantic>=2.4.2`. It was resolved by bumping the NLP stack to
+spaCy 3.8 / pydantic v2 and removing `coreferee` (which was already inactive at
+runtime). spaCy is now pinned to `3.8.*` and the whole project, including the
+`rca` group, resolves on pydantic v2.
 
-Until then, the outage pipeline tests must run in `base`, and the RCA tests
-(see below) must be run as standalone scripts.
+## RCA tests
 
-## RCA tests (`/Users/mandd/projects/DACKAR/src/dackar/RCA`)
-
-RCA tests live outside the outage package and are affected by the
-spacy/Pydantic conflict described above.  Run them as plain Python scripts
-inside `dackar_libs`, **not** via pytest:
+RCA tests live in `/src/dackar/RCA/tests/` and run via pytest through uv:
 
 ```bash
-conda activate dackar_libs
-cd /Users/mandd/projects/DACKAR/src/dackar/RCA
-python tests/test_<name>.py
+uv run pytest tests/
 ```
-
-All 203 RCA tests pass this way (verified April 2026).
 
 ## Test file map
 

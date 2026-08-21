@@ -263,10 +263,10 @@ Failure mode overlap is a strong signal for sister equipment in the engineering 
 
 ```bash
 # Unit tests (MockEquipmentSpecStore — no live Chroma or Neo4j needed)
-conda run -n base python -m pytest unit_tests/test_equipment_similarity_resolver.py -v
+uv run python -m pytest unit_tests/test_equipment_similarity_resolver.py -v
 
 # Full suite
-conda run -n base python -m pytest unit_tests/ -q
+uv run python -m pytest unit_tests/ -q
 
 # Population smoke test (requires Neo4j + Chroma)
 python -c "

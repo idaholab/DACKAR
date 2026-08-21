@@ -13,88 +13,96 @@ DACKAR is structured by a set of workflows where each workflow is designed to pr
 
 ## Installation
 
-### How to install DACKAR libraries?
-
-- Install dependency libraries
+### 1. Create a conda environment with uv
 
 ```bash
-  conda create -n dackar_libs python=3.11
-
-  conda activate dackar_libs
-
-  pip install spacy==3.5 stumpy textacy matplotlib nltk coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas
+conda create -n dackar python=3.11 uv pip
+conda activate dackar
 ```
+Activate the env (`conda activate dackar`) in any new shell before
+running the `uv` commands below.
 
-- Install additional libraries
-
-Library ``neo4j`` is a Python module that is used to communicate with Neo4j database management system,
-and ``jupyterlab`` is used to execute notebook examples under ``./examples/`` folder.
+### 2. Clone and install dependencies
 
 ```bash
+git clone https://github.com/idaholab/DACKAR.git
+cd DACKAR
 
-  pip install neo4j jupyterlab
+# Pick the install that matches your workflow:
+uv sync                                                # core NLP only
+uv sync --group rca --group kg --group nlp-extra --group dev   # full RCA workflow
+uv sync --all-groups                                    # everything
 ```
 
-- Download language model from spacy (can not use INL network)
+### 3. Bootstrap runtime models (one-time)
 
 ```bash
-  python -m spacy download en_core_web_lg
-  python -m coreferee install en
+uv run python scripts/bootstrap_models.py
 ```
 
-- Install required nltk data for similarity analysis
---------------------------------------------------------
+This downloads the NLTK corpora used for similarity analysis and
+retrains the quantulum3 classifier. The `en_core_web_lg` spaCy model
+is installed automatically as a project dependency.
 
-```bash
-  python -m nltk.downloader all
-```
+### Dependency groups
+
+| Group | Use when |
+|---|---|
+| _(core, always installed)_ | Running `python -m dackar.main` |
+| `nlp-extra` | Optional NLP pipes (pywsd, contextual spell check) |
+| `anomaly`   | Using `dackar.anomalies` (matrix-profile / two-sample tests) |
+| `kg`        | Loading data into Neo4j via `dackar.knowledge_graph` |
+| `viz`       | Word-cloud rendering in `dackar.utils.visualize` |
+| `rca`       | Running the AI-enhanced RCA demos under `src/dackar/RCA/` |
+| `docs`      | Building Sphinx documentation |
+| `dev`       | Running tests and notebook examples |
 
 ## Test
 
-### Test functions with ```pytest```
-
-- Run the following command in your command line to install pytest:
+Running the full suite requires all dependency groups (the `anomaly`, `kg`,
+and `viz` tests import packages like `stumpy`, `neo4j`, and `wordcloud`). Sync
+them first, otherwise those tests fail to import:
 
 ```bash
-pip install -U pytest
+uv sync --all-groups                         # required for the full suite
 ```
 
-- The tests can be run with:
-
 ```bash
-cd tests
-pytest
+uv run pytest tests/                         # full suite
+uv run pytest tests/pipelines/test_pipelines.py  # single file
+uv run pytest -k temporal                    # by keyword
 ```
 
-## How to build documentation, such as html, latex and pdf?
+## How to build documentation
 
-### Install Required Libraries
+### Install dependencies
 
 ```bash
-  pip install sphinx sphinx_rtd_theme nbsphinx sphinx-copybutton sphinx-autoapi
-  conda install pandoc
+uv sync --group docs
+# Plus pandoc (system package, not a Python lib):
+brew install pandoc          # macOS
+# or: sudo apt install pandoc  # Debian/Ubuntu
 ```
 
 ### Build HTML
 
 ```bash
-  cd docs
-  make html
-  cd _build/html
-  python3 -m http.server
+cd docs
+uv run make html
+cd _build/html
+python3 -m http.server
 ```
 
-open your browser to: http://localhost:8000
+Open your browser to: http://localhost:8000
 
-### Build Latex and PDF
+### Build LaTeX and PDF
 
-__Sphinx__ uses latex to export the documentation as a PDF file. Thus one needs the basic
-latex dependencies used to write a pdf on the system.
+Sphinx uses LaTeX to export documentation as a PDF, so a LaTeX
+installation is required on the system.
 
 ```bash
-  cd docs
-  make latexpdf
-  cd _build/latex/
+cd docs
+uv run make latexpdf
 ```
 
-The PDF version of DACKAR is located at ``_build/latex/dackar.pdf``
+The PDF is at `docs/_build/latex/dackar.pdf`.

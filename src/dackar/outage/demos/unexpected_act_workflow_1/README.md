@@ -42,9 +42,9 @@ Open `dackar_workflow_demo.ipynb` and run all cells.
 No external services are required — see "Stub backends" below.
 
 ```
-conda activate base
 cd .../outage
-jupyter lab demos/unexpected_act_workflow_1/dackar_workflow_demo.ipynb
+uv sync --group dev    # jupyterlab lives in the dev group
+uv run jupyter lab demos/unexpected_act_workflow_1/dackar_workflow_demo.ipynb
 ```
 
 ---

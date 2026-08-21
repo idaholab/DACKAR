@@ -35,15 +35,14 @@ This demo answers both.
 Open `outage_uncertainty_demo.ipynb` and run all cells.
 
 ```
-conda activate base
 cd .../outage
-jupyter lab "demos/activity_duration variance/outage_uncertainty_demo.ipynb"
+uv sync --group dev    # jupyterlab lives in the dev group
+uv run jupyter lab "demos/activity_duration variance/outage_uncertainty_demo.ipynb"
 ```
 
 ### CLI script
 
 ```
-conda activate base
 cd .../outage
 python "demos/activity_duration variance/activity_duration_demo.py"
 ```
