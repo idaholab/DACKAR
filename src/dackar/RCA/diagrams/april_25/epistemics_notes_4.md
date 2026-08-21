@@ -6,7 +6,7 @@
 
 ---
 
-## 1. What the epistemics module is arguing (core claim)
+## 1. What the epistemics module is arguing (core claim) 
 
 The pipeline currently has a **provenance and shape** model for data, but not a **semantic contribution** model. It knows what a CR *is* and where it came from, but has no unified vocabulary for what a CR *does* in the causal story.
 

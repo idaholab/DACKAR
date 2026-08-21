@@ -157,7 +157,7 @@ Several optional phases swallow exceptions with `LOGGER.warning` and continue **
 - CMMS context build (L448)
 - signal-episode search (L698)
 - (May-23 also listed epistemics digest, supersession, cross-pattern, KG topology, NER disambiguation)
-
+ 
 Ishikawa is the **good pattern** to copy: on failure it appends a structured record to `optional_artifact_failures` (L658). The others should do the same so a degraded run is visibly distinguishable from a clean run in the manifest. **Severity: Medium-High (a degraded run can look clean — the single most consequential robustness gap).**
 
 ### 4.5 Runtime duck-typing of the engine interface (confirms May-23 §3.3)

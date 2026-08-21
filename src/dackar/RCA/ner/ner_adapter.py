@@ -191,7 +191,7 @@ def _route_entity(schema: Any, labels: list[str], groups: list[str]) -> Optional
     return None
 
 # 2) default seed provider to pass into augment_chunks
-def ner_seed_provider_from_pipeline(
+def ner_seed_provider_from_pipeline( 
     pipeline: HybridNERPipeline,
     NERSeed,
     annotator: Optional[SpacyAnnotator] = None,

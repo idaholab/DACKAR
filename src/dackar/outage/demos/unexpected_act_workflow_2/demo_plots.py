@@ -569,8 +569,8 @@ def plot_risk_register(
 
     col_labels = ["Rank", "Component ID", "Description", "System",
                   "Tier", "Trend", "Reg ★", "Score", "Recommended Action"]
-    col_widths  = [0.04,   0.11,           0.18,          0.14,
-                   0.13,   0.09,    0.05,  0.06,   0.20]
+    col_widths  = [0.03,   0.10,           0.20,          0.15,
+                   0.12,   0.07,    0.03,  0.05,   0.25]
 
     row_h       = 0.13
     header_y    = 0.90
@@ -593,7 +593,7 @@ def plot_risk_register(
         reg_flag  = "★" if comp.get("regulatory_constraint_flag") else ""
         desc      = comp.get("description", "")
         system    = comp.get("system", "")
-        tier_note = " ←trend" if row.get("tier_reason") == "escalating_trend_no_emergent_precedent" else ""
+        tier_note = " (T)" if row.get("tier_reason") == "escalating_trend_no_emergent_precedent" else ""
         action    = _TIER_ACTIONS.get(tier, _TIER_ACTIONS[None])
 
         row_y = data_y_start - rank * row_h
@@ -605,16 +605,17 @@ def plot_risk_register(
             boxstyle="round,pad=0.01", facecolor=bg, edgecolor="white", lw=0.8, alpha=0.85,
         ))
 
-        values = [str(rank + 1), cid, desc[:24], system[:18],
+        values = [str(rank + 1), cid, desc[:28], system[:20],
                   (_TIER_DISPLAY.get(tier, "—") + tier_note)[:20],
-                  trend_lbl[:12], reg_flag, f"{score_val:.2f}", action[:32]]
+                  trend_lbl[:12], reg_flag, f"{score_val:.2f}", action]
         x = 0.01
         for val, w in zip(values, col_widths):
             ax.text(x + w / 2, row_y, val, ha="center", va="center",
-                    fontsize=7 if len(val) > 18 else 8, color=fg)
+                    fontsize=6 if len(val) > 30 else (7 if len(val) > 18 else 8),
+                    color=fg)
             x += w
 
-    ax.text(0.5, -0.05, "⚠ Synthetic illustrative dataset — not validated results",
+    ax.text(0.5, -0.05, "Millbrook synthetic holdout evaluation",
             ha="center", fontsize=8, color="#94A3B8", style="italic",
             transform=ax.transAxes)
 
