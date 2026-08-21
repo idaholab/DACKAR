@@ -49,6 +49,13 @@ class RuleValidatedRCASynthesizerV31:
     _CONTRIBUTING_CATEGORIES = {"G", "H", "I", "J", "K"}
     _ROOT_CATEGORIES = {"L"}
 
+    # WS2 Part A — chain-position primary eligibility. When the top-scored candidate
+    # is a downstream `consequence`, an `initiating` candidate whose composite score
+    # is within this margin is preferred as primary (decision log §6; metamodel
+    # "initiating candidates ranked above contributing"). Kept small/conservative so
+    # a clearly-stronger consequence is not overridden — only near-ties are corrected.
+    _CHAIN_POSITION_PRIMARY_TIE_MARGIN = 0.05
+
     def __init__(self, llm_client: LLMClient, config: Optional[RCASynthesizerConfig] = None):
         self.llm_client = llm_client
         self.config = config or RCASynthesizerConfig()
@@ -176,6 +183,29 @@ class RuleValidatedRCASynthesizerV31:
         self._apply_metamodel_phase2_postprocessing(card, causality_candidates)
         self._enforce_recommended_action_depth_mapping(card, causality_candidates)
 
+        # WS2 Part A — flag a downstream `consequence` selected as primary (covers the
+        # LLM path and any large-gap fallback case not resolved by near-tie promotion).
+        self._apply_chain_position_review_flag(card, causality_candidates)
+
+        # N-2 — flag when the primary's temporal support is a co-occurrence proxy
+        # (no matched TSKR pattern) rather than established precedence/propagation.
+        self._apply_temporal_support_flag(card, causality_candidates)
+
+        # P-5 — surface the telemetry signal-DAG causal position of the primary: flag a
+        # primary sitting at a downstream convergence node, or an initiator whose onset
+        # lead was not established (co-temporal). Previously the DAG's position_type was
+        # only used to zero convergence evidence and was otherwise discarded.
+        self._apply_signal_dag_position_flag(card, causality_candidates)
+
+        # N-3 — explain-away: if the primary is a co-symptom of a suspected common
+        # cause (a shared dependency serving multiple candidates), flag that its own
+        # common cause may be the true root rather than treating the symptom as the
+        # initiating cause.
+        self._apply_common_cause_explain_away_flag(card, causality_candidates)
+
+        # P-7 — cap confidence (not just annotate) when the primary is data-limited.
+        self._apply_data_limited_confidence_cap(card, causality_candidates)
+
         # Phase D — epistemics digest enforcement (confidence cap, grounding flags, gap typing)
         self._apply_epistemics_postprocessing(card, causality_candidates)
 
@@ -210,7 +240,317 @@ class RuleValidatedRCASynthesizerV31:
                 recommended_actions=card.get("recommended_actions") or [],
             )
 
+        # F-3 — deterministically inject the prevention ('why was it not prevented?')
+        # defense-in-depth assessment for the primary cause (covers LLM + fallback paths).
+        if "prevention_analysis" not in card:
+            card["prevention_analysis"] = self._build_prevention_analysis(
+                card=card,
+                causality_candidates=causality_candidates,
+                pm_compliance=pm_compliance,
+                telemetry_summary=telemetry_summary,
+            )
+
+        # N-4 — state, on every card, that composite_score is a non-probabilistic ordinal
+        # ranking score (not a calibrated probability) so the number is read honestly.
+        if "score_interpretation" not in card:
+            card["score_interpretation"] = self._build_score_interpretation()
+
+        # F-4 — elimination-first audit: consolidate the (already-computed) hard-gate
+        # verdicts into one analyst-facing statement that gate elimination overrides the
+        # retained composite score, and list any high-scoring gate-eliminated candidate.
+        if "gate_disposition" not in card:
+            card["gate_disposition"] = self._build_gate_disposition(
+                card=card,
+                causality_candidates=causality_candidates,
+            )
+
+        # N-6 — unify the scattered causal signals into one inspectable, directed
+        # per-run causal graph the analyst can see and contest.
+        if "causal_graph" not in card:
+            card["causal_graph"] = self._build_causal_graph(
+                card=card,
+                event=event,
+                causality_candidates=causality_candidates,
+            )
+
         return card
+
+    _HARD_GATE_ORDER = ("physical_plausibility", "timeline_consistency", "barrier_logic")
+
+    @staticmethod
+    def _eliminating_gates_for(candidate: JsonDict) -> List[str]:
+        """Gate(s)/posture(s) that removed a candidate from primary standing."""
+        gates: List[str] = []
+        hard_gates = candidate.get("hard_gates") or {}
+        for gname in RuleValidatedRCASynthesizerV31._HARD_GATE_ORDER:
+            g = hard_gates.get(gname)
+            if isinstance(g, dict) and g.get("passed") is False:
+                gates.append(gname)
+        reasons = candidate.get("primary_block_reasons") or []
+        for posture in ("documentary_contradiction", "temporal_contradiction"):
+            if posture in reasons and posture not in gates:
+                gates.append(posture)
+        return gates
+
+    def _build_gate_disposition(
+        self,
+        *,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> JsonDict:
+        """F-4 — make the elimination-first semantics explicit and auditable.
+
+        Hard gates already run (after scoring) and set ``primary_eligibility="blocked"``,
+        ``ruleout``, and ``primary_block_reasons`` on candidates — the raw audit exists but
+        is scattered, and an eliminated candidate keeps its (possibly high) composite_score.
+        This consolidates the verdicts into one card block stating that a failed gate is
+        dispositive regardless of score, and surfaces any high-scoring candidate that a gate
+        eliminated so it cannot be silently outranked-then-ignored. Purely additive; no
+        pipeline reordering, no ranking change.
+        """
+        eliminated: List[JsonDict] = []
+        seen: set = set()
+        pool = list(causality_candidates.get("candidates") or []) + list(
+            causality_candidates.get("filtered_out_candidates") or []
+        )
+        for c in pool:
+            if not isinstance(c, dict):
+                continue
+            cid = str(c.get("candidate_id") or "").strip()
+            if not cid or cid in seen:
+                continue
+            egates = self._eliminating_gates_for(c)
+            if not egates:
+                continue
+            seen.add(cid)
+            eliminated.append({
+                "candidate_id": cid,
+                "eliminating_gates": egates,
+                "composite_score": round(float(c.get("composite_score", 0.0) or 0.0), 6),
+                "note": "Composite score retained for ranking/audit only; gate elimination overrides it.",
+            })
+        eliminated.sort(key=lambda r: (-r["composite_score"], r["candidate_id"]))
+
+        primary_id = str((card.get("primary_hypothesis") or {}).get("candidate_id") or "").strip()
+        if not primary_id or primary_id == "NONE":
+            primary_status = "no_primary_established"
+        elif primary_id in seen:
+            primary_status = "eliminated"
+        else:
+            primary_status = "passed_all_gates"
+
+        return {
+            "hard_gates_are_dispositive": True,
+            "gate_order": list(self._HARD_GATE_ORDER),
+            "primary_gate_status": primary_status,
+            "eliminated_candidates": eliminated,
+            "note": (
+                "Hard gates (physical plausibility → timeline consistency → barrier logic, plus "
+                "documentary/temporal contradiction postures) are dispositive: a candidate that "
+                "fails any gate is eliminated from primary standing regardless of its "
+                "composite_score. Gates are evaluated after scoring, but their verdict overrides "
+                "the score, which is kept for ranking and audit only. Any high-scoring "
+                "gate-eliminated candidate is listed above for reviewer visibility."
+            ),
+        }
+
+    def _build_causal_graph(
+        self,
+        *,
+        card: JsonDict,
+        event: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> JsonDict:
+        """N-6 — assemble one inspectable, directed per-run causal graph.
+
+        Causal reasoning is otherwise spread across TSKR chain-position, the telemetry
+        signal-DAG, common-cause/explain-away links, near-tie competition, and hard gates,
+        so depth/direction/mechanism are each approximated separately and never fall out of
+        a single model the analyst can contest. This consolidates those already-computed
+        signals into one graph: nodes are the target event and the assessed candidates;
+        directed edges commit a cause->effect ordering where the signals support it
+        (chain_position vs the event, shared-cause explain-away), and undirected edges mark
+        near-tie competition. Purely additive and ranking-neutral — it *reflects* the
+        existing scores, making N-1/N-2/N-3 checkable by construction.
+        """
+        event_id = str(event.get("event_id") or event.get("id") or "EVENT")
+        event_node_id = f"EVENT::{event_id}"
+
+        primary_id = str((card.get("primary_hypothesis") or {}).get("candidate_id") or "").strip()
+        contributing_ids = {
+            str(cc.get("candidate_id") or "").strip()
+            for cc in (card.get("contributing_causes") or [])
+            if isinstance(cc, dict) and cc.get("candidate_id")
+        }
+
+        candidates = [c for c in (causality_candidates.get("candidates") or []) if isinstance(c, dict)]
+
+        nodes: List[JsonDict] = [{
+            "id": event_node_id,
+            "label": str(event.get("title") or event.get("description") or event_id),
+            "node_type": "target_event",
+            "role": "target_event",
+        }]
+
+        node_ids: set = {event_node_id}
+        chain_pos: Dict[str, str] = {}
+        for c in candidates:
+            cid = str(c.get("candidate_id") or "").strip()
+            if not cid or cid in node_ids:
+                continue
+            eliminated = bool(self._eliminating_gates_for(c)) or str(
+                c.get("primary_eligibility") or ""
+            ) == "blocked"
+            if cid == primary_id:
+                role = "primary"
+            elif eliminated:
+                role = "eliminated"
+            elif cid in contributing_ids:
+                role = "contributing"
+            else:
+                role = "alternative"
+
+            canonical = c.get("canonical_tuple") or {}
+            scores = c.get("scores") or {}
+            cp = str(c.get("chain_position") or "").strip()
+            chain_pos[cid] = cp
+            node: JsonDict = {
+                "id": cid,
+                "label": str(c.get("cause_label") or cid),
+                "node_type": "candidate",
+                "role": role,
+            }
+            component = canonical.get("component") or c.get("component_id")
+            if component:
+                node["component"] = str(component)
+            if canonical.get("failure_mode"):
+                node["failure_mode"] = str(canonical.get("failure_mode"))
+            if canonical.get("causal_category"):
+                node["causal_category"] = str(canonical.get("causal_category"))
+            if cp:
+                node["chain_position"] = cp
+            sig_pos = scores.get("signal_dag_position_type")
+            if sig_pos:
+                node["signal_dag_position"] = str(sig_pos)
+            if c.get("composite_score") is not None:
+                node["composite_score"] = round(float(c.get("composite_score") or 0.0), 6)
+            if c.get("confidence_label"):
+                node["confidence_label"] = str(c.get("confidence_label"))
+            nodes.append(node)
+            node_ids.add(cid)
+
+        edges: List[JsonDict] = []
+        any_directed = False
+
+        # 1) Temporal-precedence edges vs the target event, from TSKR chain_position.
+        for c in candidates:
+            cid = str(c.get("candidate_id") or "").strip()
+            if cid not in node_ids or cid == event_node_id:
+                continue
+            if str(c.get("primary_eligibility") or "") == "blocked":
+                continue  # eliminated candidates are shown as nodes, not causal edges
+            cp = chain_pos.get(cid, "")
+            rel = str((c.get("temporal_evidence") or {}).get("relation") or "").strip()
+            rel_note = f"; temporal_relation={rel}" if rel else ""
+            if cp in ("initiating", "contributing"):
+                edges.append({
+                    "from": cid,
+                    "to": event_node_id,
+                    "relation": "temporal_precedence",
+                    "directed": True,
+                    "basis": f"chain_position={cp} (precedes the event){rel_note}",
+                })
+                any_directed = True
+            elif cp == "consequence":
+                edges.append({
+                    "from": event_node_id,
+                    "to": cid,
+                    "relation": "temporal_precedence",
+                    "directed": True,
+                    "basis": f"chain_position=consequence (downstream of the event){rel_note}",
+                })
+                any_directed = True
+
+        # 2) Explain-away edges: the suspected shared cause -> its co-symptom candidates.
+        ccs = causality_candidates.get("common_cause_summary") or {}
+        if isinstance(ccs, dict) and ccs.get("suspected_common_cause"):
+            top_cc = str(ccs.get("top_common_cause_candidate_id") or "").strip()
+            if top_cc in node_ids:
+                for eid in ccs.get("explained_away_candidate_ids") or []:
+                    eid = str(eid or "").strip()
+                    if eid and eid in node_ids and eid != top_cc:
+                        edges.append({
+                            "from": top_cc,
+                            "to": eid,
+                            "relation": "explained_away",
+                            "directed": True,
+                            "basis": "shared common cause: co-symptom explained away by the top shared-cause candidate",
+                        })
+                        any_directed = True
+
+        # 3) Near-tie edges: undirected competition between close-scoring hypotheses.
+        seen_pairs: set = set()
+        for c in candidates:
+            cid = str(c.get("candidate_id") or "").strip()
+            if cid not in node_ids:
+                continue
+            for peer in c.get("near_tie_with") or []:
+                peer = str(peer or "").strip()
+                if not peer or peer not in node_ids or peer == cid:
+                    continue
+                pair = tuple(sorted((cid, peer)))
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                edges.append({
+                    "from": pair[0],
+                    "to": pair[1],
+                    "relation": "near_tie",
+                    "directed": False,
+                    "basis": "composite scores within the review gap — competing hypotheses",
+                })
+
+        return {
+            "target_event_id": event_id,
+            "directionality_committed": any_directed,
+            "nodes": nodes,
+            "edges": edges,
+            "provenance_note": (
+                "Deterministic per-run causal graph assembled from existing candidate signals: "
+                "temporal_precedence edges from TSKR chain_position relative to the event, "
+                "explained_away edges from the common-cause summary, and undirected near_tie edges "
+                "from near-tie competition. Node annotations preserve both chain-position views "
+                "(TSKR chain_position and telemetry signal_dag_position), which can differ by "
+                "design. The graph reflects the existing ranking; it does not alter it."
+            ),
+        }
+
+    @staticmethod
+    def _build_score_interpretation() -> JsonDict:
+        """N-4 — honest semantics for ``composite_score``.
+
+        The composite is a weighted blend of heuristic sub-scores with hand-set weights
+        and relation priors; it is not calibrated against outcome frequencies, and any
+        score confidence interval encodes data availability, not statistical uncertainty.
+        Emitting this block prevents ``composite_score = 0.72`` from being read as
+        '72% likely the cause'. Constant, additive, and ranking-neutral.
+        """
+        return {
+            "score_type": "ordinal_ranking",
+            "is_probability": False,
+            "is_calibrated": False,
+            "interval_meaning": (
+                "Any score confidence interval reflects data availability/degradation "
+                "(e.g. missing evidence streams), NOT statistical or sampling uncertainty."
+            ),
+            "note": (
+                "composite_score is a non-probabilistic ordinal ranking score — a weighted "
+                "blend of heuristic structural, temporal, telemetry, evidence, and governance "
+                "sub-scores with hand-set weights. It ranks hypotheses relative to one another "
+                "and must NOT be read as a probability or likelihood percentage (0.72 does not "
+                "mean '72% likely'). For likelihood, use the ordinal confidence_label."
+            ),
+        }
 
     # ------------------------------------------------------------------
     # Selection
@@ -223,6 +563,11 @@ class RuleValidatedRCASynthesizerV31:
         cands = sorted(
             cands, key=lambda x: (x.get("composite_score", 0.0) or 0.0), reverse=True
         )
+        # WS2 Part A (closes F-6 for the near-tie case): a `consequence` is a
+        # downstream effect, not the initiating cause. If the top-scored candidate is
+        # a consequence but a near-tie `initiating` candidate exists, promote the
+        # initiator to primary so synthesis is built around the upstream cause.
+        cands = self._promote_initiator_over_consequence(cands)
         n = int(self.config.max_candidates_in_prompt)
         extra_max = int(self.config.max_synthesis_extra_review_candidates)
         out = cands[:n]
@@ -237,6 +582,368 @@ class RuleValidatedRCASynthesizerV31:
                 out.append(c)
                 seen.add(cid)
         return out
+
+    @staticmethod
+    def _chain_position_of(candidate: JsonDict) -> str:
+        return str(candidate.get("chain_position") or "").strip().lower()
+
+    def _promote_initiator_over_consequence(
+        self, ranked: List[JsonDict]
+    ) -> List[JsonDict]:
+        """Promote a near-tie `initiating` candidate ahead of a top `consequence`.
+
+        Conservative: only fires when the #1 candidate is a `consequence` and some
+        `initiating` candidate scores within ``_CHAIN_POSITION_PRIMARY_TIE_MARGIN``
+        of it. A clearly-stronger consequence is left in place (and later flagged for
+        analyst review by ``_apply_chain_position_review_flag``).
+        """
+        if len(ranked) < 2:
+            return ranked
+        if self._chain_position_of(ranked[0]) != "consequence":
+            return ranked
+        top_score = float(ranked[0].get("composite_score", 0.0) or 0.0)
+        margin = float(self._CHAIN_POSITION_PRIMARY_TIE_MARGIN)
+        best_idx: Optional[int] = None
+        best_score = -1.0
+        for i in range(1, len(ranked)):
+            if self._chain_position_of(ranked[i]) != "initiating":
+                continue
+            score = float(ranked[i].get("composite_score", 0.0) or 0.0)
+            if score >= top_score - margin and score > best_score:
+                best_idx = i
+                best_score = score
+        if best_idx is None:
+            return ranked
+        initiator = ranked.pop(best_idx)
+        ranked.insert(0, initiator)
+        return ranked
+
+    def _apply_chain_position_review_flag(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        """WS2 Part A: flag when the primary hypothesis is a downstream `consequence`.
+
+        A `consequence` is a derivative effect, not the initiating cause. When the
+        primary chain_position is `consequence`, surface an analyst attention flag and
+        an uncertainty note pointing to the strongest upstream `initiating` candidate,
+        so the analyst reviews whether the true primary cause is upstream. Depth
+        labelling is intentionally left category-based (WS2 scope = Part A only).
+        """
+        primary = card.get("primary_hypothesis")
+        if not isinstance(primary, dict):
+            return
+        primary_id = str(primary.get("candidate_id") or "").strip()
+        if not primary_id:
+            return
+        candidates = [
+            c for c in (causality_candidates.get("candidates") or []) if isinstance(c, dict)
+        ]
+        primary_candidate = next(
+            (c for c in candidates if str(c.get("candidate_id") or "").strip() == primary_id),
+            None,
+        )
+        if not isinstance(primary_candidate, dict):
+            return
+        if self._chain_position_of(primary_candidate) != "consequence":
+            return
+
+        initiators = sorted(
+            (c for c in candidates if self._chain_position_of(c) == "initiating"),
+            key=lambda x: float(x.get("composite_score", 0.0) or 0.0),
+            reverse=True,
+        )
+        initiator = initiators[0] if initiators else None
+        if initiator is not None:
+            flag = (
+                "Primary hypothesis chain_position is 'consequence' (a downstream effect). "
+                f"An upstream initiating candidate exists ('{initiator.get('candidate_id')}': "
+                f"{initiator.get('cause_label') or 'n/a'}) — review whether it is the true primary cause."
+            )
+        else:
+            flag = (
+                "Primary hypothesis chain_position is 'consequence' (a downstream effect); "
+                "no initiating candidate was identified — review whether the initiating cause is "
+                "outside the current candidate set."
+            )
+
+        summary = card.setdefault("executive_summary", {})
+        if isinstance(summary, dict):
+            flags = summary.setdefault("analyst_attention_flags", [])
+            if isinstance(flags, list) and flag not in flags:
+                flags.append(flag)
+
+        uncertainties = primary.setdefault("uncertainties", [])
+        if isinstance(uncertainties, list):
+            note = (
+                "Selected primary is a downstream consequence; the upstream initiating "
+                "cause should be confirmed."
+            )
+            if note not in uncertainties:
+                uncertainties.append(note)
+
+    def _apply_temporal_support_flag(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        """N-2: flag when the primary hypothesis's temporal support is unestablished.
+
+        When no TSKR pattern matched the primary failure mode, its temporal sub-score
+        is a *co-occurrence proxy* (anomalies merely co-present in the event window) —
+        not established temporal precedence and not a propagation path. Surface this so
+        an engineer does not read a proxy-derived temporal score as confirmed temporal
+        causation (post-hoc/cum-hoc guard).
+        """
+        primary = card.get("primary_hypothesis")
+        if not isinstance(primary, dict):
+            return
+        primary_id = str(primary.get("candidate_id") or "").strip()
+        if not primary_id:
+            return
+        primary_candidate = next(
+            (
+                c for c in (causality_candidates.get("candidates") or [])
+                if isinstance(c, dict) and str(c.get("candidate_id") or "").strip() == primary_id
+            ),
+            None,
+        )
+        if not isinstance(primary_candidate, dict):
+            return
+        scores = primary_candidate.get("scores") or {}
+        if not bool(scores.get("temporal_support_unestablished")):
+            return
+
+        flag = (
+            "Primary hypothesis temporal support is unestablished (co-occurrence only): "
+            "no TSKR pattern matched this failure mode, so the temporal score reflects "
+            "anomalies merely co-present in the event window — not confirmed precedence or a "
+            "propagation path. Treat temporal support as a proxy pending mechanism/timeline confirmation."
+        )
+        summary = card.setdefault("executive_summary", {})
+        if isinstance(summary, dict):
+            flags = summary.setdefault("analyst_attention_flags", [])
+            if isinstance(flags, list) and flag not in flags:
+                flags.append(flag)
+
+        uncertainties = primary.setdefault("uncertainties", [])
+        if isinstance(uncertainties, list):
+            note = (
+                "Temporal support is a co-occurrence proxy (no matched pattern); confirm "
+                "precedence/propagation before relying on it."
+            )
+            if note not in uncertainties:
+                uncertainties.append(note)
+
+        # N-2 confidence cap: an unestablished (co-occurrence) temporal basis must not
+        # yield a 'high' confidence causal claim. Cap the primary and executive
+        # confidence at 'medium' (downward-only via _cap_confidence_label — never
+        # raises). Ranking is untouched; only the confidence claim is bounded.
+        for target in (primary, card.get("executive_summary")):
+            if isinstance(target, dict) and target.get("confidence_label"):
+                capped = self._cap_confidence_label(str(target["confidence_label"]), "medium")
+                if capped != target["confidence_label"]:
+                    target["confidence_label"] = capped
+                    target.setdefault(
+                        "confidence_label_cap_reason", "temporal_support_unestablished"
+                    )
+
+    def _apply_signal_dag_position_flag(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        """P-5: surface the telemetry signal-DAG causal position of the primary hypothesis.
+
+        The signal-evidence builder classifies each candidate's anomaly within the
+        telemetry-propagation DAG (root / common-cause root / intermediate /
+        convergence confluence) and records whether a root's onset lead over its
+        successor was actually established. That view was previously consumed only to
+        zero convergence evidence. Here it is surfaced to the analyst in two honest,
+        additive ways (no ranking or confidence change):
+
+        * the primary sits at a **convergence confluence** — a downstream node where
+          multiple propagation chains meet, i.e. a likely symptom rather than the
+          initiator; or
+        * the primary is a signal-DAG **initiator whose onset lead was not established**
+          (co-temporal / OVERLAPS), so telemetry does not demonstrate it precedes the
+          sequence it is claimed to initiate.
+        """
+        primary = card.get("primary_hypothesis")
+        if not isinstance(primary, dict):
+            return
+        primary_id = str(primary.get("candidate_id") or "").strip()
+        if not primary_id:
+            return
+        primary_candidate = next(
+            (
+                c for c in (causality_candidates.get("candidates") or [])
+                if isinstance(c, dict) and str(c.get("candidate_id") or "").strip() == primary_id
+            ),
+            None,
+        )
+        if not isinstance(primary_candidate, dict):
+            return
+        scores = primary_candidate.get("scores") or {}
+        position_type = str(scores.get("signal_dag_position_type") or "").strip().lower()
+        if not position_type or position_type == "absent":
+            return
+
+        flag: Optional[str] = None
+        note: Optional[str] = None
+        if position_type == "convergence_confluence":
+            flag = (
+                "Primary hypothesis sits at a telemetry-propagation convergence node (a "
+                "downstream point where multiple anomaly chains meet) — likely a symptom, "
+                "not the initiator. Review whether an upstream candidate is the true primary cause."
+            )
+            note = (
+                "Signal-DAG places this candidate at a convergence confluence (downstream); "
+                "confirm the upstream initiating cause."
+            )
+        elif position_type in {"root", "common_cause_root"}:
+            lag_established = scores.get("signal_dag_initiator_lag_established")
+            if lag_established is False:
+                flag = (
+                    "Primary hypothesis is a signal-DAG initiator whose onset lead was not "
+                    "established (co-temporal / overlapping anomalies) — telemetry does not "
+                    "demonstrate it precedes the sequence. Confirm precedence before relying on it."
+                )
+                note = (
+                    "Signal-DAG initiator lead is unestablished (co-temporal); confirm the "
+                    "primary precedes its downstream effects."
+                )
+        if not flag:
+            return
+
+        summary = card.setdefault("executive_summary", {})
+        if isinstance(summary, dict):
+            flags = summary.setdefault("analyst_attention_flags", [])
+            if isinstance(flags, list) and flag not in flags:
+                flags.append(flag)
+
+        uncertainties = primary.setdefault("uncertainties", [])
+        if isinstance(uncertainties, list) and note not in uncertainties:
+            uncertainties.append(note)
+
+    def _apply_common_cause_explain_away_flag(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        """N-3: flag when the primary hypothesis is a co-symptom of a suspected common cause.
+
+        The engine's common-cause analysis identifies when several candidates converge
+        on a shared dependency (`common_cause_summary.suspected_common_cause`), names the
+        strongest shared-cause candidate (`top_common_cause_candidate_id`) and lists the
+        remaining co-symptoms (`explained_away_candidate_ids`). A downstream symptom of a
+        common cause is not itself the initiating root — if such a co-symptom is selected
+        primary, surface an analyst flag pointing at the shared cause / shared dependency
+        so the true common cause is reviewed. Additive (flag + uncertainty note); ranking
+        is unchanged.
+        """
+        primary = card.get("primary_hypothesis")
+        if not isinstance(primary, dict):
+            return
+        primary_id = str(primary.get("candidate_id") or "").strip()
+        if not primary_id or primary_id == "NONE":
+            return
+
+        summary = causality_candidates.get("common_cause_summary") or {}
+        if not isinstance(summary, dict) or not summary.get("suspected_common_cause"):
+            return
+        explained_away = summary.get("explained_away_candidate_ids") or []
+        if primary_id not in explained_away:
+            return
+
+        top_cause = summary.get("top_common_cause_candidate_id")
+        shared_deps = summary.get("shared_dependency_ids") or []
+        dep_txt = f" (shared dependency: {', '.join(str(d) for d in shared_deps)})" if shared_deps else ""
+        if top_cause and str(top_cause) != primary_id:
+            flag = (
+                "Primary hypothesis is a co-symptom of a suspected common cause"
+                f"{dep_txt}: it shares a dependency with other candidates and a stronger "
+                f"shared-cause candidate ('{top_cause}') was identified — review whether the "
+                "common cause, not this symptom, is the true root."
+            )
+            note = (
+                f"Selected primary converges on a suspected common cause ('{top_cause}'); "
+                "confirm whether it is a symptom of that shared cause rather than the initiating cause."
+            )
+        else:
+            flag = (
+                "Primary hypothesis participates in a suspected common-cause cluster"
+                f"{dep_txt}; review whether a shared dependency is the true root rather than "
+                "this individual candidate."
+            )
+            note = (
+                "Selected primary is part of a suspected common-cause cluster; confirm the "
+                "shared dependency is not the true root."
+            )
+
+        exec_summary = card.setdefault("executive_summary", {})
+        if isinstance(exec_summary, dict):
+            flags = exec_summary.setdefault("analyst_attention_flags", [])
+            if isinstance(flags, list) and flag not in flags:
+                flags.append(flag)
+
+        uncertainties = primary.setdefault("uncertainties", [])
+        if isinstance(uncertainties, list) and note not in uncertainties:
+            uncertainties.append(note)
+
+    def _apply_data_limited_confidence_cap(
+        self,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+    ) -> None:
+        """P-7: cap card confidence when the primary hypothesis is data-limited.
+
+        The engine already reduces a data-limited candidate's quality multiplier and
+        flags ``data_limited_conclusion`` with ``critical_streams_below_floor``, but that
+        was previously only *annotated* (uncertainties/evidence-gaps) — the confidence
+        label could still read `high`. §3.5/§7 require conservative bias under sparse
+        data, so a data-limited primary must not carry a `high` confidence claim. Cap the
+        primary and executive confidence at `medium` (downward-only; never raises) and
+        add an analyst attention flag. Ranking is untouched.
+        """
+        primary = card.get("primary_hypothesis")
+        if not isinstance(primary, dict):
+            return
+        primary_id = str(primary.get("candidate_id") or "").strip()
+        if not primary_id:
+            return
+        primary_candidate = next(
+            (
+                c for c in (causality_candidates.get("candidates") or [])
+                if isinstance(c, dict) and str(c.get("candidate_id") or "").strip() == primary_id
+            ),
+            None,
+        )
+        if not isinstance(primary_candidate, dict):
+            return
+        if not bool(primary_candidate.get("data_limited_conclusion", False)):
+            return
+
+        missing = [str(x) for x in (primary_candidate.get("critical_streams_below_floor") or [])]
+        for target in (primary, card.get("executive_summary")):
+            if isinstance(target, dict) and target.get("confidence_label"):
+                capped = self._cap_confidence_label(str(target["confidence_label"]), "medium")
+                if capped != target["confidence_label"]:
+                    target["confidence_label"] = capped
+                    target.setdefault("confidence_label_cap_reason", "data_limited_conclusion")
+
+        summary = card.setdefault("executive_summary", {})
+        if isinstance(summary, dict):
+            flags = summary.setdefault("analyst_attention_flags", [])
+            flag = (
+                "Primary hypothesis is data-limited"
+                + (f" (critical stream(s) below floor: {', '.join(missing)})" if missing else "")
+                + " — confidence capped at 'medium'; corroborate the missing evidence stream(s) "
+                "before treating the conclusion as high-confidence."
+            )
+            if isinstance(flags, list) and flag not in flags:
+                flags.append(flag)
 
     def _select_evidence(
         self,
@@ -2121,6 +2828,182 @@ analyst_review = {
             )
         return plan
 
+    def _build_prevention_analysis(
+        self,
+        *,
+        card: JsonDict,
+        causality_candidates: JsonDict,
+        pm_compliance: Optional[JsonDict],
+        telemetry_summary: Optional[JsonDict],
+    ) -> JsonDict:
+        """F-3 — deterministic 'why was it not prevented?' defense-in-depth assessment.
+
+        The metamodel requires the RCA card to state *which barriers failed, which held,
+        and why* (a first-class output). The existing structural ``barrier_analysis``
+        only maps which safety functions a scored candidate impacts; it does not explain
+        why the failure was not prevented. This assesses three defense-in-depth layers
+        for the primary cause from data already on hand — no new inputs, no speculation:
+
+          * **preventive_maintenance** — from ``pm_compliance`` surveillance/PM checks
+            (a failed check is a prevention gap);
+          * **condition_monitoring** — from telemetry detection (anomaly precursors
+            present ⇒ monitoring held; telemetry present but no precursor ⇒ a detection
+            gap; no telemetry ⇒ not evaluated);
+          * **protection_logic** — from the primary candidate's ``barrier_logic`` hard
+            gate (a retained primary passed the gate, so protection did not preclude the
+            cause ⇒ gap; degraded/absent inputs ⇒ not evaluated).
+
+        Honest by construction: any layer without inputs is ``not_evaluated`` rather than
+        being asserted as a failure. Additive card block; ranking untouched.
+        """
+        primary = card.get("primary_hypothesis") or {}
+        primary_id = str(primary.get("candidate_id") or "").strip()
+
+        def _empty(note: str) -> JsonDict:
+            return {
+                "applicable": False,
+                "barriers": [],
+                "failed_or_missing_barriers": [],
+                "why_not_prevented": (
+                    "No primary cause was established, so a prevention (defense-in-depth) "
+                    "assessment is not applicable."
+                ),
+                "provenance_note": note,
+            }
+
+        if not primary_id or primary_id == "NONE":
+            return _empty("No primary hypothesis; prevention analysis not applicable.")
+
+        primary_candidate = next(
+            (
+                c for c in (causality_candidates.get("candidates") or [])
+                if isinstance(c, dict) and str(c.get("candidate_id") or "").strip() == primary_id
+            ),
+            None,
+        )
+
+        barriers: List[JsonDict] = []
+
+        # 1) Preventive maintenance / surveillance barrier.
+        checks = [c for c in ((pm_compliance or {}).get("checks") or []) if isinstance(c, dict)]
+        failed_checks = [c for c in checks if str(c.get("status") or "").strip().lower() == "fail"]
+        if not checks:
+            barriers.append({
+                "barrier_type": "preventive_maintenance",
+                "status": "not_evaluated",
+                "basis": "No PM/surveillance compliance inputs were available for this event.",
+            })
+        elif failed_checks:
+            names = [str(c.get("check_id") or c.get("name") or c.get("check_type") or "check") for c in failed_checks]
+            barriers.append({
+                "barrier_type": "preventive_maintenance",
+                "status": "gap",
+                "basis": f"{len(failed_checks)} of {len(checks)} PM/surveillance compliance checks failed.",
+                "detail": "Failed checks: " + ", ".join(names[:5]),
+            })
+        else:
+            barriers.append({
+                "barrier_type": "preventive_maintenance",
+                "status": "held",
+                "basis": f"All {len(checks)} PM/surveillance compliance checks passed; PM was not the prevention gap.",
+            })
+
+        # 2) Condition monitoring / detection barrier.
+        signals = [s for s in ((telemetry_summary or {}).get("signals") or []) if isinstance(s, dict)]
+        anomaly_signal_ids = [
+            str(s.get("sensor_id") or "?") for s in signals if (s.get("anomalies") or [])
+        ]
+        if not signals:
+            barriers.append({
+                "barrier_type": "condition_monitoring",
+                "status": "not_evaluated",
+                "basis": "No telemetry/condition-monitoring inputs were available for this event.",
+            })
+        elif anomaly_signal_ids:
+            barriers.append({
+                "barrier_type": "condition_monitoring",
+                "status": "held",
+                "basis": (
+                    f"{len(anomaly_signal_ids)} monitored signal(s) reported anomalies — "
+                    "condition monitoring surfaced precursors."
+                ),
+                "detail": "Sensors with anomalies: " + ", ".join(anomaly_signal_ids[:5]),
+            })
+        else:
+            barriers.append({
+                "barrier_type": "condition_monitoring",
+                "status": "gap",
+                "basis": (
+                    f"Telemetry was present ({len(signals)} signal(s)) but no anomaly precursor was "
+                    "detected before the event — no early warning."
+                ),
+            })
+
+        # 3) Protection-logic / safety-function barrier (from the primary's hard gate).
+        barrier_gate = ((primary_candidate or {}).get("hard_gates") or {}).get("barrier_logic") or {}
+        affected_sfs = (primary_candidate or {}).get("affected_safety_functions") or []
+        sf_names = [
+            str(sf.get("sf_name") or sf.get("sf_id") or "safety_function")
+            for sf in affected_sfs if isinstance(sf, dict)
+        ]
+        if not barrier_gate or bool(barrier_gate.get("degraded_mode")):
+            barriers.append({
+                "barrier_type": "protection_logic",
+                "status": "not_evaluated",
+                "basis": (
+                    "Protection-logic/barrier inputs were unavailable (barrier-logic gate ran in "
+                    "degraded mode); barrier state could not be established."
+                ),
+            })
+        elif sf_names:
+            barriers.append({
+                "barrier_type": "protection_logic",
+                "status": "gap",
+                "basis": (
+                    "The primary cause passed the barrier-logic gate — protection/safety-function "
+                    "logic did not preclude or arrest it."
+                ),
+                "detail": "Affected safety functions: " + ", ".join(sf_names[:5]),
+            })
+        else:
+            barriers.append({
+                "barrier_type": "protection_logic",
+                "status": "not_applicable",
+                "basis": "The primary cause is not linked to a protection/safety-function barrier.",
+            })
+
+        failed_or_missing = [b["barrier_type"] for b in barriers if b["status"] == "gap"]
+        assessed = [b for b in barriers if b["status"] in ("held", "gap")]
+        applicable = bool(assessed)
+
+        if failed_or_missing:
+            reasons = "; ".join(b["basis"] for b in barriers if b["status"] == "gap")
+            why = f"The failure was not prevented because: {reasons}"
+        elif applicable:
+            why = (
+                "Every assessable defense-in-depth barrier held; the prevention gap lies outside "
+                "the assessed barriers (review upstream layers or barriers not modelled here)."
+            )
+        else:
+            why = (
+                "Defense-in-depth data was insufficient to determine why the failure was not "
+                "prevented: no PM-compliance, telemetry, or protection-logic inputs were available "
+                "for the primary cause."
+            )
+
+        return {
+            "applicable": applicable,
+            "barriers": barriers,
+            "failed_or_missing_barriers": failed_or_missing,
+            "why_not_prevented": why,
+            "provenance_note": (
+                "Deterministic defense-in-depth assessment derived from pm_compliance checks, "
+                "telemetry anomaly detection, and the primary candidate's barrier-logic hard gate. "
+                "Distinct from the structural safety-function impact map in barrier_analysis; "
+                "barriers without inputs are reported as not_evaluated rather than assumed failed."
+            ),
+        }
+
     @staticmethod
     def _build_human_performance_assessment(
         *,
@@ -2133,22 +3016,25 @@ analyst_review = {
         block for the RCA card.  When no such candidates are present, returns an
         ``applicable=False`` record so the field is always populated.
         """
-        # G = human_performance in the v32 category scheme (operator/maintenance error);
-        # H-K cover the legacy synthesizer scheme and remain for backwards compatibility.
-        HOP_CATEGORIES = {"G", "H", "I", "J", "K"}
+        # F-2 (2026-08-20): aligned to the v32 A–L taxonomy. Human & Organisational
+        # Performance covers ONLY: G = human performance (operator/maintenance
+        # execution), the human facet of I = change control (unauthorized/temporary
+        # modification), and L = organisational/systemic (training, safety culture,
+        # resource, corrective-action programme). Design (H), surveillance/testing (J)
+        # and vendor/procurement (K) are hardware/programmatic/supply-chain causes —
+        # NOT human performance — and are deliberately excluded so they are not
+        # misattributed with a human-performance regulatory reference. They remain
+        # reported under their own causal categories elsewhere in the card.
+        HOP_CATEGORIES = {"G", "I", "L"}
         PERFORMANCE_MODE: Dict[str, str] = {
             "G": "execution_error",
-            "H": "execution_error",
-            "I": "procedure_gap",
-            "J": "knowledge_gap",
-            "K": "supervisory_gap",
+            "I": "change_management_gap",
+            "L": "organisational_gap",
         }
         REGULATORY_REF: Dict[str, str] = {
-            "G": "AP-913 §4.3 — Human Performance (maintenance execution)",
-            "H": "AP-913 §4.3 — Human Performance (maintenance execution)",
-            "I": "AP-913 §4.4 — Procedure Adequacy",
-            "J": "AP-913 §4.5 — Training and Qualification",
-            "K": "AP-913 §4.6 — Supervisory and Organisational Factors",
+            "G": "AP-913 §4.3 — Human Performance (operator/maintenance execution)",
+            "I": "AP-913 §4.4 — Change Management / Configuration Control",
+            "L": "AP-913 §4.6 — Supervisory and Organisational Factors",
         }
 
         hop_candidates = [
@@ -2157,7 +3043,27 @@ analyst_review = {
             and str(c.get("primary_causal_category") or "").strip().upper() in HOP_CATEGORIES
         ]
 
-        category_flags: Dict[str, bool] = {cat: False for cat in HOP_CATEGORIES}
+        # Categories that are sometimes mistaken for human performance but are not:
+        # H (design), J (surveillance/testing program), K (vendor/procurement).
+        excluded_non_hop = sorted({
+            str(c.get("primary_causal_category") or "").strip().upper()
+            for c in (selected_candidates or [])
+            if isinstance(c, dict)
+            and str(c.get("primary_causal_category") or "").strip().upper() in {"H", "J", "K"}
+        })
+        _EXCLUDED_LABELS = {"H": "design", "J": "surveillance/testing", "K": "vendor/procurement"}
+        excluded_note = (
+            (
+                " Note: retained candidate(s) in category "
+                + ", ".join(f"{c} ({_EXCLUDED_LABELS[c]})" for c in excluded_non_hop)
+                + " are NOT human-performance findings and are reported under their own"
+                  " causal categories, not here."
+            )
+            if excluded_non_hop
+            else ""
+        )
+
+        category_flags: Dict[str, bool] = {cat: False for cat in ("G", "I", "L")}
         for c in hop_candidates:
             cat = str(c.get("primary_causal_category") or "").strip().upper()
             if cat in category_flags:
@@ -2169,8 +3075,9 @@ analyst_review = {
                 "category_flags": category_flags,
                 "findings": [],
                 "provenance_note": (
-                    "No H/I/J/K category candidate was retained in the final candidate set. "
-                    "Human and organisational factors were not identified as contributors in this event."
+                    "No G/I/L (human performance, change control, or organisational/systemic) "
+                    "candidate was retained in the final candidate set. Human and organisational "
+                    "factors were not identified as contributors in this event." + excluded_note
                 ),
             }
 
@@ -2207,6 +3114,7 @@ analyst_review = {
             "provenance_note": (
                 f"{len(findings)} human/organisational finding(s) identified across "
                 f"categories: {', '.join(sorted(k for k, v in category_flags.items() if v))}."
+                + excluded_note
             ),
         }
 
@@ -3073,10 +3981,10 @@ analyst_review = {
         }
         if ccf_summary is not None:
             card["ccf_summary"] = ccf_summary
-        # Always populate human_performance_assessment (applicable=False when no H/I/J/K candidates)
+        # Always populate human_performance_assessment (applicable=False when no G/I/L candidates)
         card["human_performance_assessment"] = human_performance_assessment if top is not None else {
             "applicable": False,
-            "category_flags": {"H": False, "I": False, "J": False, "K": False},
+            "category_flags": {"G": False, "I": False, "L": False},
             "findings": [],
             "provenance_note": "No primary hypothesis — human performance assessment not applicable.",
         }

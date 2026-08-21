@@ -425,6 +425,13 @@ class RCAReasoningOrchestrator:
                     )
             except Exception as exc:
                 LOGGER.warning("fm_id_candidate resolution failed — pipeline continues: %s", exc)
+                optional_artifact_failures.append({
+                    "phase": "fm_id_candidate_resolution",
+                    "artifact": "doc_extraction_store.fm_candidates",
+                    "error_type": type(exc).__name__,
+                    "error": repr(exc),
+                    "impact": "failure-mode candidate IDs not resolved from document extractions this run",
+                })
 
         # Stage 5B — live CMMS context (event-scoped CRs and WOs)
         cmms_context: Optional[JsonDict] = None
@@ -450,6 +457,13 @@ class RCAReasoningOrchestrator:
                     "Stage 5B: CMMS context build failed — pipeline continues without CMMS context. "
                     "Error: %s", exc,
                 )
+                optional_artifact_failures.append({
+                    "phase": "cmms_context_build",
+                    "artifact": "cmms_context",
+                    "error_type": type(exc).__name__,
+                    "error": repr(exc),
+                    "impact": "live CMMS CRs/WOs absent; kg_context not augmented with CMMS documents/past events",
+                })
 
         kg_context = self._enrich_past_events_temporal_metadata(
             kg_context=kg_context,
@@ -699,6 +713,13 @@ class RCAReasoningOrchestrator:
                 LOGGER.warning(
                     "Signal episode search failed — pipeline continues: %s", exc
                 )
+                optional_artifact_failures.append({
+                    "phase": "signal_episode_search",
+                    "artifact": "historical_signal_episodes",
+                    "error_type": type(exc).__name__,
+                    "error": repr(exc),
+                    "impact": "historical signal episodes absent; cross-pattern linkage cannot run",
+                })
 
         # Phase 2 — Cross-pattern linkage
         cross_pattern_evidence: Optional[JsonDict] = None
@@ -718,6 +739,13 @@ class RCAReasoningOrchestrator:
                     self._validate_and_persist(run_id, "cross_pattern_evidence", cross_pattern_evidence)
             except Exception as exc:
                 LOGGER.warning("Cross-pattern linkage failed — pipeline continues: %s", exc)
+                optional_artifact_failures.append({
+                    "phase": "cross_pattern_linkage",
+                    "artifact": "cross_pattern_evidence",
+                    "error_type": type(exc).__name__,
+                    "error": repr(exc),
+                    "impact": "cross-pattern evidence absent; candidates not linked to historical signal episodes",
+                })
 
         # Phase D — attach EpistemicsDigest to each candidate before synthesis
         self._attach_epistemics_digests(causality_candidates, evidence_bundle)

@@ -933,6 +933,7 @@ class CausalBase(object):
       effect_hs = row[4] if len(row) > 4 else None
       sent = row[5] if len(row) > 5 else None
       conjecture = row[6] if len(row) > 6 else None
+      negated = row[7] if len(row) > 7 else None
       causals.append({
         "cause_text": getattr(cause, "text", str(cause) if cause is not None else ""),
         "cause_status": getattr(cause_hs, "text", str(cause_hs) if cause_hs is not None else ""),
@@ -941,6 +942,7 @@ class CausalBase(object):
         "effect_status": getattr(effect_hs, "text", str(effect_hs) if effect_hs is not None else ""),
         "sentence": getattr(sent, "text", str(sent) if sent is not None else ""),
         "conjecture": bool(conjecture) if conjecture is not None else False,
+        "negated": bool(negated) if negated is not None else False,
       })
 
     entity_status = []

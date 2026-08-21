@@ -5,8 +5,9 @@ Covers:
 WS1 — Human Performance Assessment
   - applicable=True when H/I/J/K candidate retained
   - applicable=False when only A-F candidates retained
-  - category_flags correctly set for each H/I/J/K type
-  - performance_mode mapped correctly (H→execution_error, I→procedure_gap, etc.)
+  - category_flags correctly set for each G/I/L type
+  - performance_mode mapped correctly (G→execution_error, I→change_management_gap, L→organisational_gap)
+  - design (H) / surveillance (J) / vendor (K) are EXCLUDED from human performance (F-2 fix)
   - regulatory_reference populated per category
   - corrective_action_ids cross-referenced from recommended_actions
   - deterministic injection via post-processing path (no double-injection)
@@ -89,9 +90,9 @@ def _action(aid: str, depth: str, linked: Optional[str] = None) -> dict:
 # WS1 — Human Performance Assessment
 # ═══════════════════════════════════════════════════════════════════════
 
-def test_hpa_applicable_true_when_H_retained():
+def test_hpa_applicable_true_when_G_retained():
     result = BUILD_HPA(
-        selected_candidates=[_candidate("C1", "H")],
+        selected_candidates=[_candidate("C1", "G")],
         recommended_actions=[],
     )
     assert result["applicable"] is True
@@ -111,17 +112,16 @@ def test_hpa_applicable_false_empty_candidates():
 
 
 def test_hpa_category_flags_set_for_retained_categories():
-    cands = [_candidate("CH", "H"), _candidate("CJ", "J")]
+    cands = [_candidate("CG", "G"), _candidate("CL", "L")]
     result = BUILD_HPA(selected_candidates=cands, recommended_actions=[])
-    assert result["category_flags"]["H"] is True
-    assert result["category_flags"]["J"] is True
+    assert result["category_flags"]["G"] is True
+    assert result["category_flags"]["L"] is True
     assert result["category_flags"]["I"] is False
-    assert result["category_flags"]["K"] is False
 
 
-def test_hpa_performance_mode_H():
+def test_hpa_performance_mode_G():
     result = BUILD_HPA(
-        selected_candidates=[_candidate("C1", "H")],
+        selected_candidates=[_candidate("C1", "G")],
         recommended_actions=[],
     )
     assert result["findings"][0]["performance_mode"] == "execution_error"
@@ -132,27 +132,41 @@ def test_hpa_performance_mode_I():
         selected_candidates=[_candidate("C1", "I")],
         recommended_actions=[],
     )
-    assert result["findings"][0]["performance_mode"] == "procedure_gap"
+    assert result["findings"][0]["performance_mode"] == "change_management_gap"
 
 
-def test_hpa_performance_mode_J():
+def test_hpa_performance_mode_L():
     result = BUILD_HPA(
-        selected_candidates=[_candidate("C1", "J")],
+        selected_candidates=[_candidate("C1", "L")],
         recommended_actions=[],
     )
-    assert result["findings"][0]["performance_mode"] == "knowledge_gap"
+    assert result["findings"][0]["performance_mode"] == "organisational_gap"
 
 
-def test_hpa_performance_mode_K():
+def test_hpa_excludes_design_surveillance_vendor():
+    """F-2: H (design), J (surveillance), K (vendor) are NOT human performance."""
+    for cat in ("H", "J", "K"):
+        result = BUILD_HPA(
+            selected_candidates=[_candidate("C1", cat)],
+            recommended_actions=[],
+        )
+        assert result["applicable"] is False, f"category {cat} must not count as human performance"
+        assert result["findings"] == []
+
+
+def test_hpa_excluded_category_noted_in_provenance():
+    """A retained design (H) cause should be flagged as excluded, not silently dropped."""
     result = BUILD_HPA(
-        selected_candidates=[_candidate("C1", "K")],
+        selected_candidates=[_candidate("CG", "G"), _candidate("CH", "H")],
         recommended_actions=[],
     )
-    assert result["findings"][0]["performance_mode"] == "supervisory_gap"
+    assert result["applicable"] is True  # G is present
+    note = result["provenance_note"].lower()
+    assert "design" in note and "not human-performance" in note
 
 
 def test_hpa_regulatory_reference_present():
-    for cat in ("H", "I", "J", "K"):
+    for cat in ("G", "I", "L"):
         result = BUILD_HPA(
             selected_candidates=[_candidate("C1", cat)],
             recommended_actions=[],
@@ -161,32 +175,32 @@ def test_hpa_regulatory_reference_present():
 
 
 def test_hpa_corrective_action_ids_cross_referenced():
-    cands = [_candidate("C_H", "H")]
-    actions = [_action("ACT-1", "contributing", linked="C_H")]
+    cands = [_candidate("C_G", "G")]
+    actions = [_action("ACT-1", "contributing", linked="C_G")]
     result = BUILD_HPA(selected_candidates=cands, recommended_actions=actions)
     assert "ACT-1" in result["findings"][0]["corrective_action_ids"]
 
 
 def test_hpa_action_not_linked_gives_empty_ids():
-    cands = [_candidate("C_H", "H")]
+    cands = [_candidate("C_G", "G")]
     actions = [_action("ACT-2", "proximate", linked="OTHER")]
     result = BUILD_HPA(selected_candidates=cands, recommended_actions=actions)
     assert result["findings"][0]["corrective_action_ids"] == []
 
 
 def test_hpa_findings_count_matches_hop_candidates():
-    cands = [_candidate("C_H", "H"), _candidate("C_I", "I"), _candidate("C_A", "A")]
+    cands = [_candidate("C_G", "G"), _candidate("C_I", "I"), _candidate("C_A", "A")]
     result = BUILD_HPA(selected_candidates=cands, recommended_actions=[])
-    assert len(result["findings"]) == 2  # only H and I
+    assert len(result["findings"]) == 2  # only G and I
 
 
 def test_hpa_provenance_note_present():
-    result = BUILD_HPA(selected_candidates=[_candidate("C1", "H")], recommended_actions=[])
+    result = BUILD_HPA(selected_candidates=[_candidate("C1", "G")], recommended_actions=[])
     assert isinstance(result["provenance_note"], str) and result["provenance_note"]
 
 
 def test_hpa_required_fields_present_when_applicable():
-    result = BUILD_HPA(selected_candidates=[_candidate("C1", "H")], recommended_actions=[])
+    result = BUILD_HPA(selected_candidates=[_candidate("C1", "G")], recommended_actions=[])
     for field in ("applicable", "category_flags", "findings", "provenance_note"):
         assert field in result
 

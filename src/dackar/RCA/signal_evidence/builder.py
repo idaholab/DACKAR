@@ -20,6 +20,14 @@ from .topology import is_upstream, resolve_edge_type
 JsonDict = Dict[str, Any]
 UPSTREAM_RELATIONS = {PRECEDES, OVERLAPS}
 
+# P-5: an "initiator" (root of a propagation chain) is only credible if it leads its
+# successor by a demonstrated onset lag. A purely co-temporal root — an OVERLAPS
+# relation (degradation merely active at the successor's onset) or a lag below this
+# threshold — is a concurrent anomaly, not a proven upstream initiator, and its
+# initiator credit is discounted rather than being awarded the full path strength.
+_MIN_INITIATOR_LAG_HOURS = 0.5
+_COTEMPORAL_INITIATOR_FACTOR = 0.6
+
 
 def _parse_dt(value: Optional[str]) -> Optional[datetime]:
     if not value:
@@ -383,6 +391,8 @@ def _per_candidate_scores(
         best_score = 0.0
         best_chain = None
         best_pos = "absent"
+        best_lag_established: Optional[bool] = None
+        best_path_score = 0.0
         for chain in chains:
             chain_components = [anomalies[idx].component_id for idx in chain.path]
             if component_id not in chain_components:
@@ -391,13 +401,27 @@ def _per_candidate_scores(
             anomaly_idx = chain.path[pos_idx]
             topo = node_topology.get(anomaly_idx)
             ptype = topo.pattern_type if topo else "linear"
+            lag_established: Optional[bool] = None
             if pos_idx == 0:
-                if ptype == "divergence":
-                    score = 1.0
-                    pos = "common_cause_root"
-                else:
-                    score = 1.0
-                    pos = "root"
+                # P-5(c): require a demonstrated onset lead before crediting a clean
+                # initiator. A co-temporal root (OVERLAPS relation, or a sub-threshold
+                # lag to its successor) is a concurrent anomaly, not a proven upstream
+                # initiator, and is discounted below.
+                root_node = chain.nodes[pos_idx] if pos_idx < len(chain.nodes) else {}
+                rel_to_next = str(root_node.get("allen_relation_to_next") or "").strip().lower()
+                lag_to_next = root_node.get("onset_lag_to_next_h")
+                lag_established = (
+                    rel_to_next == PRECEDES
+                    and isinstance(lag_to_next, (int, float))
+                    and abs(float(lag_to_next)) >= _MIN_INITIATOR_LAG_HOURS
+                )
+                pos = "common_cause_root" if ptype == "divergence" else "root"
+                # P-5(b): weight the initiator by the propagation chain's quality
+                # (path_score) rather than a flat 1.0, so a root on a weak/uncertain
+                # chain does not automatically dominate ranking.
+                score = clamp01(chain.path_score)
+                if not lag_established:
+                    score = clamp01(score * _COTEMPORAL_INITIATOR_FACTOR)
             elif ptype in ("convergence", "hub"):
                 score = chain.path_score * 0.3
                 pos = "convergence_confluence"
@@ -408,11 +432,15 @@ def _per_candidate_scores(
                 best_score = score
                 best_chain = chain.chain_id
                 best_pos = pos
+                best_lag_established = lag_established
+                best_path_score = chain.path_score
         contrib = contributing_candidates.get(fm_id, {})
         result[fm_id] = {
             "chain_position_score": round(best_score, 6),
             "best_chain_id": best_chain,
+            "best_chain_path_score": round(best_path_score, 6),
             "position_type": best_pos,
+            "initiator_lag_established": best_lag_established,
             "contributing_cause_role": contrib.get("contributing_cause_role"),
             "confluence_component_id": contrib.get("confluence_component_id"),
         }

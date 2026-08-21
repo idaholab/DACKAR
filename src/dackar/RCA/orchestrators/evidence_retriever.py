@@ -39,6 +39,78 @@ def _contains_any(text: str, phrases: List[str]) -> bool:
     return any(p in text for p in phrases)
 
 
+# P-3 — lightweight negation / refutation detection.
+# The fixed contradiction-cue phrase list only catches a handful of absence phrasings.
+# A refutation expressed as an explicit negation of a *degradation state* — "showed no
+# damage", "did not exhibit wear", "bearing was not degraded", "ruled out fouling",
+# "no signs of drift" — is otherwise missed and the snippet is mis-classed as merely
+# contextual, which suppresses disconfirming evidence (the core bias-mitigation signal,
+# §3.10). This detector flags a negation trigger followed, within a *tight* scope
+# window, by a degradation/failure-state term. The window is deliberately short so that
+# absence-as-cause phrasing ("no lubrication led to bearing wear", "loss of flow caused
+# seizure") is NOT mistaken for refutation. The caller gates on semantic relevance so
+# the signal is scoped to the right candidate; the phrase list remains as a fallback.
+_NEGATION_SINGLE_TRIGGERS = frozenset(
+    {"no", "not", "never", "without", "none", "cannot", "absent"}
+)
+_NEGATION_MULTIWORD_TRIGGERS = (
+    "no evidence of", "no sign of", "no signs of", "no indication of",
+    "no indications of", "did not", "does not", "do not", "was not",
+    "were not", "is not", "are not", "could not", "failed to", "showed no",
+    "found no", "free of", "absence of", "ruled out", "negative for",
+    "without any", "did not exhibit", "no further",
+)
+_NEGATABLE_STATE_TERMS = frozenset({
+    "degraded", "degradation", "degrading",
+    "failed", "failure", "failing",
+    "wear", "worn",
+    "leak", "leaks", "leaking", "leakage",
+    "fouling", "fouled",
+    "drift", "drifting", "drifted",
+    "stiction",
+    "damage", "damaged",
+    "crack", "cracks", "cracked", "cracking",
+    "corrosion", "corroded",
+    "erosion", "eroded",
+    "blockage", "blocked", "clogged",
+    "abnormal", "abnormality", "abnormalities",
+    "anomaly", "anomalies", "anomalous",
+    "defect", "defects", "defective",
+})
+_NEGATION_SCOPE_TOKENS = 3
+
+
+def _negation_refutation_hit(snippet: str, target_terms: frozenset) -> bool:
+    """Return True when a negation trigger is followed, within a short window, by a
+    degradation/failure-state term — i.e. the snippet refutes a degradation claim.
+
+    Deterministic and high-precision by design (short scope window; state-term targets
+    only). ``snippet`` must already be normalised (lowercased, whitespace-collapsed).
+    """
+    if not snippet or not target_terms:
+        return False
+    tokens = snippet.split()
+    n = len(tokens)
+    if n == 0:
+        return False
+
+    trigger_end_positions: List[int] = [
+        i for i, tok in enumerate(tokens) if tok in _NEGATION_SINGLE_TRIGGERS
+    ]
+    for phrase in _NEGATION_MULTIWORD_TRIGGERS:
+        parts = phrase.split()
+        plen = len(parts)
+        for i in range(0, n - plen + 1):
+            if tokens[i:i + plen] == parts:
+                trigger_end_positions.append(i + plen - 1)
+
+    for pos in trigger_end_positions:
+        window = tokens[pos + 1: pos + 1 + _NEGATION_SCOPE_TOKENS]
+        if any(w in target_terms for w in window):
+            return True
+    return False
+
+
 def _cosine_sim(a: Any, b: Any) -> float:
     """Cosine similarity between two pre-normalised numpy vectors.
 
@@ -655,6 +727,28 @@ class ChromaEvidenceRetriever:
         contextual_cue_hit = _contains_any(snippet, self.config.contextual_cues or [])
         structural_cue_hit = _contains_any(snippet, self.config.structural_contradiction_cues or [])
 
+        # P-3 — semantic-ish negation/refutation beyond the fixed cue list. Scoped to
+        # THIS candidate: the negated state must be one of the candidate's OWN named
+        # failure/degradation states (cause_label / hypothesis_type ∩ state vocab). This
+        # prevents a negation about a *different* hypothesis in a multi-hypothesis
+        # snippet ("... caused by air in-leakage; no evidence of fouling ...") from being
+        # read as a refutation of this candidate. The semantic-relevance gate is an
+        # additional guard.
+        candidate_state_terms = frozenset(
+            t for t in candidate_terms if t in _NEGATABLE_STATE_TERMS
+        )
+        negation_refutation_hit = (
+            semantic_relevance > 0.0
+            and bool(candidate_state_terms)
+            and _negation_refutation_hit(snippet, candidate_state_terms)
+        )
+        if negation_refutation_hit:
+            # The degradation term that fired the support cue is itself negated
+            # ("showed no wear") — it must not also accrue support. Suppress the
+            # support-cue contribution so the refutation is not masked by the very
+            # word being negated.
+            support_cue_hit = False
+
         # Unambiguous causal connectors: the snippet explicitly attributes the
         # event to this candidate's failure mode, not just mentions a related topic.
         # These phrases are much more specific than generic support cues like
@@ -665,6 +759,28 @@ class ChromaEvidenceRetriever:
             "confirmed as", "determined to be",
         )
         causal_attribution_hit = _contains_any(snippet, _CAUSAL_ATTRIBUTION_PHRASES)
+
+        # N-5 — causal-LINK negation backstop. The extraction layer is empirically weak on
+        # negated/reversed causal claims (direction acc. 56%, negated_causality F1 0.0), so a
+        # snippet like "X did not cause Y" / "not attributable to X" can still index as a
+        # positive X->Y attribution and inflate support for the wrong failure mode. When such
+        # a phrase is present AND the snippet is relevant to THIS candidate, treat the causal
+        # attribution as negated: drop the attribution boost and count it as disconfirming
+        # (parity with the P-3 negated-state refutation). Distinct from P-3, which only
+        # negates degradation STATES ("showed no wear"), not the causal LINK itself.
+        _CAUSAL_NEGATION_PHRASES = (
+            "did not cause", "does not cause", "do not cause", "not caused by",
+            "was not caused by", "were not caused by", "not attributable to",
+            "not attributed to", "not due to", "not the cause", "not a cause",
+            "no causal", "ruled out as the cause", "ruled out as a cause",
+            "not responsible for", "unrelated to",
+        )
+        causal_link_negation_hit = (
+            semantic_relevance > 0.0
+            and _contains_any(snippet, _CAUSAL_NEGATION_PHRASES)
+        )
+        if causal_link_negation_hit:
+            causal_attribution_hit = False
 
         support_score = 0.0
         contradiction_score = 0.0
@@ -678,12 +794,13 @@ class ChromaEvidenceRetriever:
         if support_cue_hit:
             support_score += 0.25
 
-        if contradiction_cue_hit:
-            # Only apply the full contradiction-cue boost when the snippet has semantic
-            # relevance to the candidate's hypothesis (semantic_relevance > 0 means the
-            # snippet's terms overlap with the candidate's cause_label / hypothesis_type).
-            # A snippet with zero relevance contains contradiction cues about a *different*
-            # failure mode; boosting contradiction for the wrong candidate is a false signal.
+        # A fixed contradiction cue OR a P-3 negated-degradation-state refutation both
+        # count as contradiction evidence with the same weight (parity: a negated state
+        # is as disconfirming as an absence phrase). ``negation_refutation_hit`` is
+        # already relevance-gated; only apply the full boost when the snippet is
+        # relevant to THIS candidate — a zero-relevance cue is about a different failure
+        # mode and boosting contradiction for the wrong candidate is a false signal.
+        if contradiction_cue_hit or negation_refutation_hit or causal_link_negation_hit:
             if semantic_relevance > 0.0:
                 contradiction_score += 0.45
             else:
@@ -802,8 +919,16 @@ class ChromaEvidenceRetriever:
         # contradiction cues co-occur with non-trivial semantic relevance.
         # This prevents e.g. "X caused by A; B is contradicted by evidence" from
         # being mis-labelled as contradicting for candidate A.
-        if causal_attribution_hit and contradiction_cue_hit and semantic_relevance > 0.3:
+        if causal_attribution_hit and (contradiction_cue_hit or negation_refutation_hit) and semantic_relevance > 0.3:
             support_score = min(1.0, support_score + 0.15)
+
+        # N-5 — a negated causal LINK about this candidate is non-evidence: drop the
+        # (lexically-driven) support so a "X did not cause Y" snippet cannot accrue
+        # positive support for X, and let it read as contradicting. Relevance-gated
+        # and phrase-specific, so genuine attributions are unaffected.
+        if causal_link_negation_hit:
+            context_score = max(context_score, round(support_score * 0.5, 6))
+            support_score = min(support_score, 0.10)
 
         if contradiction_score >= max(support_score, context_score) and contradiction_score >= 0.35:
             support_role = "contradicting"
@@ -854,6 +979,8 @@ class ChromaEvidenceRetriever:
             "evidence_role_confidence": evidence_score,
             "structural_contradiction_hit": structural_contradiction_hit,
             "structural_contradiction_score": round(structural_contradiction_score, 6),
+            "negation_refutation_hit": bool(negation_refutation_hit),
+            "causal_link_negation_hit": bool(causal_link_negation_hit),
             # spaCy annotation signals — None when annotator not configured
             "spacy_conjecture_fraction": round(conjecture_fraction, 4),
             "spacy_temporal_relation": (

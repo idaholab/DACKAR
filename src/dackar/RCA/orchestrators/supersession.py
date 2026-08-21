@@ -25,6 +25,7 @@ Rules:
     and never supersede.
 """
 
+from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
@@ -33,6 +34,15 @@ JsonDict = Dict[str, Any]
 # String constants — mirror schema.EpistemicClass without importing across packages
 _ANALYZES_CLASS = "analyzes_past_degradation"
 _AFFECTS_CLASS = "affects_performance"
+
+# P-4 — relevance gate margin.
+# Authority and relevance are different axes. A higher-authority hit may only
+# supersede a lower-authority hit when it is at least *nearly as on-point*: its
+# relevance must be within this margin of the hit it would erase. A higher-authority
+# but off-point hit (relevance more than the margin below the on-point lower-authority
+# hit) does NOT supersede it — the most on-point evidence survives. Kept modest so the
+# authority hierarchy still governs the normal case (comparable relevance).
+_RELEVANCE_SUPERSEDE_MARGIN = 0.15
 
 # doc_type sets used as fallback when epistemic_class annotation is absent
 _ANALYZES_DOC_TYPES: Set[str] = {"RCA", "ECA", "OE", "LER"}
@@ -85,6 +95,27 @@ def _authority_rank(meta: JsonDict) -> int:
     if doc_type == "OE":
         return 5
     return 6  # other analyzes-class (LER, etc.)
+
+
+def _relevance_of(hit: JsonDict) -> float:
+    """Relevance (on-pointness) proxy for the P-4 supersession gate.
+
+    Prefers an explicit relevance / semantic-overlap annotation when the retriever
+    supplies one, else falls back to the retrieval ``support_score`` (the pre-
+    supersession value if a prior pass already zeroed it). This is the axis
+    supersession must respect so a higher-authority but *off-point* hit does not erase
+    strongly on-point lower-authority support.
+    """
+    meta = hit.get("metadata") or {}
+    for field in ("relevance_score", "semantic_overlap", "on_point_score"):
+        val = meta.get(field)
+        if isinstance(val, (int, float)):
+            return float(val)
+    val = hit.get("support_score_original", hit.get("support_score"))
+    try:
+        return float(val or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _recency_dt(meta: JsonDict) -> Optional[datetime]:
@@ -187,6 +218,7 @@ def resolve_supersession(
         by_candidate.setdefault(str(cid), []).append(idx)
 
     superseded: Set[int] = set()
+    relevance_retained = 0
 
     for cid, indices in by_candidate.items():
         if len(indices) <= 1:
@@ -194,25 +226,52 @@ def resolve_supersession(
 
         group = [(idx, results[idx].get("metadata") or {}) for idx in indices]
 
-        # Step 1 — authority rank filter
+        # Step 1 — authority rank filter, gated by relevance (P-4).
+        # A lower-authority hit is only superseded when at least one best-rank
+        # (would-be superseding) hit is nearly as on-point (within the relevance
+        # margin). If every higher-authority hit is materially *less* relevant than
+        # this hit, the hit is the most on-point evidence and is retained despite its
+        # lower authority — authority must not erase relevance.
         best_rank = min(_authority_rank(meta) for _, meta in group)
+        best_rank_relevance = max(
+            _relevance_of(results[idx])
+            for idx, meta in group
+            if _authority_rank(meta) == best_rank
+        )
         for idx, meta in group:
-            if _authority_rank(meta) > best_rank:
+            if _authority_rank(meta) <= best_rank:
+                continue
+            this_relevance = _relevance_of(results[idx])
+            if best_rank_relevance >= this_relevance - _RELEVANCE_SUPERSEDE_MARGIN:
                 superseded.add(idx)
+            else:
+                # Higher-authority evidence is off-point relative to this hit — retain.
+                results[idx]["supersession_relevance_retained"] = True
+                results[idx]["supersession_relevance"] = round(this_relevance, 6)
+                results[idx]["supersession_superior_relevance"] = round(best_rank_relevance, 6)
+                relevance_retained += 1
 
-        # Step 2 — recency tiebreak among equal-rank survivors
+        # Step 2 — recency tiebreak, scoped to survivors of the *same* authority rank.
+        # (Relevance-retained lower-authority survivors must not be re-erased by a
+        # newer higher-authority hit — that would defeat the Step-1 relevance gate.)
         survivors = [(idx, meta) for idx, meta in group if idx not in superseded]
         if len(survivors) <= 1:
             continue
-        dated = [(idx, _recency_dt(meta)) for idx, meta in survivors]
-        known = [(idx, dt) for idx, dt in dated if dt is not None]
-        if not known:
-            continue  # no recency info — both contribute
-        latest_dt = max(dt for _, dt in known)
-        for idx, dt in dated:
-            if dt is not None and dt < latest_dt:
-                superseded.add(idx)
-        # Ties or unknown recency: contribute without supersession
+        by_rank: Dict[int, List] = defaultdict(list)
+        for idx, meta in survivors:
+            by_rank[_authority_rank(meta)].append((idx, meta))
+        for _rank, bucket in by_rank.items():
+            if len(bucket) <= 1:
+                continue
+            dated = [(idx, _recency_dt(meta)) for idx, meta in bucket]
+            known = [(idx, dt) for idx, dt in dated if dt is not None]
+            if not known:
+                continue  # no recency info — both contribute
+            latest_dt = max(dt for _, dt in known)
+            for idx, dt in dated:
+                if dt is not None and dt < latest_dt:
+                    superseded.add(idx)
+            # Ties or unknown recency: contribute without supersession
 
     # Apply supersession: zero support_score, downgrade role
     for idx in superseded:
@@ -232,6 +291,7 @@ def resolve_supersession(
 
     bundle["supersession_applied"] = bool(superseded)
     bundle["supersession_count"] = len(superseded)
+    bundle["supersession_relevance_retained_count"] = relevance_retained
     if epistemics_policy_version:
         bundle["supersession_policy_version"] = epistemics_policy_version
 

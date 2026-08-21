@@ -59,6 +59,11 @@ class Neo4jKGContextBuilder:
     ) -> JsonDict:
         self._basic_input_checks(event, telemetry_summary)
 
+        # P-1: accumulate per-family truncation stats so silently-dropped
+        # candidates (past events / documents / OE beyond their caps) become
+        # manifest-visible via kg_context.provenance rather than disappearing.
+        self._truncation_stats: JsonDict = {}
+
         asset_id = event["asset_id"]
         event_id = event.get("event_id") or event["id"]
 
@@ -109,6 +114,18 @@ class Neo4jKGContextBuilder:
                 failure_mode_ids=fm_ids,
                 component_types=component_types,
             )
+            # OE docs are truncated at the DB level (Cypher LIMIT), so the
+            # pre-truncation total is unknown; record an at-cap flag so an
+            # analyst knows more OE evidence may exist beyond max_oe_documents.
+            oe_cap = self.config.max_oe_documents
+            if len(oe_docs) >= oe_cap:
+                self._record_truncation(
+                    family="oe_documents",
+                    total_matched=None,
+                    cap=oe_cap,
+                    dropped_ids=[],
+                    retained=len(oe_docs),
+                )
             # Merge OE docs into the documents list (dedup by doc_id)
             existing_ids = {d["doc_id"] for d in documents}
             for oe in oe_docs:
@@ -140,7 +157,53 @@ class Neo4jKGContextBuilder:
             "provenance": {
                 "builder": "Neo4jKGContextBuilder",
                 "run_id": run_context.get("run_id"),
+                "expansion": {
+                    "max_hops": self.config.max_hops,
+                    "seed_component_count": len(component_ids),
+                    "neighborhood_component_count": len(all_component_ids),
+                    "failure_mode_count": len(failure_modes),
+                },
+                "truncation": self._truncation_stats,
+                "truncation_occurred": any(
+                    stat.get("truncated") for stat in self._truncation_stats.values()
+                ),
             },
+        }
+
+    def _record_truncation(
+        self,
+        *,
+        family: str,
+        total_matched: Optional[int],
+        cap: int,
+        dropped_ids: List[str],
+        retained: Optional[int] = None,
+    ) -> None:
+        """Record per-family truncation stats into ``self._truncation_stats`` (P-1).
+
+        ``total_matched`` is None when the pre-truncation total is unknown (e.g. a
+        DB-side ``LIMIT``); in that case truncation is inferred from an at-cap
+        retained count. Otherwise a family is ``truncated`` when more items matched
+        than the cap allows.
+        """
+        stats = getattr(self, "_truncation_stats", None)
+        if stats is None:
+            stats = self._truncation_stats = {}
+        if total_matched is None:
+            retained_n = int(retained if retained is not None else cap)
+            dropped_count = None
+            truncated = retained_n >= cap
+        else:
+            retained_n = min(int(total_matched), int(cap))
+            dropped_count = max(0, int(total_matched) - int(cap))
+            truncated = dropped_count > 0
+        stats[family] = {
+            "cap": int(cap),
+            "total_matched": total_matched,
+            "retained": retained_n,
+            "dropped_count": dropped_count,
+            "truncated": bool(truncated),
+            "dropped_ids": list(dropped_ids or [])[:50],
         }
 
     def _basic_input_checks(self, event: JsonDict, telemetry_summary: JsonDict) -> None:
@@ -323,6 +386,7 @@ class Neo4jKGContextBuilder:
                nbr.id AS neighbor_id,
                nbr.name AS neighbor_name,
                null AS neighbor_type
+        ORDER BY seed_id, neighbor_id
         """
         hier_rows = [dict(r) for r in self.client.query(hier_query, {"seed_ids": list(seed_component_ids)}, db=self.database)]
 
@@ -341,6 +405,7 @@ class Neo4jKGContextBuilder:
                nbr.id AS neighbor_id,
                nbr.name AS neighbor_name,
                null AS neighbor_type
+        ORDER BY seed_id, neighbor_id
         """
         conn_rows = [dict(r) for r in self.client.query(conn_query, {"seed_ids": list(seed_component_ids)}, db=self.database)]
 
@@ -594,6 +659,7 @@ class Neo4jKGContextBuilder:
           oe.applicable_system_types      AS applicable_system_types,
           oe.applicable_component_types   AS applicable_component_types,
           linked_fm_ids
+        ORDER BY doc_id
         LIMIT $limit
         """
         try:
@@ -682,6 +748,7 @@ class Neo4jKGContextBuilder:
           d.revision AS revision,
           collect(DISTINCT a.asset_id) AS matched_asset_ids,
           collect(DISTINCT c.id) AS matched_component_ids
+        ORDER BY doc_id
         """
         rows = [dict(r) for r in self.client.query(
             query,
@@ -732,7 +799,14 @@ class Neo4jKGContextBuilder:
                 x["doc_id"] or "",
             )
         )
-        return enriched[: self.config.max_documents]
+        cap = self.config.max_documents
+        self._record_truncation(
+            family="documents",
+            total_matched=len(enriched),
+            cap=cap,
+            dropped_ids=[e.get("doc_id") for e in enriched[cap:] if e.get("doc_id")],
+        )
+        return enriched[:cap]
 
     def _fetch_past_events(
         self,
@@ -785,6 +859,7 @@ class Neo4jKGContextBuilder:
           collect(DISTINCT c.id) AS matched_component_ids,
           collect(DISTINCT fmc.fm_id) AS confirmed_failure_mode_ids,
           collect(DISTINCT fmm.fm_id) AS candidate_failure_mode_ids
+        ORDER BY timestamp_start DESC, event_id
         """
         rows = [dict(r) for r in self.client.query(
             query,
@@ -866,7 +941,14 @@ class Neo4jKGContextBuilder:
                 x["event_id"] or "",
             )
         )
-        return enriched[: self.config.max_past_events]
+        cap = self.config.max_past_events
+        self._record_truncation(
+            family="past_events",
+            total_matched=len(enriched),
+            cap=cap,
+            dropped_ids=[e.get("event_id") for e in enriched[cap:] if e.get("event_id")],
+        )
+        return enriched[:cap]
 
     def _parse_event_time(self, event: JsonDict) -> Optional[datetime]:
         for key in ("timestamp_start", "timestamp_end"):

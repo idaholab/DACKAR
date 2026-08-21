@@ -520,6 +520,8 @@ class RuleBasedCausalityEngineV32:
                 "tskr_pattern_match": temporal_parts["tskr_pattern_match"],
                 "temporal_precedence": temporal_parts["temporal_precedence"],
                 "latency_consistency": temporal_parts["latency_consistency"],
+                "temporal_basis": temporal_parts.get("temporal_basis", "none"),
+                "temporal_support_unestablished": bool(temporal_parts.get("temporal_support_unestablished", False)),
                 "symptom_match": round(symptom_score, 4),
                 "alarm_signal": round(alarm_signal, 4),
                 "rpn_prior": round(rpn_prior, 4),
@@ -745,6 +747,8 @@ class RuleBasedCausalityEngineV32:
                 "tskr_pattern_match": temporal_parts["tskr_pattern_match"],
                 "temporal_precedence": temporal_parts["temporal_precedence"],
                 "latency_consistency": temporal_parts["latency_consistency"],
+                "temporal_basis": temporal_parts.get("temporal_basis", "none"),
+                "temporal_support_unestablished": bool(temporal_parts.get("temporal_support_unestablished", False)),
                 "alarm_signal": round(alarm_signal, 4),
                 "barrier_signal": round(barrier_signal, 4),
             }
@@ -1115,8 +1119,25 @@ class RuleBasedCausalityEngineV32:
                 if not chain_meta:
                     chain_meta = signal_ev_index.get(str(candidate_id), {}) or {}
             evidence_chain = float(chain_meta.get("chain_position_score", 0.0) or 0.0)
-            if str(chain_meta.get("position_type") or "absent") == "convergence_confluence":
+            signal_position_type = str(chain_meta.get("position_type") or "absent")
+            if signal_position_type == "convergence_confluence":
                 evidence_chain = 0.0
+            if chain_meta and signal_position_type != "absent":
+                # P-5: surface the signal-DAG causal position (previously used only to
+                # zero convergence nodes) onto the candidate so downstream consumers and
+                # analysts can see the telemetry-propagation view of where this candidate
+                # sits in the chain. Additive provenance — the authoritative
+                # `chain_position` (TSKR-derived) is left intact.
+                candidate["scores"]["signal_dag_position_type"] = signal_position_type
+                mapped_chain_position = self._chain_position_from_signal_dag(signal_position_type)
+                if mapped_chain_position:
+                    candidate["scores"]["signal_dag_chain_position"] = mapped_chain_position
+                lag_established = chain_meta.get("initiator_lag_established")
+                if lag_established is not None:
+                    candidate["scores"]["signal_dag_initiator_lag_established"] = bool(lag_established)
+                best_path_score = chain_meta.get("best_chain_path_score")
+                if best_path_score is not None:
+                    candidate["scores"]["signal_dag_path_score"] = round(float(best_path_score), 6)
             if chain_meta:
                 refined_evidence_score = max(
                     0.0,
@@ -1447,6 +1468,25 @@ class RuleBasedCausalityEngineV32:
             "causal_category": str(category or "A"),
             "chain_position": str(chain_position or "contributing"),
         }
+
+    @staticmethod
+    def _chain_position_from_signal_dag(position_type: Optional[str]) -> Optional[str]:
+        """Map a signal-DAG ``position_type`` onto the candidate ``chain_position`` vocabulary.
+
+        The telemetry-propagation DAG classifies a candidate's anomaly as a root /
+        common-cause root (upstream initiator), an intermediate node, or a convergence
+        confluence (a downstream node where multiple chains meet — a symptom). This
+        maps that view onto the coarser initiating/contributing/consequence vocabulary
+        used for analyst-facing chain-position reasoning.
+        """
+        pt = str(position_type or "").strip().lower()
+        if pt in {"root", "common_cause_root"}:
+            return "initiating"
+        if pt == "convergence_confluence":
+            return "consequence"
+        if pt == "intermediate":
+            return "contributing"
+        return None
 
     @staticmethod
     def _chain_position_from_relation(relation: Optional[str]) -> str:
@@ -2328,17 +2368,29 @@ class RuleBasedCausalityEngineV32:
                 )
 
         passed = len(reasons) == 0
+        # F-1 honesty: this gate is a minimum-structural-score SCREEN. It does NOT
+        # evaluate physical plausibility against the operating state at event time
+        # (power/flow/pressure/temperature/mode) or FMEA failure-mode condition
+        # parameters. The check_basis / operating_state_checked fields below make
+        # that limitation explicit and machine-readable so downstream consumers and
+        # auditors do not over-read a "passed" result as an operating-state check.
+        screen_caveat = (
+            " NOTE: screen basis = minimum structural score (floor 0.200); "
+            "operating-state / FMEA-condition envelope NOT evaluated by this gate."
+        )
         rationale = (
             f"PASS: structural={f'{structural:.3f}' if structural is not None else 'not_assessed'}; component='{component_id or 'n/a'}'; "
             f"failure_mode='{failure_mode_id or 'n/a'}'."
             if passed
             else "FAIL: " + "; ".join(reasons) + "."
-        ) + plc_note
+        ) + plc_note + screen_caveat
         hard_gates = candidate.setdefault("hard_gates", {})
         hard_gates["physical_plausibility"] = {
             "passed": passed,
             "rationale": rationale,
             "gate_order": 1,
+            "check_basis": "minimum_structural_score",
+            "operating_state_checked": False,
             "plc_consulted": plc_consulted,
             "degraded_mode": not (structural_raw is not None or plc_consulted),
         }
@@ -2825,6 +2877,19 @@ class RuleBasedCausalityEngineV32:
             return None
         return max(counts, key=counts.__getitem__)
 
+    # N-2 — co-occurrence temporal proxies.
+    # When telemetry anomalies exist in the event window but NO TSKR pattern matched
+    # this failure mode, these proxy values are the only thing giving the candidate a
+    # temporal sub-score. They are a *co-occurrence proxy*, NOT established temporal or
+    # causal evidence: mere co-presence of anomalies is neither temporal precedence nor
+    # a propagation path. Uses of these constants are tagged
+    # (`temporal_basis="cooccurrence_proxy"`, `temporal_support_unestablished=True`) so
+    # downstream consumers and the analyst do not read a proxy-derived temporal score as
+    # confirmed temporal causation. (The *magnitude* of these constants is a separate,
+    # open question — see review finding N-2 part (a).)
+    _TEMPORAL_COOCCURRENCE_TSKR_PROXY = 0.55
+    _TEMPORAL_COOCCURRENCE_LATENCY_PROXY = 0.30
+
     def _temporal_score_for_fm(self, fm, telemetry_summary, event_time, tskr_index):
         anomaly_signals = [sig.get("sensor_id") for sig in telemetry_summary.get("signals", []) if sig.get("anomalies")]
         pattern = self._lookup_tskr_pattern(tskr_index, fm.get("fm_id"))
@@ -2839,11 +2904,16 @@ class RuleBasedCausalityEngineV32:
         latency_consistency = self._pattern_latency_alignment(pattern)
         temporal_contradiction = self._pattern_temporal_contradiction(pattern)
 
+        # No matched TSKR pattern but anomalies present → temporal support is
+        # unestablished (co-occurrence only). Keep the candidate reviewable via a
+        # proxy, but flag it so it is not mistaken for confirmed temporal causation.
+        temporal_support_unestablished = False
         if tskr_pattern_match == 0.0 and anomaly_signals:
-            tskr_pattern_match = 0.55
+            tskr_pattern_match = self._TEMPORAL_COOCCURRENCE_TSKR_PROXY
+            temporal_support_unestablished = True
 
         if latency_consistency == 0.0 and anomaly_signals:
-            latency_consistency = 0.30
+            latency_consistency = self._TEMPORAL_COOCCURRENCE_LATENCY_PROXY
 
         temporal = min(
             1.0,
@@ -2856,11 +2926,20 @@ class RuleBasedCausalityEngineV32:
         if temporal_contradiction:
             temporal = max(0.0, temporal - 0.25)
 
+        if pattern:
+            temporal_basis = "tskr_pattern"
+        elif temporal_support_unestablished:
+            temporal_basis = "cooccurrence_proxy"
+        else:
+            temporal_basis = "none"
+
         return {
             "temporal": round(temporal, 6),
             "tskr_pattern_match": round(tskr_pattern_match, 6),
             "temporal_precedence": round(temporal_precedence, 6),
             "latency_consistency": round(latency_consistency, 6),
+            "temporal_basis": temporal_basis,
+            "temporal_support_unestablished": temporal_support_unestablished,
             "matching_signal_ids": anomaly_signals[:5],
             "relation": relation,
             "operator_family": operator_family,
@@ -3649,6 +3728,36 @@ class RuleBasedCausalityEngineV32:
         candidate["confidence_label"] = self._normalized_confidence_label(candidate["composite_score"])
         return candidate
 
+    # P-2 — shared-support-dependency edge recognition.
+    # The strongest CCF signal (shared_dependency, weight 0.30) fires when two failed
+    # components sit on a common *support* dependency (power, cooling, service water,
+    # instrument air, a shared connector/header, …). The previous exact-string match on
+    # just {connected_support, support_environment, support_system} was brittle: those
+    # names are not the ones the expansion actually emits, so the signal never fired
+    # directly and CCF under-detected (only the cluster-proxy fallback could raise it).
+    # We now match edge types by semantic family (case-insensitive substring) so support
+    # and functional-coupling relationships are recognised however the KG names them.
+    # Pure containment (`has_part_usage`) is deliberately excluded — it already feeds the
+    # separate `upstream_adjacency` / shared_upstream signal, and treating every part of
+    # an assembly as a shared dependency would over-fire CCF.
+    _SUPPORT_DEPENDENCY_EDGE_FAMILIES = (
+        "support",          # connected_support, support_environment, support_system, supports
+        "connects_port",    # functional connectivity via the port/connector model
+        "connector",
+        "power",            # powered_by, power_supply, electrical_supply
+        "supplies", "supply",
+        "cool",             # cooling, cooled_by, coolant
+        "service_water", "instrument_air", "lube", "lubric",
+        "shared",
+    )
+
+    @classmethod
+    def _is_support_dependency_edge(cls, edge_type) -> bool:
+        et = str(edge_type or "").strip().lower()
+        if not et or "has_part_usage" in et:
+            return False
+        return any(fam in et for fam in cls._SUPPORT_DEPENDENCY_EDGE_FAMILIES)
+
     def _build_common_cause_index(self, kg_context):
         components = [c for c in (kg_context.get("components") or []) if isinstance(c, dict)]
         upstream_paths = [p for p in (kg_context.get("upstream_paths") or []) if isinstance(p, dict)]
@@ -3667,7 +3776,7 @@ class RuleBasedCausalityEngineV32:
                 edge_type = edge.get("edge_type")
                 from_node = edge.get("from_node")
                 to_node = edge.get("to_node")
-                if edge_type in {"connected_support", "support_environment", "support_system"}:
+                if self._is_support_dependency_edge(edge_type):
                     if from_node:
                         support_dependency_ids.add(str(from_node))
                     if to_node:
@@ -4022,6 +4131,19 @@ class RuleBasedCausalityEngineV32:
             and len(clustered_candidate_ids) >= 2
         )
 
+        # N-3 explain-away: once a common cause is suspected, the *other* clustered
+        # candidates are co-symptoms of the same shared dependency, not independent
+        # root causes. Surface them so a downstream symptom is not silently read as
+        # the initiating cause when its own common cause is present. Additive
+        # provenance only — ranking is unchanged (the synthesizer raises an analyst
+        # flag if such a co-symptom is selected primary).
+        top_common_cause_id = top_common_cause.get("candidate_id")
+        explained_away_candidate_ids = (
+            sorted(cid for cid in clustered_candidate_ids if cid and cid != top_common_cause_id)
+            if suspected_common_cause
+            else []
+        )
+
         notes = []
         if not candidates_with_common_cause:
             notes.append("No retained or filtered candidates showed non-zero common-cause structure.")
@@ -4051,6 +4173,7 @@ class RuleBasedCausalityEngineV32:
             "top_common_cause_score": float(top_common_cause.get("common_cause_score", 0.0)) if top_common_cause else 0.0,
             "top_common_cause_confidence": top_common_cause.get("common_cause_confidence", "none") if top_common_cause else "none",
             "clustered_candidate_ids": clustered_candidate_ids,
+            "explained_away_candidate_ids": explained_away_candidate_ids,
             "shared_dependency_ids": shared_dependency_ids,
             "notes": notes,
         }

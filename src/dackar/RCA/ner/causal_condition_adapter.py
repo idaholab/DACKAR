@@ -1420,6 +1420,8 @@ def _tuple_to_causal_dict(item: Any) -> Dict[str, Any]:
         out["sentence"] = _safe_text(vals[5])
         if len(vals) > 6:
             out["conjecture"] = bool(vals[6])
+        if len(vals) > 7:
+            out["negated"] = bool(vals[7])
         return out
     if len(vals) == 3:
         out["cause_text"] = _safe_text(vals[0])

@@ -937,12 +937,17 @@ class CausalSentence(CausalBase):
     root = sent.root
     if conjecture is None:
       conjecture = self.isConjecture(root)
+    # N-5: capture sentence-level negation so a negated causal claim
+    # ("X did not cause Y") is not exported as a positive cause->effect tuple.
+    # isNegation already exists and is used elsewhere; propagate it here so the
+    # stage-5 export can carry a `negated` flag (default False when absent).
+    negated, _negText = self.isNegation(root)
     for csub in cause:
       for c in csub:
         for esub in effect:
           for e in esub:
-            logger.debug(f'({c} health status: {c._.health_status}) "{causalKeyword}" ({e} health status: {e._.health_status}), conjecture: "{conjecture}"')
-            self._extractedCausals.append([c, c._.health_status, causalKeyword, e, e._.health_status, sent, conjecture])
+            logger.debug(f'({c} health status: {c._.health_status}) "{causalKeyword}" ({e} health status: {e._.health_status}), conjecture: "{conjecture}", negated: "{negated}"')
+            self._extractedCausals.append([c, c._.health_status, causalKeyword, e, e._.health_status, sent, conjecture, bool(negated)])
 
 
   def collectCauseEffectSents(self, doc):

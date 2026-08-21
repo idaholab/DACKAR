@@ -528,11 +528,16 @@ def assert_hp_categories_present(
     assessment categories list.
     """
     hp = _safe_get(result, "rca_card", "human_performance_assessment") or {}
-    actual = hp.get("categories_present") or []
+    # The emitted field is ``category_flags`` (a {category: bool} map); derive the
+    # present-category list from it.
+    flags = hp.get("category_flags")
+    if isinstance(flags, dict):
+        actual = [k for k, v in flags.items() if v]
+    else:
+        actual = hp.get("categories_present") or []
     for cat in expected_categories:
         label = (
-            f"{msg_prefix}human_performance_assessment.categories_present "
-            f"contains '{cat}'"
+            f"{msg_prefix}human_performance_assessment category '{cat}' present"
         )
         _assert(cat in actual, label + f"  (got {actual})")
 
