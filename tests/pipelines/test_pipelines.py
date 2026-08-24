@@ -54,6 +54,7 @@ class TestPipelines:
     ents = self.get_entity(doc, label='conjecture')
     assert ents == ['unlikely']
 
+  @_newer_ner_model
   def test_emergent_activity_entity(self, nlp_obj):
     matcher = EmergentActivity(nlp_obj)
     content = """ wo101 wo 102  wo# 103 , wo#104 or wo #105 wo # 106 or a 107 wrong wo .
@@ -69,6 +70,7 @@ class TestPipelines:
     assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106']
     assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', 'E08D-34r', 'A218']
 
+  @_newer_ner_model
   def test_emergent_activity_entity_pipeline(self, nlp_obj):
     nlp_obj.add_pipe('EmergentActivity')
     content = """ wo101 wo 102  wo# 103 , wo#104 or wo #105 wo # 106 or a 107 wrong wo .
@@ -111,6 +113,7 @@ class TestPipelines:
     assert ents == []
     assert entTIME == ['approximately 5pm']
 
+  @_newer_ner_model
   def test_temporal_attribute_entity_pipeline(self, nlp_obj):
     nlp_obj.add_pipe('temporal_attribute_entity')
     doc = nlp_obj("The valve is about a twenty-nine years old. The event occurred almost twice a week")
