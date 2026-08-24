@@ -195,6 +195,13 @@ jobs:
           conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
           python -m ensurepip --upgrade
           python -m pip install --upgrade setuptools
+          # contextualSpellCheck pins editdistance==0.6.2, whose PyPI sdist has no cp312 wheel and
+          # a broken setup.py (unconditionally cythonizes editdistance/bycython.pyx, which that sdist
+          # never shipped) -- it fails on Python 3.12 regardless of whether Cython is present in the
+          # build env. The GitHub source at the same tag does include the .pyx, so install from there
+          # first; pip then sees the exact pin already satisfied and skips rebuilding it from PyPI.
+          pip install cython
+          pip install "git+https://github.com/roy-ht/editdistance.git@v0.6.2"
           pip install textacy spacy==3.8.11 stumpy nltk==3.8.1 matplotlib beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml cytoolz
           pip install neo4j jupyterlab
           pip install pytest
