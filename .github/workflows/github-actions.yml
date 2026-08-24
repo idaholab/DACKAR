@@ -195,16 +195,18 @@ jobs:
           conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
           python -m ensurepip --upgrade
           python -m pip install --upgrade setuptools
-          pip install textacy spacy==3.8.11 stumpy nltk==3.8.1 matplotlib beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] scikit-learn pyspellchecker pandas wordcloud jsonschema toml cytoolz
+          pip install textacy spacy==3.8.11 stumpy nltk==3.8.1 matplotlib beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml cytoolz
           pip install neo4j jupyterlab
           pip install pytest
 
       # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
+      # Pin the model wheel (instead of "spacy download", which always grabs the newest build) so this
+      # job's NLP output stays reproducible across runs rather than silently drifting on new releases.
       - name: Download trained models
         run: |
           conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
           python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
-          python -m spacy download en_core_web_lg
+          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
           quantulum3-training -s
 
       - name: Test
