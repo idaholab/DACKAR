@@ -12,4 +12,4 @@ except AttributeError:
 else:
     ssl._create_default_https_context = _create_unverified_https_context
 
-nltk.download('all')
+nltk.download(['punkt', 'wordnet', 'averaged_perceptron_tagger', 'brown'])
