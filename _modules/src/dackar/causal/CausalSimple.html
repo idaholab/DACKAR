@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>src.dackar.causal.CausalSimple &mdash; DACKAR 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
       <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
 
@@ -44,7 +44,7 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_new.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
@@ -82,11 +82,11 @@
   <h1>Source code for src.dackar.causal.CausalSimple</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
 
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="sd">Created on April, 2024</span>
 
 <span class="sd">@author: wangc, mandd</span>
-<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">"""</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
@@ -105,44 +105,44 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
 
 
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">):</span>
-  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">):</span>
-  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">):</span>
-  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">):</span>
-  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg_text&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">):</span>
-  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;alias&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;action&#39;</span><span class="p">):</span>
-  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;edep&#39;</span><span class="p">):</span>
-  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;edep&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'conjecture'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">'conjecture'</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'status'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"status"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'neg'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"neg"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'neg_text'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"neg_text"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'alias'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"alias"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'action'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"action"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'edep'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"edep"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">):</span>
-  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">):</span>
-  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;status&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">):</span>
-  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">):</span>
-  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;neg_text&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;alias&#39;</span><span class="p">):</span>
-  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;alias&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;action&#39;</span><span class="p">):</span>
-  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">&#39;edep&#39;</span><span class="p">):</span>
-  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">&quot;edep&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'conjecture'</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">'conjecture'</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'status'</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"status"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'neg'</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"neg"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'neg_text'</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"neg_text"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'alias'</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"alias"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'action'</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"action"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Token</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'edep'</span><span class="p">):</span>
+  <span class="n">Token</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s2">"edep"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 
 <div class="viewcode-block" id="CausalSimple">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">CausalSimple</span><span class="p">(</span><span class="n">CausalBase</span><span class="p">):</span>
-<span class="w">  </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">  </span><span class="sd">"""</span>
 <span class="sd">    Class to process OPG Operator Shift Logs dataset</span>
-<span class="sd">  &quot;&quot;&quot;</span>
-  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="s1">&#39;SSC&#39;</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="s1">&#39;causal&#39;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">  """</span>
+  <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="o">=</span><span class="s1">'SSC'</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="o">=</span><span class="s1">'causal'</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      Construct</span>
 
 <span class="sd">      Args:</span>
@@ -154,29 +154,29 @@
 <span class="sd">      Returns:</span>
 
 <span class="sd">        None</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">nlp</span><span class="p">,</span> <span class="n">entID</span><span class="p">,</span> <span class="n">causalKeywordID</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">nlp</span><span class="o">.</span><span class="n">has_pipe</span><span class="p">(</span><span class="s1">&#39;mergeEntitiesWithSameID&#39;</span><span class="p">):</span>
-      <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="o">.</span><span class="n">add_pipe</span><span class="p">(</span><span class="s1">&#39;mergeEntitiesWithSameID&#39;</span><span class="p">,</span> <span class="n">after</span><span class="o">=</span><span class="s1">&#39;aliasResolver&#39;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">nlp</span><span class="o">.</span><span class="n">has_pipe</span><span class="p">(</span><span class="s1">'mergeEntitiesWithSameID'</span><span class="p">):</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">nlp</span><span class="o">.</span><span class="n">add_pipe</span><span class="p">(</span><span class="s1">'mergeEntitiesWithSameID'</span><span class="p">,</span> <span class="n">after</span><span class="o">=</span><span class="s1">'aliasResolver'</span><span class="p">)</span>
 <div class="viewcode-block" id="CausalSimple._subjList">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple._subjList">[docs]</a>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_subjList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubj:pass&#39;</span><span class="p">]</span></div>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_subjList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'nsubj'</span><span class="p">,</span> <span class="s1">'nsubjpass'</span><span class="p">,</span> <span class="s1">'nsubj:pass'</span><span class="p">]</span></div>
 
 <div class="viewcode-block" id="CausalSimple._objList">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple._objList">[docs]</a>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_objList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">]</span></div>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_objList</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'pobj'</span><span class="p">,</span> <span class="s1">'dobj'</span><span class="p">,</span> <span class="s1">'iobj'</span><span class="p">,</span> <span class="s1">'obj'</span><span class="p">,</span> <span class="s1">'obl'</span><span class="p">,</span> <span class="s1">'oprd'</span><span class="p">]</span></div>
 
 <div class="viewcode-block" id="CausalSimple._entInfoNames">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple._entInfoNames">[docs]</a>
-    <span class="bp">self</span><span class="o">.</span><span class="n">_entInfoNames</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;entity&#39;</span><span class="p">,</span> <span class="s1">&#39;label&#39;</span><span class="p">,</span> <span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="s1">&#39;amod&#39;</span><span class="p">,</span> <span class="s1">&#39;action&#39;</span><span class="p">,</span> <span class="s1">&#39;dep&#39;</span><span class="p">,</span> <span class="s1">&#39;alias&#39;</span><span class="p">,</span> <span class="s1">&#39;negation&#39;</span><span class="p">,</span> <span class="s1">&#39;conjecture&#39;</span><span class="p">,</span> <span class="s1">&#39;sentence&#39;</span><span class="p">]</span></div>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_entInfoNames</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'entity'</span><span class="p">,</span> <span class="s1">'label'</span><span class="p">,</span> <span class="s1">'status'</span><span class="p">,</span> <span class="s1">'amod'</span><span class="p">,</span> <span class="s1">'action'</span><span class="p">,</span> <span class="s1">'dep'</span><span class="p">,</span> <span class="s1">'alias'</span><span class="p">,</span> <span class="s1">'negation'</span><span class="p">,</span> <span class="s1">'conjecture'</span><span class="p">,</span> <span class="s1">'sentence'</span><span class="p">]</span></div>
 
 
 <div class="viewcode-block" id="CausalSimple.reset">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.reset">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      Reset rule-based matcher</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">_entInfoNames</span> <span class="o">=</span> <span class="kc">None</span></div>
 
@@ -184,7 +184,7 @@
 <div class="viewcode-block" id="CausalSimple.textProcess">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.textProcess">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">textProcess</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      Function to clean text</span>
 
 <span class="sd">      Args:</span>
@@ -192,7 +192,7 @@
 
 <span class="sd">      Returns:</span>
 <span class="sd">        procObj, DACKAR.Preprocessing object</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">procObj</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">textProcess</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">procObj</span></div>
 
@@ -200,7 +200,7 @@
 <div class="viewcode-block" id="CausalSimple.extractInformation">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.extractInformation">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">extractInformation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      extract information</span>
 
 <span class="sd">      Args:</span>
@@ -210,9 +210,9 @@
 <span class="sd">      Returns:</span>
 
 <span class="sd">        None</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1">## health status</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Start to extract health status&#39;</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">'Start to extract health status'</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">extractStatus</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_screen</span><span class="p">:</span>
@@ -220,46 +220,46 @@
       <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span><span class="p">:</span>
         <span class="n">ents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getCustomEnts</span><span class="p">(</span><span class="n">sent</span><span class="o">.</span><span class="n">ents</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_entID</span><span class="p">])</span>
         <span class="k">if</span> <span class="n">ents</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-          <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Sentence:&#39;</span><span class="p">,</span> <span class="n">sent</span><span class="p">)</span>
-          <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;... Conjecture:&#39;</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">conjecture</span><span class="p">)</span>
-          <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;... Negation:&#39;</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg_text</span><span class="p">)</span>
-          <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;... Action:&#39;</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">action</span><span class="p">)</span>
+          <span class="nb">print</span><span class="p">(</span><span class="s1">'Sentence:'</span><span class="p">,</span> <span class="n">sent</span><span class="p">)</span>
+          <span class="nb">print</span><span class="p">(</span><span class="s1">'... Conjecture:'</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">conjecture</span><span class="p">)</span>
+          <span class="nb">print</span><span class="p">(</span><span class="s1">'... Negation:'</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg_text</span><span class="p">)</span>
+          <span class="nb">print</span><span class="p">(</span><span class="s1">'... Action:'</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">action</span><span class="p">)</span>
           <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">ents</span><span class="p">:</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;... Entity:&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;...... Status:&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;...... Amod:&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status_amod</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;...... Action:&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">action</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;...... Dep:&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">edep</span><span class="p">)</span>
-            <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;...... Alias:&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'... Entity:'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'...... Status:'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'...... Amod:'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status_amod</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'...... Action:'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">action</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'...... Dep:'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">edep</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s1">'...... Alias:'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg</span><span class="p">:</span>
-              <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;...... Negation&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg_text</span><span class="p">)</span>
+              <span class="nb">print</span><span class="p">(</span><span class="s1">'...... Negation'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg_text</span><span class="p">)</span>
 
     <span class="n">entInfo</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span><span class="p">:</span>
       <span class="n">ents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getCustomEnts</span><span class="p">(</span><span class="n">sent</span><span class="o">.</span><span class="n">ents</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_entID</span><span class="p">])</span>
       <span class="k">if</span> <span class="n">ents</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">ents</span><span class="p">:</span>
-            <span class="n">entInfo</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">label_</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status_amod</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">action</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">edep</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg_text</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">conjecture</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)])</span>
+            <span class="n">entInfo</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">label_</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">status_amod</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">action</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">edep</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">neg_text</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">conjecture</span><span class="p">,</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="p">)])</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entInfo</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
       <span class="bp">self</span><span class="o">.</span><span class="n">_entStatus</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">entInfo</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_entInfoNames</span><span class="p">)</span>
 
     <span class="c1"># Extract entity relations</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Start to extract general entity relations&#39;</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">'Start to extract general entity relations'</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">extractRelDep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span><span class="p">)</span>
     <span class="c1"># dfRels = pd.DataFrame(self._allRelPairs, columns=self._relationNames)</span>
-    <span class="c1"># dfRels.to_csv(nlpConfig[&#39;files&#39;][&#39;output_relation_file&#39;], columns=self._relationNames)</span>
+    <span class="c1"># dfRels.to_csv(nlpConfig['files']['output_relation_file'], columns=self._relationNames)</span>
 
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
       <span class="bp">self</span><span class="o">.</span><span class="n">_relationGeneral</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_relationNames</span><span class="p">)</span>
       <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_screen</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relationGeneral</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;End of general entity relation extraction!&#39;</span><span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">'End of general entity relation extraction!'</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_causalKeywordID</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="p">:</span>
       <span class="c1"># # Extract entity causal relations</span>
-      <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;Start to extract entity causal relation&#39;</span><span class="p">)</span>
+      <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">'Start to extract entity causal relation'</span><span class="p">)</span>
       <span class="bp">self</span><span class="o">.</span><span class="n">extractCausalRelDep</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span><span class="p">)</span>
-      <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;End of causal relation extraction!&#39;</span><span class="p">)</span>
+      <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">'End of causal relation extraction!'</span><span class="p">)</span>
       <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_rawCausalList</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
         <span class="c1"># self._rawCausalList contains all identified entities ordered by index</span>
         <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rawCausalList</span><span class="p">:</span>
@@ -272,7 +272,7 @@
 <div class="viewcode-block" id="CausalSimple.extractStatus">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.extractStatus">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">extractStatus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">matchedSents</span><span class="p">,</span> <span class="n">predSynonyms</span><span class="o">=</span><span class="p">[],</span> <span class="n">exclPrepos</span><span class="o">=</span><span class="p">[]):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      Extract health status and relation</span>
 
 <span class="sd">      Args:</span>
@@ -280,7 +280,7 @@
 <span class="sd">        matchedSents: list, the matched sentences</span>
 <span class="sd">        predSynonyms: list, predicate synonyms</span>
 <span class="sd">        exclPrepos: list, exclude the prepositions</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="c1"># procedure to process OPG CWS data</span>
     <span class="c1"># collect status, negation, conjecture information</span>
     <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">matchedSents</span><span class="p">:</span>
@@ -299,18 +299,18 @@
 <div class="viewcode-block" id="CausalSimple.handleValidSent">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.handleValidSent">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">handleValidSent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sent</span><span class="p">,</span> <span class="n">ents</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      Handle sentence that do not have (subj, predicate, obj)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">root</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">root</span>
     <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isNegation</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
     <span class="n">conjecture</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isConjecture</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">,</span><span class="n">neg</span><span class="p">)</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">,</span><span class="n">negText</span><span class="p">)</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">,</span><span class="n">conjecture</span><span class="p">)</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg'</span><span class="p">,</span><span class="n">neg</span><span class="p">)</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg_text'</span><span class="p">,</span><span class="n">negText</span><span class="p">)</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'conjecture'</span><span class="p">,</span><span class="n">conjecture</span><span class="p">)</span>
     <span class="n">root</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">root</span>
-    <span class="n">action</span> <span class="o">=</span> <span class="n">root</span> <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">,</span> <span class="s1">&#39;AUX&#39;</span><span class="p">]</span> <span class="k">else</span> <span class="kc">None</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;action&#39;</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
+    <span class="n">action</span> <span class="o">=</span> <span class="n">root</span> <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'VERB'</span><span class="p">,</span> <span class="s1">'AUX'</span><span class="p">]</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'action'</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
     <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">ents</span><span class="p">:</span>
       <span class="n">neg</span> <span class="o">=</span> <span class="kc">None</span>
       <span class="n">negText</span> <span class="o">=</span> <span class="kc">None</span>
@@ -318,34 +318,34 @@
       <span class="n">status</span> <span class="o">=</span> <span class="kc">None</span>        <span class="c1"># store health status for identified entities</span>
       <span class="n">entRoot</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
 
-      <span class="k">if</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">]:</span>
+      <span class="k">if</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'nsubj'</span><span class="p">,</span> <span class="s1">'nsubjpass'</span><span class="p">]:</span>
         <span class="n">status</span><span class="p">,</span> <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getStatusForSubj</span><span class="p">(</span><span class="n">ent</span><span class="p">)</span>
-      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;dobj&#39;</span><span class="p">,</span> <span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;iobj&#39;</span><span class="p">,</span> <span class="s1">&#39;obj&#39;</span><span class="p">,</span> <span class="s1">&#39;obl&#39;</span><span class="p">,</span> <span class="s1">&#39;oprd&#39;</span><span class="p">]:</span>
+      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'dobj'</span><span class="p">,</span> <span class="s1">'pobj'</span><span class="p">,</span> <span class="s1">'iobj'</span><span class="p">,</span> <span class="s1">'obj'</span><span class="p">,</span> <span class="s1">'obl'</span><span class="p">,</span> <span class="s1">'oprd'</span><span class="p">]:</span>
         <span class="n">status</span><span class="p">,</span> <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getStatusForObj</span><span class="p">(</span><span class="n">ent</span><span class="p">)</span>
         <span class="n">head</span> <span class="o">=</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span>
-        <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;xcomp&#39;</span><span class="p">,</span> <span class="s1">&#39;advcl&#39;</span><span class="p">,</span> <span class="s1">&#39;relcl&#39;</span><span class="p">]:</span>
-          <span class="n">ccomps</span> <span class="o">=</span> <span class="p">[</span><span class="n">child</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">head</span><span class="o">.</span><span class="n">rights</span> <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;ccomp&#39;</span><span class="p">]]</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'xcomp'</span><span class="p">,</span> <span class="s1">'advcl'</span><span class="p">,</span> <span class="s1">'relcl'</span><span class="p">]:</span>
+          <span class="n">ccomps</span> <span class="o">=</span> <span class="p">[</span><span class="n">child</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">head</span><span class="o">.</span><span class="n">rights</span> <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'ccomp'</span><span class="p">]]</span>
           <span class="n">status</span> <span class="o">=</span> <span class="n">ccomps</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ccomps</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span>
-      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;compound&#39;</span><span class="p">]:</span>
+      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'compound'</span><span class="p">]:</span>
         <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="n">head</span> <span class="o">=</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span>
-        <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;compound&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'compound'</span><span class="p">]:</span>
           <span class="n">status</span> <span class="o">=</span> <span class="n">head</span>
-      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;conj&#39;</span><span class="p">]:</span>
+      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'conj'</span><span class="p">]:</span>
         <span class="c1"># TODO: recursive function to retrieve non-conj</span>
         <span class="n">amod</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="n">head</span> <span class="o">=</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span>
         <span class="n">headStatus</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="k">if</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;conj&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'conj'</span><span class="p">]:</span>
           <span class="n">head</span> <span class="o">=</span> <span class="n">head</span><span class="o">.</span><span class="n">head</span>
         <span class="n">headEnt</span> <span class="o">=</span> <span class="n">head</span><span class="o">.</span><span class="n">doc</span><span class="p">[</span><span class="n">head</span><span class="o">.</span><span class="n">i</span><span class="p">:</span><span class="n">head</span><span class="o">.</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;nsubj&#39;</span><span class="p">,</span> <span class="s1">&#39;nsubjpass&#39;</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'nsubj'</span><span class="p">,</span> <span class="s1">'nsubjpass'</span><span class="p">]:</span>
           <span class="n">headStatus</span><span class="p">,</span> <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getStatusForSubj</span><span class="p">(</span><span class="n">headEnt</span><span class="p">)</span>
-        <span class="k">elif</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;pobj&#39;</span><span class="p">,</span> <span class="s1">&#39;dobj&#39;</span><span class="p">]:</span>
+        <span class="k">elif</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'pobj'</span><span class="p">,</span> <span class="s1">'dobj'</span><span class="p">]:</span>
           <span class="n">headStatus</span><span class="p">,</span> <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getStatusForObj</span><span class="p">(</span><span class="n">headEnt</span><span class="p">)</span>
           <span class="n">head</span> <span class="o">=</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span>
-          <span class="k">if</span> <span class="n">headStatus</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;xcomp&#39;</span><span class="p">,</span> <span class="s1">&#39;advcl&#39;</span><span class="p">,</span> <span class="s1">&#39;relcl&#39;</span><span class="p">]:</span>
-            <span class="n">ccomps</span> <span class="o">=</span> <span class="p">[</span><span class="n">child</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">head</span><span class="o">.</span><span class="n">rights</span> <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;ccomp&#39;</span><span class="p">]]</span>
+          <span class="k">if</span> <span class="n">headStatus</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'xcomp'</span><span class="p">,</span> <span class="s1">'advcl'</span><span class="p">,</span> <span class="s1">'relcl'</span><span class="p">]:</span>
+            <span class="n">ccomps</span> <span class="o">=</span> <span class="p">[</span><span class="n">child</span> <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">head</span><span class="o">.</span><span class="n">rights</span> <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'ccomp'</span><span class="p">]]</span>
             <span class="n">headStatus</span> <span class="o">=</span> <span class="n">ccomps</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ccomps</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span>
         <span class="k">if</span> <span class="n">headStatus</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
           <span class="n">status</span> <span class="o">=</span> <span class="n">amod</span>
@@ -354,69 +354,69 @@
         <span class="k">else</span><span class="p">:</span>
           <span class="n">status</span> <span class="o">=</span> <span class="n">headStatus</span> <span class="k">if</span> <span class="n">amod</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">[</span><span class="n">amod</span><span class="p">,</span> <span class="n">headStatus</span><span class="p">]</span>
 
-      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;ROOT&#39;</span><span class="p">]:</span>
+      <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'ROOT'</span><span class="p">]:</span>
         <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">status</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-          <span class="n">rights</span> <span class="o">=</span><span class="p">[</span><span class="n">tk</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">entRoot</span><span class="o">.</span><span class="n">rights</span><span class="p">)</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">,</span> <span class="s1">&#39;NOUN&#39;</span><span class="p">,</span> <span class="s1">&#39;ADJ&#39;</span><span class="p">,</span> <span class="s1">&#39;ADV&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">tk</span><span class="o">.</span><span class="n">i</span> <span class="o">&gt;=</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">]</span>
+          <span class="n">rights</span> <span class="o">=</span><span class="p">[</span><span class="n">tk</span> <span class="k">for</span> <span class="n">tk</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="n">entRoot</span><span class="o">.</span><span class="n">rights</span><span class="p">)</span> <span class="k">if</span> <span class="n">tk</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'VERB'</span><span class="p">,</span> <span class="s1">'NOUN'</span><span class="p">,</span> <span class="s1">'ADJ'</span><span class="p">,</span> <span class="s1">'ADV'</span><span class="p">]</span> <span class="ow">and</span> <span class="n">tk</span><span class="o">.</span><span class="n">i</span> <span class="o">&gt;=</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">]</span>
           <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rights</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">status</span> <span class="o">=</span> <span class="n">rights</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
       <span class="k">else</span><span class="p">:</span>
         <span class="n">status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getAmod</span><span class="p">(</span><span class="n">ent</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
       <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
-        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">status</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status_amod&#39;</span><span class="p">,</span> <span class="n">status</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">status</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status_amod'</span><span class="p">,</span> <span class="n">status</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
       <span class="k">else</span><span class="p">:</span>
-        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">status</span><span class="p">)</span>
+        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">status</span><span class="p">)</span>
 
-      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">,</span> <span class="n">neg</span><span class="p">)</span>
-      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">,</span> <span class="n">negText</span><span class="p">)</span>
-      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;edep&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">dep_</span><span class="p">)</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg'</span><span class="p">,</span> <span class="n">neg</span><span class="p">)</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg_text'</span><span class="p">,</span> <span class="n">negText</span><span class="p">)</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'edep'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">dep_</span><span class="p">)</span>
 
-      <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">,</span> <span class="s1">&#39;AUX&#39;</span><span class="p">]:</span>
-        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;action&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="p">)</span>
-      <span class="k">elif</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;prep&#39;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">,</span> <span class="s1">&#39;AUX&#39;</span><span class="p">]:</span>
-        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;action&#39;</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">head</span><span class="p">)</span></div>
+      <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'VERB'</span><span class="p">,</span> <span class="s1">'AUX'</span><span class="p">]:</span>
+        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'action'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'prep'</span><span class="p">]</span> <span class="ow">and</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'VERB'</span><span class="p">,</span> <span class="s1">'AUX'</span><span class="p">]:</span>
+        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'action'</span><span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">head</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="CausalSimple.handleInvalidSent">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.handleInvalidSent">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">handleInvalidSent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sent</span><span class="p">,</span> <span class="n">ents</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      Handle sentence that do not have (subj, predicate, obj)</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">root</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">root</span>
     <span class="n">neg</span><span class="p">,</span> <span class="n">negText</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isNegation</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
     <span class="n">conjecture</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isConjecture</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">,</span><span class="n">neg</span><span class="p">)</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">,</span><span class="n">negText</span><span class="p">)</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">,</span><span class="n">conjecture</span><span class="p">)</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg'</span><span class="p">,</span><span class="n">neg</span><span class="p">)</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg_text'</span><span class="p">,</span><span class="n">negText</span><span class="p">)</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'conjecture'</span><span class="p">,</span><span class="n">conjecture</span><span class="p">)</span>
     <span class="n">root</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">root</span>
-    <span class="n">action</span> <span class="o">=</span> <span class="n">root</span> <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">,</span> <span class="s1">&#39;AUX&#39;</span><span class="p">]</span> <span class="k">else</span> <span class="kc">None</span>
-    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;action&#39;</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
+    <span class="n">action</span> <span class="o">=</span> <span class="n">root</span> <span class="k">if</span> <span class="n">root</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'VERB'</span><span class="p">,</span> <span class="s1">'AUX'</span><span class="p">]</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">sent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'action'</span><span class="p">,</span> <span class="n">action</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">ents</span><span class="p">:</span>
-      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg&#39;</span><span class="p">,</span> <span class="n">neg</span><span class="p">)</span>
-      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;neg_text&#39;</span><span class="p">,</span> <span class="n">negText</span><span class="p">)</span>
-      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;conjecture&#39;</span><span class="p">,</span> <span class="n">conjecture</span><span class="p">)</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg'</span><span class="p">,</span> <span class="n">neg</span><span class="p">)</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'neg_text'</span><span class="p">,</span> <span class="n">negText</span><span class="p">)</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'conjecture'</span><span class="p">,</span> <span class="n">conjecture</span><span class="p">)</span>
       <span class="n">entRoot</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
-      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;edep&#39;</span><span class="p">,</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span><span class="p">)</span>
-      <span class="k">if</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;VERB&#39;</span><span class="p">,</span> <span class="s1">&#39;AUX&#39;</span><span class="p">]:</span>
-        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;action&#39;</span><span class="p">,</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span><span class="p">)</span>
+      <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'edep'</span><span class="p">,</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span><span class="o">.</span><span class="n">pos_</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'VERB'</span><span class="p">,</span> <span class="s1">'AUX'</span><span class="p">]:</span>
+        <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'action'</span><span class="p">,</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">head</span><span class="p">)</span>
       <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
         <span class="c1"># entity at the beginning of sentence</span>
         <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">start</span> <span class="o">==</span> <span class="n">sent</span><span class="o">.</span><span class="n">start</span><span class="p">:</span>
           <span class="n">status</span> <span class="o">=</span> <span class="n">sent</span><span class="p">[</span><span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">:]</span>
           <span class="c1"># some clean up for the text</span>
           <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span><span class="p">(</span><span class="n">status</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
-          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
         <span class="c1"># entity at the end of sentence</span>
         <span class="k">elif</span> <span class="n">ent</span><span class="o">.</span><span class="n">end</span> <span class="o">==</span> <span class="n">sent</span><span class="o">.</span><span class="n">end</span> <span class="ow">or</span> <span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">end</span> <span class="o">==</span> <span class="n">sent</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">sent</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">is_punct</span><span class="p">):</span>
           <span class="n">text</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span>
           <span class="c1"># substitute entity ID with its alias</span>
-          <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b</span><span class="si">%s</span><span class="s2">\b&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span> <span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+          <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b</span><span class="si">%s</span><span class="s2">\b"</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span> <span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
           <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
         <span class="c1"># entity in the middle of sentence</span>
         <span class="k">else</span><span class="p">:</span>
           <span class="n">entRoot</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
@@ -425,15 +425,15 @@
             <span class="n">status</span> <span class="o">=</span> <span class="n">sent</span><span class="p">[</span><span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">:]</span>
             <span class="c1"># some clean up for the text</span>
             <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span><span class="p">(</span><span class="n">status</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
-            <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+            <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
           <span class="c1"># Include the whole info with alias substitution</span>
           <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_objList</span><span class="p">:</span>
             <span class="n">text</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span>
             <span class="c1"># substitute entity ID with its alias</span>
-            <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b</span><span class="si">%s</span><span class="s2">\b&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span> <span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b</span><span class="si">%s</span><span class="s2">\b"</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span> <span class="p">,</span> <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">alias</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
             <span class="n">text</span> <span class="o">=</span> <span class="n">getOnlyWords</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
             <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-            <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+            <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
       <span class="c1"># other type of entities</span>
       <span class="k">else</span><span class="p">:</span>
         <span class="n">entRoot</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">root</span>
@@ -442,22 +442,22 @@
           <span class="n">status</span> <span class="o">=</span> <span class="n">sent</span><span class="p">[</span><span class="n">ent</span><span class="o">.</span><span class="n">end</span><span class="p">:]</span>
           <span class="c1"># some clean up for the text</span>
           <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span><span class="p">(</span><span class="n">status</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
-          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
         <span class="c1"># Include the whole info with alias substitution</span>
         <span class="k">elif</span> <span class="n">entRoot</span><span class="o">.</span><span class="n">dep_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_objList</span><span class="p">:</span>
           <span class="c1"># depend on the application, can use self.getstatusForObj to get the status</span>
           <span class="n">text</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span>
           <span class="n">text</span> <span class="o">=</span> <span class="n">getOnlyWords</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
           <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+          <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
           <span class="c1"># If there is single entity, then report it.</span>
           <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">ents</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
             <span class="n">text</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span>
-            <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b</span><span class="si">%s</span><span class="s2">\b&quot;</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span> <span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b</span><span class="si">%s</span><span class="s2">\b"</span> <span class="o">%</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="p">)</span> <span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
             <span class="n">text</span> <span class="o">=</span> <span class="n">getOnlyWords</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
             <span class="n">text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_textProcess</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
-            <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">&#39;status&#39;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+            <span class="n">ent</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="s1">'status'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
           <span class="c1"># if the entity not among subj and obj and there are more than one entity, it may not need to report it</span>
           <span class="k">else</span><span class="p">:</span>
             <span class="k">pass</span></div>
@@ -466,7 +466,7 @@
 <div class="viewcode-block" id="CausalSimple.extractCausalRelDep">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.extractCausalRelDep">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">extractCausalRelDep</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">matchedSents</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 
 <span class="sd">      Args:</span>
 
@@ -475,7 +475,7 @@
 <span class="sd">      Returns:</span>
 
 <span class="sd">        (subject tuple, predicate, object tuple): generator, the extracted causal relation</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="n">allCausalPairs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">sent</span> <span class="ow">in</span> <span class="n">matchedSents</span><span class="p">:</span>
       <span class="n">causalPairs</span> <span class="o">=</span> <span class="p">[]</span>
@@ -506,7 +506,7 @@
           <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">isSubElements</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">sscEnts</span><span class="o">+</span><span class="n">causalEnts</span><span class="p">):</span>
             <span class="n">causalPairs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">obj</span><span class="p">,</span> <span class="n">obj</span><span class="o">.</span><span class="n">i</span><span class="p">))</span>
 
-      <span class="c1"># mergePhrase pipeline can merge &quot;( Issue&quot; into single entity.</span>
+      <span class="c1"># mergePhrase pipeline can merge "( Issue" into single entity.</span>
       <span class="n">causalPairs</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">causalPairs</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">itemgetter</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
 
       <span class="n">causalPairs</span> <span class="o">=</span> <span class="p">[</span><span class="n">elem</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">causalPairs</span><span class="p">]</span>
@@ -518,8 +518,8 @@
 <div class="viewcode-block" id="CausalSimple.isSubElements">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.isSubElements">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">isSubElements</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">elem1</span><span class="p">,</span> <span class="n">elemList</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    """</span>
     <span class="n">isSub</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="k">for</span> <span class="n">elem</span> <span class="ow">in</span> <span class="n">elemList</span><span class="p">:</span>
       <span class="n">isSub</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">isSubElement</span><span class="p">(</span><span class="n">elem1</span><span class="p">,</span> <span class="n">elem</span><span class="p">)</span>
@@ -532,21 +532,21 @@
 <div class="viewcode-block" id="CausalSimple.isSubElement">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalSimple/index.html#src.dackar.causal.CausalSimple.CausalSimple.isSubElement">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">isSubElement</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">elem1</span><span class="p">,</span> <span class="n">elem2</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">"""</span>
 <span class="sd">      True if elem1 is a subelement of elem2</span>
-<span class="sd">    &quot;&quot;&quot;</span>
+<span class="sd">    """</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">elem1</span><span class="p">,</span> <span class="n">Token</span><span class="p">):</span>
       <span class="n">s1</span><span class="p">,</span> <span class="n">e1</span> <span class="o">=</span> <span class="n">elem1</span><span class="o">.</span><span class="n">i</span><span class="p">,</span> <span class="n">elem1</span><span class="o">.</span><span class="n">i</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">elem1</span><span class="p">,</span> <span class="n">Span</span><span class="p">):</span>
       <span class="n">s1</span><span class="p">,</span> <span class="n">e1</span> <span class="o">=</span> <span class="n">elem1</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">elem1</span><span class="o">.</span><span class="n">end</span>
     <span class="k">else</span><span class="p">:</span>
-      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">&quot;Wrong data type is provided!&quot;</span><span class="p">)</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">"Wrong data type is provided!"</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">elem2</span><span class="p">,</span> <span class="n">Token</span><span class="p">):</span>
       <span class="n">s2</span><span class="p">,</span> <span class="n">e2</span> <span class="o">=</span> <span class="n">elem2</span><span class="o">.</span><span class="n">i</span><span class="p">,</span> <span class="n">elem2</span><span class="o">.</span><span class="n">i</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">elem2</span><span class="p">,</span> <span class="n">Span</span><span class="p">):</span>
       <span class="n">s2</span><span class="p">,</span> <span class="n">e2</span> <span class="o">=</span> <span class="n">elem2</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">elem2</span><span class="o">.</span><span class="n">end</span>
     <span class="k">else</span><span class="p">:</span>
-      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">&quot;Wrong data type is provided!&quot;</span><span class="p">)</span>
+      <span class="k">raise</span> <span class="ne">IOError</span><span class="p">(</span><span class="s2">"Wrong data type is provided!"</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">s1</span> <span class="o">&gt;=</span> <span class="n">s2</span> <span class="ow">and</span> <span class="n">e1</span> <span class="o">&lt;=</span><span class="n">e2</span><span class="p">:</span>
       <span class="k">return</span> <span class="kc">True</span>
     <span class="k">else</span><span class="p">:</span>

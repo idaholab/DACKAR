@@ -8,7 +8,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Custom Pipelines Demo &mdash; DACKAR 0.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
       <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
@@ -48,7 +48,7 @@
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="../install_spacy3.5.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install_new.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../support.html">Support</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Notebooks</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="PreprocessingDemo.html">Preprocessing Demo</a></li>
@@ -126,17 +126,17 @@ from spacy.tokens import Token
 from spacy import displacy
 import coreferee
 
-#### Using spacy&#39;s Token extensions for coreferee
-if Token.has_extension(&#39;ref_n&#39;):
-  _ = Token.remove_extension(&#39;ref_n&#39;)
-if Token.has_extension(&#39;ref_t&#39;):
-  _ = Token.remove_extension(&#39;ref_t&#39;)
-if Token.has_extension(&#39;ref_t_&#39;):
-  _ = Token.remove_extension(&#39;ref_t_&#39;)
-Token.set_extension(&#39;ref_n&#39;, default=&#39;&#39;)
-Token.set_extension(&#39;ref_t&#39;, default=&#39;&#39;)
+#### Using spacy's Token extensions for coreferee
+if Token.has_extension('ref_n'):
+  _ = Token.remove_extension('ref_n')
+if Token.has_extension('ref_t'):
+  _ = Token.remove_extension('ref_t')
+if Token.has_extension('ref_t_'):
+  _ = Token.remove_extension('ref_t_')
+Token.set_extension('ref_n', default='')
+Token.set_extension('ref_t', default='')
 
-nlp = spacy.load(&quot;en_core_web_lg&quot;)
+nlp = spacy.load("en_core_web_lg")
 </pre></div>
 </div>
 </div>
@@ -148,40 +148,40 @@ nlp = spacy.load(&quot;en_core_web_lg&quot;)
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Function used to display NER entities
 def displayNER(doc, includePunct=False):
-  &quot;&quot;&quot;
+  """
     Generate data frame for visualization of spaCy doc with custom attributes.
-  &quot;&quot;&quot;
+  """
   rows = []
   for i, t in enumerate(doc):
     if not t.is_punct or includePunct:
-      row = {&#39;token&#39;: i,
-             &#39;text&#39;: t.text, &#39;lemma&#39;: t.lemma_,
-             &#39;pos&#39;: t.pos_, &#39;dep&#39;: t.dep_, &#39;ent_type&#39;: t.ent_type_,
-             &#39;ent_iob_&#39;: t.ent_iob_}
-      if doc.has_extension(&#39;coref_chains&#39;):
-        if t.has_extension(&#39;coref_chains&#39;) and t._.coref_chains: # neuralcoref attributes
-          row[&#39;coref_chains&#39;] = t._.coref_chains.pretty_representation
+      row = {'token': i,
+             'text': t.text, 'lemma': t.lemma_,
+             'pos': t.pos_, 'dep': t.dep_, 'ent_type': t.ent_type_,
+             'ent_iob_': t.ent_iob_}
+      if doc.has_extension('coref_chains'):
+        if t.has_extension('coref_chains') and t._.coref_chains: # neuralcoref attributes
+          row['coref_chains'] = t._.coref_chains.pretty_representation
         else:
-          row[&#39;coref_chains&#39;] = None
-      if t.has_extension(&#39;ref_n&#39;): # referent attribute
-        row[&#39;ref_n&#39;] = t._.ref_n
-        row[&#39;ref_t&#39;] = t._.ref_t
-      if t.has_extension(&#39;ref_ent&#39;): # ref_n/ref_t
-        row[&#39;ref_ent&#39;] = t._.ref_ent
+          row['coref_chains'] = None
+      if t.has_extension('ref_n'): # referent attribute
+        row['ref_n'] = t._.ref_n
+        row['ref_t'] = t._.ref_t
+      if t.has_extension('ref_ent'): # ref_n/ref_t
+        row['ref_ent'] = t._.ref_ent
       rows.append(row)
-  df = pd.DataFrame(rows).set_index(&#39;token&#39;)
+  df = pd.DataFrame(rows).set_index('token')
   df.index.name = None
   return df
 
 
 # Reset Pipelines
 def resetPipeline(nlp, pipes):
-  &quot;&quot;&quot;
+  """
     remove all custom pipes, and add new pipes
-  &quot;&quot;&quot;
+  """
   customPipes = [pipe for (pipe, _) in nlp.pipeline
-                  if pipe not in [&#39;tagger&#39;, &#39;parser&#39;,
-                                  &#39;tok2vec&#39;, &#39;attribute_ruler&#39;, &#39;lemmatizer&#39;]]
+                  if pipe not in ['tagger', 'parser',
+                                  'tok2vec', 'attribute_ruler', 'lemmatizer']]
   for pipe in customPipes:
     _ = nlp.remove_pipe(pipe)
   # re-add specified pipes
@@ -190,12 +190,12 @@ def resetPipeline(nlp, pipes):
 
 # Print Dependency Tree
 def printDepTree(doc, skipPunct=True):
-  &quot;&quot;&quot;
+  """
     Utility function to pretty print the dependency tree.
-  &quot;&quot;&quot;
+  """
   def printRecursive(root, indent, skipPunct):
-    if not root.dep_ == &#39;punct&#39; or not skipPunct:
-      print(&quot; &quot;*indent + f&quot;{root} [{root.pos_}, {root.dep_}]&quot;)
+    if not root.dep_ == 'punct' or not skipPunct:
+      print(" "*indent + f"{root} [{root.pos_}, {root.dep_}]")
     for left in root.lefts:
       printRecursive(left, indent=indent+4, skipPunct=skipPunct)
     for right in root.rights:
@@ -213,19 +213,19 @@ def printDepTree(doc, skipPunct=True):
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span># Normalizing Named Entities, remove the leading article and trailing particle
-@Language.component(&quot;normEntities&quot;)
+@Language.component("normEntities")
 def normEntities(doc):
-  &quot;&quot;&quot;
+  """
     Normalizing Named Entities, remove the leading article and trailing particle
     @ In, doc, spacy.tokens.doc.Doc
     @ Out, doc, spacy.tokens.doc.Doc
-  &quot;&quot;&quot;
+  """
   ents = []
   for ent in doc.ents:
-    if ent[0].pos_ == &quot;DET&quot;: # leading article
+    if ent[0].pos_ == "DET": # leading article
       ent = Span(doc, ent.start+1, ent.end, label=ent.label)
     if len(ent) &gt; 0:
-      if ent[-1].pos_ == &quot;PART&quot;: # trailing particle like &#39;s
+      if ent[-1].pos_ == "PART": # trailing particle like 's
         ent = Span(doc, ent.start, ent.end-1, label=ent.label)
       if len(ent) &gt; 0:
         ents.append(ent)
@@ -233,53 +233,53 @@ def normEntities(doc):
   return doc
 
 # Initialize Coreference Attributes with Entity Info
-@Language.component(&quot;initCoref&quot;)
+@Language.component("initCoref")
 def initCoref(doc):
   for e in doc.ents:
     e[0]._.ref_n, e[0]._.ref_t = e.text, e.label_
   return doc
 
 # Anaphora resolution using coreferee
-@Language.component(&quot;anaphorCoref&quot;)
+@Language.component("anaphorCoref")
 def anaphorCoref(doc):
-  &quot;&quot;&quot;
+  """
     Anaphora resolution using coreferee
     This pipeline need to be added after NER.
     The assumption here is: The entities need to be recognized first, then call
-    pipeline &quot;initCoref&quot; to assign initial custom attribute &quot;ref_n&quot; and &quot;ref_t&quot;,
-    then call pipeline &quot;aliasResolver&quot; to resolve all the aliases used in the text.
-    After all these pre-processes, we can use &quot;anaphorCoref&quot; pipeline to resolve the
+    pipeline "initCoref" to assign initial custom attribute "ref_n" and "ref_t",
+    then call pipeline "aliasResolver" to resolve all the aliases used in the text.
+    After all these pre-processes, we can use "anaphorCoref" pipeline to resolve the
     coreference.
-  &quot;&quot;&quot;
-  if not Token.has_extension(&#39;coref_chains&#39;):
+  """
+  if not Token.has_extension('coref_chains'):
     return doc
   for token in doc:
     coref = token._.coref_chains
     # if token is coref and not already dereferenced
-    if coref and token._.ref_n == &#39;&#39;:
-      # check all the references, if &quot;ref_n&quot; is available (determined by NER and initCoref),
-      # the value of &quot;ref_n&quot; will be assigned to current token
+    if coref and token._.ref_n == '':
+      # check all the references, if "ref_n" is available (determined by NER and initCoref),
+      # the value of "ref_n" will be assigned to current token
       for chain in coref:
         for ref in chain:
           refToken = doc[ref[0]]
-          if refToken._.ref_n != &#39;&#39;:
+          if refToken._.ref_n != '':
             token._.ref_n = refToken._.ref_n
             token._.ref_t = refToken._.ref_t
             break
   return doc
 
 # Expand the current entities, recursive function to extend entity with all previous NOUN
-@Language.component(&quot;expandEntities&quot;)
+@Language.component("expandEntities")
 def expandEntities(doc):
-  &quot;&quot;&quot;
+  """
     Expand the current entities, recursive function to extend entity with all previous NOUN
-  &quot;&quot;&quot;
+  """
   newEnts = []
   isUpdated = False
   for ent in doc.ents:
-    if ent.label_ == &quot;SSC&quot; and ent.start != 0:
+    if ent.label_ == "SSC" and ent.start != 0:
       prevToken = doc[ent.start - 1]
-      if prevToken.pos_ in [&#39;NOUN&#39;]:
+      if prevToken.pos_ in ['NOUN']:
         newEnt = Span(doc, ent.start - 1, ent.end, label=ent.label)
         newEnts.append(newEnt)
         isUpdated = True
@@ -300,7 +300,7 @@ def expandEntities(doc):
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>pipelines = [&#39;entity_ruler&#39;,&#39;normEntities&#39;, &#39;initCoref&#39;, &#39;coreferee&#39;,&#39;anaphorCoref&#39;, &#39;expandEntities&#39;]
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>pipelines = ['entity_ruler','normEntities', 'initCoref', 'coreferee','anaphorCoref', 'expandEntities']
 resetPipeline(nlp, pipelines)
 nlp.pipeline
 </pre></div>
@@ -313,7 +313,7 @@ nlp.pipeline
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>text = r&quot;&quot;&quot;A leak was noticed from the RCP pump 1A.
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>text = r"""A leak was noticed from the RCP pump 1A.
           The RCP pump 1A pressure gauge was found not operating, and it was found inoperative.
           The RCP pump 1A pressure gauge was found inoperative.
           Rupture of pump bearings caused shaft degradation.
@@ -322,7 +322,7 @@ nlp.pipeline
           Pump test failed due to power supply failure.
           Pump inspection revealed excessive impeller degradation.
           Pump inspection revealed excessive impeller degradation likely due to cavitation.
-        &quot;&quot;&quot;
+        """
 </pre></div>
 </div>
 </div>
@@ -330,22 +330,22 @@ nlp.pipeline
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>patterns = [{&quot;label&quot;:&quot;comp&quot;, &quot;pattern&quot;:[{&quot;LOWER&quot;:&quot;gauge&quot;}], &quot;id&quot;:&quot;ssc&quot;}]
-ruler = nlp.get_pipe(&#39;entity_ruler&#39;)
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>patterns = [{"label":"comp", "pattern":[{"LOWER":"gauge"}], "id":"ssc"}]
+ruler = nlp.get_pipe('entity_ruler')
 ruler.add_patterns(patterns)
-rules = [{&quot;LOWER&quot;:&quot;pump&quot;}]
+rules = [{"LOWER":"pump"}]
 matcher = Matcher(nlp.vocab)
-matcher.add(&#39;comp&#39;, [rules])
+matcher.add('comp', [rules])
 
 doc = nlp(text)
 matches = matcher(doc, as_spans=True)
-print(&#39;Identified Entities:&#39;)
+print('Identified Entities:')
 for span in matches:
-    print(&#39;Entity:&#39;, span.text, &#39;| Label:&#39;, span.label_, &#39;| Sentence&#39;, span.sent)
+    print('Entity:', span.text, '| Label:', span.label_, '| Sentence', span.sent)
 
-displacy.render(doc, style=&#39;ent&#39;, jupyter=True)
+displacy.render(doc, style='ent', jupyter=True)
 
-print(&#39;Dependency Tree:&#39;)
+print('Dependency Tree:')
 printDepTree(doc)
 </pre></div>
 </div>
@@ -363,9 +363,9 @@ df
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>print(&#39;Coreference Info: \n&#39;, doc._.coref_chains.pretty_representation)
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span>print('Coreference Info: \n', doc._.coref_chains.pretty_representation)
 
-print(f&#39;Label for token &quot;{doc[22]}&quot; is &quot;{doc[22]._.ref_n}&quot;&#39;)
+print(f'Label for token "{doc[22]}" is "{doc[22]._.ref_n}"')
 </pre></div>
 </div>
 </div>

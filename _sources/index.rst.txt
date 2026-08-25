@@ -15,11 +15,12 @@ Welcome to DACKAR's documentation!
    :maxdepth: 2
    :caption: Contents:
 
-   install_spacy3.5
+   install_new
    support
    Notebooks <notebooks/index>
    knowledge_graph
    .. install
+   .. install_spacy3.5
 
 .. toctree::
    :maxdepth: 2
