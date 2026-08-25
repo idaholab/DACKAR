@@ -32,10 +32,12 @@ Install the Required Libraries with Python 3.11
 
   conda activate dackar_libs
 
-  pip install textacy spacy==3.8.11 stumpy matplotlib nltk==3.8.1 beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml openai langchain langchain_openai langchain_community langchain-core ollama langchain-ollama cytoolz
+  pip install "setuptools<82"
 
-.. library conflicts for spacy 3.8: coreferee
-.. fix torch to 2.8.0 for windows
+  pip install spacy==3.5 stumpy textacy matplotlib nltk==3.8.1 coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml openai langchain langchain_openai langchain_community langchain-core ollama langchain-ollama cytoolz
+
+.. torch is also required: pip install torch==2.9.1 --extra-index-url https://download.pytorch.org/whl/cpu on Linux,
+.. or pip install torch==2.8.0 on Windows; not needed on macOS.
 
 Install the Required Libraries with Python 3.12
 -----------------------------------------------
@@ -46,10 +48,17 @@ Install the Required Libraries with Python 3.12
 
   conda activate dackar_libs
 
-  pip install torch spacy==3.8.11 stumpy matplotlib nltk==3.8.1 beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd openpyxl quantulum3[classifier] scikit-learn pyspellchecker  pandas wordcloud jsonschema toml openai langchain langchain_openai langchain_community langchain-core ollama langchain-ollama cytoolz
+  python -m pip install --upgrade setuptools
 
-.. library conflicts for spacy 3.8: textacy,  coreferee, contextualSpellCheck
-.. fix torch to 2.8.0 for windows
+  pip install cython
+
+  pip install "git+https://github.com/roy-ht/editdistance.git@v0.6.2"
+
+  pip install textacy spacy==3.8.11 stumpy nltk==3.8.1 matplotlib beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml openai langchain langchain_openai langchain_community langchain-core ollama langchain-ollama cytoolz
+
+.. contextualSpellCheck pins editdistance==0.6.2, whose PyPI sdist fails to build on Python 3.12;
+.. installing it from the tagged GitHub source above works around this.
+.. coreferee is not yet compatible with spacy 3.8 and is omitted here; torch is not required for this environment.
 
 Install the Required Libraries with Python 3.13
 -----------------------------------------------
