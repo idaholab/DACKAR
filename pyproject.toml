@@ -28,6 +28,11 @@ dependencies = [
   "numerizer",
   "autocorrect",
   "contextualSpellCheck",
+  # Pulled in (pinned ==0.6.2) by contextualSpellCheck. Declared directly so the
+  # [tool.uv.sources] git override below applies on 3.12 -- uv ignores sources for
+  # transitive-only deps. The 0.6.2 PyPI sdist can't build on 3.12 (missing
+  # bycython.pyx); <3.12 keeps using the PyPI wheels.
+  "editdistance",
   # Floor at 1.3 (not upstream's <1.3): pywsd >=1.3 disambiguates via the `wn`
   # library (Open English WordNet), the backend the similarity test golden values
   # were regolded against. <1.3 reverts to nltk-WordNet and breaks those tests.
@@ -76,6 +81,13 @@ where = ["src"]
 torch = [
   { index = "pytorch-cpu", marker = "platform_system != 'Windows'" },
   { index = "pytorch-cpu-win", marker = "platform_system == 'Windows'" },
+]
+# editdistance 0.6.2 (hard-pinned by contextualSpellCheck) ships no cp312 wheel, and
+# its PyPI sdist fails to build on 3.12: it cythonizes editdistance/bycython.pyx, which
+# the sdist omits. The GitHub source at v0.6.2 includes the .pyx, so build from git on
+# 3.12; 3.10/3.11 keep using the PyPI wheels.
+editdistance = [
+  { git = "https://github.com/roy-ht/editdistance.git", tag = "v0.6.2", marker = "python_version >= '3.12'" },
 ]
 
 # Two named indexes pointing at the same URL because uv applies an index

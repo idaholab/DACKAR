@@ -114,17 +114,8 @@ jobs:
         with:
           enable-cache: true
 
-      # contextualSpellCheck pins editdistance==0.6.2, whose PyPI sdist has no cp312 wheel and
-      # a broken setup.py (it cythonizes editdistance/bycython.pyx, which that sdist never
-      # shipped) -- it fails on Python 3.12 regardless of whether Cython is present. The GitHub
-      # source at the same tag does include the .pyx, so install it first; uv sync then sees the
-      # exact pin already satisfied and skips rebuilding it from PyPI.
-      - name: Install Python 3.12 editdistance workaround
-        run: |
-          uv venv --python 3.12
-          uv pip install cython "setuptools<82"
-          uv pip install --no-build-isolation "git+https://github.com/roy-ht/editdistance.git@v0.6.2"
-
+      # editdistance on 3.12 is built from a GitHub source pinned in pyproject.toml
+      # ([tool.uv.sources]); the PyPI sdist for its 0.6.2 pin can't build on 3.12.
       - name: Install DACKAR Required Libraries
         run: uv sync --python 3.12 --all-groups
 
