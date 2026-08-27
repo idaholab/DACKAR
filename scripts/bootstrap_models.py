@@ -2,6 +2,7 @@
 
 Handles the runtime artifacts that uv cannot lock:
   - NLTK corpora (punkt, wordnet, averaged_perceptron_tagger, brown)
+  - wn Open English WordNet lexicon (oewn:2024) used by pywsd >=1.3
   - quantulum3 classifier retrain (`quantulum3-training -s`)
 
 Run after `uv sync`:
@@ -49,6 +50,27 @@ def install_nltk_corpora() -> None:
 
 
 STEPS["nltk"] = install_nltk_corpora
+
+
+def install_wn_lexicon() -> None:
+    """Download the Open English WordNet lexicon used by pywsd >=1.3.
+
+    pywsd 1.3 disambiguates via the `wn` library instead of nltk WordNet, and
+    lazily downloads `oewn:2024` on first use. Fetch it here so all network
+    downloads happen in bootstrap, not mid-test. Idempotent: `wn.download`
+    skips a lexicon that is already installed.
+    """
+    import wn
+
+    lexicon = "oewn:2024"
+    if any(lex.id == "oewn" and lex.version == "2024" for lex in wn.lexicons()):
+        logger.info("wn lexicon %s already installed", lexicon)
+        return
+    logger.info("wn.download(%s)", lexicon)
+    wn.download(lexicon)
+
+
+STEPS["wn"] = install_wn_lexicon
 
 
 def retrain_quantulum() -> None:

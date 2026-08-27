@@ -22,9 +22,9 @@ def _load_script():
 
 
 def test_script_exposes_expected_steps():
-    """STEPS dict drives --only flag and ordering; both must be present."""
+    """STEPS dict drives --only flag and ordering; all must be present."""
     mod = _load_script()
-    assert set(mod.STEPS) == {"nltk", "quantulum"}
+    assert set(mod.STEPS) == {"nltk", "wn", "quantulum"}
 
 
 def test_only_flag_accepts_known_steps():

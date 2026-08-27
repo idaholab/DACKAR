@@ -3,25 +3,18 @@ run-name: ${{ github.actor }} is testing out DACKAR
 on: [push, pull_request]
 
 concurrency:
-  group: ${{ github.head_ref }}
+  # head_ref is set only for pull_request events; on push it is empty, which GitHub
+  # rejects as a concurrency group. Fall back to github.ref so the value is never empty,
+  # and prefix with github.workflow to avoid colliding with other workflows.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  Test-DACKAR-Linux:
+    runs-on: ubuntu-latest
     steps:
-      - name: Setup Conda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          miniconda-version: "latest"
-          channels: conda-forge, defaults
-          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
-          auto-update-conda: true
-          auto-activate-base: true
+      - name: Fetch and Branch
+        uses: actions/checkout@v4
 
       - name: Job Information
         run: |
@@ -29,46 +22,31 @@ jobs:
           echo " This job is now running on a ${{ runner.os }} server"
           echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
 
-      - name: Fetch and Branch
-        uses: actions/checkout@v3
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
 
+      # Installs every dependency group from pyproject.toml (torch CPU wheels are
+      # routed per-OS via [tool.uv.sources]). Replaces the conda + pip install list.
       - name: Install DACKAR Required Libraries
-        # Either fix scikit-learn==1.5 to allow quantulum3 to use the pretrained classifier or
-        # Run "quantulum3-training -s" to retrain classifier
+        run: uv sync --python 3.11 --all-groups
 
-        run: |
-          pwd
-          conda create -n dackar_libs python=3.11
-          conda init bash && source ~/.bashrc && conda activate dackar_libs
-          pip install "setuptools<82"
-          pip install torch==2.9.1 --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install spacy==3.5 stumpy textacy matplotlib nltk==3.8.1 coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
-          pip install neo4j jupyterlab
-          pip install pytest
-      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
-      # python -m nltk.downloader all
+      # nltk corpora, the wn (oewn:2024) lexicon for pywsd >=1.3, and the quantulum3
+      # classifier retrain. The en_core_web_lg model is a URL dep in pyproject.toml,
+      # so uv sync already installed it.
       - name: Download trained models
-        run: |
-          conda init bash && source ~/.bashrc && conda activate dackar_libs
-          python -m coreferee install en
-          python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
-          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
-          quantulum3-training -s
+        run: uv run python scripts/bootstrap_models.py
 
       - name: Test
-        run: |
-          cd tests
-          conda init bash && source ~/.bashrc && conda activate dackar_libs
-          pytest
-
+        working-directory: tests
+        run: uv run pytest
 
   Test-DACKAR-Macos:
     runs-on: macos-latest
     steps:
-      - name: Setup Conda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          enable-cache: true
+      - name: Fetch and Branch
+        uses: actions/checkout@v4
 
       - name: Job Information
         run: |
@@ -76,103 +54,54 @@ jobs:
           echo " This job is now running on a ${{ runner.os }} server"
           echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
 
-      - name: Fetch and Branch
-        uses: actions/checkout@v3
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
 
       - name: Install DACKAR Required Libraries
-        run: |
-          pwd
-          conda create -n dackar_libs python=3.11
-          conda init zsh && source ~/.zshrc && conda activate dackar_libs
-          pip install "setuptools<82"
-          pip install spacy==3.5 stumpy textacy matplotlib nltk==3.8.1 coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
-          pip install neo4j jupyterlab
-          pip install pytest
+        run: uv sync --python 3.11 --all-groups
 
-      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
       - name: Download trained models
-        run: |
-          conda init zsh && source ~/.zshrc && conda activate dackar_libs
-          python -m coreferee install en
-          python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
-          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
-          quantulum3-training -s
+        run: uv run python scripts/bootstrap_models.py
 
       - name: Test
-        run: |
-          cd tests
-          conda init zsh && source ~/.zshrc && conda activate dackar_libs
-          pytest
-
+        working-directory: tests
+        run: uv run pytest
 
   Test-DACKAR-Windows:
     runs-on: windows-2025
     steps:
-      - name: Setup Conda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          miniconda-version: "latest"
-          channels: conda-forge, defaults
-          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
-          activate-environment: dackar_libs
-          auto-update-conda: true
-          auto-activate-base: false
+      - name: Fetch and Branch
+        uses: actions/checkout@v4
+
       - name: Job Information
         run: |
           echo " The job was automatically triggered by a ${{ github.event_name }} event."
           echo " This job is now running on a ${{ runner.os }} server"
           echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
 
-      - name: Fetch and Branch
-        uses: actions/checkout@v3
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
 
-      # Fix PyTorch to 2.8.0 due to issue: https://github.com/pytorch/pytorch/issues/166628
+      # Windows pins torch 2.8.0 (pytorch #166628) via platform markers in pyproject.toml.
       - name: Install DACKAR Required Libraries
-        run: |
-          echo " Create dackar_libs"
-          conda install python=3.11
-          echo " Conda information"
-          conda info
-          echo " Activate Dackar conda environment"
-          pip install "setuptools<82"
-          pip install torch==2.8.0 spacy==3.5 stumpy textacy matplotlib nltk==3.8.1 coreferee beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] numpy==1.26 scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml
-          pip install neo4j jupyterlab
-          pip install pytest
-          conda list
-          which python
-          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
-          python -m coreferee install en
-          python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
-          quantulum3-training -s
+        run: uv sync --python 3.11 --all-groups
 
-      # pip uninstall numba llvmlite
-      # pip install --no-cache-dir numba==0.61 llvmlite==0.44
-      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
-      # python -m spacy download en_core_web_lg
-      # pip install numba
-      # - name: Download trained models
-      #   run: |
-      #     pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.5.0/en_core_web_lg-3.5.0-py3-none-any.whl
-      #     python -m coreferee install en
-      #     python -m nltk.downloader all
-      #     quantulum3-training -s
+      - name: Download trained models
+        run: uv run python scripts/bootstrap_models.py
 
       - name: Test
-        run: |
-          cd tests
-          pytest
+        working-directory: tests
+        run: uv run pytest
 
   Test-DACKAR-Macos-py312:
     runs-on: macos-latest
     steps:
-      - name: Setup Conda
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          miniconda-version: "latest"
-          channels: conda-forge, defaults
-          use-only-tar-bz2: true  # IMPORTANT: This needs to be set for caching to work properly!
-          auto-update-conda: true
-          auto-activate-base: true
+      - name: Fetch and Branch
+        uses: actions/checkout@v4
 
       - name: Job Information
         run: |
@@ -180,39 +109,28 @@ jobs:
           echo " This job is now running on a ${{ runner.os }} server"
           echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
 
-      - name: Fetch and Branch
-        uses: actions/checkout@v3
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # contextualSpellCheck pins editdistance==0.6.2, whose PyPI sdist has no cp312 wheel and
+      # a broken setup.py (it cythonizes editdistance/bycython.pyx, which that sdist never
+      # shipped) -- it fails on Python 3.12 regardless of whether Cython is present. The GitHub
+      # source at the same tag does include the .pyx, so install it first; uv sync then sees the
+      # exact pin already satisfied and skips rebuilding it from PyPI.
+      - name: Install Python 3.12 editdistance workaround
+        run: |
+          uv venv --python 3.12
+          uv pip install cython "setuptools<82"
+          uv pip install --no-build-isolation "git+https://github.com/roy-ht/editdistance.git@v0.6.2"
 
       - name: Install DACKAR Required Libraries
-        run: |
-          pwd
-          conda create -n dackar_libs_new python=3.12
-          conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
-          python -m ensurepip --upgrade
-          python -m pip install --upgrade setuptools
-          # contextualSpellCheck pins editdistance==0.6.2, whose PyPI sdist has no cp312 wheel and
-          # a broken setup.py (unconditionally cythonizes editdistance/bycython.pyx, which that sdist
-          # never shipped) -- it fails on Python 3.12 regardless of whether Cython is present in the
-          # build env. The GitHub source at the same tag does include the .pyx, so install from there
-          # first; pip then sees the exact pin already satisfied and skips rebuilding it from PyPI.
-          pip install cython
-          pip install "git+https://github.com/roy-ht/editdistance.git@v0.6.2"
-          pip install textacy spacy==3.8.11 stumpy nltk==3.8.1 matplotlib beautifulsoup4 networkx pysbd tomli numerizer autocorrect pywsd==1.2.5 openpyxl quantulum3[classifier] scikit-learn pyspellchecker contextualSpellCheck pandas wordcloud jsonschema toml cytoolz
-          pip install neo4j jupyterlab
-          pip install pytest
+        run: uv sync --python 3.12 --all-groups
 
-      # python -m spacy download en_core_web_lg [for some reason, GitHub machine complains this command]
-      # Pin the model wheel (instead of "spacy download", which always grabs the newest build) so this
-      # job's NLP output stays reproducible across runs rather than silently drifting on new releases.
       - name: Download trained models
-        run: |
-          conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
-          python -m nltk.downloader punkt wordnet averaged_perceptron_tagger brown
-          pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
-          quantulum3-training -s
+        run: uv run python scripts/bootstrap_models.py
 
       - name: Test
-        run: |
-          cd tests
-          conda init zsh && source ~/.zshrc && conda activate dackar_libs_new
-          pytest
+        working-directory: tests
+        run: uv run pytest

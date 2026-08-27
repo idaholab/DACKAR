@@ -7,21 +7,19 @@ license = {file="LICENSE"}
 requires-python = ">=3.11"
 dependencies = [
   "setuptools<82",
-  "spacy==3.5; python_version < \"3.12\"",
-  "spacy==3.8; python_version >= \"3.12\"",
-  "stumpy",
-  # Core NLP — exact versions match CI's known-good install
+  # Core NLP. Unified on spaCy 3.8 (pydantic v2): the pinned en_core_web_lg 3.8
+  # model and the regenerated test fixtures require 3.8, so upstream's
+  # "spacy==3.5; python<3.12" pin is dropped as incompatible. coreferee is also
+  # dropped (it hard-requires spacy<3.6 and is already runtime-inactive).
   "spacy==3.8.*",
   "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
-  "numpy>=1.26,<2",
-  "pandas",
-  "pysbd",
-  "quantulum3[classifier]",
-  "scikit-learn",
+  "stumpy",
   "textacy",
-  "numerizer",
-  "networkx",
-  "nltk==3.8.1; python_version < \"3.12\"",
+  "matplotlib",
+  # Pinned to 3.8.1: nltk 3.9+ renamed corpora (punkt->punkt_tab,
+  # averaged_perceptron_tagger->..._eng), which scripts/bootstrap_models.py
+  # downloads under the old names. 3.8.1 keeps the bootstrap and fixtures working.
+  "nltk==3.8.1",
   "beautifulsoup4",
   "networkx",
   "pysbd",
@@ -30,12 +28,16 @@ dependencies = [
   "numerizer",
   "autocorrect",
   "contextualSpellCheck",
-  "pywsd<1.3",
+  # Floor at 1.3 (not upstream's <1.3): pywsd >=1.3 disambiguates via the `wn`
+  # library (Open English WordNet), the backend the similarity test golden values
+  # were regolded against. <1.3 reverts to nltk-WordNet and breaks those tests.
+  # An explicit floor is required: bare `pywsd` lets uv keep a stale 1.2.x already
+  # in the venv, since it satisfies an unpinned constraint.
+  "pywsd>=1.3",
   "openpyxl",
   "quantulum3[classifier]",
   "numpy==1.26; python_version < \"3.12\"",
   "numpy; python_version >= \"3.12\"",
-  "matplotlib",
   "scikit-learn",
   "pyspellchecker",
   "python-dateutil",
@@ -47,16 +49,16 @@ dependencies = [
   "jupyterlab",
   "pytest",
   "plotly",
-  "xlrd"
+  "xlrd",
+  # Torch: CPU builds routed via [tool.uv.sources]; Windows pinned for pytorch #166628
+  "torch==2.9.1 ; platform_system != 'Windows'",
+  "torch==2.8.0 ; platform_system == 'Windows'",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache License",
     "Operating System :: OS Independent",
-    "Topic :: Scientific/Engineering"
-  # Torch: platform-specific pins (Windows fix for pytorch issue #166628)
-  "torch==2.9.1 ; platform_system != 'Windows'",
-  "torch==2.8.0 ; platform_system == 'Windows'",
+    "Topic :: Scientific/Engineering",
 ]
 
 [project.urls]
@@ -96,7 +98,7 @@ explicit = true
 # pydantic-v1 ceiling) and was already inactive at runtime (its gate is spaCy <=3.3).
 nlp-extra = [
   "contextualSpellCheck",
-  "pywsd",
+  "pywsd>=1.3",
   "autocorrect",
   "pyspellchecker",
 ]
