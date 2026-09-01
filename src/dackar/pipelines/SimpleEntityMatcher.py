@@ -70,10 +70,9 @@ class SimpleEntityMatcher(object):
         spans.append(span)
     else:
       spans.extend(matches)
-    # order matters here, for duplicated entities, only the first one will keep.
-    # TODO: reorder entities as [existing.ner, new.ner, spacy.ner]
-    # In this order, spacy.ner will be always replaced with custom ner, while the existing custom ner is preferred over
-    # new custom ner.
+    # Split existing entities into custom NER (kept) and spaCy's built-in NER.
+    # Custom entities take precedence over built-in NER (see the else branch below),
+    # and existing custom NER is preferred over newly matched custom NER.
     old = []
     ner = []
     spacyNERLabel = ["PERSON", "NORP", "FAC", "ORG", "GPE", "LOC", "PRODUCT", "EVENT", "WORK_OF_ART",
@@ -88,7 +87,12 @@ class SimpleEntityMatcher(object):
     if replace:
       doc.ents = filter_spans(spans+list(doc.ents))
     else:
-      # directly filtering will not replace existing spacy NERs.
-      # doc.ents = filter_spans(list(doc.ents)+spans)
-      doc.ents = filter_spans(old+spans+ner)
+      # filter_spans keeps the longest span on overlap, so a multi-token built-in
+      # span (e.g. PERSON/CARDINAL) would otherwise swallow a single-token custom
+      # entity. Resolve custom entities first, then keep only the built-in NER
+      # spans that don't overlap them.
+      custom = filter_spans(old+spans)
+      occupied = {i for span in custom for i in range(span.start, span.end)}
+      kept_ner = [span for span in ner if not any(i in occupied for i in range(span.start, span.end))]
+      doc.ents = filter_spans(custom+kept_ner)
     return doc

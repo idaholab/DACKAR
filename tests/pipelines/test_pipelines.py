@@ -68,7 +68,7 @@ class TestPipelines:
     wo_ents = self.get_entity(updated_doc, label='WO')
     id_ents = self.get_entity(updated_doc, label='ID')
     assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106', 'WO# 84658']
-    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', '1BC', 'E08D-34r']
+    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', '1BC', 'E08D-34r', 'A218']
 
   @_newer_ner_model
   def test_emergent_activity_entity_pipeline(self, nlp_obj):
@@ -83,7 +83,7 @@ class TestPipelines:
     wo_ents = self.get_entity(doc, label='WO')
     id_ents = self.get_entity(doc, label='ID')
     assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106', 'WO# 84658']
-    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', '1BC', 'E08D-34r']
+    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', '1BC', 'E08D-34r', 'A218']
 
   def test_location_entity(self, nlp_obj):
     patterns = {'label': 'location', 'pattern': [{'LOWER': 'nearby'}], 'id': 'location'}
