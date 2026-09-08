@@ -1,0 +1,517 @@
+"""
+test_synthesizer_gates.py — standalone unit tests for
+RuleValidatedRCASynthesizerV31._all_claims_cited and
+                              _passes_minimum_evidence_gate
+
+Run directly:   python test_synthesizer_gates.py
+Or via pytest:  pytest test_synthesizer_gates.py
+
+_all_claims_cited:
+  1. NONE primary → always True (no claims to cite)
+  2. No citations on primary → False
+  3. Valid citations on primary → True
+  4. Alternative with substantive claims but no citations → False
+  5. Alternative with no substantive claims → citations not required → True
+
+_passes_minimum_evidence_gate:
+  1. NONE primary → False
+  2. No candidate_id → False
+  3. composite_score < minimum_primary_score (0.35) → False
+  4. No citations → False
+  5. Evidence list empty → False
+  6. No supporting evidence linked to primary → False
+  7. Supporting evidence present → True
+"""
+import sys
+from pathlib import Path
+
+_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
+if str(_RCA_ROOT) not in sys.path:
+    sys.path.insert(0, str(_RCA_ROOT))
+
+from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
+
+
+# ── Stub LLM ──────────────────────────────────────────────────────────────────
+
+class _StubLLM:
+    def generate_json(self, model, prompt, temperature=0.1):
+        return {}
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def make_synthesizer():
+    return RuleValidatedRCASynthesizerV31(llm_client=_StubLLM())
+
+
+def minimal_citation():
+    return {"claim_summary": "A claim.", "source_type": "evidence_snippet", "source_id": "SNIP-001", "excerpt": "x"}
+
+
+def minimal_supporting_evidence(candidate_id):
+    return {
+        "evidence_id": "EV-001",
+        "source_type": "WO",
+        "source_id": "WO-001",
+        "support_role": "supporting",
+        "linked_candidate_id": candidate_id,
+        "summary": "Supporting.",
+        "excerpt": "Found degraded.",
+    }
+
+
+def minimal_card(candidate_id="FM::CAND-A", composite_score=0.82, citations=None,
+                 evidence=None, alternatives=None):
+    return {
+        "primary_hypothesis": {
+            "candidate_id": candidate_id,
+            "cause_label": "air in-leakage",
+            "hypothesis_type": "failure_mode",
+            "narrative": "Narrative.",
+            "why_primary": ["Reason."],
+            "uncertainties": [],
+            "composite_score": composite_score,
+            "citations": citations if citations is not None else [minimal_citation()],
+        },
+        "alternatives": alternatives or [],
+        "evidence": evidence if evidence is not None else [minimal_supporting_evidence(candidate_id)],
+        "recommended_actions": [
+            {"action_id": "A001", "action_type": "corrective", "description": "Fix it.", "priority": "high"}
+        ],
+        "executive_summary": {
+            "decision_status": "review_required",
+            "primary_conclusion": "Conclusion.",
+            "analyst_attention_flags": [],
+        },
+        "analyst_review": {
+            "decision_required": False,
+            "questions_to_resolve": [],
+            "writeback_recommendation": "hold_until_review",
+        },
+    }
+
+
+# ── _all_claims_cited tests ────────────────────────────────────────────────
+
+def test_claims_cited_none_primary():
+    """NONE card → True (no claims to cite)."""
+    s = make_synthesizer()
+    card = minimal_card(candidate_id="NONE", citations=[])
+    assert s._all_claims_cited(card) is True
+    print("  PASS test_claims_cited_none_primary")
+
+
+def test_claims_cited_no_primary_citations():
+    """Primary has no citations → False."""
+    s = make_synthesizer()
+    card = minimal_card(citations=[])
+    assert s._all_claims_cited(card) is False
+    print("  PASS test_claims_cited_no_primary_citations")
+
+
+def test_claims_cited_primary_with_citations():
+    """Primary with citations, no alternatives → True."""
+    s = make_synthesizer()
+    card = minimal_card(citations=[minimal_citation()])
+    assert s._all_claims_cited(card) is True
+    print("  PASS test_claims_cited_primary_with_citations")
+
+
+def test_claims_cited_alternative_substantive_no_citations():
+    """Alternative has reason_not_primary but no citations → False."""
+    s = make_synthesizer()
+    card = minimal_card(alternatives=[
+        {
+            "candidate_id": "FM::CAND-B",
+            "reason_not_primary": "Lower score.",
+            "supports": ["Some support"],
+            "weaknesses": ["Some weakness"],
+            # NO citations field
+        }
+    ])
+    assert s._all_claims_cited(card) is False
+    print("  PASS test_claims_cited_alternative_substantive_no_citations")
+
+
+def test_claims_cited_alternative_no_substantive_claims():
+    """Alternative with no reason_not_primary, supports, weaknesses → citations not required."""
+    s = make_synthesizer()
+    card = minimal_card(alternatives=[
+        {
+            "candidate_id": "FM::CAND-B",
+            # no reason_not_primary, no supports, no weaknesses
+        }
+    ])
+    assert s._all_claims_cited(card) is True
+    print("  PASS test_claims_cited_alternative_no_substantive_claims")
+
+
+def test_claims_cited_alternative_with_citations():
+    """Alternative with substantive claims AND citations → True."""
+    s = make_synthesizer()
+    card = minimal_card(alternatives=[
+        {
+            "candidate_id": "FM::CAND-B",
+            "reason_not_primary": "Lower score.",
+            "supports": ["Some support"],
+            "weaknesses": ["Some weakness"],
+            "citations": [minimal_citation()],
+        }
+    ])
+    assert s._all_claims_cited(card) is True
+    print("  PASS test_claims_cited_alternative_with_citations")
+
+
+# ── _passes_minimum_evidence_gate tests ─────────────────────────────────────
+
+def test_gate_none_primary_fails():
+    """NONE primary → gate=False."""
+    s = make_synthesizer()
+    card = minimal_card(candidate_id="NONE", citations=[])
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_none_primary_fails")
+
+
+def test_gate_low_composite_score_fails():
+    """composite_score < 0.35 → gate=False."""
+    s = make_synthesizer()
+    card = minimal_card(composite_score=0.30)
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_low_composite_score_fails")
+
+
+def test_gate_no_citations_fails():
+    """No citations → gate=False."""
+    s = make_synthesizer()
+    card = minimal_card(composite_score=0.82, citations=[])
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_no_citations_fails")
+
+
+def test_gate_no_evidence_rows_fails():
+    """Empty evidence list → no supporting evidence → gate=False."""
+    s = make_synthesizer()
+    card = minimal_card(evidence=[])
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_no_evidence_rows_fails")
+
+
+def test_gate_only_contextual_evidence_fails():
+    """Evidence present but no 'supporting' role linked to primary → gate=False."""
+    s = make_synthesizer()
+    card = minimal_card(evidence=[
+        {
+            "evidence_id": "EV-001",
+            "source_type": "WO",
+            "source_id": "WO-001",
+            "support_role": "contextual",   # not "supporting"
+            "linked_candidate_id": "FM::CAND-A",
+            "summary": "Contextual.",
+            "excerpt": "Normal readings.",
+        }
+    ])
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_only_contextual_evidence_fails")
+
+
+def test_gate_supporting_evidence_wrong_candidate_fails():
+    """Supporting evidence linked to a different candidate → gate=False."""
+    s = make_synthesizer()
+    card = minimal_card(evidence=[
+        {
+            "evidence_id": "EV-001",
+            "source_type": "WO",
+            "source_id": "WO-001",
+            "support_role": "supporting",
+            "linked_candidate_id": "FM::OTHER-CAND",  # wrong candidate
+            "summary": "Supporting other.",
+            "excerpt": "Degraded.",
+        }
+    ])
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_supporting_evidence_wrong_candidate_fails")
+
+
+def test_gate_passes_all_requirements():
+    """composite≥0.35, citations present, supporting evidence linked to primary → True."""
+    s = make_synthesizer()
+    card = minimal_card(
+        candidate_id="FM::CAND-A",
+        composite_score=0.82,
+        citations=[minimal_citation()],
+        evidence=[minimal_supporting_evidence("FM::CAND-A")],
+    )
+    assert s._passes_minimum_evidence_gate(card) is True
+    print("  PASS test_gate_passes_all_requirements")
+
+
+def test_gate_composite_exactly_at_threshold():
+    """composite_score == 0.35 (minimum_primary_score) → passes."""
+    s = make_synthesizer()
+    card = minimal_card(
+        candidate_id="FM::CAND-A",
+        composite_score=0.35,
+        citations=[minimal_citation()],
+        evidence=[minimal_supporting_evidence("FM::CAND-A")],
+    )
+    assert s._passes_minimum_evidence_gate(card) is True
+    print("  PASS test_gate_composite_exactly_at_threshold")
+
+
+# ── H6 — posture-aware recommended actions ───────────────────────────────────
+
+def test_recommended_actions_no_warning_when_supported():
+    """H6: supported posture → posture_warning is None on each action."""
+    s = make_synthesizer()
+    candidate = {"candidate_id": "CAND-A", "cause_label": "corrosion", "evidence_posture": "supported"}
+    actions = [{"action_type": "inspection", "description": "Inspect welds", "priority": "high"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["posture_warning"] is None
+    print("  PASS test_recommended_actions_no_warning_when_supported")
+
+
+def test_recommended_actions_warning_when_contradicted():
+    """H6: contradicted posture → posture_warning populated on every action."""
+    s = make_synthesizer()
+    candidate = {"candidate_id": "CAND-A", "cause_label": "bearing wear", "evidence_posture": "contradicted"}
+    actions = [
+        {"action_type": "investigation", "description": "Investigate wear pattern", "priority": "high"},
+        {"action_type": "monitoring",    "description": "Monitor vibration",       "priority": "medium"},
+    ]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert len(result) == 2
+    for row in result:
+        assert row["posture_warning"] is not None
+        assert "contradict" in row["posture_warning"].lower()
+    print("  PASS test_recommended_actions_warning_when_contradicted")
+
+
+def test_recommended_actions_warning_when_no_data():
+    """H6: no_data posture → posture_warning populated on every action."""
+    s = make_synthesizer()
+    candidate = {"candidate_id": "CAND-A", "cause_label": "fouling", "evidence_posture": "no_data"}
+    actions = [{"action_type": "inspection", "description": "Inspect internals", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["posture_warning"] is not None
+    assert "speculative" in result[0]["posture_warning"].lower()
+    print("  PASS test_recommended_actions_warning_when_no_data")
+
+
+def test_recommended_actions_warning_absent_when_no_primary_candidate():
+    """H6: None primary_candidate → posture_warning is None (no posture available)."""
+    s = make_synthesizer()
+    actions = [{"action_type": "inspection", "description": "Check seals", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=None)
+    assert result[0]["posture_warning"] is None
+    print("  PASS test_recommended_actions_warning_absent_when_no_primary_candidate")
+
+
+def test_recommended_actions_priority_escalates_for_critical_safety_function():
+    """C4/C5: critical safety-function impact forces action priority to critical."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "reactor trip logic fault",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_name": "Reactor Protection", "sf_category": "reactor_protection"}
+        ],
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Validate trip logic", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "critical"
+    print("  PASS test_recommended_actions_priority_escalates_for_critical_safety_function")
+
+
+def test_recommended_actions_priority_escalates_for_high_safety_function():
+    """C4/C5: core-cooling impact forces at least high priority."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "RHR pump degradation",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_name": "Core Cooling", "sf_category": "core_cooling"}
+        ],
+    }
+    actions = [{"action_type": "monitoring", "description": "Monitor pump vibration", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "high"
+    print("  PASS test_recommended_actions_priority_escalates_for_high_safety_function")
+
+
+def test_recommended_actions_priority_escalates_for_critical_aliases():
+    """Third pass: alias/abbreviation forms like RPS still map to critical."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "trip relay drift",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_id": "SF::RPS-ACT", "sf_name": "RPS Actuation", "sf_category": "trip_logic"}
+        ],
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Check relay setpoints", "priority": "high"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "critical"
+    print("  PASS test_recommended_actions_priority_escalates_for_critical_aliases")
+
+
+def test_recommended_actions_priority_escalates_for_high_aliases():
+    """Third pass: alias/abbreviation forms like ECCS still map to high."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "injection flow margin loss",
+        "evidence_posture": "supported",
+        "affected_safety_functions": [
+            {"sf_id": "SF::ECCS-TRAIN-A", "sf_name": "ECCS Train A", "sf_category": "emergency_core_cooling"}
+        ],
+    }
+    actions = [{"action_type": "monitoring", "description": "Trend injection header pressure", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "high"
+    print("  PASS test_recommended_actions_priority_escalates_for_high_aliases")
+
+
+def test_recommended_actions_priority_boosts_for_multiple_degraded_barriers():
+    """§8.3 depth pass: multiple degraded barriers force high-priority actioning."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "multi-train degradation",
+        "evidence_posture": "supported",
+        "scores": {"barrier_signal": 0.7},
+        "affected_safety_functions": [
+            {"sf_id": "SF::RHR-A", "sf_name": "RHR Train A", "sf_category": "residual_heat_removal"},
+            {"sf_id": "SF::RHR-B", "sf_name": "RHR Train B", "sf_category": "residual_heat_removal"},
+        ],
+    }
+    actions = [{"action_type": "monitoring", "description": "Trend pump performance", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] in {"high", "critical"}
+    print("  PASS test_recommended_actions_priority_boosts_for_multiple_degraded_barriers")
+
+
+def test_recommended_actions_rationale_includes_barrier_weighting():
+    """§8.3 depth pass: rationale explicitly references barrier degradation."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "containment isolation relay drift",
+        "evidence_posture": "supported",
+        "scores": {"barrier_signal": 1.0},
+        "affected_safety_functions": [
+            {"sf_id": "SF::CI-TRAIN-A", "sf_name": "Containment Isolation Train A", "sf_category": "containment_isolation"},
+        ],
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Validate relay logic", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert "barrier degradation" in (result[0].get("rationale") or "").lower()
+    print("  PASS test_recommended_actions_rationale_includes_barrier_weighting")
+
+
+def test_recommended_actions_priority_escalates_for_risk_scalar():
+    """§8.4: high risk-significance scalar should force high priority floor."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "safety-significant leakage",
+        "evidence_posture": "supported",
+        "scores": {"risk_significance_scalar": 0.8, "risk_significance_tier": "high"},
+    }
+    actions = [{"action_type": "monitoring", "description": "Increase trending", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "high"
+    print("  PASS test_recommended_actions_priority_escalates_for_risk_scalar")
+
+
+def test_recommended_actions_rationale_includes_risk_significance():
+    """§8.4: action rationale should mention risk-significance scalar/tier."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "containment relay drift",
+        "evidence_posture": "supported",
+        "scores": {"risk_significance_scalar": 1.0, "risk_significance_tier": "critical"},
+    }
+    actions = [{"action_type": "engineering_evaluation", "description": "Validate logic", "priority": "medium"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    rationale = (result[0].get("rationale") or "").lower()
+    assert "risk significance scalar" in rationale
+    assert "tier=critical" in rationale
+    print("  PASS test_recommended_actions_rationale_includes_risk_significance")
+
+
+def test_gate_whitespace_padded_support_role_passes():
+    """Sprint 3 / S10 fix: support_role='  Supporting  ' (whitespace + mixed case) → passes.
+
+    Before the fix, raw string comparison would fail.  The current implementation
+    uses .strip().lower() so whitespace-padded values are normalised correctly.
+    """
+    s = make_synthesizer()
+    ev = minimal_supporting_evidence("FM::CAND-A")
+    ev["support_role"] = "  Supporting  "
+    card = minimal_card(
+        candidate_id="FM::CAND-A",
+        composite_score=0.82,
+        citations=[minimal_citation()],
+        evidence=[ev],
+    )
+    assert s._passes_minimum_evidence_gate(card) is True
+    print("  PASS test_gate_whitespace_padded_support_role_passes")
+
+
+# ── Main runner ───────────────────────────────────────────────────────────────
+
+ALL_TESTS = [
+    test_claims_cited_none_primary,
+    test_claims_cited_no_primary_citations,
+    test_claims_cited_primary_with_citations,
+    test_claims_cited_alternative_substantive_no_citations,
+    test_claims_cited_alternative_no_substantive_claims,
+    test_claims_cited_alternative_with_citations,
+    test_gate_none_primary_fails,
+    test_gate_low_composite_score_fails,
+    test_gate_no_citations_fails,
+    test_gate_no_evidence_rows_fails,
+    test_gate_only_contextual_evidence_fails,
+    test_gate_supporting_evidence_wrong_candidate_fails,
+    test_gate_passes_all_requirements,
+    test_gate_composite_exactly_at_threshold,
+    test_recommended_actions_no_warning_when_supported,
+    test_recommended_actions_warning_when_contradicted,
+    test_recommended_actions_warning_when_no_data,
+    test_recommended_actions_warning_absent_when_no_primary_candidate,
+    test_recommended_actions_priority_escalates_for_critical_safety_function,
+    test_recommended_actions_priority_escalates_for_high_safety_function,
+    test_recommended_actions_priority_escalates_for_critical_aliases,
+    test_recommended_actions_priority_escalates_for_high_aliases,
+    test_recommended_actions_priority_boosts_for_multiple_degraded_barriers,
+    test_recommended_actions_rationale_includes_barrier_weighting,
+    test_recommended_actions_priority_escalates_for_risk_scalar,
+    test_recommended_actions_rationale_includes_risk_significance,
+    test_gate_whitespace_padded_support_role_passes,
+]
+
+
+def run_all():
+    print(f"\n=== test_synthesizer_gates ({len(ALL_TESTS)} tests) ===")
+    passed, failed = 0, 0
+    for fn in ALL_TESTS:
+        try:
+            fn()
+            passed += 1
+        except Exception as exc:
+            import traceback
+            print(f"  FAIL {fn.__name__}: {exc}")
+            traceback.print_exc()
+            failed += 1
+    print(f"\n{passed} passed, {failed} failed")
+    return failed == 0
+
+
+if __name__ == "__main__":
+    ok = run_all()
+    sys.exit(0 if ok else 1)
