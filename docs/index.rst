@@ -20,6 +20,7 @@ Welcome to DACKAR's documentation!
    Notebooks <notebooks/index>
    knowledge_graph
    rca
+   outage
    .. install
 
 .. toctree::
