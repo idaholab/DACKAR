@@ -1,0 +1,885 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "rca_card.v3_1.schema.json",
+  "title": "RCACard",
+  "description": "Final synthesized RCA card produced from structured reasoning artifacts, evidence retrieval, and constrained LLM synthesis.",
+  "type": "object",
+  "required": [
+    "rca_id",
+    "event_id",
+    "generated_at",
+    "llm_model",
+    "validation_status",
+    "executive_summary",
+    "primary_hypothesis",
+    "contributing_causes",
+    "evidence",
+    "recommended_actions",
+    "analyst_review",
+    "provenance"
+  ],
+  "properties": {
+    "rca_id": {
+      "type": "string",
+      "description": "Unique RCA card identifier."
+    },
+    "event_id": {
+      "type": "string",
+      "description": "Target abnormal event identifier."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the RCA card was generated."
+    },
+    "llm_model": {
+      "type": "string",
+      "description": "LLM model used for synthesis."
+    },
+    "input_artifacts": {
+      "type": "object",
+      "description": "References to key input artifacts used during synthesis.",
+      "properties": {
+        "event_id": {
+          "type": "string"
+        },
+        "bundle_id": {
+          "type": "string"
+        },
+        "evidence_bundle_id": {
+          "type": "string"
+        },
+        "candidates_ref": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "validation_status": {
+      "type": "object",
+      "required": [
+        "schema_valid",
+        "all_claims_cited",
+        "passed_minimum_evidence_gate",
+        "validation_errors",
+        "retry_count",
+        "fallback_used"
+      ],
+      "properties": {
+        "schema_valid": {
+          "type": "boolean"
+        },
+        "all_claims_cited": {
+          "type": "boolean"
+        },
+        "passed_minimum_evidence_gate": {
+          "type": "boolean"
+        },
+        "validation_errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fallback_used": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "executive_summary": {
+      "type": "object",
+      "description": "Analyst-facing summary of the current RCA conclusion and review posture.",
+      "required": [
+        "decision_status",
+        "primary_conclusion",
+        "confidence_label",
+        "analyst_attention_flags"
+      ],
+      "properties": {
+        "decision_status": {
+          "type": "string",
+          "enum": [
+            "review_required",
+            "candidate_ready",
+            "insufficient_evidence"
+          ]
+        },
+        "primary_conclusion": {
+          "type": "string"
+        },
+        "confidence_label": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "speculative"
+          ]
+        },
+        "analyst_attention_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "category_coverage_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "external_oe_unavailable": {
+          "type": "boolean"
+        },
+        "conclusion_type": {
+          "type": "string",
+          "enum": [
+            "hypothesis_supported",
+            "hypothesis_speculative",
+            "no_adequate_hypothesis"
+          ],
+          "description": "Epistemic standing of the RCA conclusion. hypothesis_supported: primary candidate is A-series with non-trivial evidence posture. hypothesis_speculative: primary is B-series or all candidates have zero telemetry signal. no_adequate_hypothesis: no candidate met minimum requirements or all evidence is absent — treat the card as a review placeholder, not a conclusion."
+        },
+        "causal_depth_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proximate_cause": { "type": "string" },
+            "contributing_causes": { "type": "array", "items": { "type": "string" } },
+            "root_cause": { "type": "string" },
+            "depth_complete": { "type": "boolean" },
+            "depth_incomplete_reason": {
+              "type": "string",
+              "description": "Present when depth_complete=false. Explains which depth layer is unresolved and what data or causal evidence would complete it."
+            }
+          }
+        },
+        "unresolved_gaps": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "effectiveness_monitoring_plan": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["linked_action_id", "indicator", "threshold", "review_horizon"],
+            "properties": {
+              "linked_action_id":   { "type": "string" },
+              "causal_depth_level": {
+                "type": "string",
+                "enum": ["proximate", "contributing", "root"],
+                "description": "Which causal depth layer this monitoring item addresses."
+              },
+              "indicator":          { "type": "string" },
+              "threshold":          { "type": "string" },
+              "review_horizon":     { "type": "string" },
+              "success_criteria":   {
+                "type": "string",
+                "description": "Measurable criterion that closes this monitoring item when met."
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "primary_hypothesis": {
+      "type": "object",
+      "required": [
+        "candidate_id",
+        "cause_label",
+        "hypothesis_type",
+        "narrative",
+        "why_primary",
+        "uncertainties",
+        "composite_score",
+        "confidence_label",
+        "citations"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string"
+        },
+        "cause_label": {
+          "type": "string"
+        },
+        "hypothesis_type": {
+          "type": "string",
+          "description": "Hypothesis type copied or derived from the selected causality candidate."
+        },
+        "fm_id": {
+          "type": ["string", "null"]
+        },
+        "narrative": {
+          "type": "string",
+          "description": "Human-readable explanation of the selected primary hypothesis."
+        },
+        "why_primary": {
+          "type": "array",
+          "description": "Explicit reasons this hypothesis is ranked above alternatives.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "uncertainties": {
+          "type": "array",
+          "description": "Known uncertainties, unresolved contradictions, or missing evidence relevant to the primary hypothesis.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "composite_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Non-probabilistic ORDINAL RANKING score: a weighted blend of heuristic structural/temporal/telemetry/evidence/governance sub-scores. It is NOT a calibrated probability — 0.72 does not mean '72% likely'. Use it only to rank hypotheses relative to one another; interpret likelihood via confidence_label. See card-level score_interpretation."
+        },
+        "confidence_label": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "speculative"
+          ]
+        },
+        "citations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "claim_summary",
+              "source_type",
+              "source_id",
+              "excerpt"
+            ],
+            "properties": {
+              "claim_summary": {
+                "type": "string"
+              },
+              "source_type": {
+                "type": "string",
+                "enum": [
+                  "kg_path",
+                  "evidence_snippet",
+                  "telemetry_anomaly",
+                  "fmea_record",
+                  "pm_check",
+                  "operational_context"
+                ]
+              },
+              "source_id": {
+                "type": "string"
+              },
+              "excerpt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "alternatives": {
+      "type": "array",
+      "description": "Alternative non-primary hypotheses considered during synthesis.",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "cause_label",
+          "hypothesis_type",
+          "composite_score",
+          "confidence_label",
+          "reason_not_primary"
+        ],
+        "properties": {
+          "candidate_id": {
+            "type": "string"
+          },
+          "cause_label": {
+            "type": "string"
+          },
+          "hypothesis_type": {
+            "type": "string"
+          },
+          "composite_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Non-probabilistic ordinal ranking score (weighted heuristic blend), not a calibrated probability. See card-level score_interpretation."
+          },
+          "confidence_label": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "speculative"
+            ]
+          },
+          "reason_not_primary": {
+            "type": "string"
+          },
+          "supports": {
+            "type": "array",
+            "description": "Short statements describing what supports this alternative.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "weaknesses": {
+            "type": "array",
+            "description": "Short statements describing what weakens this alternative.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "contributing_causes": {
+      "type": "array",
+      "description": "Contributing mechanisms that are causally relevant but not selected as the primary hypothesis.",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "cause_label",
+          "contribution_type",
+          "rationale",
+          "citations"
+        ],
+        "properties": {
+          "candidate_id": {
+            "type": "string"
+          },
+          "cause_label": {
+            "type": "string"
+          },
+          "contribution_type": {
+            "type": "string",
+            "enum": [
+              "contributing",
+              "enabling",
+              "escalating"
+            ]
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Evidence records included in the RCA card for traceability.",
+      "items": {
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "source_type",
+          "source_id",
+          "summary",
+          "excerpt"
+        ],
+        "properties": {
+          "evidence_id": {
+            "type": "string"
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "kg_path",
+              "evidence_snippet",
+              "telemetry_anomaly",
+              "fmea_record",
+              "pm_check",
+              "operational_context"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "doc_id": {
+            "type": "string"
+          },
+          "authority_level": {
+            "type": "string",
+            "enum": [
+              "mandatory",
+              "guidance",
+              "informational",
+              "unknown"
+            ]
+          },
+          "support_role": {
+            "type": "string",
+            "description": "How this evidence is being used in the RCA card.",
+            "enum": [
+              "supporting",
+              "contextual",
+              "contradicting",
+              "missing"
+            ]
+          },
+          "linked_candidate_id": {
+            "type": "string",
+            "description": "Candidate hypothesis this evidence most directly relates to, if applicable."
+          },
+          "summary": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "description": "Recommended next actions tied to the RCA output.",
+      "items": {
+        "type": "object",
+        "required": [
+          "action_id",
+          "action_type",
+          "description",
+          "priority"
+        ],
+        "properties": {
+          "action_id": {
+            "type": "string"
+          },
+          "action_type": {
+            "type": "string",
+            "enum": [
+              "immediate_corrective",
+              "long_term_corrective",
+              "preventive",
+              "monitoring",
+              "procedure_update",
+              "engineering_evaluation",
+              "pm_corrective"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "target_component_id": {
+            "type": "string"
+          },
+          "linked_candidate_id": {
+            "type": "string"
+          },
+          "target_causal_depth": {
+            "type": "string",
+            "enum": ["proximate", "contributing", "root"],
+            "description": "Which causal-depth layer this action primarily addresses."
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why this action is recommended."
+          },
+          "expected_observation_if_true": {
+            "type": "string",
+            "description": "What observation or result would strengthen the linked hypothesis if this action is taken."
+          },
+          "owner": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "analyst_review": {
+      "type": "object",
+      "description": "Explicit analyst review gates and unresolved decision items.",
+      "required": [
+        "decision_required",
+        "questions_to_resolve",
+        "writeback_recommendation"
+      ],
+      "properties": {
+        "decision_required": {
+          "type": "boolean"
+        },
+        "questions_to_resolve": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writeback_recommendation": {
+          "type": "string",
+          "enum": [
+            "hold_until_review",
+            "ready_if_accepted"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ccf_summary": {
+      "type": "object",
+      "description": "Common-cause failure summary block. Emitted when ≥2 candidates form a plausible common-cause cluster (suspected_ccf=true) or when any common-cause signal is present. Absence of this block means no common-cause signal was detected.",
+      "additionalProperties": false,
+      "required": ["suspected_ccf", "ccf_confidence", "shared_mechanism_ids", "affected_trains", "affected_candidate_ids", "rationale"],
+      "properties": {
+        "suspected_ccf": {
+          "type": "boolean",
+          "description": "True when ≥2 candidates with medium/high CCF confidence share a plausible common mechanism and the top CCF score ≥ 0.45."
+        },
+        "ccf_confidence": {
+          "type": "string",
+          "enum": ["none", "low", "medium", "high"],
+          "description": "Confidence derived from the highest common-cause score among clustered candidates."
+        },
+        "shared_mechanism_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "KG node IDs of shared dependency or upstream components driving the CCF signal."
+        },
+        "affected_trains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Train IDs that are out-of-service and linked to clustered CCF candidates, if known."
+        },
+        "affected_candidate_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Candidate IDs that form the common-cause cluster."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Analyst-facing narrative summarising the CCF signal and recommended scope of investigation."
+        }
+      }
+    },
+    "barrier_analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall_status", "degraded_barrier_count", "key_degraded_barriers"],
+      "properties": {
+        "overall_status": { "type": "string", "enum": ["green", "yellow", "red"] },
+        "degraded_barrier_count": { "type": "integer", "minimum": 0 },
+        "key_degraded_barriers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["barrier_id", "barrier_label", "barrier_type"],
+            "properties": {
+              "barrier_id": { "type": "string" },
+              "barrier_label": { "type": "string" },
+              "barrier_type": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "human_performance_assessment": {
+      "type": "object",
+      "description": "Step 6 human and organizational performance assessment (v32 A–L taxonomy). Populated when a G (human performance), I (change control), or L (organisational/systemic) category candidate is retained. Design (H), surveillance/testing (J) and vendor/procurement (K) are NOT human-performance findings and are excluded from this block.",
+      "additionalProperties": false,
+      "required": ["applicable", "category_flags", "findings", "provenance_note"],
+      "properties": {
+        "applicable": {
+          "type": "boolean",
+          "description": "True when at least one G/I/L candidate is retained in the card."
+        },
+        "category_flags": {
+          "type": "object",
+          "description": "Which human/organisational causal categories (G, I, L) are present among retained candidates.",
+          "additionalProperties": false,
+          "properties": {
+            "G": { "type": "boolean", "description": "Human performance — operator/maintenance execution error" },
+            "I": { "type": "boolean", "description": "Change control — unauthorized/temporary modification (human facet)" },
+            "L": { "type": "boolean", "description": "Organisational / systemic — training, safety culture, resource, corrective-action programme" }
+          }
+        },
+        "findings": {
+          "type": "array",
+          "description": "One structured finding per retained G/I/L candidate.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidate_id", "causal_category", "cause_label", "confidence_label", "performance_mode"],
+            "properties": {
+              "candidate_id":      { "type": "string" },
+              "causal_category":   { "type": "string", "enum": ["G", "I", "L"] },
+              "cause_label":       { "type": "string" },
+              "confidence_label":  { "type": "string" },
+              "performance_mode":  {
+                "type": "string",
+                "description": "Human/organisational performance mode inferred from the v32 category (G→execution_error, I→change_management_gap, L→organisational_gap). Legacy values retained for backward compatibility.",
+                "enum": ["execution_error", "change_management_gap", "organisational_gap", "procedure_gap", "knowledge_gap", "supervisory_gap", "unknown"]
+              },
+              "corrective_action_ids": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "IDs of recommended_actions[] that address this finding."
+              },
+              "regulatory_reference": {
+                "type": "string",
+                "description": "Optional AP-913 / 10 CFR reference relevant to this human performance category."
+              }
+            }
+          }
+        },
+        "provenance_note": {
+          "type": "string",
+          "description": "Explanation when applicable=false or when human-performance data is limited."
+        }
+      }
+    },
+    "prevention_analysis": {
+      "type": "object",
+      "description": "Defense-in-depth 'why was it not prevented?' assessment for the primary hypothesis (metamodel §: 'which barriers failed, which held, and why'). Deterministically derived from PM/surveillance compliance, condition-monitoring detection, and the primary candidate's barrier-logic gate — distinct from the structural safety-function impact map in barrier_analysis. Absent for a NONE primary.",
+      "additionalProperties": false,
+      "required": ["applicable", "barriers", "failed_or_missing_barriers", "why_not_prevented", "provenance_note"],
+      "properties": {
+        "applicable": {
+          "type": "boolean",
+          "description": "True when at least one defense-in-depth barrier could be assessed (held or gap) for the primary cause."
+        },
+        "barriers": {
+          "type": "array",
+          "description": "One row per assessed defense-in-depth layer.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["barrier_type", "status", "basis"],
+            "properties": {
+              "barrier_type": {
+                "type": "string",
+                "enum": ["preventive_maintenance", "condition_monitoring", "protection_logic"],
+                "description": "Defense-in-depth layer: preventive maintenance / surveillance, condition monitoring / detection, or protection-logic / safety-function barrier."
+              },
+              "status": {
+                "type": "string",
+                "enum": ["held", "gap", "not_evaluated", "not_applicable"],
+                "description": "held = barrier functioned; gap = barrier absent/failed/degraded and did not prevent the failure; not_evaluated = insufficient data; not_applicable = layer not relevant to this cause."
+              },
+              "basis": {
+                "type": "string",
+                "description": "Deterministic basis for the status (e.g. failed PM check ids, detection precursors, barrier-logic gate outcome)."
+              },
+              "detail": {
+                "type": "string",
+                "description": "Optional supporting detail (check names, sensor ids, safety-function names)."
+              }
+            }
+          }
+        },
+        "failed_or_missing_barriers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "barrier_type values whose status is 'gap' — the layers that did not prevent the failure."
+        },
+        "why_not_prevented": {
+          "type": "string",
+          "description": "Analyst-facing narrative answering 'why was it not prevented?' by naming the barrier gaps, or explaining the data limitation when none could be assessed."
+        },
+        "provenance_note": {
+          "type": "string",
+          "description": "Explanation of inputs used and any data limitations."
+        }
+      }
+    },
+    "score_interpretation": {
+      "type": "object",
+      "description": "N-4 transparency block: states how composite_score and its interval are to be read, so the number is never mistaken for a calibrated probability.",
+      "additionalProperties": false,
+      "required": ["score_type", "is_probability", "is_calibrated", "note"],
+      "properties": {
+        "score_type": {
+          "type": "string",
+          "enum": ["ordinal_ranking"],
+          "description": "composite_score is an ordinal ranking score, not a probability or frequency."
+        },
+        "is_probability": {
+          "type": "boolean",
+          "description": "Always false — composite_score does not express a probability or likelihood percentage."
+        },
+        "is_calibrated": {
+          "type": "boolean",
+          "description": "Always false — weights and relation priors are hand-set and not calibrated against outcome frequencies."
+        },
+        "interval_meaning": {
+          "type": "string",
+          "description": "What any score confidence interval encodes (data availability / degradation), NOT statistical/sampling uncertainty."
+        },
+        "note": {
+          "type": "string",
+          "description": "Analyst-facing guidance on how to read the score and which field (confidence_label) to use for likelihood."
+        }
+      }
+    },
+    "gate_disposition": {
+      "type": "object",
+      "description": "F-4 elimination-first audit: makes explicit that hard gates are dispositive — a candidate failing any gate is eliminated from primary standing regardless of its composite_score (which is retained for ranking/audit only). Gates are evaluated after scoring but override it.",
+      "additionalProperties": false,
+      "required": ["hard_gates_are_dispositive", "gate_order", "primary_gate_status", "eliminated_candidates", "note"],
+      "properties": {
+        "hard_gates_are_dispositive": {
+          "type": "boolean",
+          "description": "Always true — a failed hard gate eliminates a candidate irrespective of its composite_score."
+        },
+        "gate_order": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The order in which hard gates are evaluated (physical plausibility → timeline consistency → barrier logic)."
+        },
+        "primary_gate_status": {
+          "type": "string",
+          "enum": ["passed_all_gates", "eliminated", "no_primary_established"],
+          "description": "Whether the card's primary hypothesis cleared all hard gates."
+        },
+        "eliminated_candidates": {
+          "type": "array",
+          "description": "Candidates removed from primary standing by a hard gate (or contradiction posture), sorted by descending composite_score so a high-scoring but gate-eliminated candidate is visible.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidate_id", "eliminating_gates", "composite_score"],
+            "properties": {
+              "candidate_id": { "type": "string" },
+              "eliminating_gates": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Gate(s)/posture(s) that eliminated this candidate (e.g. barrier_logic, timeline_consistency, documentary_contradiction)."
+              },
+              "composite_score": { "type": "number", "minimum": 0, "maximum": 1 },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "note": {
+          "type": "string",
+          "description": "Analyst-facing explanation of the elimination-first semantics."
+        }
+      }
+    },
+    "causal_graph": {
+      "type": "object",
+      "description": "N-6 unified, inspectable per-run causal graph. Consolidates the otherwise-scattered causal signals (TSKR chain_position, telemetry signal-DAG position, common-cause/explain-away links, near-tie competition, gate elimination) into ONE directed graph the analyst can see and contest, with committed edge directionality. Nodes are the target event and the assessed candidates; edges carry a relation type, a direction, and a basis. Deterministic and additive — it reflects existing scores, it does not change ranking.",
+      "additionalProperties": false,
+      "required": ["target_event_id", "directionality_committed", "nodes", "edges", "provenance_note"],
+      "properties": {
+        "target_event_id": {
+          "type": "string",
+          "description": "Identifier of the abnormal event at the centre of the graph."
+        },
+        "directionality_committed": {
+          "type": "boolean",
+          "description": "True when at least one directed cause->effect edge could be committed from the available signals."
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "node_type", "role"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "node_type": { "type": "string", "enum": ["target_event", "candidate"] },
+              "role": {
+                "type": "string",
+                "enum": ["target_event", "primary", "contributing", "alternative", "eliminated"]
+              },
+              "component": { "type": "string" },
+              "failure_mode": { "type": "string" },
+              "causal_category": { "type": "string" },
+              "chain_position": { "type": "string" },
+              "signal_dag_position": { "type": "string" },
+              "composite_score": { "type": "number", "minimum": 0, "maximum": 1 },
+              "confidence_label": { "type": "string" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "description": "Directed (or explicitly undirected) causal links between nodes, each with a basis and provenance.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to", "relation", "directed", "basis"],
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "relation": {
+                "type": "string",
+                "enum": ["temporal_precedence", "common_cause", "explained_away", "near_tie"],
+                "description": "temporal_precedence = chain-position ordering vs the event; common_cause / explained_away = shared-cause links; near_tie = undirected competition between close-scoring hypotheses."
+              },
+              "directed": { "type": "boolean" },
+              "basis": { "type": "string" }
+            }
+          }
+        },
+        "provenance_note": {
+          "type": "string",
+          "description": "How the graph was assembled and the dual chain-position views (TSKR vs telemetry) it reconciles."
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "pipeline_version",
+        "generated_by"
+      ],
+      "properties": {
+        "source_bundle_id": {
+          "type": "string"
+        },
+        "pipeline_version": {
+          "type": "string"
+        },
+        "generated_by": {
+          "type": "string"
+        },
+        "card_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
