@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OperationalContext",
+  "description": "Operational context for an asset in an analysis window: mode, power level, train configuration, operator actions, alarms, and nearby maintenance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["asset_id", "window", "mode"],
+
+  "properties": {
+
+    "asset_id": { "type": "string", "description": "Asset identifier — must resolve to a KG Asset node." },
+
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "string", "format": "date-time" },
+        "end":   { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "mode": {
+      "type": "string",
+      "enum": ["startup", "power_ramp", "steady", "power_ramp_down", "shutdown", "post_maintenance_test", "maintenance", "unknown"],
+      "description": "Plant/unit operating mode during the analysis window. Extended from 4-state enum to capture operationally significant transitions."
+    },
+
+    "percent_rated_power": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 100.0,
+      "description": "Power level as percent of rated capacity [0-100]. Canonical power field — use this for cross-asset consistency."
+    },
+
+    "power_mw": {
+      "type": "number",
+      "description": "Optional absolute power in MW for reference."
+    },
+
+    "train_configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Train/division in-service status. Critical for redundant safety system RCA.",
+      "properties": {
+        "train_id":    { "type": "string", "description": "Train or division identifier (e.g., 'Train-A', 'Division-I')." },
+        "in_service":  { "type": "boolean" },
+        "oos_reason":  { "type": "string", "description": "Out-of-service reason if not in service." },
+        "oos_start":   { "type": "string", "format": "date-time" },
+        "oos_end":     { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "recent_alarms": {
+      "type": "array",
+      "description": "Alarm history within the analysis window. Distinct from operator actions.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["alarm_id", "timestamp", "priority"],
+        "properties": {
+          "alarm_id":        { "type": "string" },
+          "timestamp":       { "type": "string", "format": "date-time" },
+          "description":     { "type": "string" },
+          "priority":        { "type": "string", "enum": ["critical", "high", "medium", "low", "informational"] },
+          "setpoint":        { "type": "number" },
+          "actual_value":    { "type": "number" },
+          "unit":            { "type": "string" },
+          "acknowledged_at": { "type": "string", "format": "date-time" },
+          "acknowledged_by": { "type": "string" },
+          "system_affected": { "type": "string" }
+        }
+      }
+    },
+
+    "recent_operations": {
+      "type": "array",
+      "description": "Operator actions, interlocks, and state changes within the analysis window.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["timestamp", "action_type"],
+        "properties": {
+          "timestamp":       { "type": "string", "format": "date-time" },
+          "action_type": {
+            "type": "string",
+            "enum": ["operator_action", "state_change", "interlock_actuation", "manual_trip", "auto_actuation", "surveillance_test", "other"]
+          },
+          "description":     { "type": "string" },
+          "operator_id":     { "type": "string" },
+          "system_affected": { "type": "string" },
+          "procedure_ref":   { "type": "string", "description": "SOP/procedure followed for this action, if applicable." }
+        }
+      }
+    },
+
+    "nearby_maintenance": {
+      "type": "array",
+      "description": "Maintenance activities within the window that may have affected or been affected by the event.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["wo_id", "maintenance_type"],
+        "properties": {
+          "wo_id":            { "type": "string", "description": "Work order ID — must resolve to a document.json record of type WO." },
+          "maintenance_type": {
+            "type": "string",
+            "enum": ["corrective", "preventive", "surveillance", "modification", "calibration", "inspection", "other"]
+          },
+          "component_id":  { "type": "string", "description": "Component worked — must resolve to a KG Component node." },
+          "proximity": {
+            "type": "string",
+            "enum": ["same_component", "same_asset", "same_train", "adjacent_system", "same_plant_area"],
+            "description": "Topological proximity of this maintenance to the event asset."
+          },
+          "completed_at":  { "type": "string", "format": "date-time" },
+          "crew_id":       { "type": "string" },
+          "notes":         { "type": "string" }
+        }
+      }
+    }
+  }
+}
