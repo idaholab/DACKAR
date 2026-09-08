@@ -1,0 +1,329 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReliabilityArtifact",
+  "description": "Generic document artifact schema for CR / WO / SOP / ECA ingestion (designed for Chroma-based retrieval and RCA orchestration).",
+  "type": "object",
+  "additionalProperties": false,
+
+  "required": ["doc_id", "doc_type", "title", "created_at"],
+
+  "anyOf": [
+    { "required": ["chunks"] },
+    {
+      "properties": { "description": { "type": "string", "minLength": 1 } },
+      "required": ["description"]
+    }
+  ],
+
+  "properties": {
+
+    "doc_id":   { "type": "string", "description": "Stable canonical document identifier." },
+    "doc_type": { "type": "string", "enum": ["CR", "WO", "SOP", "ECA", "OE", "OTHER"] },
+    "title":    { "type": "string" },
+    "description": { "type": "string", "description": "Short abstract or summary." },
+
+    "created_at":     { "type": "string", "format": "date-time" },
+    "effective_date": { "type": "string", "format": "date-time", "description": "Applicable for SOPs." },
+    "expiry_date":    { "type": "string", "format": "date-time" },
+    "doc_version":    { "type": "string", "description": "Version string (semver or integer)." },
+
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_type": { "type": "string" },
+        "source_id":   { "type": "string" },
+        "source_url":  { "type": "string", "format": "uri" }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ingested_at":        { "type": "string", "format": "date-time" },
+        "ingested_by":        { "type": "string" },
+        "ingest_tool_version":{ "type": "string" },
+        "ingest_hash":   { "type": "string", "description": "Content-only hash for incremental update detection." },
+        "source_hash":   { "type": "string", "description": "Original file/source hash." }
+      }
+    },
+
+    "authority_level": {
+      "type": "string",
+      "enum": ["mandatory", "guidance", "informational", "unknown"],
+      "description": "Mandatory procedure vs. guidance vs. informational — propagated to chunks for retrieval weighting."
+    },
+
+    "classification": { "type": "string", "description": "Security/classification label (e.g., UNCLASSIFIED, SENSITIVE)." },
+    "approver":        { "type": "string" },
+
+    "equipment_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Canonical equipment tags (e.g., P-123). Must resolve to KG Asset nodes."
+    },
+
+    "system":         { "type": "string" },
+    "subsystem":      { "type": "string" },
+    "component_type": { "type": "string" },
+    "location":       { "type": "string" },
+
+    "symptom_keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Raw symptom keywords extracted by NER — used for indexing only. See failure_mode_refs for normalized signal."
+    },
+
+    "failure_mode_keywords": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Raw failure mode keywords from NER — unnormalized. See failure_mode_refs."
+    },
+
+    "failure_mode_refs": {
+      "type": "array",
+      "description": "Normalized failure mode references resolved against FMEA/KG failure mode nodes. Preferred over raw keyword arrays for scoring.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fm_id"],
+        "properties": {
+          "fm_id":      { "type": "string", "description": "Canonical failure mode ID in the KG." },
+          "fm_label":   { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0, "description": "NER/NLP confidence for this mapping." }
+        }
+      }
+    },
+
+    "extracted_causal_statements": {
+      "type": "array",
+      "description": "Causal language extracted by NLP from CR/WO narrative text (e.g., 'caused by', 'resulted in', 'following'). Applicable to all doc types, not just ECAs.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statement"],
+        "properties": {
+          "statement":   { "type": "string", "description": "Extracted causal sentence or phrase." },
+          "cause_span":  { "type": "string", "description": "Identified cause text span." },
+          "effect_span": { "type": "string", "description": "Identified effect text span." },
+          "confidence":  { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "source_chunk_id": { "type": "string", "description": "Chunk from which this statement was extracted." }
+        }
+      }
+    },
+
+    "recommended_actions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+
+    "status": {
+      "type": "string",
+      "enum": ["reported", "assigned", "in_progress", "completed", "closed", "unknown"]
+    },
+
+    "reported_by":    { "type": "string" },
+    "reported_date":  { "type": "string", "format": "date-time" },
+    "discovered_date":{ "type": "string", "format": "date-time" },
+
+    "condition_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Structured companion to as_found / as_left free-text fields.",
+      "properties": {
+        "as_found_text":      { "type": "string", "description": "Free-text as-found condition (verbatim from record)." },
+        "as_left_text":       { "type": "string", "description": "Free-text as-left condition (verbatim from record)." },
+        "as_found_condition": { "type": "string", "enum": ["acceptable", "degraded", "failed", "unknown"] },
+        "as_left_condition":  { "type": "string", "enum": ["acceptable", "degraded", "failed", "unknown"] },
+        "measurements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["parameter", "value", "unit"],
+            "properties": {
+              "parameter": { "type": "string" },
+              "value":     { "type": "number" },
+              "unit":      { "type": "string" },
+              "limit":     { "type": "number" },
+              "in_spec":   { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+
+    "parts_replaced": { "type": "array", "items": { "type": "string" } },
+    "labor_hours":    { "type": "number" },
+    "cost_estimate":  { "type": "number" },
+
+    "related_docs": {
+      "type": "array",
+      "description": "Typed document relationships (replaces flat ID list). Captures causal/workflow links between CR, WO, ECA, SOP.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["doc_id", "relation_type"],
+        "properties": {
+          "doc_id": { "type": "string" },
+          "relation_type": {
+            "type": "string",
+            "enum": ["triggered", "closed_by", "references", "supersedes", "implements", "followed_by", "related_to"]
+          }
+        }
+      }
+    },
+
+    "sop_sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "section_id":      { "type": "string" },
+          "section_heading": { "type": "string" },
+          "step_number":     { "type": "integer" },
+          "step_text":       { "type": "string" },
+          "preconditions":   { "type": "string" },
+          "safety_holds":    { "type": "string" },
+          "tools_required":  { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+
+    "eca": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "event": { "type": "string" },
+        "causal_factors": { "type": "array", "items": { "type": "string" } },
+        "evidence_items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "properties": {
+              "evidence_id": { "type": "string" },
+              "type": { "type": "string", "enum": ["reading", "photo", "test", "document", "other"] },
+              "ref":     { "type": "string" },
+              "snippet": { "type": "string" }
+            }
+          }
+        },
+        "rationale":            { "type": "string" },
+        "confidence":           { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "recommended_followups":{ "type": "array", "items": { "type": "string" } },
+        "recurrence_notes":     { "type": "string" }
+      }
+    },
+
+    "oe_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Present only when doc_type = 'OE'. Fleet-wide operating experience report metadata. Populates KG oe_document node and drives soft-similarity retrieval.",
+      "properties": {
+        "issuing_body": {
+          "type": "string",
+          "description": "Organization that issued the OE report (e.g., 'NRC', 'INPO', 'EPRI', 'WANO')."
+        },
+        "oe_number": {
+          "type": "string",
+          "description": "Unique OE report number assigned by the issuing body (e.g., 'GL-2008-01', 'SER-2023-05')."
+        },
+        "plant_scope": {
+          "type": "string",
+          "enum": ["fleet_wide", "pwr_only", "bwr_only", "specific_plant", "unknown"],
+          "description": "Scope of the OE report. Used for soft reactor-type filtering — pwr_only/bwr_only are advisory, not hard excludes."
+        },
+        "applicable_system_types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "System-type labels this OE report applies to (e.g., 'RCS', 'ECCS', 'AFW'). Used for similarity-based retrieval, not hard filtering."
+        },
+        "applicable_component_types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Component-type labels this OE applies to (e.g., 'centrifugal_pump', 'motor_operated_valve'). Soft filter key for retrieval."
+        },
+        "similarity_basis": {
+          "type": "string",
+          "enum": ["component_type", "failure_mode", "system_type", "degradation_mechanism", "unknown"],
+          "description": "Primary basis on which this OE should be matched to new events during retrieval."
+        }
+      }
+    },
+
+    "chunks": {
+      "type": "array",
+      "description": "Primary chunking scheme — used for embeddings and retrieval.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunk_id", "chunk_index", "text_for_embedding"],
+        "properties": {
+          "chunk_id":       { "type": "string" },
+          "chunk_index":    { "type": "integer" },
+          "parent_doc_id":  { "type": "string" },
+          "source_section_id": {
+            "type": "string",
+            "description": "Links this chunk back to its originating sop_sections[].section_id, enabling traceable path from embedding hit to procedure step."
+          },
+          "heading":        { "type": "string" },
+          "section_path":   { "type": "string" },
+          "page_number":    { "type": "integer" },
+          "text_for_embedding": { "type": "string" },
+          "raw_text_ref":   { "type": "string", "description": "Pointer to raw storage (not the full raw text)." },
+          "raw_text_excerpt":{ "type": "string", "description": "Optional short raw excerpt for grounding." },
+          "embedding_model":     { "type": "string" },
+          "embedding_created_at":{ "type": "string", "format": "date-time" },
+          "view_type": {
+            "type": "string",
+            "enum": ["raw", "retrieval_summary", "rca_frame", "other"]
+          },
+          "keywords":         { "type": "array", "items": { "type": "string" } },
+          "authority_level":  { "type": "string", "enum": ["mandatory", "guidance", "informational", "unknown"] },
+          "extraction_quality": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Parsing/OCR confidence for this chunk. Low values should discount downstream use."
+          },
+          "extraction_flags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["ocr_used", "low_confidence_parse", "table_detected", "image_only", "truncated"]
+            },
+            "description": "Flags indicating parsing quality issues for this chunk."
+          }
+        }
+      }
+    },
+
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["doc_id"],
+        "properties": {
+          "doc_id":  { "type": "string" },
+          "section": { "type": "string" },
+          "excerpt": { "type": "string" }
+        }
+      }
+    },
+
+    "linked_ids":  { "type": "array", "items": { "type": "string" } },
+    "access_tags": { "type": "array", "items": { "type": "string" } },
+    "pii_masked":  { "type": "boolean", "default": true },
+
+    "extensions": {
+      "type": "object",
+      "description": "Free-form extension map for iterative or site-specific fields.",
+      "additionalProperties": true
+    }
+  }
+}
