@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SensitivityTable",
+  "description": "Step 5 output: for each top-N candidate, estimates the composite-score delta if each currently missing or not-assessed data source were available at full quality. Identifies whether absent data could change the ranking.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "generated_at", "summary", "rows"],
+
+  "properties": {
+
+    "event_id":     { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["any_ranking_change_possible", "missing_sources_checked", "top_n_candidates"],
+      "properties": {
+        "any_ranking_change_possible": {
+          "type": "boolean",
+          "description": "True when at least one row has would_change_ranking == true."
+        },
+        "missing_sources_checked": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Source families that were missing or not_assessed and therefore tested."
+        },
+        "top_n_candidates": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "source_family", "current_status",
+                     "current_composite_score", "estimated_composite_if_available",
+                     "estimated_score_delta", "would_change_ranking"],
+        "properties": {
+          "candidate_id":                     { "type": "string" },
+          "candidate_rank":                   { "type": "integer", "minimum": 1 },
+          "source_family":                    { "type": "string" },
+          "current_status":                   { "type": "string" },
+          "current_composite_score":          { "type": "number" },
+          "estimated_composite_if_available": { "type": "number" },
+          "estimated_score_delta":            { "type": "number",
+                                                "description": "Positive = score improves if source is available." },
+          "would_change_ranking":             { "type": "boolean" }
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "generated_by": { "type": "string" },
+        "top_n":        { "type": "integer" }
+      }
+    }
+  }
+}
