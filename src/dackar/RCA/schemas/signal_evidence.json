@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "signal_evidence",
+  "type": "object",
+  "required": [
+    "run_id",
+    "augmented_anomaly_set",
+    "propagation_chains",
+    "per_candidate_chain_score",
+    "chain_coverage",
+    "augmented_anomaly_count",
+    "historian_anomaly_count"
+  ],
+  "properties": {
+    "run_id": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "augmented_anomaly_set": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sensor_id", "timestamp_start", "timestamp_end", "pattern", "severity", "source"],
+        "properties": {
+          "sensor_id": { "type": "string" },
+          "component_id": { "type": ["string", "null"] },
+          "timestamp_start": { "type": "string", "format": "date-time" },
+          "timestamp_end": { "type": "string", "format": "date-time" },
+          "pattern": {
+            "type": "string",
+            "enum": [
+              "step_change",
+              "gradual_drift",
+              "spike",
+              "oscillation",
+              "dropout",
+              "sustained_exceedance",
+              "unknown"
+            ]
+          },
+          "severity": { "type": "number", "minimum": 0, "maximum": 1 },
+          "source": { "type": "string", "enum": ["historian", "telemetry_summary"] },
+          "raw_value_start": { "type": ["number", "null"] },
+          "raw_value_peak": { "type": ["number", "null"] },
+          "units": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "propagation_chains": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["chain_id", "path_score", "topology_alignment_factor", "lag_consistency_factor", "nodes"],
+        "properties": {
+          "chain_id": { "type": "string" },
+          "path_score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "topology_alignment_factor": { "type": "number", "minimum": 0, "maximum": 1 },
+          "lag_consistency_factor": { "type": "number", "minimum": 0, "maximum": 1 },
+          "mean_allen_score": { "type": "number" },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["sensor_id", "component_id", "timestamp_start", "timestamp_end", "severity"],
+              "properties": {
+                "sensor_id": { "type": "string" },
+                "component_id": { "type": ["string", "null"] },
+                "timestamp_start": { "type": "string", "format": "date-time" },
+                "timestamp_end": { "type": "string", "format": "date-time" },
+                "severity": { "type": "number" },
+                "allen_relation_to_next": { "type": ["string", "null"], "enum": ["precedes", "overlaps", null] },
+                "onset_lag_to_next_h": { "type": ["number", "null"] },
+                "edge_type_to_next": { "type": ["string", "null"], "enum": ["containment", "connectivity", "mixed", null] },
+                "node_pattern_type": {
+                  "type": "string",
+                  "enum": ["linear", "divergence", "convergence", "hub", "isolated"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "per_candidate_chain_score": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["chain_position_score", "position_type"],
+        "properties": {
+          "chain_position_score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "best_chain_id": { "type": ["string", "null"] },
+          "position_type": {
+            "type": "string",
+            "enum": ["root", "common_cause_root", "intermediate", "convergence_confluence", "absent"]
+          },
+          "contributing_cause_role": {
+            "type": ["string", "null"],
+            "enum": ["concurrent_cause_candidate", null]
+          },
+          "confluence_component_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "dag_topology_summary": {
+      "type": "object",
+      "properties": {
+        "divergence_node_count": { "type": "integer" },
+        "convergence_node_count": { "type": "integer" },
+        "hub_node_count": { "type": "integer" },
+        "linear_node_count": { "type": "integer" },
+        "isolated_node_count": { "type": "integer" }
+      }
+    },
+    "chain_coverage": { "type": "number", "minimum": 0, "maximum": 1 },
+    "augmented_anomaly_count": { "type": "integer" },
+    "historian_anomaly_count": { "type": "integer" },
+    "fetch_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["sensor_id", "reason"],
+        "properties": {
+          "sensor_id": { "type": "string" },
+          "component_id": { "type": ["string", "null"] },
+          "reason": {
+            "type": "string",
+            "enum": ["no_sensor_map_entry", "historian_unavailable", "no_anomalies_in_window", "api_error"]
+          }
+        }
+      }
+    },
+    "chain_warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "components", "message"],
+        "properties": {
+          "type": { "type": "string", "enum": ["topology_cycle", "feedback_cascade_truncated"] },
+          "components": { "type": "array", "items": { "type": "string" } },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}
