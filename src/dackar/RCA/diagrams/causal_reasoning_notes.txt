@@ -1,0 +1,259 @@
+================================================================================
+CAUSAL REASONING FOR AI-DRIVEN RCA — NUCLEAR PLANT EQUIPMENT RELIABILITY
+Design notes and architectural observations
+Session date: 2026-03-16
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. PROBLEM FRAMING
+--------------------------------------------------------------------------------
+
+Goal: AI-assisted root cause analysis (RCA) and troubleshooting for system
+engineers operating within a nuclear power plant equipment reliability program.
+
+Two input streams:
+  - Condition-based data: sensor/SCADA monitoring, anomaly alerts, diagnostic
+    and prognostic outputs
+  - Textual data: incident reports, maintenance reports, past RCAs, reliability
+    documentation
+
+Two operational modes required:
+  - Reactive: engineer faces an anomaly now — assist fast diagnosis
+  - Proactive: surface degradation patterns before failures occur
+
+
+--------------------------------------------------------------------------------
+2. CURRENT ARCHITECTURE
+--------------------------------------------------------------------------------
+
+Two complementary data stores already in place:
+
+  A. Chroma vector database
+     - Stores condensed textual information (RCA reports, maintenance
+       summaries, incident narratives)
+     - Enables semantic retrieval: "what does this look like in the past?"
+
+  B. MBSE-driven knowledge graph (KG)
+     - Captures system architecture through MBSE models
+     - Events (anomaly, condition, maintenance reports) are linked to
+       equipment nodes
+     - Enables structural retrieval: "what is connected to this, and how?"
+
+Key insight: these two stores answer fundamentally different questions and
+should NOT be queried identically. Their combination is the architectural
+strength of the system.
+
+
+--------------------------------------------------------------------------------
+3. THE TWO TYPES OF CAUSALITY — AND WHY BOTH ARE NEEDED
+--------------------------------------------------------------------------------
+
+  LOGICAL / STRUCTURAL CAUSALITY (from MBSE knowledge graph)
+  - Provides physically plausible causal paths between equipment
+  - Knows: bearing is upstream of seal; lubrication system feeds bearing
+  - Knows: which events are linked to which equipment nodes
+  - Does NOT know: which event came first, or whether co-occurrence is
+    coincidence or propagation
+
+  TEMPORAL CAUSALITY (from event stream mining)
+  - Provides empirically observed ordering and lag between event types
+  - Knows: vibration anomaly consistently precedes seal failure by 3-10 days
+  - Knows: statistical strength of directional relationship
+  - Does NOT know: the physical mechanism behind the ordering
+
+  --> Neither alone is sufficient for RCA.
+  --> The KG establishes the hypothesis space (candidate causal paths).
+  --> Temporal analysis confirms direction and measures lag on those paths.
+  --> Chroma validates against documented engineering precedent.
+
+
+--------------------------------------------------------------------------------
+4. PROPOSED QUERY PRIORITY STRATEGY
+--------------------------------------------------------------------------------
+
+  Step 1 — KG traversal (scope / candidate generation)
+    Traverse the MBSE graph from the anomaly equipment node to identify
+    physically plausible causal paths: upstream components, shared subsystems,
+    known failure mode dependencies. This scopes the search space for
+    temporal analysis and Chroma retrieval.
+
+  Step 2 — Temporal pattern mining (causal direction + lag)
+    For each candidate pair from the KG, mine the historical event stream
+    to establish: does this pair appear as coincidence or as a consistent
+    partial order? What is the characteristic time lag?
+
+  Step 3 — Chroma retrieval (precedent validation)
+    Query Chroma for semantically similar past RCA narratives, scoped to the
+    equipment cluster identified in Step 1. Validates or challenges the
+    hypothesis against documented engineering judgment and surfaces
+    contextual factors.
+
+  Step 4 — LLM synthesis
+    Fuse the outputs of Steps 1-3 into a ranked hypothesis with:
+    - Causal mechanism (from KG)
+    - Temporal ordering and lag (from mining)
+    - Historical precedents (from Chroma)
+    - Confidence score and cited sources
+
+
+--------------------------------------------------------------------------------
+5. TEMPORAL FRAMEWORK: MÖRCHEN'S TSKR
+--------------------------------------------------------------------------------
+
+Reference: Mörchen, F. — Time Series Knowledge Representation (TSKR)
+ACM KDD 2006. DOI: 10.1145/1150402.1150485
+
+Core idea: a hierarchical language for interval patterns expressing temporal
+concepts of coincidence and partial order. Three levels:
+
+  Level 1 — DURATION
+    Raw continuous signals are discretized into named state intervals using
+    Mörchen's Persist method (maximizes interval length, suppresses noise).
+    Example: sensor stream → VIBRATION_HIGH (t_start, t_end)
+    RCA use: distinguishes sustained degradation states from transient spikes.
+
+  Level 2 — COINCIDENCE
+    Intervals that overlap in time — they co-occur.
+    RCA use: common-cause failure detection. If vibration and temperature
+    rise consistently co-occur, they are likely symptoms of the same upstream
+    cause, NOT a propagation chain. Distinguishing coincidence from causation
+    is one of the most common errors in manual RCA.
+
+  Level 3 — PARTIAL ORDER
+    Intervals with consistent temporal ordering across multiple historical
+    cases — one reliably precedes the other.
+    RCA use: directional causal hypothesis with measurable lag.
+    Example: VIB_HIGH → TEMP_ELEVATED → SEAL_FAIL (ordered, non-overlapping)
+
+Key advantage over Allen's 13 relations: TSKR patterns are far more concise,
+avoid the combinatorial explosion of full Allen relation mining, and map
+directly onto interpretable engineering concepts (simultaneous vs. sequential
+degradation).
+
+Integration with KG: TSKR does not replace the KG — it annotates it.
+Each KG edge between equipment/event nodes gets a temporal label:
+  - simultaneous (coincidence pattern found)
+  - precedes(Δt mean, Δt std) (partial order found with lag statistics)
+  - unordered (no consistent pattern found)
+This transforms a static MBSE architecture model into an empirically
+validated causal graph.
+
+
+--------------------------------------------------------------------------------
+6. MIXED EVENT TYPES — OPERATOR SELECTION RULES
+--------------------------------------------------------------------------------
+
+Events in the system are of two native temporal types:
+  - Interval-native: events with explicit start and end time (duration)
+  - Point-native: events with a single timestamp (no duration)
+
+The valid temporal operator family depends on the types of BOTH events
+in a candidate pair:
+
+  Interval × Interval
+    --> Full TSKR operator set applicable
+    --> Coincidence, partial order, meets, overlaps, starts, during, etc.
+    --> Example: VIBRATION_HIGH (DCS) vs TEMP_ELEVATED (DCS)
+
+  Interval × Point
+    --> Reduced Allen subset only
+    --> Three valid relations: point-before-interval, point-during-interval,
+        point-after-interval
+    --> Example: DEGRADED_STATE (DCS interval) vs MAINTENANCE_WO (CMMS point)
+    --> Useful for RCA: was the work order raised during the degraded state
+        (reactive) or after it closed (delayed response)?
+
+  Point × Point
+    --> Temporal order and Δt only
+    --> before(Δt) or simultaneous(epsilon)
+    --> Use Δt histogram across historical cases to characterise lag
+    --> Closer to Laxman episode framework than TSKR proper
+    --> Example: ALARM_TRIGGER vs WORK_ORDER_CREATION (both CMMS log)
+
+Applying operators inconsistently across mixed types produces mathematically
+invalid patterns and corrupts the coincidence/partial-order distinction.
+
+
+--------------------------------------------------------------------------------
+7. EVENT TYPE CLASSIFICATION BY DATA SOURCE
+--------------------------------------------------------------------------------
+
+  Interval-native sources:
+    - DCS / SCADA state historians (explicit start/end of operating states)
+    - Condition monitoring regimes (period of elevated reading)
+    - Work orders with open AND close timestamps recorded in CMMS
+
+  Point-native sources:
+    - Alarm logs (single trigger timestamp)
+    - Inspection findings (date of observation)
+    - Failure notifications / corrective action requests
+    - RCA report dates
+
+  Promotable to interval (context-dependent):
+    - Point event + known or inferable duration
+      e.g. work order with planned hours → synthetic interval
+    - Point representing a state change → extend forward to next state change
+      on same equipment using Persist discretization logic
+    - Must be flagged as synthetic interval (not native) for auditability
+
+ACTION: Build an event source registry as a metadata layer in the KG.
+Each data source node records:
+  - Native temporal type (interval / point)
+  - Promotion validity and method (if applicable)
+  - Timestamp resolution / granularity
+Event nodes inherit type tags at ingestion. Operator selection reads type
+tags automatically when evaluating candidate pairs.
+
+
+--------------------------------------------------------------------------------
+8. OPEN PROBLEMS FOR FURTHER DEVELOPMENT
+--------------------------------------------------------------------------------
+
+  8.1 Epsilon tolerance for coincidence
+    TSKR coincidence requires a tolerance parameter (epsilon) to handle
+    near-overlapping intervals. This tolerance should be tuned per pair type
+    rather than globally, because data sources have mismatched granularity:
+    DCS states resolve to seconds; maintenance regime intervals resolve to days.
+    A single global epsilon will either over-merge fine-grained pairs or
+    under-merge coarse-grained ones.
+    --> Need: epsilon registry per source-pair combination, or a
+        granularity-normalisation step before mining.
+
+  8.2 Event taxonomy and typing granularity
+    Episode mining quality depends on event type consistency. Events must be
+    typed at the right level of abstraction:
+    - Too coarse (all anomalies = one type): everything correlates spuriously
+    - Too fine (each sensor tag is unique): nothing recurs enough to be
+      statistically significant
+    Recommended level: failure mode taxonomy from MBSE (e.g. lubrication
+    degradation, mechanical wear, seal leakage) rather than raw sensor IDs.
+    --> Need: failure mode ontology mapped to event node types in KG.
+
+  8.3 Entity resolution for event-to-equipment linking
+    KG edge quality depends on consistent equipment references in source
+    documents. Informal names, tag variants, and abbreviations ("P-101",
+    "pump 101", "cooling pump A") must resolve to the same equipment node.
+    --> Need: fuzzy entity resolution / normalisation step at ingestion.
+
+  8.4 Confidence scoring and explainability
+    In a nuclear context, every hypothesis must carry:
+    - Number of historical precedents supporting it
+    - Graph distance between anomaly and proposed root cause
+    - Temporal support (frequency and consistency of episode)
+    - Source documents cited
+    Engineers must be able to challenge the system output.
+    --> Must be designed in from the start, not retrofitted.
+
+  8.5 Temporal dimension on KG event nodes
+    Current event nodes carry timestamps but not sequence relationships.
+    Adding positional context within a degradation timeline — e.g. "this
+    anomaly type appeared on average 14 days before failure" — enables
+    matching a new anomaly not just semantically but positionally in a
+    known degradation curve.
+    --> Need: precursor library as a derived layer on the KG.
+
+
+--------------------------------------------------------------------------------
+END OF NOTES
+--------------------------------------------------------------------------------
