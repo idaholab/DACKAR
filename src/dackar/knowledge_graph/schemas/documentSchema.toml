@@ -1,70 +1,204 @@
-title = "Document Graph Schema"
-version = 1.0
+title   = "Document Graph Schema (Shared)"
+version = "2.0.0"
 
-# ====================
-# Node Entities
-# ====================
+# Shared schema for DACKAR and AI_MBSE_licensing.
+#
+# Node label conventions:
+#   - Document, Section, TextChunk, Figure, Table, DocumentRef, Standard
+#     use PascalCase to match the AI_MBSE_licensing ingestion code.
+#   - The `mentions` relation targets `element_usage` from mbseSchema.toml,
+#     which must be loaded alongside this schema.
+#
+# Changelog vs. v1.0 (DACKAR-only):
+#   - Added TextChunk, DocumentRef, Standard node types (RAG / licensing pipeline)
+#   - Renamed document_section → Section (richer properties, RAG-oriented)
+#   - Added next_section, belongs_to_document, belongs_to_section relations
+#   - Added cites_doc_section, cites_table, cites_figure cross-reference relations
+#   - Added `mentions` relation (TextChunk/Table → element_usage)
+#   - Added edge weight / confidence properties for hybrid retrieval scoring
+#   - Added provenance_json and classification on evidence nodes
+#   - Promoted document_type to enum (DACKAR vocabulary)
+
+# ============================================================
+# NODE ENTITIES
+# ============================================================
 
 [node.Document]
-node_description = """  This node represents a full document such as a licensing report, safety analysis report, or technical 
-                        specification. It serves as a container for structured content including sections, figures, and tables, 
-                        and provides metadata such as title, publication date, and document type."""
+node_description = "Represents a full document such as a licensing report, safety analysis report, technical specification, test report, calculation, procedure, or maintenance record. It serves as a primary input in the AI_MBSE_licensing pipeline and as evidence / provenance context in the DACKAR RCA pipeline."
 node_properties = [
-    { name = "document_id", type = "string", optional = false, description = "Unique identifier for the document" },
-    { name = "title", type = "string", optional = false, description = "Title of the document" },
-    { name = "publication_date", type = "string", optional = true, description = "Date the document was published or issued" },
-    { name = "document_type", type = "string", optional = true, description = "Type of document (e.g., SAR, licensing report, technical spec)" },
-    { name = "source_path", type = "string", optional = true, description = "File path or URI to the original document" }
+  { name = "document_id",      type = "string",  optional = false, description = "Unique identifier for the document (used as Neo4j PK and MERGE key)." },
+  { name = "title",            type = "string",  optional = false, description = "Title of the document." },
+  { name = "document_type", type = "enum", optional = true, description = "Type or class of the artifact.", enum_values = ["FSAR", "licensing_report", "technical_specification", "test_report", "calculation", "procedure", "maintenance_record", "outage_report", "vendor_manual", "other"] },
+  { name = "publication_date", type = "string",  optional = true,  description = "Publication or issue date (ISO-8601)." },
+  { name = "reference",        type = "string",  optional = true,  description = "External document number, citation, or repository pointer." },
+  { name = "revision",         type = "string",  optional = true,  description = "Revision, version, or issue designation." },
+  { name = "effective_date",   type = "string",  optional = true,  description = "Date on which the document became effective or approved." },
+  { name = "source_path",      type = "string",  optional = true,  description = "File path or URI to the original document." },
+  { name = "classification",   type = "string",  optional = true,  description = "Data classification or access-control tag." }
 ]
 
-[node.DocumentSection]
-node_description = """  This node represents a section within a document, such as a chapter, subsection, or paragraph. 
-                        It contains structured text and metadata, and serves as a source for extracted knowledge 
-                        elements like requirements, specifications, or hazards."""
+[node.Section]
+node_description = "Represents a section, chapter, subsection, or paragraph within a document. Holds structured text and metadata; serves as the anchor for extracted knowledge elements (requirements, specifications, hazards, etc.) in both the DACKAR RCA and AI_MBSE_licensing pipelines."
 node_properties = [
-    { name = "section_id", type = "string", optional = false, description = "Unique identifier for the section" },
-    { name = "title", type = "string", optional = true, description = "Title or heading of the section" },
-    { name = "section_number", type = "string", optional = true, description = "Hierarchical number or label (e.g., 3.2.1)" },
-    { name = "text", type = "string", optional = true, description = "Raw or cleaned text content of the section" },
-    { name = "page_number", type = "integer", optional = true, description = "Page number where the section starts" }
+  { name = "section_id",     type = "string",  optional = false, description = "Unique identifier for the section (used as Neo4j PK)." },
+  { name = "title",          type = "string",  optional = true,  description = "Heading or title of the section." },
+  { name = "section_number", type = "string",  optional = true,  description = "Hierarchical number or label, such as 3.2.1." },
+  { name = "order",          type = "integer", optional = true,  description = "Zero-based position within the document.", indexed = true },
+  { name = "text",           type = "string",  optional = true,  description = "Raw or cleaned text content." },
+  { name = "page_number",    type = "integer", optional = true,  description = "Page number where the section starts." },
+  { name = "document_id",    type = "string",  optional = true,  description = "Foreign key to Document.document_id.", indexed = true }
+]
+
+[node.TextChunk]
+node_description = "A text chunk derived from a Section (e.g., the section body split for RAG). Includes NLP enrichments and is the primary unit stored in the Chroma vector store for retrieval-augmented generation. Used by AI_MBSE_licensing; DACKAR RCA may also consume it when document evidence is needed."
+node_properties = [
+  { name = "chunk_id",        type = "string",      optional = false, description = "Unique chunk identifier, e.g. 'chunk:{doc}:sec{idx}'." },
+  { name = "document_id",     type = "string",      optional = false, description = "Foreign key to Document.document_id.", indexed = true },
+  { name = "section_title",   type = "string",      optional = true,  description = "Section title this chunk belongs to." },
+  { name = "heading_level",   type = "integer",     optional = true,  description = "Markdown heading level (1..6)." },
+  { name = "text",            type = "string",      optional = true,  description = "Full text of the chunk." },
+  { name = "keywords",        type = "string_array",optional = true,  description = "Keywords extracted from the chunk." },
+  { name = "provenance_json", type = "json_string", optional = true,  description = "Serialized provenance map (ingest_id, content_hash, etc.)." },
+  { name = "classification",  type = "string",      optional = true,  description = "Data classification or access-control tag." }
 ]
 
 [node.Figure]
-node_description = """  This node represents a figure within a document, such as a diagram, schematic, or chart. 
-                        Figures often illustrate systems, components, or processes and are referenced by other entities."""
+node_description = "Represents a figure within a document (diagram, schematic, chart). Figures often illustrate systems, components, or processes and are referenced by other entities."
 node_properties = [
-    { name = "figure_id", type = "string", optional = false, description = "Unique identifier for the figure" },
-    { name = "caption", type = "string", optional = true, description = "Caption or description of the figure" },
-    { name = "image_path", type = "string", optional = true, description = "File path or URI to the figure image" },
-    { name = "page_number", type = "integer", optional = true, description = "Page number where the figure appears" }
+  { name = "figure_id",       type = "string",      optional = false, description = "Unique identifier for the figure." },
+  { name = "caption",         type = "string",      optional = true,  description = "Caption or description of the figure." },
+  { name = "image_path",      type = "string",      optional = true,  description = "File path or URI to the figure image." },
+  { name = "page_number",     type = "integer",     optional = true,  description = "Page number where the figure appears." },
+  { name = "document_id",     type = "string",      optional = true,  description = "Foreign key to Document.document_id." },
+  { name = "provenance_json", type = "json_string", optional = true,  description = "Serialized provenance map." },
+  { name = "classification",  type = "string",      optional = true,  description = "Data classification or access-control tag." }
 ]
 
 [node.Table]
-node_description = """  This node represents a table within a document, containing structured data such as specifications, 
-                        test results, or component listings. Tables are often referenced by other entities for quantitative or categorical data."""
+node_description = "Represents a table within a document containing structured data such as specifications, test results, FMEA rows, or component listings."
 node_properties = [
-    { name = "table_id", type = "string", optional = false, description = "Unique identifier for the table" },
-    { name = "caption", type = "string", optional = true, description = "Caption or description of the table" },
-    { name = "data", type = "string", optional = true, description = "Serialized representation of the table data (e.g., JSON or CSV)" },
-    { name = "headers", type = "list", optional = true, description = "List of column headers in the table" },
-    { name = "page_number", type = "integer", optional = true, description = "Page number where the table appears" }
+  { name = "table_id",        type = "string",      optional = false, description = "Unique identifier for the table." },
+  { name = "caption",         type = "string",      optional = true,  description = "Caption or description of the table." },
+  { name = "data",            type = "json_string", optional = true,  description = "Serialized table data (columns/rows as JSON)." },
+  { name = "headers",         type = "list",        optional = true,  description = "List of column headers." },
+  { name = "page_number",     type = "integer",     optional = true,  description = "Page number where the table appears." },
+  { name = "document_id",     type = "string",      optional = true,  description = "Foreign key to Document.document_id." },
+  { name = "provenance_json", type = "json_string", optional = true,  description = "Serialized provenance map." },
+  { name = "classification",  type = "string",      optional = true,  description = "Data classification or access-control tag." }
 ]
 
-# ====================
-# Relations
-# ====================
+[node.DocumentRef]
+node_description = "Placeholder for a cited internal document or section that has not yet been ingested. Created at parse time so cross-document citations are recorded immediately. Replaced with a real Section edge once the referenced document is ingested and resolve_doc_refs() is run. Used by AI_MBSE_licensing incremental ingest."
+node_properties = [
+  { name = "ref_id",         type = "string", optional = false, description = "Unique id: 'DOCREF:<logical_doc_id>:<section_label>'." },
+  { name = "logical_doc_id", type = "string", optional = true,  description = "Normalised document family identifier." },
+  { name = "display_name",   type = "string", optional = true,  description = "Human-readable document name." },
+  { name = "section_label",  type = "string", optional = true,  description = "Section/condition number as cited (e.g. '3.1.1')." },
+  { name = "status",         type = "string", optional = true,  description = "'unresolved' until the target document is ingested; 'resolved' after." },
+  { name = "resolved_to",    type = "string", optional = true,  description = "Section node id once resolved (e.g. 'SEC:doc123:004')." }
+]
+
+[node.Standard]
+node_description = "A normalised standards or codes reference, e.g. 'ASME BPVC Section III' or 'IEEE 603'. Used in the AI_MBSE_licensing pipeline to track regulatory standard citations in licensing text."
+node_properties = [
+  { name = "standard_id", type = "string", optional = false, description = "Canonical identifier, e.g. 'STD:ASME_BPVC_III'." },
+  { name = "label",       type = "string", optional = true,  description = "Raw label text as it appears in the source document." },
+  { name = "family",      type = "string", optional = true,  description = "Code family (ASME_BPVC, IEEE, NFPA, ASTM, NRC, etc.)." }
+]
+
+
+# ============================================================
+# RELATIONS
+# ============================================================
 
 [relation.has_section]
-relation_description = "Links a document to its sections."
-source_node = "node.Document"
-target_node = "node.DocumentSection"
+relation_description = "Links a Document to one of its Sections (with ordering)."
+from_node = "node.Document"
+to_node   = "node.Section"
+relation_properties = [
+  { name = "order",  type = "integer", optional = false, description = "Zero-based position of the section within the document." },
+  { name = "weight", type = "float",   optional = true,  description = "Confidence or relevance weight." }
+]
+
+[relation.next_section]
+relation_description = "Adjacency link: Section_i points to Section_{i+1} within the same document. Enables linear context expansion during retrieval."
+from_node = "node.Section"
+to_node   = "node.Section"
+relation_properties = [
+  { name = "weight", type = "float", optional = true, description = "Confidence or relevance weight." }
+]
+
+[relation.belongs_to_document]
+relation_description = "Links an evidence node (TextChunk, Table, Figure) directly to its parent Document."
+from_node = ["node.TextChunk", "node.Table", "node.Figure"]
+to_node   = "node.Document"
+relation_properties = [
+  { name = "weight", type = "float", optional = true, description = "Confidence or relevance weight." }
+]
+
+[relation.belongs_to_section]
+relation_description = "Links an evidence node (TextChunk, Table, Figure) to the Section it was extracted from."
+from_node = ["node.TextChunk", "node.Table", "node.Figure"]
+to_node   = "node.Section"
+relation_properties = [
+  { name = "weight", type = "float", optional = true, description = "Confidence or relevance weight." }
+]
 
 [relation.has_figure]
-relation_description = "Links a document to its figures."
-source_node = "node.DocumentSection"
-target_node = "node.Figure"
+relation_description = "Links a Section to a Figure it contains."
+from_node = "node.Section"
+to_node   = "node.Figure"
 
 [relation.has_table]
-relation_description = "Links a document to its tables."
-source_node = "node.DocumentSection"
-target_node = "node.Table"
+relation_description = "Links a Section to a Table it contains."
+from_node = "node.Section"
+to_node   = "node.Table"
+
+[relation.references]
+relation_description = "Links a TextChunk to a Standard it cites."
+from_node = "node.TextChunk"
+to_node   = "node.Standard"
+relation_properties = [
+  { name = "weight", type = "float", optional = true, description = "Confidence or relevance weight." }
+]
+
+[relation.cites_doc_section]
+relation_description = "A TextChunk cites a section of another internal document by label in its prose (e.g. 'see SAR Section 4.3'). The target is either a resolved Section node or an unresolved DocumentRef placeholder."
+from_node = "node.TextChunk"
+to_node   = ["node.Section", "node.DocumentRef"]
+relation_properties = [
+  { name = "doc_label",     type = "string",  optional = true,  description = "Document alias as it appears in the text (e.g. 'SAR')." },
+  { name = "section_label", type = "string",  optional = true,  description = "Section number as cited (e.g. '4.3')." },
+  { name = "raw_text",      type = "string",  optional = true,  description = "Full matched substring." },
+  { name = "confidence",    type = "float",   optional = true,  description = "NER extraction confidence." },
+  { name = "resolved",      type = "boolean", optional = true,  description = "True when edge points to a real Section node." },
+  { name = "weight",        type = "float",   optional = true,  description = "Confidence/weight alias for fusion scoring." }
+]
+
+[relation.cites_table]
+relation_description = "A TextChunk cites a Table by label in its prose (e.g. 'see Table 3-1')."
+from_node = "node.TextChunk"
+to_node   = "node.Table"
+relation_properties = [
+  { name = "label",      type = "string", optional = true,  description = "Raw label as it appears in the text (e.g. 'Table 3-1')." },
+  { name = "confidence", type = "float",  optional = true,  description = "Assignment confidence." },
+  { name = "weight",     type = "float",  optional = true,  description = "Confidence/weight alias for fusion scoring." }
+]
+
+[relation.cites_figure]
+relation_description = "A TextChunk cites a Figure by label in its prose (e.g. 'see Figure 4-2')."
+from_node = "node.TextChunk"
+to_node   = "node.Figure"
+relation_properties = [
+  { name = "label",      type = "string", optional = true,  description = "Raw label as it appears in the text (e.g. 'Figure 4-2')." },
+  { name = "confidence", type = "float",  optional = true,  description = "Assignment confidence." },
+  { name = "weight",     type = "float",  optional = true,  description = "Confidence/weight alias for fusion scoring." }
+]
+
+[relation.mentions]
+relation_description = "A TextChunk or Table mentions a plant element occurrence. Bridges the document evidence layer to the MBSE system skeleton. The target is an element_usage node from mbseSchema.toml, which must be loaded alongside this schema."
+from_node = ["node.TextChunk", "node.Table"]
+to_node   = "node.element_usage"
+relation_properties = [
+  { name = "weight", type = "float", optional = true, description = "Confidence or relevance weight." }
+]

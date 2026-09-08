@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TelemetrySummary",
+  "description": "Statistical and anomaly summary of telemetry signals for an asset over an analysis window. Output of Step 3. Raw data remains external.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["asset_id", "event_id", "window", "generated_at", "signals"],
+
+  "properties": {
+
+    "asset_id":     { "type": "string" },
+    "event_id":     { "type": "string", "description": "Event this summary was generated for. Links back to event.json." },
+    "generated_at": { "type": "string", "format": "date-time" },
+
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start":            { "type": "string", "format": "date-time" },
+        "end":              { "type": "string", "format": "date-time" },
+        "baseline_start":   { "type": "string", "format": "date-time", "description": "Start of baseline period used for comparison." },
+        "baseline_end":     { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "analysis_methods": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["descriptive_stats", "baseline_comparison", "matrix_profile", "changepoint_detection", "threshold_check", "other"]
+      },
+      "description": "Methods applied to produce this summary. Enables consumers to understand provenance of anomaly findings."
+    },
+
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sensor_id", "parameter", "unit", "stats"],
+        "properties": {
+
+          "sensor_id":  { "type": "string" },
+          "parameter":  { "type": "string", "description": "Physical parameter (e.g., 'bearing_temperature', 'shaft_vibration_x')." },
+          "unit":       { "type": "string" },
+
+          "stats": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mean", "std", "min", "max", "sample_count"],
+            "description": "Descriptive statistics over the analysis window.",
+            "properties": {
+              "mean":         { "type": "number" },
+              "std":          { "type": "number" },
+              "min":          { "type": "number" },
+              "max":          { "type": "number" },
+              "p25":          { "type": "number" },
+              "p75":          { "type": "number" },
+              "p95":          { "type": "number" },
+              "sample_count": { "type": "integer" }
+            }
+          },
+
+          "baseline_comparison": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Comparison of window stats against baseline period.",
+            "properties": {
+              "baseline_mean":   { "type": "number" },
+              "baseline_std":    { "type": "number" },
+              "delta_mean":      { "type": "number", "description": "window mean - baseline mean" },
+              "delta_std":       { "type": "number" },
+              "percent_change":  { "type": "number" },
+              "deviation_sigma": { "type": "number", "description": "Deviation from baseline in units of baseline std." }
+            }
+          },
+
+          "anomalies": {
+            "type": "array",
+            "description": "Detected anomalies within this signal.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["anomaly_id", "detection_method", "pattern", "timestamp_start"],
+              "properties": {
+                "anomaly_id":       { "type": "string" },
+                "detection_method": {
+                  "type": "string",
+                  "enum": ["matrix_profile", "threshold_exceedance", "baseline_deviation", "changepoint", "other"]
+                },
+                "pattern": {
+                  "type": "string",
+                  "enum": ["step_change", "gradual_drift", "spike", "oscillation", "dropout", "sustained_exceedance", "unknown"],
+                  "description": "Anomaly morphology — matches event.json symptom_signature.anomaly_pattern for cross-linking."
+                },
+                "timestamp_start": { "type": "string", "format": "date-time" },
+                "timestamp_end":   { "type": "string", "format": "date-time" },
+                "interval_type": {
+                  "type": "string",
+                  "enum": ["closed", "open", "half_open_start", "half_open_end"],
+                  "default": "closed",
+                  "description": "Endpoint convention for [timestamp_start, timestamp_end] used by temporal reasoning."
+                },
+                "severity_score": {
+                  "type": "number",
+                  "minimum": 0.0,
+                  "maximum": 1.0,
+                  "description": "Normalized anomaly severity. Used by Step 5 telemetry consistency score."
+                },
+                "peak_value":    { "type": "number" },
+                "matrix_profile_index": {
+                  "type": "integer",
+                  "description": "Discord index in matrix profile output, if detection_method = matrix_profile."
+                },
+                "promoted_to_kg_event": {
+                  "type": "boolean",
+                  "description": "Whether this anomaly was promoted to an abnormal_event node in the KG. Requires explicit promotion logic gate."
+                },
+                "kg_event_id": {
+                  "type": "string",
+                  "description": "KG abnormal_event node ID if promoted_to_kg_event = true."
+                },
+                "promotion_rationale": {
+                  "type": "string",
+                  "description": "Explanation of why this anomaly met the threshold for KG promotion."
+                }
+              }
+            }
+          },
+
+          "changepoints": {
+            "type": "array",
+            "description": "Detected distributional change points in this signal.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["changepoint_id", "timestamp"],
+              "properties": {
+                "changepoint_id":   { "type": "string" },
+                "timestamp":        { "type": "string", "format": "date-time" },
+                "confidence":       { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+                "before_mean":      { "type": "number" },
+                "after_mean":       { "type": "number" },
+                "detection_method": { "type": "string" }
+              }
+            }
+          },
+
+          "within_normal_limits": {
+            "type": "boolean",
+            "description": "True if no anomalies or limit exceedances were detected for this signal."
+          },
+
+          "data_quality": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "missing_fraction":  { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+              "flatline_detected": { "type": "boolean" },
+              "outlier_fraction":  { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+              "quality_flags":     { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+
+    "overall_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Rolled-up assessment across all signals — consumed directly by Step 5 scoring.",
+      "properties": {
+        "any_anomaly_detected":     { "type": "boolean" },
+        "anomaly_count":            { "type": "integer" },
+        "most_anomalous_signal":    { "type": "string", "description": "sensor_id of signal with highest severity_score." },
+        "earliest_anomaly_time":    { "type": "string", "format": "date-time" },
+        "pattern_summary":          { "type": "string", "description": "Narrative summary of anomaly patterns — fed to LLM in Step 7." }
+      }
+    }
+  }
+}
