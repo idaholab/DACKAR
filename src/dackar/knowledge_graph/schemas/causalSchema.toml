@@ -1,29 +1,30 @@
 title = "Causality Graph Schema"
-version = 1.0
+version = "1.0"
 
-# ====================
-# Node 
-# ====================
+# ============================================================
+# NODE ENTITIES
+# ============================================================
 
-[node.abnormal_event]
-node_description = """Represents a generic abnormal event associated with a specific equipment item, capturing any unexpected, 
-                      irregular, or off-nominal condition that may impact the equipment’s performance, reliability, or safety. 
-                      This node serves as a placeholder for a wide range of event types—including faults, anomalies, or 
-                      operational deviations—detected through monitoring systems, reported by plant staff, or inferred from 
-                      system behavior. It enables semantic linking to related entities such as condition reports, monitoring 
-                      variables, failure modes, and maintenance actions, supporting diagnostics, risk assessment, and operational 
-                      decision-making."""
+[node.degradation_mechanism]
+node_description = "Represents a physical, chemical, or mechanical process that progressively deteriorates the integrity, performance, or functional capability of a component or system over time. Examples include corrosion, fatigue, wear, erosion, embrittlement, and fouling."
+node_properties = [
+  { name = "id",                type = "string", optional = false, description = "Stable unique identifier for the degradation mechanism." },
+  { name = "name",              type = "string", optional = false, description = "Name of the degradation mechanism, such as corrosion, fatigue, or wear." },
+  { name = "description",       type = "string", optional = true,  description = "Narrative explanation of how the mechanism operates and what it affects." },
+  { name = "mechanism_class",   type = "enum",   optional = true,  description = "High-level classification of the degradation mechanism.", enum_values = ["mechanical", "chemical", "thermal", "electrical", "environmental", "combined"] },
+  { name = "affected_material", type = "string", optional = true,  description = "Material, component type, or system class typically affected by this mechanism." }
+]
 
-# ====================
-# Relations
-# ====================
+# ============================================================
+# RELATIONS
+# ============================================================
 
-[relation.causes]
-relation_description = """Defines a directed causal relationship between two recorded events or anomaly instances, 
-                          indicating that the occurrence of one event or anomaly has contributed to, triggered, or 
-                          influenced the emergence of the other. This relation captures temporal and logical dependencies 
-                          within operational or system behavior contexts, supporting root cause analysis, fault 
-                          propagation modeling, and the construction of causal chains for diagnostics, risk assessment, 
-                          and decision support."""
-from_entity = "abnormal_event"
-to_entity = "abnormal_event"
+[relation.precipitates]
+relation_description = "Indicates that a degradation mechanism precipitates or leads to a specific failure mode over time."
+from_entity = "degradation_mechanism"
+to_entity = "failure_mode"
+
+[relation.results_in]
+relation_description = "Indicates that a failure mode resulted in a documented condition report. This relation closes the causal chain from degradation to operational record."
+from_entity = "failure_mode"
+to_entity = "condition_report"
