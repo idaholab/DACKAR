@@ -1,0 +1,291 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OutageActivityRecommendation",
+  "description": "Stage G output. Final recommendation artifact for an emergent outage activity. Synthesizes all upstream pipeline outputs into an actionable, evidence-backed recommendation for the outage manager. Designed as a traceable audit trail: every claim cites a source, every regulatory flag is surfaced, and analysts can reject with reason. This is the artifact the outage manager reads.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recommendation_id",
+    "activity_id",
+    "run_id",
+    "generated_at",
+    "decision_status",
+    "executive_summary",
+    "primary_recommendation",
+    "regulatory_flags",
+    "evidence_chain",
+    "schedule_summary",
+    "analyst_review",
+    "validation_status",
+    "provenance"
+  ],
+
+  "properties": {
+
+    "recommendation_id": {
+      "type": "string",
+      "description": "Stable unique identifier for this recommendation. Format: REC::{activity_id}::{uuid}."
+    },
+
+    "activity_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "pipeline_version": { "type": ["string", "null"] },
+
+    "decision_status": {
+      "type": "string",
+      "enum": ["PROCEED", "DEFER", "ESCALATE", "MONITOR", "INCONCLUSIVE"],
+      "description": "PROCEED: execute the recommended option. DEFER: defer to post-outage or next cycle. ESCALATE: risk or regulatory complexity requires management decision. MONITOR: no immediate action, but flag for continued observation. INCONCLUSIVE: insufficient data to recommend — analyst review required."
+    },
+
+    "executive_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_conclusion", "confidence_tier", "analyst_attention_flags"],
+      "properties": {
+        "primary_conclusion": {
+          "type": "string",
+          "description": "One or two sentence plain-language summary for the outage manager."
+        },
+        "confidence_tier": {
+          "type": "string",
+          "enum": ["data_supported", "sme_informed", "low_confidence"],
+          "description": "data_supported: recommendation backed by ≥5 analogs and solid schedule data. sme_informed: based on limited analogs or SME-adjusted estimates. low_confidence: minimal historical data — treat as a watch item."
+        },
+        "analyst_attention_flags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Machine-generated flags requiring analyst attention (e.g., 'regulatory_constraint_present', 'low_analog_count', 'temporal_contradiction_detected', 'critical_path_impact', 'high_unknown_abbreviation_rate')."
+        }
+      }
+    },
+
+    "primary_recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "option_type", "rationale", "cp_impact_hours", "criticality_label"],
+      "description": "The top-ranked feasible, regulatory-cleared option from InsertionOptions.",
+      "properties": {
+        "option_id": {
+          "type": "string",
+          "description": "References InsertionOptions.options[].option_id."
+        },
+        "option_type": {
+          "type": "string",
+          "enum": [
+            "insert_now",
+            "defer_to_post_outage",
+            "pre_outage_staging",
+            "add_contingency_buffer",
+            "parallel_execution",
+            "scope_reduction",
+            "escalate_to_management"
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Evidence-backed rationale citing specific analogs, chain links, and schedule analysis."
+        },
+        "cp_impact_hours": { "type": "number" },
+        "criticality_label": {
+          "type": "string",
+          "enum": ["critical", "near_critical", "non_critical"]
+        }
+      }
+    },
+
+    "regulatory_flags": {
+      "type": "array",
+      "description": "All regulatory constraints identified in Stage A, surfaced here for the outage manager. Any DEFER or ESCALATE recommendation with regulatory flags present must be reviewed by licensing before action.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["driver_type", "defer_prohibited"],
+        "properties": {
+          "driver_type": {
+            "type": "string",
+            "enum": [
+              "ts_surveillance",
+              "nrc_commitment",
+              "cap_commitment",
+              "hold_point",
+              "alara_constraint",
+              "license_basis_inspection",
+              "other"
+            ]
+          },
+          "identifier": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "defer_prohibited": { "type": "boolean" }
+        }
+      }
+    },
+
+    "evidence_chain": {
+      "type": "array",
+      "description": "The specific pieces of evidence backing this recommendation. Designed for the evidence drilldown view. Every claim in the recommendation should have at least one entry here.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidence_id", "source_type", "source_id", "supports"],
+        "properties": {
+          "evidence_id": { "type": "string" },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "condition_report",
+              "work_order",
+              "historical_analog",
+              "temporal_chain_link",
+              "schedule_analysis",
+              "fmea_reference",
+              "sme_input",
+              "regulatory_constraint"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Identifier of the source record (e.g., CR number, analog_id, link_id)."
+          },
+          "snippet": {
+            "type": ["string", "null"],
+            "description": "Relevant text or data excerpt from the source."
+          },
+          "relevance_score": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "supports": {
+            "type": "boolean",
+            "description": "True if this evidence supports the recommendation; false if it contradicts or qualifies it."
+          }
+        }
+      }
+    },
+
+    "history_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Summary of what the historical record shows for this component and activity type.",
+      "properties": {
+        "analog_count": { "type": ["integer", "null"], "minimum": 0 },
+        "outages_represented": { "type": ["integer", "null"], "minimum": 0 },
+        "outage_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "§8a: Deduplicated, sorted list of outage IDs the recommendation draws from. Enables traceability from recommendation back to specific outage events."
+        },
+        "recurrence_pattern": {
+          "type": ["string", "null"],
+          "description": "e.g., 'Component has had 3 corrective maintenance events in the last 2 cycles, trend increasing.'"
+        },
+        "duration_p50_hours": { "type": ["number", "null"], "minimum": 0 },
+        "duration_p80_hours": { "type": ["number", "null"], "minimum": 0 }
+      }
+    },
+
+    "schedule_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cp_impact_hours", "criticality_label", "float_consumed_hours"],
+      "description": "Key schedule impact figures for the executive view.",
+      "properties": {
+        "cp_impact_hours": { "type": "number" },
+        "criticality_label": {
+          "type": "string",
+          "enum": ["critical", "near_critical", "non_critical"]
+        },
+        "float_consumed_hours": { "type": "number", "minimum": 0 },
+        "displaced_task_count": { "type": ["integer", "null"], "minimum": 0 },
+        "has_displaced_regulatory_tasks": {
+          "type": ["boolean", "null"],
+          "description": "True if any displaced task has a regulatory constraint."
+        }
+      }
+    },
+
+    "analyst_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required"],
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "description": "True if analyst review is required before this recommendation can be acted upon (e.g., regulatory constraints present, low confidence, or INCONCLUSIVE decision status)."
+        },
+        "reason": {
+          "type": ["string", "null"],
+          "description": "Why analyst review is required."
+        },
+        "reviewer_decision": {
+          "type": ["string", "null"],
+          "enum": ["accepted", "rejected", "modified", "pending", null],
+          "description": "Populated after analyst review. Part of the human-in-the-loop feedback loop."
+        },
+        "reviewer_notes": {
+          "type": ["string", "null"],
+          "description": "Free-text notes from the reviewing analyst. Feeds back into the learning loop."
+        },
+        "reviewed_by": { "type": ["string", "null"] },
+        "reviewed_at": { "type": ["string", "null"], "format": "date-time" },
+        "rejection_reason": {
+          "type": ["string", "null"],
+          "description": "The analyst's stated reason for rejecting the recommendation. Populated only when reviewer_decision is 'rejected'. Stored with RECOMMENDATION_REJECTED prefix in outcome_notes for downstream filtering."
+        }
+      }
+    },
+
+    "validation_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_valid", "minimum_evidence_met", "validation_errors", "fallback_used"],
+      "properties": {
+        "schema_valid": { "type": "boolean" },
+        "all_regulatory_flags_resolved": {
+          "type": "boolean",
+          "description": "True if every regulatory_flag has been acknowledged in the recommendation logic."
+        },
+        "minimum_evidence_met": {
+          "type": "boolean",
+          "description": "True if the evidence_chain contains at least one supporting entry."
+        },
+        "validation_errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "fallback_used": {
+          "type": "boolean",
+          "description": "True if any upstream stage used a fallback (e.g., population-level duration, no analog data)."
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "generated_by"],
+      "description": "Full traceability of all input artifacts used to produce this recommendation.",
+      "properties": {
+        "run_id": { "type": "string" },
+        "generated_by": { "type": "string" },
+        "pipeline_version": { "type": ["string", "null"] },
+        "input_artifacts": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "emergent_activity_id": { "type": ["string", "null"] },
+            "schedule_version_id": { "type": ["string", "null"] },
+            "kg_query_timestamp": { "type": ["string", "null"], "format": "date-time" },
+            "intake_result_run_id": { "type": ["string", "null"] },
+            "timeline_run_id": { "type": ["string", "null"] },
+            "temporal_chain_run_id": { "type": ["string", "null"] },
+            "schedule_impact_run_id": { "type": ["string", "null"] },
+            "analogs_run_id": { "type": ["string", "null"] },
+            "insertion_options_run_id": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  }
+}

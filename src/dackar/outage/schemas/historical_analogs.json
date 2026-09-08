@@ -1,0 +1,216 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HistoricalAnalogs",
+  "description": "Stage E output. Similar past emergent activities retrieved from the historical record, together with a duration distribution fitted from the analog set. Produced by the semantic and lexical similarity retrieval pipeline. Provides the empirical basis for duration estimation and recurrence pattern recognition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activity_id",
+    "run_id",
+    "generated_at",
+    "query_summary",
+    "analogs",
+    "duration_distribution",
+    "retrieval_summary",
+    "provenance"
+  ],
+
+  "properties": {
+
+    "activity_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+
+    "query_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized_description"],
+      "description": "Summary of what was used as the retrieval query.",
+      "properties": {
+        "normalized_description": { "type": "string" },
+        "component_family": { "type": ["string", "null"] },
+        "task_family": { "type": ["string", "null"] },
+        "system_id": { "type": ["string", "null"] },
+        "component_id": { "type": ["string", "null"] },
+        "discipline": { "type": ["string", "null"] }
+      }
+    },
+
+    "analogs": {
+      "type": "array",
+      "description": "Retrieved historical activities ranked by similarity score.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "analog_id",
+          "activity_id",
+          "outage_id",
+          "similarity_score",
+          "data_quality_score"
+        ],
+        "properties": {
+          "analog_id": {
+            "type": "string",
+            "description": "Unique identifier for this analog entry within the result set."
+          },
+          "activity_id": {
+            "type": "string",
+            "description": "Identifier of the historical activity in the data store."
+          },
+          "outage_id": { "type": "string" },
+          "plant_id": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+
+          "similarity_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Overall similarity score between query activity and this analog."
+          },
+
+          "similarity_breakdown": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Per-dimension similarity scores.",
+            "properties": {
+              "lexical": {
+                "type": ["number", "null"],
+                "minimum": 0, "maximum": 1,
+                "description": "BM25 or token-overlap similarity on normalized descriptions."
+              },
+              "semantic": {
+                "type": ["number", "null"],
+                "minimum": 0, "maximum": 1,
+                "description": "Embedding cosine similarity."
+              },
+              "component_match": {
+                "type": ["number", "null"],
+                "minimum": 0, "maximum": 1,
+                "description": "1.0 if exact component_id match, partial credit for same component_family."
+              },
+              "context_match": {
+                "type": ["number", "null"],
+                "minimum": 0, "maximum": 1,
+                "description": "Similarity of execution context (phase, discipline, execution mode flags)."
+              }
+            }
+          },
+
+          "actual_duration_hours": {
+            "type": ["number", "null"],
+            "minimum": 0
+          },
+
+          "planned_duration_hours": {
+            "type": ["number", "null"],
+            "minimum": 0
+          },
+
+          "duration_overrun_hours": {
+            "type": ["number", "null"],
+            "description": "actual_duration_hours - planned_duration_hours. Negative values indicate underrun."
+          },
+
+          "overrun_ratio": {
+            "type": ["number", "null"],
+            "description": "actual / planned duration ratio. Values > 1.0 indicate overrun."
+          },
+
+          "emergence_type": {
+            "type": ["string", "null"],
+            "enum": ["truly_unplanned", "scope_expansion", "regulatory_driven", "schedule_optimization", "unknown", null]
+          },
+
+          "component_id": { "type": ["string", "null"] },
+
+          "outage_phase": {
+            "type": ["string", "null"],
+            "enum": ["cooldown", "defueling", "refueling", "maintenance", "startup", "power_ascension", "other", null]
+          },
+
+          "had_rework": {
+            "type": ["boolean", "null"],
+            "description": "True if this historical activity was followed by a rework event."
+          },
+
+          "data_quality_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+
+    "duration_distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p50_hours", "p80_hours", "p90_hours", "confidence_tier", "sample_size"],
+      "description": "Duration distribution fitted from the analog set. Used by Stage D for schedule impact assessment.",
+      "properties": {
+        "distribution_type": {
+          "type": "string",
+          "enum": ["lognormal", "normal", "empirical", "triangular", "fallback_population"],
+          "description": "fallback_population: no analog data available; population-level statistics used."
+        },
+        "p50_hours": { "type": "number", "minimum": 0 },
+        "p80_hours": { "type": "number", "minimum": 0 },
+        "p90_hours": { "type": "number", "minimum": 0 },
+        "mean_hours": { "type": ["number", "null"], "minimum": 0 },
+        "std_hours": { "type": ["number", "null"], "minimum": 0 },
+        "confidence_tier": {
+          "type": "string",
+          "enum": ["data_supported", "sme_informed", "low_confidence"]
+        },
+        "sample_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of analogs with actual_duration_hours used to fit this distribution."
+        },
+        "outliers_removed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of analog durations removed as outliers before fitting."
+        },
+        "fitting_notes": { "type": ["string", "null"] }
+      }
+    },
+
+    "retrieval_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analog_count", "fallback_used"],
+      "properties": {
+        "analog_count": { "type": "integer", "minimum": 0 },
+        "outages_represented": { "type": "integer", "minimum": 0 },
+        "plants_represented": { "type": "integer", "minimum": 0 },
+        "retrieval_method": {
+          "type": ["string", "null"],
+          "description": "e.g., semantic+lexical, lexical_only, component_exact_match"
+        },
+        "fallback_used": {
+          "type": "boolean",
+          "description": "True if population-level fallback was used due to insufficient analog data."
+        },
+        "similarity_threshold_applied": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_by", "run_id"],
+      "properties": {
+        "generated_by": { "type": "string" },
+        "run_id": { "type": "string" },
+        "retrieval_index_version": { "type": ["string", "null"] },
+        "embedding_model": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
