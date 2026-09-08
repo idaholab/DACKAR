@@ -13,7 +13,22 @@ DACKAR is structured by a set of workflows where each workflow is designed to pr
 
 ## Installation
 
-### 1. Create a conda environment with uv
+DACKAR uses **uv** as the default environment and dependency manager. A
+traditional **conda + pip** install (no uv) is also supported — see
+[Alternative: conda + pip](#alternative-conda--pip-no-uv) below. Both paths are
+exercised in CI.
+
+### Default: uv
+
+#### 1. Get a Python 3.11 environment
+
+Option A — let uv manage Python (no conda needed):
+
+```bash
+uv python install 3.11
+```
+
+Option B — use conda just for Python + uv:
 
 ```bash
 conda create -n dackar python=3.11 uv pip
@@ -22,7 +37,7 @@ conda activate dackar
 Activate the env (`conda activate dackar`) in any new shell before
 running the `uv` commands below.
 
-### 2. Clone and install dependencies
+#### 2. Clone and install dependencies
 
 ```bash
 git clone https://github.com/idaholab/DACKAR.git
@@ -34,7 +49,7 @@ uv sync --group rca --group kg --group nlp-extra --group dev   # full RCA workfl
 uv sync --all-groups                                    # everything
 ```
 
-### 3. Bootstrap runtime models (one-time)
+#### 3. Bootstrap runtime models (one-time)
 
 ```bash
 uv run python scripts/bootstrap_models.py
@@ -43,6 +58,27 @@ uv run python scripts/bootstrap_models.py
 This downloads the NLTK corpora used for similarity analysis and
 retrains the quantulum3 classifier. The `en_core_web_lg` spaCy model
 is installed automatically as a project dependency.
+
+### Alternative: conda + pip (no uv)
+
+For users who prefer plain pip. Use Python 3.11 (the editdistance 3.12
+build workaround is uv-only).
+
+```bash
+conda create -n dackar python=3.11
+conda activate dackar
+
+# CPU-only torch, matching uv's routing; omit to get the default PyPI build:
+pip install "torch==2.9.1" --index-url https://download.pytorch.org/whl/cpu
+
+pip install .                              # core (enough to run the test suite)
+pip install . --group rca --group kg       # add optional groups (needs pip >= 25.1)
+
+python scripts/bootstrap_models.py
+```
+
+With this path, drop the `uv run` prefix from the commands elsewhere in this
+README (e.g. run `pytest` and `python scripts/bootstrap_models.py` directly).
 
 ### Dependency groups
 
@@ -59,12 +95,12 @@ is installed automatically as a project dependency.
 
 ## Test
 
-Running the full suite requires all dependency groups (the `anomaly`, `kg`,
-and `viz` tests import packages like `stumpy`, `neo4j`, and `wordcloud`). Sync
-them first, otherwise those tests fail to import:
+The full suite runs on the core dependencies alone — the packages the tests
+reach (`stumpy`, `neo4j`, `wordcloud`) are declared in
+`[project.dependencies]`, so no dependency group is needed:
 
 ```bash
-uv sync --all-groups                         # required for the full suite
+uv sync
 ```
 
 ```bash

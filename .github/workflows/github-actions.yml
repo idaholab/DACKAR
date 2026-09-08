@@ -125,3 +125,44 @@ jobs:
       - name: Test
         working-directory: tests
         run: uv run pytest
+
+  # Optional non-uv install path (conda provides Python, pip installs the project),
+  # tested on Linux only; the uv jobs above already cover macOS and Windows.
+  Test-DACKAR-Conda-Pip-Linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}          # login shell so `conda activate` works
+    steps:
+      - name: Fetch and Branch
+        uses: actions/checkout@v4
+
+      - name: Job Information
+        run: |
+          echo " The job was automatically triggered by a ${{ github.event_name }} event."
+          echo " This job is now running on a ${{ runner.os }} server"
+          echo " The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+
+      - name: Set up conda (Python 3.11)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.11"
+          activate-environment: dackar
+          auto-activate-base: false
+
+      # CPU torch from the pytorch index (matches the uv CPU routing and avoids the
+      # large default CUDA wheel from PyPI). 'pip install .' then finds it satisfied.
+      - name: Install CPU torch
+        run: pip install "torch==2.9.1" --index-url https://download.pytorch.org/whl/cpu
+
+      # Plain pip install, no uv. Core deps cover the full test suite; the
+      # en_core_web_lg model is a URL dep in pyproject.toml and installs here too.
+      - name: Install DACKAR (pip)
+        run: pip install .
+
+      - name: Download trained models
+        run: python scripts/bootstrap_models.py
+
+      - name: Test
+        working-directory: tests
+        run: pytest
