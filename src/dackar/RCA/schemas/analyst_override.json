@@ -1,0 +1,184 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "analyst_override.json",
+  "title": "AnalystOverride",
+  "description": "Structured record of an analyst override decision on an RCA card. Persisted as a separate artifact to support regulatory audit trails and override-history mining for recurrence signals.",
+  "type": "object",
+  "required": [
+    "override_id",
+    "run_id",
+    "event_id",
+    "asset_id",
+    "created_at",
+    "override_type",
+    "rationale",
+    "writeback_decision",
+    "original_primary",
+    "provenance"
+  ],
+  "properties": {
+    "override_id": {
+      "type": "string",
+      "description": "Unique identifier for this override record. Format: OVRD::{event_id}::{iso_timestamp}"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "RCA run_id this override was applied to."
+    },
+    "event_id": {
+      "type": "string"
+    },
+    "asset_id": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the override was recorded."
+    },
+    "analyst_id": {
+      "type": ["string", "null"],
+      "description": "Identifier of the analyst who made the override. Null if not provided."
+    },
+    "override_type": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "accept_with_caveats",
+        "primary_candidate_change",
+        "alternative_rerank",
+        "evidence_role_change",
+        "reject_all",
+        "gate_override_physical",
+        "gate_override_timeline",
+        "gate_override_barrier"
+      ],
+      "description": "Semantic classification of the override action. Used for aggregate mining of override patterns."
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Analyst-provided free-text rationale for the override decision. Required for regulatory auditability."
+    },
+    "original_primary": {
+      "type": "object",
+      "description": "Snapshot of the RCA card's primary_hypothesis at the time of override. Preserved immutably for audit.",
+      "required": ["candidate_id", "cause_label", "composite_score"],
+      "properties": {
+        "candidate_id": { "type": "string" },
+        "cause_label": { "type": "string" },
+        "composite_score": { "type": ["number", "null"] },
+        "confidence_label": { "type": ["string", "null"] },
+        "fm_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "override_primary": {
+      "type": ["object", "null"],
+      "description": "Candidate selected by the analyst as new primary. Required when override_type is primary_candidate_change; null otherwise.",
+      "required": ["candidate_id", "cause_label"],
+      "properties": {
+        "candidate_id": { "type": "string" },
+        "cause_label": { "type": "string" },
+        "fm_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "gate_override": {
+      "type": ["object", "null"],
+      "description": "Structured gate-override payload for contradiction/hard-gate reinstatement lifecycle events.",
+      "properties": {
+        "gate_type": {
+          "type": "string",
+          "enum": ["physical", "timeline", "barrier"]
+        },
+        "candidate_id": { "type": "string" },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "lifecycle_event": {
+          "type": "string",
+          "enum": ["reinstated_by_analyst"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "questions_resolved": {
+      "type": "array",
+      "description": "Analyst responses to the questions_to_resolve listed in analyst_review. Each resolved question becomes part of the permanent override record.",
+      "items": {
+        "type": "object",
+        "required": ["question", "answer", "resolution_type"],
+        "properties": {
+          "question": { "type": "string" },
+          "answer": { "type": "string" },
+          "resolution_type": {
+            "type": "string",
+            "enum": ["resolved", "deferred", "not_applicable"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "evidence_additions": {
+      "type": "array",
+      "description": "Evidence references the analyst added that were not in the original evidence_bundle. Each addition is stamped as analyst-provided for traceability.",
+      "items": {
+        "type": "object",
+        "required": ["evidence_ref", "support_role", "added_by_analyst"],
+        "properties": {
+          "evidence_ref": {
+            "type": "string",
+            "description": "Document ID, snippet ID, or free-text reference to the added evidence."
+          },
+          "support_role": {
+            "type": "string",
+            "enum": ["supporting", "contradicting", "contextual"]
+          },
+          "added_by_analyst": {
+            "type": "boolean",
+            "const": true
+          },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "writeback_decision": {
+      "type": "string",
+      "enum": ["accept", "reject", "defer"],
+      "description": "Analyst's final disposition: accept (proceed to writeback), reject (discard RCA), defer (hold pending further investigation)."
+    },
+    "caveats": {
+      "type": "array",
+      "description": "Analyst-noted caveats that must accompany the RCA if written back to the plant information system.",
+      "items": { "type": "string" }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Traceability back to the base RCA run.",
+      "required": ["base_rca_card_id", "generated_by"],
+      "properties": {
+        "base_rca_card_id": {
+          "type": "string",
+          "description": "rca_id of the RCA card that was overridden."
+        },
+        "generated_by": {
+          "type": "string",
+          "description": "Module that produced this override record."
+        },
+        "original_decision_status": {
+          "type": ["string", "null"],
+          "description": "executive_summary.decision_status of the original RCA card."
+        },
+        "original_writeback_recommendation": {
+          "type": ["string", "null"],
+          "description": "analyst_review.writeback_recommendation of the original RCA card."
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

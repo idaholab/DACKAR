@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProtectionLogicContext",
+  "description": "Protection logic and barrier actuation context used to interpret SOE and barrier logic gates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protection_logic_context_id", "event_id", "asset_id", "generated_at", "logic_sets", "barrier_states"],
+  "properties": {
+    "protection_logic_context_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "asset_id": { "type": ["string", "null"] },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "logic_sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["logic_id", "logic_type", "description"],
+        "properties": {
+          "logic_id": { "type": "string" },
+          "logic_type": { "type": "string", "enum": ["trip", "permissive", "interlock", "actuation", "other"] },
+          "description": { "type": "string" },
+          "setpoints": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["parameter", "comparison"],
+              "properties": {
+                "parameter": { "type": "string" },
+                "comparison": { "type": "string", "enum": [">", ">=", "<", "<=", "==", "!="] },
+                "threshold": { "type": ["number", "null"] },
+                "unit": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "input_signals": { "type": "array", "items": { "type": "string" } },
+          "output_signals": { "type": "array", "items": { "type": "string" } },
+          "document_refs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "barrier_states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["barrier_id", "state"],
+        "properties": {
+          "barrier_id": { "type": "string" },
+          "sf_id": { "type": ["string", "null"] },
+          "state": { "type": "string", "enum": ["held", "failed", "degraded", "unknown"] },
+          "state_timestamp": { "type": ["string", "null"], "format": "date-time" },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } },
+          "rationale": { "type": "string" }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_by"],
+      "properties": {
+        "generated_by": { "type": "string" }
+      }
+    }
+  }
+}
