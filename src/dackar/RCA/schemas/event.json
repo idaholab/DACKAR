@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Event",
+  "description": "Triggering event record — the entry point for the RCA pipeline. Captures the anomaly, alarm, or failure observation that initiates analysis.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "timestamp_start", "asset_id", "severity", "event_type", "symptom_signature"],
+
+  "properties": {
+
+    "event_id": {
+      "type": "string",
+      "description": "Stable unique identifier for this event. Referenced by all downstream artifacts."
+    },
+
+    "timestamp_start": { "type": "string", "format": "date-time", "description": "Onset of the observed event." },
+    "timestamp_end":   { "type": "string", "format": "date-time", "description": "Resolution or end of observation. Null if ongoing." },
+
+    "asset_id": {
+      "type": "string",
+      "description": "Primary asset associated with the event. Must resolve to a KG Asset node."
+    },
+
+    "component_id": {
+      "type": "string",
+      "description": "Specific component on the asset, if known at intake. Must resolve to a KG Component node."
+    },
+
+    "severity": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+      "description": "Operational severity at time of reporting."
+    },
+
+    "event_type": {
+      "type": "string",
+      "enum": ["SYMPTOM", "DEGRADATION", "INTERVENTION", "FAILURE"],
+      "description": "Classification of the event nature."
+    },
+
+    "trigger_source": {
+      "type": "string",
+      "enum": ["alarm", "operator_observation", "surveillance_test", "predictive_monitoring", "scheduled_inspection", "other"],
+      "description": "What initiated detection of this event."
+    },
+
+    "actuation_type": {
+      "type": "string",
+      "enum": ["anomalous", "design_signal", "spurious_suspected", "unknown"],
+      "description": "Characterizes whether the event was initiated by an anomalous process condition, an expected design-basis signal (e.g., high-pressure safety injection), a suspected spurious actuation, or is unknown. When design_signal, anomaly-based FM candidates should be treated as speculative — the pipeline is verifying design-basis response, not diagnosing a failure. Defaults to unknown when not supplied by the operator."
+    },
+
+    "symptom_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description"],
+      "description": "Structured characterization of observed symptoms — used by Step 5 to match against FMEA failure mode patterns.",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Free-text symptom description as reported."
+        },
+        "symptom_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["vibration", "temperature", "pressure", "flow", "noise", "leakage", "electrical", "control_signal", "structural", "other"]
+          },
+          "description": "Categorized symptom types. Multiple allowed."
+        },
+        "anomaly_pattern": {
+          "type": "string",
+          "enum": ["step_change", "gradual_drift", "spike", "oscillation", "dropout", "sustained_exceedance", "unknown"],
+          "description": "Telemetry pattern shape associated with this symptom, if known at intake."
+        },
+        "affected_parameters": {
+          "type": "array",
+          "description": "Specific measured parameters that exhibited the symptom.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["parameter", "sensor_id"],
+            "properties": {
+              "parameter":    { "type": "string", "description": "Parameter name (e.g., 'bearing_temperature')." },
+              "sensor_id":    { "type": "string" },
+              "observed_value": { "type": "number" },
+              "unit":           { "type": "string" },
+              "normal_range": {
+                "type": "object",
+                "properties": {
+                  "min": { "type": "number" },
+                  "max": { "type": "number" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "related_cr_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Condition report IDs linked to this event. Must resolve to document.json records of type CR."
+    },
+
+    "related_alarm_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Alarm IDs from operational_context that correspond to this event."
+    },
+
+    "reported_by":  { "type": "string" },
+    "reported_at":  { "type": "string", "format": "date-time" },
+
+    "initial_assessment": {
+      "type": "string",
+      "description": "Free-text initial assessment by the reporting engineer. Not AI-generated."
+    },
+
+    "rca_required": {
+      "type": "boolean",
+      "description": "Whether a formal RCA workflow has been initiated for this event."
+    }
+  }
+}
