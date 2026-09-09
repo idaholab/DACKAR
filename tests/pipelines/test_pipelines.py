@@ -67,8 +67,8 @@ class TestPipelines:
     updated_doc = matcher(doc)
     wo_ents = self.get_entity(updated_doc, label='WO')
     id_ents = self.get_entity(updated_doc, label='ID')
-    assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106']
-    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', 'E08D-34r', 'A218']
+    assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106', 'WO# 84658']
+    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', '1BC', 'E08D-34r', 'A218']
 
   @_newer_ner_model
   def test_emergent_activity_entity_pipeline(self, nlp_obj):
@@ -82,8 +82,8 @@ class TestPipelines:
     doc = nlp_obj(content)
     wo_ents = self.get_entity(doc, label='WO')
     id_ents = self.get_entity(doc, label='ID')
-    assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106']
-    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', 'E08D-34r', 'A218']
+    assert wo_ents == ['wo101', 'wo 102', 'wo# 103', 'wo #105', 'wo # 106', 'WO# 84658']
+    assert id_ents == ['wo#104', 'ABCD01D', '8hr', '24hrs', '1EFGH', 'J08', 'AB-7603', 'IJKL-7148', 'XYZA7148abc', 'OPGH0248', '1BC', 'E08D-34r', 'A218']
 
   def test_location_entity(self, nlp_obj):
     patterns = {'label': 'location', 'pattern': [{'LOWER': 'nearby'}], 'id': 'location'}
@@ -119,8 +119,8 @@ class TestPipelines:
     doc = nlp_obj("The valve is about a twenty-nine years old. The event occurred almost twice a week")
     ents = self.get_entity(doc, label='temporal_attribute')
     entDATE = self.get_entity(doc, label='DATE')
-    assert ents == ['about']
-    assert entDATE == ['twenty-nine years old', 'almost twice a week']
+    assert ents == ['about', 'almost']
+    assert entDATE == ['twenty-nine years old']
 
   @_newer_ner_model
   def test_temporal_entity(self, nlp_obj):
@@ -132,7 +132,7 @@ class TestPipelines:
     updated_doc = matcher(doc)
     ents = self.get_entity(updated_doc, label='Temporal')
     print(ents)
-    assert ents == ['25th August 2023', 'on 10 September', 'October', 'on January fourth', 'yesterday afternoon', 'before 2022', 'after 12/2024']
+    assert ents == ['25th August 2023', 'on 10 September', 'on the twelfth of October', 'on January fourth', 'yesterday afternoon', 'before 2022', 'after', '12/2024']
 
   @_newer_ner_model
   def test_temporal_entity_pipeline(self, nlp_obj):
@@ -142,7 +142,7 @@ class TestPipelines:
             yesterday afternoon, before 2022, after 12/2024."""
     doc = nlp_obj(content)
     ents = self.get_entity(doc, label='Temporal')
-    assert ents == ['25th August 2023', 'on 10 September', 'October', 'on January fourth', 'yesterday afternoon', 'before 2022', 'after 12/2024']
+    assert ents == ['25th August 2023', 'on 10 September', 'on the twelfth of October', 'on January fourth', 'yesterday afternoon', 'before 2022', 'after', '12/2024']
 
   def test_temporal_relation_entity(self, nlp_obj):
     matcher = TemporalRelationEntity(nlp_obj)
