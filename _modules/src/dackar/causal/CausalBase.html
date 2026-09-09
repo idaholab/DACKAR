@@ -13,8 +13,8 @@
 
   
       <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
-      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
       <script src="../../../../_static/copybutton.js?v=f281be69"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -126,28 +126,15 @@
 <span class="c1"># logger.addHandler(ch)</span>
 <span class="c1">##</span>
 
-<span class="c1">## coreferee module for Coreference Resolution</span>
-<span class="c1">## Q? at which level to perform coreferee? After NER and perform coreferee on collected sentence</span>
+<span class="c1">## Coreference resolution via coreferee is disabled: coreferee 1.4.1 only</span>
+<span class="c1">## supports spaCy &lt;=3.3 and pinned the project below the pydantic-v2 line.</span>
+<span class="c1">## The anaphorCoref/anaphorEntCoref pipes below remain as no-ops (they guard</span>
+<span class="c1">## on the unregistered `coref_chains` extension). Re-enable with a spaCy-3.8</span>
+<span class="c1">## compatible coref library (e.g. fastcoref) if anaphora resolution is needed.</span>
 <div class="viewcode-block" id="_corefAvail">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalBase/index.html#src.dackar.causal.CausalBase._corefAvail">[docs]</a>
 <span class="n">_corefAvail</span> <span class="o">=</span> <span class="kc">False</span></div>
 
-<span class="k">try</span><span class="p">:</span>
-  <span class="c1"># check the current version spacy&gt;=3.0.0,&lt;=3.3.0</span>
-  <span class="kn">from</span><span class="w"> </span><span class="nn">packaging.version</span><span class="w"> </span><span class="kn">import</span> <span class="n">Version</span>
-<div class="viewcode-block" id="ver">
-<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalBase/index.html#src.dackar.causal.CausalBase.ver">[docs]</a>
-  <span class="n">ver</span> <span class="o">=</span> <span class="n">spacy</span><span class="o">.</span><span class="n">__version__</span></div>
-
-  <span class="n">valid</span> <span class="o">=</span> <span class="n">Version</span><span class="p">(</span><span class="n">ver</span><span class="p">)</span><span class="o">&gt;=</span><span class="n">Version</span><span class="p">(</span><span class="s1">'3.0.0'</span><span class="p">)</span> <span class="ow">and</span> <span class="n">Version</span><span class="p">(</span><span class="n">ver</span><span class="p">)</span><span class="o">&lt;=</span><span class="n">Version</span><span class="p">(</span><span class="s1">'3.3.0'</span><span class="p">)</span>
-  <span class="k">if</span> <span class="n">valid</span><span class="p">:</span>
-    <span class="c1"># https://github.com/msg-systems/coreferee</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">coreferee</span>
-    <span class="n">_corefAvail</span> <span class="o">=</span> <span class="kc">True</span>
-  <span class="k">else</span><span class="p">:</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">'Module coreferee is not compatible with spacy version </span><span class="si">{</span><span class="n">ver</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
-<span class="k">except</span> <span class="ne">ModuleNotFoundError</span><span class="p">:</span>
-  <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">'Module coreferee can not be imported'</span><span class="p">)</span>
 
 
 <span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'health_status'</span><span class="p">):</span>
@@ -307,14 +294,12 @@
 
     <span class="c1">## pipelines "merge_entities" and "merge_noun_chunks" can be used to merge noun phrases and entities</span>
     <span class="c1">## for easier analysis</span>
-    <span class="k">if</span> <span class="n">_corefAvail</span><span class="p">:</span>
-      <span class="bp">self</span><span class="o">.</span><span class="n">pipelines</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'pysbdSentenceBoundaries'</span><span class="p">,</span>
+<div class="viewcode-block" id="CausalBase.pipelines">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalBase/index.html#src.dackar.causal.CausalBase.CausalBase.pipelines">[docs]</a>
+    <span class="bp">self</span><span class="o">.</span><span class="n">pipelines</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'pysbdSentenceBoundaries'</span><span class="p">,</span>
                       <span class="s1">'mergePhrase'</span><span class="p">,</span> <span class="s1">'normEntities'</span><span class="p">,</span> <span class="s1">'initCoref'</span><span class="p">,</span> <span class="s1">'aliasResolver'</span><span class="p">,</span>
-                      <span class="s1">'coreferee'</span><span class="p">,</span><span class="s1">'anaphorCoref'</span><span class="p">,</span> <span class="s1">'anaphorEntCoref'</span><span class="p">]</span>
-    <span class="k">else</span><span class="p">:</span>
-      <span class="bp">self</span><span class="o">.</span><span class="n">pipelines</span> <span class="o">=</span> <span class="p">[</span><span class="s1">'pysbdSentenceBoundaries'</span><span class="p">,</span>
-                      <span class="s1">'mergePhrase'</span><span class="p">,</span><span class="s1">'normEntities'</span><span class="p">,</span> <span class="s1">'initCoref'</span><span class="p">,</span> <span class="s1">'aliasResolver'</span><span class="p">,</span>
-                      <span class="s1">'anaphorCoref'</span><span class="p">,</span> <span class="s1">'anaphorEntCoref'</span><span class="p">]</span>
+                      <span class="s1">'anaphorCoref'</span><span class="p">,</span> <span class="s1">'anaphorEntCoref'</span><span class="p">]</span></div>
+
     <span class="c1"># ner pipeline is not needed since we are focusing on the keyword matching approach</span>
     <span class="k">if</span> <span class="n">nlp</span><span class="o">.</span><span class="n">has_pipe</span><span class="p">(</span><span class="s2">"ner"</span><span class="p">):</span>
       <span class="n">nlp</span><span class="o">.</span><span class="n">remove_pipe</span><span class="p">(</span><span class="s2">"ner"</span><span class="p">)</span>

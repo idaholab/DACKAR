@@ -13,8 +13,8 @@
 
   
       <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
-      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
-      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
       <script src="../../../../_static/copybutton.js?v=f281be69"></script>
       <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -571,6 +571,51 @@
 
 
 
+<div class="viewcode-block" id="_to_nltk_synset">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils._to_nltk_synset">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_nltk_synset</span><span class="p">(</span><span class="n">syn</span><span class="p">):</span>
+<span class="w">  </span><span class="sd">"""Map a pywsd ``wn``-library Synset to the equivalent nltk WordNet synset.</span>
+
+<span class="sd">  pywsd &gt;= 1.x returns synsets from the ``wn`` library (ids like ``oewn-...``)</span>
+<span class="sd">  that lack the nltk API (``.name()``, ``path_similarity``, ...) used throughout</span>
+<span class="sd">  this module. Recover the nltk synset by matching part of speech + lemmas,</span>
+<span class="sd">  preferring an exact definition match and falling back to maximum lemma</span>
+<span class="sd">  overlap. nltk synsets are returned unchanged; returns ``None`` if no nltk</span>
+<span class="sd">  synset can be found.</span>
+<span class="sd">  """</span>
+  <span class="k">if</span> <span class="n">syn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">return</span> <span class="kc">None</span>
+  <span class="c1"># Already an nltk synset (exposes the .name() method)?</span>
+  <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">syn</span><span class="p">,</span> <span class="s1">'name'</span><span class="p">,</span> <span class="kc">None</span><span class="p">)):</span>
+    <span class="k">return</span> <span class="n">syn</span>
+  <span class="k">try</span><span class="p">:</span>
+    <span class="n">pos</span> <span class="o">=</span> <span class="n">syn</span><span class="o">.</span><span class="n">pos</span><span class="p">()</span> <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">syn</span><span class="o">.</span><span class="n">pos</span><span class="p">)</span> <span class="k">else</span> <span class="n">syn</span><span class="o">.</span><span class="n">pos</span>
+    <span class="n">lemmas</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">lemma</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">' '</span><span class="p">,</span> <span class="s1">'_'</span><span class="p">)</span> <span class="k">for</span> <span class="n">lemma</span> <span class="ow">in</span> <span class="n">syn</span><span class="o">.</span><span class="n">lemmas</span><span class="p">()]</span>
+    <span class="n">definition</span> <span class="o">=</span> <span class="p">(</span><span class="n">syn</span><span class="o">.</span><span class="n">definition</span><span class="p">()</span> <span class="ow">or</span> <span class="s1">''</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+  <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+  <span class="k">def</span><span class="w"> </span><span class="nf">_collect</span><span class="p">(</span><span class="n">usePos</span><span class="p">):</span>
+    <span class="n">found</span><span class="p">,</span> <span class="n">seen</span> <span class="o">=</span> <span class="p">[],</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">lemma</span> <span class="ow">in</span> <span class="n">lemmas</span><span class="p">:</span>
+      <span class="n">hits</span> <span class="o">=</span> <span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">lemma</span><span class="p">,</span> <span class="n">pos</span><span class="o">=</span><span class="n">pos</span><span class="p">)</span> <span class="k">if</span> <span class="p">(</span><span class="n">usePos</span> <span class="ow">and</span> <span class="n">pos</span><span class="p">)</span> <span class="k">else</span> <span class="n">wn</span><span class="o">.</span><span class="n">synsets</span><span class="p">(</span><span class="n">lemma</span><span class="p">)</span>
+      <span class="k">for</span> <span class="n">cand</span> <span class="ow">in</span> <span class="n">hits</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cand</span><span class="o">.</span><span class="n">name</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+          <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">cand</span><span class="o">.</span><span class="n">name</span><span class="p">())</span>
+          <span class="n">found</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cand</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">found</span>
+
+  <span class="n">candidates</span> <span class="o">=</span> <span class="n">_collect</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_collect</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+  <span class="k">if</span> <span class="ow">not</span> <span class="n">candidates</span><span class="p">:</span>
+    <span class="k">return</span> <span class="kc">None</span>
+  <span class="k">for</span> <span class="n">cand</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">cand</span><span class="o">.</span><span class="n">definition</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="n">definition</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">cand</span>
+  <span class="n">lemmaSet</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">lemma</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">lemma</span> <span class="ow">in</span> <span class="n">lemmas</span><span class="p">)</span>
+  <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">candidates</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">lemmaSet</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">l</span><span class="o">.</span><span class="n">name</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">lemmas</span><span class="p">())))</span></div>
+
+
+
 <span class="c1"># use disambiguate function to disambiguate sentences</span>
 <div class="viewcode-block" id="sentenceSenseDisambiguationPyWSD">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/similarity/simUtils/index.html#src.dackar.similarity.simUtils.sentenceSenseDisambiguationPyWSD">[docs]</a>
@@ -609,9 +654,17 @@
     <span class="n">sentSense</span> <span class="o">=</span> <span class="n">pywsd</span><span class="o">.</span><span class="n">disambiguate</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">pywsd</span><span class="o">.</span><span class="n">cosine_lesk</span><span class="p">,</span> <span class="n">prefersNone</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="n">keepLemmas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
   <span class="k">elif</span> <span class="n">method</span> <span class="o">==</span> <span class="s1">'max_similarity'</span><span class="p">:</span>
     <span class="n">sentSense</span> <span class="o">=</span> <span class="n">pywsd</span><span class="o">.</span><span class="n">disambiguate</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">pywsd</span><span class="o">.</span><span class="n">similarity</span><span class="o">.</span><span class="n">max_similarity</span><span class="p">,</span> <span class="n">similarity_option</span><span class="o">=</span><span class="n">simMethod</span><span class="p">,</span> <span class="n">prefersNone</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>  <span class="n">keepLemmas</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-  <span class="c1"># sentSense: a list of tuples, [(word, lemma, wn.synset/None)]</span>
-  <span class="n">wordList</span> <span class="o">=</span> <span class="nb">list</span><span class="p">([</span><span class="n">syn</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">sentSense</span> <span class="k">if</span> <span class="n">syn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">])</span>
-  <span class="n">synsetList</span> <span class="o">=</span> <span class="nb">list</span><span class="p">([</span><span class="n">syn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">sentSense</span> <span class="k">if</span> <span class="n">syn</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">])</span>
+  <span class="c1"># sentSense: a list of tuples, [(word, lemma, wn.synset/None)]. pywsd returns</span>
+  <span class="c1"># `wn`-library synsets; convert each to the equivalent nltk synset so the</span>
+  <span class="c1"># downstream nltk-based similarity code works (drop words with no nltk match).</span>
+  <span class="n">wordList</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="n">synsetList</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">word</span><span class="p">,</span> <span class="n">_lemma</span><span class="p">,</span> <span class="n">syn</span> <span class="ow">in</span> <span class="n">sentSense</span><span class="p">:</span>
+    <span class="n">nltkSyn</span> <span class="o">=</span> <span class="n">_to_nltk_synset</span><span class="p">(</span><span class="n">syn</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">nltkSyn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">continue</span>
+    <span class="n">wordList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">word</span><span class="p">)</span>
+    <span class="n">synsetList</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">nltkSyn</span><span class="p">)</span>
   <span class="k">return</span> <span class="n">wordList</span><span class="p">,</span> <span class="n">synsetList</span></div>
 
 
