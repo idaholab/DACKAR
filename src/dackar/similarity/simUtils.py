@@ -444,6 +444,48 @@ def wordSenseDisambiguation(word, sentence, senseMethod='simple_lesk', simMethod
     return set(sense)
 
 
+def _to_nltk_synset(syn):
+  """Map a pywsd ``wn``-library Synset to the equivalent nltk WordNet synset.
+
+  pywsd >= 1.x returns synsets from the ``wn`` library (ids like ``oewn-...``)
+  that lack the nltk API (``.name()``, ``path_similarity``, ...) used throughout
+  this module. Recover the nltk synset by matching part of speech + lemmas,
+  preferring an exact definition match and falling back to maximum lemma
+  overlap. nltk synsets are returned unchanged; returns ``None`` if no nltk
+  synset can be found.
+  """
+  if syn is None:
+    return None
+  # Already an nltk synset (exposes the .name() method)?
+  if callable(getattr(syn, 'name', None)):
+    return syn
+  try:
+    pos = syn.pos() if callable(syn.pos) else syn.pos
+    lemmas = [str(lemma).replace(' ', '_') for lemma in syn.lemmas()]
+    definition = (syn.definition() or '').strip().lower()
+  except Exception:
+    return None
+
+  def _collect(usePos):
+    found, seen = [], set()
+    for lemma in lemmas:
+      hits = wn.synsets(lemma, pos=pos) if (usePos and pos) else wn.synsets(lemma)
+      for cand in hits:
+        if cand.name() not in seen:
+          seen.add(cand.name())
+          found.append(cand)
+    return found
+
+  candidates = _collect(True) or _collect(False)
+  if not candidates:
+    return None
+  for cand in candidates:
+    if cand.definition().strip().lower() == definition:
+      return cand
+  lemmaSet = set(lemma.lower() for lemma in lemmas)
+  return max(candidates, key=lambda c: len(lemmaSet & set(l.name().lower() for l in c.lemmas())))
+
+
 # use disambiguate function to disambiguate sentences
 def sentenceSenseDisambiguationPyWSD(sentence, senseMethod='simple_lesk', simMethod='path'):
   """
@@ -480,9 +522,17 @@ def sentenceSenseDisambiguationPyWSD(sentence, senseMethod='simple_lesk', simMet
     sentSense = pywsd.disambiguate(sentence, pywsd.cosine_lesk, prefersNone=True,  keepLemmas=True)
   elif method == 'max_similarity':
     sentSense = pywsd.disambiguate(sentence, pywsd.similarity.max_similarity, similarity_option=simMethod, prefersNone=True,  keepLemmas=True)
-  # sentSense: a list of tuples, [(word, lemma, wn.synset/None)]
-  wordList = list([syn[0] for syn in sentSense if syn[-1] is not None])
-  synsetList = list([syn[-1] for syn in sentSense if syn[-1] is not None])
+  # sentSense: a list of tuples, [(word, lemma, wn.synset/None)]. pywsd returns
+  # `wn`-library synsets; convert each to the equivalent nltk synset so the
+  # downstream nltk-based similarity code works (drop words with no nltk match).
+  wordList = []
+  synsetList = []
+  for word, _lemma, syn in sentSense:
+    nltkSyn = _to_nltk_synset(syn)
+    if nltkSyn is None:
+      continue
+    wordList.append(word)
+    synsetList.append(nltkSyn)
   return wordList, synsetList
 
 # Sentence similarity after disambiguation
