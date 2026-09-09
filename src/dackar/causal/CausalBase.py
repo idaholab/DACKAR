@@ -41,22 +41,12 @@ logger = logging.getLogger('DACKAR')
 # logger.addHandler(ch)
 ##
 
-## coreferee module for Coreference Resolution
-## Q? at which level to perform coreferee? After NER and perform coreferee on collected sentence
+## Coreference resolution via coreferee is disabled: coreferee 1.4.1 only
+## supports spaCy <=3.3 and pinned the project below the pydantic-v2 line.
+## The anaphorCoref/anaphorEntCoref pipes below remain as no-ops (they guard
+## on the unregistered `coref_chains` extension). Re-enable with a spaCy-3.8
+## compatible coref library (e.g. fastcoref) if anaphora resolution is needed.
 _corefAvail = False
-try:
-  # check the current version spacy>=3.0.0,<=3.3.0
-  from packaging.version import Version
-  ver = spacy.__version__
-  valid = Version(ver)>=Version('3.0.0') and Version(ver)<=Version('3.3.0')
-  if valid:
-    # https://github.com/msg-systems/coreferee
-    import coreferee
-    _corefAvail = True
-  else:
-    logger.info(f'Module coreferee is not compatible with spacy version {ver}')
-except ModuleNotFoundError:
-  logger.info('Module coreferee can not be imported')
 
 
 if not Span.has_extension('health_status'):
@@ -178,13 +168,8 @@ class CausalBase(object):
     self._conjectureKeywords = self.getKeywords(self._conjectureFile, columnNames=['conjecture-keywords'])
     ## pipelines "merge_entities" and "merge_noun_chunks" can be used to merge noun phrases and entities
     ## for easier analysis
-    if _corefAvail:
-      self.pipelines = ['pysbdSentenceBoundaries',
+    self.pipelines = ['pysbdSentenceBoundaries',
                       'mergePhrase', 'normEntities', 'initCoref', 'aliasResolver',
-                      'coreferee','anaphorCoref', 'anaphorEntCoref']
-    else:
-      self.pipelines = ['pysbdSentenceBoundaries',
-                      'mergePhrase','normEntities', 'initCoref', 'aliasResolver',
                       'anaphorCoref', 'anaphorEntCoref']
     # ner pipeline is not needed since we are focusing on the keyword matching approach
     if nlp.has_pipe("ner"):
