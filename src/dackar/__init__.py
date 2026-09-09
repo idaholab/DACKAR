@@ -3,9 +3,20 @@ __version__ = "1.0.dev"
 
 import logging
 
-# Heavy NLP dependencies (spacy, pysbd, etc.) are optional: the RCA subpackage
-# and its unit tests run standalone without them.  Guard all top-level imports
-# so that environments which only install the RCA stack still work correctly.
+logger = logging.getLogger("dackar")
+logger.setLevel(logging.INFO)
+
+# The symbols re-exported below all come from DACKAR's heavy NLP stack
+# (spacy, pysbd, textacy, ...), which is an *optional* install.  The RCA
+# subpackage and its unit tests import none of them, so `import dackar` and
+# `import dackar.RCA` must keep working when that stack is absent.
+#
+# They are guarded as a single group on purpose: every import here depends on
+# the same optional NLP stack, so in practice either the whole stack is present
+# or none of it is -- guarding each line separately would add noise without
+# changing that outcome.  On failure we log the underlying error rather than
+# swallowing it, so a genuine bug (as opposed to a missing optional dependency)
+# stays visible.
 try:
     # import workflows
     from dackar.causal.CausalSentence import CausalSentence
@@ -37,8 +48,10 @@ try:
     from dackar.utils.nlp.CreatePatterns import CreatePatterns
     from dackar.utils.opm.OPLparser import OPMobject
     from dackar.utils.mbse.LMLparser import LMLobject
-except ImportError:
-    pass
-
-logger = logging.getLogger("dackar")
-logger.setLevel(logging.INFO)
+except ImportError as exc:
+    logger.warning(
+        "DACKAR top-level NLP imports are unavailable (%s). This is expected in "
+        "an RCA-only environment; install the full NLP stack (spacy, pysbd, "
+        "textacy, ...) to enable the top-level convenience imports.",
+        exc,
+    )
