@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cmms_context.json",
+  "title": "CMMSContext",
+  "description": "Live-fetched CMMS records (CRs and WOs) scoped to the RCA event. Fetched at RCA invocation time from the plant CMMS. Narrative text is also injected into the run-scoped Chroma collection for semantic retrieval. Persisted as cmms_context.json in the run artifact store.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "cmms_context_id",
+    "run_id",
+    "event_id",
+    "asset_id",
+    "generated_at",
+    "adapter",
+    "lookback_anchor",
+    "lookback_from",
+    "lookback_to",
+    "cr_records",
+    "wo_records",
+    "recurrence_summary",
+    "provenance"
+  ],
+  "properties": {
+    "cmms_context_id": {
+      "type": "string",
+      "description": "Unique ID. Format: CMMSCTX::{event_id}::{iso_timestamp}"
+    },
+    "run_id":    { "type": "string" },
+    "event_id":  { "type": "string" },
+    "asset_id":  { "type": ["string", "null"] },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "adapter": {
+      "type": "string",
+      "description": "Class name of the CMMSContextAdapter that produced this context."
+    },
+    "lookback_anchor": {
+      "type": "string",
+      "enum": ["last_pm", "event_time_minus_90d", "custom"],
+      "description": "What drove the lookback window start date."
+    },
+    "lookback_from": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Start of the CMMS query window (inclusive). Derived from last PM date on the primary asset, or fallback."
+    },
+    "lookback_to": {
+      "type": "string",
+      "format": "date-time",
+      "description": "End of the CMMS query window (inclusive). Typically the event timestamp."
+    },
+    "sister_component_ids": {
+      "type": "array",
+      "description": "KG component IDs identified as sister equipment and included in the CMMS query scope. Flat list for backward compatibility — use sister_components[] for match type provenance.",
+      "items": { "type": "string" }
+    },
+    "sister_components": {
+      "type": "array",
+      "description": "Sister equipment with match type provenance. Superset of sister_component_ids. Absent when no similarity resolver is configured.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["component_id", "match_type"],
+        "properties": {
+          "component_id":    { "type": "string" },
+          "component_label": { "type": ["string", "null"] },
+          "match_type": {
+            "type": "string",
+            "description": "How the sister was identified. Topology-only: 'topology'. Similarity-only: 'failure_mode_overlap', 'spec_embedding', 'fm_overlap+spec_embedding'. Combined: 'topology+failure_mode_overlap', 'topology+spec_embedding', 'topology+fm_overlap+spec_embedding'."
+          },
+          "shared_fm_count": {
+            "type": "integer",
+            "description": "Number of shared failure modes (Tier 2). 0 for topology-only or embedding-only matches."
+          },
+          "embedding_score": {
+            "type": "number",
+            "description": "Chroma similarity distance (Tier 3). 0.0 for topology-only or FM-overlap-only matches. Lower = more similar."
+          }
+        }
+      }
+    },
+    "cr_records": {
+      "type": "array",
+      "description": "Corrective Action records from the CMMS within the lookback window, scoped to primary asset and sister equipment.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cr_id", "status", "short_description", "created_date", "is_sister_equipment"],
+        "properties": {
+          "cr_id": {
+            "type": "string",
+            "description": "CMMS CR number."
+          },
+          "cr_type": {
+            "type": ["string", "null"],
+            "description": "CMMS record type (e.g. CAL, CAP, PM for Maximo; M1, M2 for SAP PM)."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "closed", "cancelled", "unknown"],
+            "description": "Current CR status."
+          },
+          "priority": {
+            "type": ["string", "null"],
+            "description": "CMMS priority code."
+          },
+          "short_description": { "type": "string" },
+          "long_text": {
+            "type": ["string", "null"],
+            "description": "Full CR narrative. Also embedded and injected into Chroma for semantic retrieval."
+          },
+          "functional_location": { "type": ["string", "null"] },
+          "equipment_id":        { "type": ["string", "null"] },
+          "component_id": {
+            "type": ["string", "null"],
+            "description": "KG component_id matched from functional_location or equipment_id. Null if unresolved."
+          },
+          "created_date":  { "type": "string", "format": "date-time" },
+          "closed_date":   { "type": ["string", "null"], "format": "date-time" },
+          "days_before_event": {
+            "type": ["integer", "null"],
+            "description": "Days between created_date and the event timestamp. Negative = after event (data lag)."
+          },
+          "is_sister_equipment": {
+            "type": "boolean",
+            "description": "True if this record belongs to sister equipment, not the primary asset."
+          }
+        }
+      }
+    },
+    "wo_records": {
+      "type": "array",
+      "description": "Work Order records from the CMMS within the lookback window.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["wo_id", "status", "short_description", "created_date", "is_sister_equipment"],
+        "properties": {
+          "wo_id":             { "type": "string" },
+          "wo_type":           { "type": ["string", "null"] },
+          "status":            { "type": "string", "enum": ["open", "closed", "cancelled", "unknown"] },
+          "priority":          { "type": ["string", "null"] },
+          "short_description": { "type": "string" },
+          "long_text":         { "type": ["string", "null"] },
+          "functional_location": { "type": ["string", "null"] },
+          "equipment_id":        { "type": ["string", "null"] },
+          "component_id":        { "type": ["string", "null"] },
+          "created_date":        { "type": "string", "format": "date-time" },
+          "closed_date":         { "type": ["string", "null"], "format": "date-time" },
+          "days_before_event":   { "type": ["integer", "null"] },
+          "is_sister_equipment": { "type": "boolean" }
+        }
+      }
+    },
+    "recurrence_summary": {
+      "type": "object",
+      "description": "Derived aggregate — computed by CMMSContextBuilder, not from CMMS directly.",
+      "additionalProperties": false,
+      "required": ["cr_count_primary", "cr_count_sister", "open_wo_count", "open_cr_count"],
+      "properties": {
+        "cr_count_primary":        { "type": "integer" },
+        "cr_count_sister":         { "type": "integer" },
+        "open_wo_count":           { "type": "integer" },
+        "open_cr_count":           { "type": "integer" },
+        "earliest_related_cr_date": { "type": ["string", "null"] },
+        "most_recent_cr_date":      { "type": ["string", "null"] }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_by"],
+      "properties": {
+        "generated_by":  { "type": "string" },
+        "kg_context_id": { "type": ["string", "null"] },
+        "query_params":  { "type": "object", "additionalProperties": true }
+      }
+    }
+  }
+}

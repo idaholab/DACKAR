@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PMCompliance",
+  "description": "Planned-vs-executed preventive maintenance compliance assessment for an asset in an analysis window. Feeds Step 5 causal scoring directly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["asset_id", "window", "checks", "summary"],
+
+  "properties": {
+
+    "asset_id": { "type": "string", "description": "Asset identifier — must resolve to a KG Asset node." },
+
+    "event_id": {
+      "type": "string",
+      "description": "Event under analysis — optional, used for traceability and staleness review (PM Compliance module)."
+    },
+    "assessment_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this assessment was generated (or as-of / event time). See PM_Compliance_Module_Architecture.md."
+    },
+    "look_back_window_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "CMMS/schedule lookback horizon used for this artifact."
+    },
+    "fmea_pm_linkage_available": {
+      "type": "boolean",
+      "description": "True when KG provides explicit PM task ↔ failure mode tags (or equivalent); when false, scope analysis is advisory only."
+    },
+    "data_quality_notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Human-readable caveats (missing WOs, partial export, CBM not evaluated, etc.)."
+    },
+    "components": {
+      "type": "array",
+      "description": "Per-component PM detail (module extension). When absent, use checks[] + summary only.",
+      "items": { "type": "object" }
+    },
+
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "string", "format": "date-time" },
+        "end":   { "type": "string", "format": "date-time" }
+      }
+    },
+
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "check_type", "status"],
+        "properties": {
+          "check_id": { "type": "string", "description": "PM task ID from CMMS or surveillance requirement ID." },
+          "check_type": {
+            "type": "string",
+            "enum": ["scheduled_pm", "surveillance_test", "calibration", "inspection", "lubrication", "functional_test", "other"],
+            "description": "Type of PM task — disambiguates check_id semantics."
+          },
+          "source_ref": {
+            "type": "string",
+            "description": "Resolving reference: PM task ID in CMMS, or SOP section (e.g., 'SOP-4321 §3.2'). Must trace to a document.json or KG node."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pass", "fail", "unknown"],
+            "description": "Execution status of this check."
+          },
+          "scheduled_date":   { "type": "string", "format": "date-time" },
+          "completed_date":   { "type": "string", "format": "date-time" },
+          "overdue_by_days": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Days past scheduled date at time of event. Populated only if status != pass."
+          },
+          "details": { "type": "string", "description": "Free-text notes on check result." },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "doc_id references (type WO) that confirm execution. Must resolve to document.json records."
+          },
+          "component_id": {
+            "type": "string",
+            "description": "KG Component node ID that this PM check covers. When present, used for direct structural matching in governance scoring instead of keyword heuristics."
+          },
+          "applicable_fm_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "KG FailureMode node IDs explicitly targeted by this PM check (e.g., a surveillance test designed to verify a specific trip function). Optional override that narrows governance scoring to specific failure modes."
+          },
+          "wo_id": {
+            "type": "string",
+            "description": "Closing WO for the PM execution; copied into governance rationale by Stage D."
+          }
+        }
+      }
+    },
+
+    "overdue_items": {
+      "type": "array",
+      "description": "Explicit overdue PM index — aggregated from checks[] for direct consumption by Step 5 causal scoring without re-parsing checks array.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "scheduled_date", "overdue_by_days"],
+        "properties": {
+          "check_id":        { "type": "string" },
+          "check_type":      { "type": "string" },
+          "scheduled_date":  { "type": "string", "format": "date-time" },
+          "overdue_by_days": { "type": "number", "minimum": 0 },
+          "source_ref":      { "type": "string" }
+        }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_checks", "passed", "failed", "unknown", "overdue_count"],
+      "description": "Structured aggregate — directly consumable by orchestrator and Step 5 scoring without parsing checks[].",
+      "properties": {
+        "total_checks":  { "type": "integer" },
+        "passed":        { "type": "integer" },
+        "failed":        { "type": "integer" },
+        "unknown":       { "type": "integer" },
+        "overdue_count": { "type": "integer", "description": "Number of checks not completed by scheduled date." },
+        "last_pm_date":  { "type": "string", "format": "date-time", "description": "Most recent completed PM date." },
+        "next_pm_date":  { "type": "string", "format": "date-time", "description": "Next scheduled PM date." },
+        "compliance_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Fraction of checks passed: passed / total_checks. Used as a normalized compliance signal in Step 5 evidence scoring."
+        },
+        "notes": { "type": "string" },
+        "overall_compliance": {
+          "type": "string",
+          "enum": ["compliant", "partial", "non_compliant"]
+        },
+        "maintenance_induced_risk": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "has_scope_gaps_for_primary_fm": { "type": "boolean" },
+        "data_quality_confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "pm_found_defect_rate": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Fraction of PM executions with as-found data that recorded a defect condition (degradation signal). Absent when no as-found data is available."
+        }
+      }
+    }
+  }
+}

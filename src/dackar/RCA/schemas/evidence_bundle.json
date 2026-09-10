@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "evidence_bundle.v3.schema.json",
+  "title": "EvidenceBundle",
+  "description": "Ranked evidence snippets retrieved from the document store using KG-guided filters.",
+  "type": "object",
+  "required": [
+    "bundle_id",
+    "generated_at",
+    "query",
+    "score_metric",
+    "score_threshold",
+    "retrieval_scope",
+    "results"
+  ],
+  "properties": {
+    "bundle_id": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "query": {
+      "type": "string"
+    },
+    "score_metric": {
+      "type": "string"
+    },
+    "score_threshold": {
+      "type": "number"
+    },
+    "candidate_evidence_summary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "candidate_id": { "type": "string" },
+          "supporting_count": { "type": "integer", "minimum": 0 },
+          "contradicting_count": { "type": "integer", "minimum": 0 },
+          "contextual_count": { "type": "integer", "minimum": 0 },
+          "best_support_score": { "type": "number" },
+          "best_source_tier": { "type": ["string", "null"] },
+          "best_contradiction_score": { "type": "number" },
+          "best_context_score": { "type": "number" },
+          "supporting_snippet_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "contradicting_snippet_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "contextual_snippet_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["candidate_id"],
+        "additionalProperties": false
+      }
+    },
+    "retrieval_scope": {
+      "type": "object",
+      "required": [
+        "asset_id"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "Event identifier that scoped this retrieval."
+        },
+        "asset_id": {
+          "type": "string"
+        },
+        "doc_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "doc_types_included": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "component_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kg_subgraph_id": {
+          "type": "string"
+        },
+        "hop_limit": {
+          "type": "integer"
+        },
+        "query_count": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "filters": {
+      "type": "object",
+      "properties": {
+        "asset_id": {
+          "type": "string"
+        },
+        "doc_type": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "doc_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "component_id": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "authority_level": {
+          "type": "string"
+        },
+        "system": {
+          "type": "string"
+        },
+        "min_extraction_quality": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pipeline_health": {
+      "type": "object",
+      "required": ["status", "issues"],
+      "properties": {
+        "status": { "type": "string", "enum": ["green", "yellow", "red"] },
+        "issues": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "snippet_id",
+          "doc_id",
+          "score",
+          "snippet"
+        ],
+        "properties": {
+          "retrieval_score": { "type": "number" },
+          "evidence_score": { "type": "number" },
+          "support_score": { "type": "number" },
+          "contradiction_score": { "type": "number" },
+          "context_score": { "type": "number" },
+          "snippet_id": {
+            "type": "string"
+          },
+          "doc_id": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "image_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "support_role": {
+                "type": "string",
+                "enum": ["supporting", "contextual", "contradicting", "missing"]
+              },
+              "linked_candidate_id": { "type": "string" },
+              "query_type": { "type": "string" },
+              "query_intent": { "type": "string" },
+              "candidate_id": { "type": "string" },
+              "cause_label": { "type": "string" },
+              "hypothesis_type": { "type": "string" },
+              "raw_store_score": { "type": "number" },
+              "query_weight": { "type": "number" },
+              "doc_type_weight": { "type": "number" },
+              "candidate_term_overlap": { "type": "number" },
+              "authority_weight": { "type": "number" },
+              "extraction_quality_weight": { "type": "number" },
+              "evidence_role_confidence": { "type": "number" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "retriever": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "query_count": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

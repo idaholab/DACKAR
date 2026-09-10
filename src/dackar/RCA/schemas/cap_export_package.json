@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cap_export_package.json",
+  "title": "CAPExportPackage",
+  "description": "Structured export of RCA recommended_actions mapped to CMMS (Maximo / SAP PM) record fields. One CRRecord is produced per recommended_action. Persisted as cap_export_package.json in the run artifact store.",
+  "type": "object",
+  "required": [
+    "export_id",
+    "run_id",
+    "event_id",
+    "asset_id",
+    "generated_at",
+    "target_system",
+    "cr_records",
+    "unresolved_locations",
+    "provenance"
+  ],
+  "properties": {
+    "export_id": {
+      "type": "string",
+      "description": "Unique identifier. Format: CAPEXP::{event_id}::{iso_timestamp}"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "event_id": {
+      "type": "string"
+    },
+    "asset_id": {
+      "type": ["string", "null"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "target_system": {
+      "type": "string",
+      "enum": ["maximo", "sap_pm", "generic"],
+      "description": "Target CMMS. Controls which field-map defaults are applied and which system-specific extension block is populated."
+    },
+    "cr_records": {
+      "type": "array",
+      "description": "One record per recommended_action. Each maps to a single Corrective Action / Work Order in the target CMMS.",
+      "items": {
+        "type": "object",
+        "required": [
+          "export_record_id",
+          "source_action_id",
+          "action_type",
+          "cr_type",
+          "short_description",
+          "long_text",
+          "priority",
+          "priority_code",
+          "mapping_status"
+        ],
+        "properties": {
+          "export_record_id": {
+            "type": "string",
+            "description": "Unique ID for this record within the package. Format: {export_id}::{source_action_id}"
+          },
+          "source_action_id": {
+            "type": "string",
+            "description": "rca_card.recommended_actions[i].action_id — links back to the RCA artifact."
+          },
+          "action_type": {
+            "type": "string",
+            "description": "Original RCA action_type value (preserved for traceability)."
+          },
+          "cr_type": {
+            "type": "string",
+            "description": "CMMS record type code (e.g. CAL, PM, TQ for Maximo; M1, M3, Q3 for SAP PM)."
+          },
+          "short_description": {
+            "type": "string",
+            "description": "Truncated to target CMMS short-description field limit."
+          },
+          "long_text": {
+            "type": "string",
+            "description": "Full narrative including RCA run reference, rationale, and expected observation."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Original RCA priority label (critical / high / medium / low)."
+          },
+          "priority_code": {
+            "type": "string",
+            "description": "CMMS priority code (e.g. 1–4)."
+          },
+          "functional_location": {
+            "type": ["string", "null"],
+            "description": "Maximo FLOC resolved from kg_context.components[].maximo_floc. Null when unresolved."
+          },
+          "equipment_id": {
+            "type": ["string", "null"],
+            "description": "SAP PM equipment ID resolved from kg_context.components[].sap_equipment_id. Null when unresolved."
+          },
+          "target_component_id": {
+            "type": ["string", "null"],
+            "description": "KG component_id from the source recommended_action. Always preserved for traceability even when FLOC/equipment_id is resolved."
+          },
+          "mapping_status": {
+            "type": "string",
+            "enum": ["resolved", "unresolved"],
+            "description": "resolved = functional_location or equipment_id was set from KG. unresolved = KG property absent; field is null."
+          },
+          "owner": {
+            "type": ["string", "null"],
+            "description": "Passed through from recommended_action.owner. Null if not set."
+          },
+          "linked_candidate_id": {
+            "type": ["string", "null"],
+            "description": "Passed through from recommended_action.linked_candidate_id."
+          },
+          "maximo_ext": {
+            "type": "object",
+            "description": "Maximo-specific extension fields (work_group, site_id, etc.). Populated only when target_system == maximo.",
+            "additionalProperties": true
+          },
+          "sap_ext": {
+            "type": "object",
+            "description": "SAP PM extension fields (plant_section, planner_group, etc.). Populated only when target_system == sap_pm.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "unresolved_locations": {
+      "type": "array",
+      "description": "component_ids for which no FLOC/equipment_id mapping was found in the KG. These cr_records have mapping_status=unresolved and require manual CMMS field completion.",
+      "items": { "type": "string" }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["generated_by", "rca_card_id"],
+      "properties": {
+        "generated_by": { "type": "string" },
+        "rca_card_id": { "type": "string" },
+        "override_id": { "type": ["string", "null"] },
+        "pipeline_version": { "type": ["string", "null"] },
+        "field_map_source": {
+          "type": "string",
+          "description": "Which field-map file was used (e.g. maximo_default, sap_pm_default, or custom)."
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

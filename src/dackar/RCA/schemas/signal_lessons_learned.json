@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SignalLessonsLearned",
+  "description": "Step 3.5 output: set of matched historical signal patterns (lessons learned) and a novel-pattern flag when no match is found. Each match is a prior event with a known causal explanation and resolution that was triggered by a similar signal pattern.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "generated_at", "summary", "matched_patterns", "novel_pattern_flag"],
+
+  "properties": {
+
+    "event_id":     { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_matched", "novel_pattern_flag", "n_novel_patterns", "input_sources"],
+      "properties": {
+        "total_matched":      { "type": "integer", "minimum": 0, "description": "Number of patterns with historical support." },
+        "novel_pattern_flag": { "type": "boolean", "description": "True when any pattern entry has novel_pattern == true." },
+        "n_novel_patterns":   { "type": "integer", "minimum": 0 },
+        "n_alarm_windows":    { "type": "integer", "minimum": 0 },
+        "n_soe_windows":      { "type": "integer", "minimum": 0 },
+        "n_anomaly_windows":  { "type": "integer", "minimum": 0 },
+        "input_sources":      {
+          "type": "array",
+          "items": { "type": "string", "enum": ["telemetry", "alarm_log", "soe_log", "signal_evidence"] }
+        }
+      }
+    },
+
+    "matched_patterns": {
+      "type": "array",
+      "description": "Patterns that have historical recurrence support (recurrence_count > 0 or history_score >= threshold).",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["pattern_id", "target_id", "component_id", "confidence", "recurrence_count", "novel_pattern"],
+        "properties": {
+          "pattern_id":       { "type": "string" },
+          "target_id":        { "type": ["string", "null"] },
+          "component_id":     { "type": ["string", "null"] },
+          "confidence":       { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "support":          { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+          "recurrence_count": { "type": "integer", "minimum": 0 },
+          "recurrence_trend": { "type": ["string", "null"] },
+          "novel_pattern":    { "type": "boolean" },
+          "relation":         { "type": ["string", "null"] },
+          "mean_lag_hours":   { "type": ["number", "null"] },
+          "causal_explanation": {
+            "type": ["string", "null"],
+            "description": "Short causal explanation from the recurrence profile or KG past event (when available)."
+          },
+          "resolution_summary": {
+            "type": ["string", "null"],
+            "description": "Resolution or corrective action summary from the matched prior event (when available)."
+          }
+        }
+      }
+    },
+
+    "novel_pattern_flag": {
+      "type": "boolean",
+      "description": "True when at least one pattern entry has novel_pattern == true (no historical precedent found)."
+    },
+
+    "novel_patterns": {
+      "type": "array",
+      "description": "Patterns with novel_pattern == true — candidates for scope expansion review.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["pattern_id", "target_id", "component_id", "novel_pattern"],
+        "properties": {
+          "pattern_id":   { "type": "string" },
+          "target_id":    { "type": ["string", "null"] },
+          "component_id": { "type": ["string", "null"] },
+          "novel_pattern": { "type": "boolean" },
+          "confidence":   { "type": "number" },
+          "relation":     { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "generated_by":       { "type": "string" },
+        "run_id":             { "type": ["string", "null"] },
+        "tskr_pattern_count": { "type": "integer" }
+      }
+    }
+  }
+}

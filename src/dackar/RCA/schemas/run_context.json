@@ -1,0 +1,196 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RunContext",
+  "description": "Orchestrator run context. Written at the start of Stage A and referenced by all subsequent stages.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["run_id", "started_at", "input_refs", "scope_management"],
+
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Unique run identifier (UUID4)."
+    },
+    "run_label": {
+      "type": ["string", "null"],
+      "description": "Optional human-readable label for the run."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the run was initiated."
+    },
+    "config": {
+      "type": "object",
+      "description": "Orchestrator configuration snapshot for this run.",
+      "additionalProperties": true,
+      "properties": {
+        "enable_ishikawa":                  { "type": "boolean" },
+        "persist_intermediate_artifacts":   { "type": "boolean" },
+        "stop_on_validation_error":         { "type": "boolean" },
+        "top_k_candidates":                 { "type": "integer" },
+        "top_k_evidence":                   { "type": "integer" }
+      }
+    },
+    "input_refs": {
+      "type": "object",
+      "description": "References and availability flags for all inputs consumed at Stage A (Step 0 scoping).",
+      "additionalProperties": true,
+      "required": ["event_id", "asset_id"],
+      "properties": {
+        "event_id":               { "type": ["string", "null"] },
+        "asset_id":               { "type": ["string", "null"] },
+        "telemetry_asset_id":     { "type": ["string", "null"] },
+        "event_severity":         { "type": ["string", "null"], "description": "From event.severity — propagated for quick downstream access." },
+        "event_type":             { "type": ["string", "null"], "description": "From event.event_type." },
+        "actuation_type":         { "type": ["string", "null"], "description": "From event.actuation_type — design_signal vs anomalous vs spurious_suspected." },
+        "trigger_source":         { "type": ["string", "null"], "description": "From event.trigger_source — alarm, operator_observation, etc." },
+        "has_operational_context":          { "type": "boolean", "description": "True when operational_context was provided at run() invocation." },
+        "has_pm_compliance":                { "type": "boolean", "description": "True when pm_compliance was provided or auto-built." },
+        "has_cmms_context":                 { "type": "boolean", "description": "True when cmms_context was provided or fetched in Stage B5." },
+        "has_soe_log":                      { "type": "boolean", "description": "True when a soe_log artifact was provided. Tightly coupled with has_protection_logic_context." },
+        "has_alarm_log":                    { "type": "boolean", "description": "True when an alarm_log artifact was provided." },
+        "has_protection_logic_context":     { "type": "boolean", "description": "True when protection_logic_context was provided. Required for barrier logic gate in non-degraded mode." },
+        "has_configuration_change_records": { "type": "boolean", "description": "True when configuration_change_records were provided. Feeds Categories H/I scoping." },
+        "active_scope_version":             { "type": "integer", "minimum": 0, "description": "Active scope version — kept in sync with scope_management.active_scope_version." },
+        "active_scope_revision_id":         { "type": ["string", "null"], "description": "Active scope revision id — kept in sync with scope_management.latest_approved_revision_id." }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "description": "Input validation report for this run.",
+      "additionalProperties": true
+    },
+    "scope_management": {
+      "type": "object",
+      "description": "Step-0 scope lifecycle state for iterative revision and replayability.",
+      "additionalProperties": true,
+      "required": ["active_scope_version", "scope_revisions"],
+      "properties": {
+        "active_scope_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latest_approved_revision_id": {
+          "type": ["string", "null"]
+        },
+        "scope_revisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [              "revision_id",
+              "scope_version",
+              "trigger",
+              "changed_boundary",
+              "analyst_decision",
+              "decision_timestamp",
+              "scope_snapshot"
+            ],
+            "properties": {
+              "revision_id": { "type": "string" },
+              "scope_version": { "type": "integer", "minimum": 0 },
+              "trigger": { "type": "string" },
+              "changed_boundary": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "added_asset_ids":       { "type": "array", "items": { "type": "string" } },
+                  "removed_asset_ids":     { "type": "array", "items": { "type": "string" } },
+                  "added_component_ids":   { "type": "array", "items": { "type": "string" } },
+                  "removed_component_ids": { "type": "array", "items": { "type": "string" } },
+                  "added_systems":         { "type": "array", "items": { "type": "string" } },
+                  "removed_systems":       { "type": "array", "items": { "type": "string" } },
+                  "window_delta":          { "type": ["string", "null"] }
+                }
+              },
+              "analyst_decision": {
+                "type": "string",
+                "enum": ["accepted", "deferred", "rejected"]
+              },
+              "decision_timestamp": { "type": "string", "format": "date-time" },
+              "scope_snapshot": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Full snapshot of the investigation boundary at the time of this revision.",
+                "properties": {
+                  "asset_ids":     { "type": "array", "items": { "type": "string" } },
+                  "component_ids": { "type": "array", "items": { "type": "string" } },
+                  "system_boundary":          { "type": "array", "items": { "type": "string" }, "description": "Systems in scope — populated from operational_context.recent_alarms and alarm_log." },
+                  "change_control_systems":   { "type": "array", "items": { "type": "string" }, "description": "Systems flagged by configuration_change_records — feeds H/I category scoping." },
+                  "time_window": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "start": { "type": ["string", "null"] },
+                      "end":   { "type": ["string", "null"] }
+                    }
+                  },
+                  "safety_function_map": { "type": "array", "items": { "type": "string" }, "description": "Populated from kg_context.safety_functions in later revisions." },
+                  "operating_context": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Operating mode and power level at event time — from operational_context.",
+                    "properties": {
+                      "mode":                { "type": ["string", "null"] },
+                      "percent_rated_power": { "type": ["number", "null"] },
+                      "train_id":            { "type": ["string", "null"] },
+                      "train_in_service":    { "type": ["boolean", "null"] }
+                    }
+                  },
+                  "event_context": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Key event characterization fields captured at intake.",
+                    "properties": {
+                      "severity":       { "type": ["string", "null"] },
+                      "event_type":     { "type": ["string", "null"] },
+                      "actuation_type": { "type": ["string", "null"] },
+                      "trigger_source": { "type": ["string", "null"] }
+                    }
+                  },
+                  "data_availability": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Flags indicating which optional input artifacts were present at scoping time.",
+                    "properties": {
+                      "has_operational_context":          { "type": "boolean" },
+                      "has_pm_compliance":                { "type": "boolean" },
+                      "has_cmms_context":                 { "type": "boolean" },
+                      "has_soe_log":                      { "type": "boolean" },
+                      "has_alarm_log":                    { "type": "boolean" },
+                      "has_protection_logic_context":     { "type": "boolean" },
+                      "has_configuration_change_records": { "type": "boolean" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "expansion_suggestions": {
+          "type": "array",
+          "description": "Phase 3b — scope-expansion signals detected by the pipeline (from Step 2c Allen map, propagation chains, TSKR novel patterns). Each entry has analyst_decision: pending|accepted|deferred|rejected.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["signal_id", "source_stage", "trigger_type", "analyst_decision"],
+            "properties": {
+              "signal_id":               { "type": "string" },
+              "source_stage":            { "type": "string" },
+              "trigger_type":            { "type": "string", "enum": ["out_of_scope_causal_component", "out_of_scope_propagation_component", "novel_signal_pattern"] },
+              "suggested_component_ids": { "type": "array", "items": { "type": "string" } },
+              "allen_relation":          { "type": ["string", "null"] },
+              "node_type":               { "type": ["string", "null"] },
+              "severity":                { "type": "string", "enum": ["info", "warning", "critical"] },
+              "rationale":               { "type": "string" },
+              "analyst_decision":        { "type": "string", "enum": ["pending", "accepted", "deferred", "rejected"] },
+              "detected_at":             { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

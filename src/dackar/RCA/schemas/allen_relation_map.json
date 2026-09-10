@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AllenRelationMap",
+  "description": "Step 2c output: ordered event graph mapping anomalies, alarm entries, and SOE records to the triggering event using Allen interval algebra. Each node carries the Allen relation of its interval to the current event interval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "generated_at", "event_interval", "summary", "nodes"],
+
+  "properties": {
+
+    "event_id":     { "type": "string" },
+    "generated_at": { "type": "string", "format": "date-time" },
+
+    "event_interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start"],
+      "properties": {
+        "start": { "type": "string", "format": "date-time" },
+        "end":   { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+
+    "quality_flags": {
+      "type": "object",
+      "description": "Data quality flags that affect relation reliability.",
+      "additionalProperties": false,
+      "properties": {
+        "soe_clock_sync_ok":   { "type": ["boolean", "null"], "description": "False when SOE recorder clock sync failed; SOE node relations are set to unknown." },
+        "alarm_clock_sync_ok": { "type": ["boolean", "null"] },
+        "soe_nodes_capped":    { "type": "boolean", "description": "True when SOE input exceeded max_soe_nodes and was trimmed." }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_nodes", "node_type_counts", "causal_nodes", "contradiction_nodes", "timeline_consistent"],
+      "properties": {
+        "total_nodes":         { "type": "integer", "minimum": 0 },
+        "node_type_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "anomaly":    { "type": "integer", "minimum": 0 },
+            "alarm":      { "type": "integer", "minimum": 0 },
+            "soe_record": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "causal_nodes":          { "type": "integer", "minimum": 0, "description": "Nodes with allen_relation_to_event in {overlaps, contains, precedes}." },
+        "contradiction_nodes":   { "type": "integer", "minimum": 0, "description": "Nodes with allen_relation_to_event == follows." },
+        "unknown_relation_nodes":{ "type": "integer", "minimum": 0 },
+        "timeline_consistent":   { "type": "boolean", "description": "False when any node has relation == follows." },
+        "dominant_causal_type":  { "type": ["string", "null"], "description": "Node type (anomaly|alarm|soe_record) with the most causal nodes.", "enum": ["anomaly", "alarm", "soe_record", null] },
+        "earliest_causal_onset": { "type": ["string", "null"], "format": "date-time", "description": "Earliest interval_start across all causal nodes." }
+      }
+    },
+
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node_id", "node_type", "source_id", "interval_start", "is_point_event",
+                     "allen_relation_to_event", "allen_base_score", "causal_candidate"],
+        "properties": {
+          "node_id":   { "type": "string", "description": "Stable ID: {NODE_TYPE}::{source_id}." },
+          "node_type": { "type": "string", "enum": ["anomaly", "alarm", "soe_record"] },
+          "source_id": { "type": "string", "description": "ID of the originating record (sensor_id/alarm_id/record_id)." },
+          "component_id": { "type": ["string", "null"] },
+          "interval_start": { "type": "string", "format": "date-time" },
+          "interval_end":   { "type": ["string", "null"], "format": "date-time" },
+          "is_point_event": { "type": "boolean", "description": "True for SOE records and alarms without acknowledged_at." },
+          "allen_relation_to_event": {
+            "type": "string",
+            "enum": ["precedes", "overlaps", "contains", "during", "follows", "unknown"],
+            "description": "Allen relation of this node's interval relative to the current event interval."
+          },
+          "allen_base_score": {
+            "type": "number", "minimum": 0.0, "maximum": 1.0,
+            "description": "Base RCA relevance score from RELATION_SCORE table. 0 when relation is unknown."
+          },
+          "causal_candidate": {
+            "type": "boolean",
+            "description": "True when allen_relation_to_event in {overlaps, contains, precedes}."
+          },
+          "severity":    { "type": ["string", "null"], "description": "Severity for anomaly nodes." },
+          "priority":    { "type": ["string", "null"], "description": "Priority for alarm/SOE nodes." },
+          "transition":  { "type": ["string", "null"], "description": "Transition type for SOE nodes (trip, assert, etc.)." },
+          "is_protection_signal": { "type": ["boolean", "null"], "description": "True for SOE nodes that are protection-system signals." },
+          "system":      { "type": ["string", "null"], "description": "Plant system for alarm nodes." }
+        }
+      }
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "generated_by": { "type": "string" },
+        "epsilon_hours": { "type": "number" },
+        "max_soe_nodes": { "type": "integer" }
+      }
+    }
+  }
+}

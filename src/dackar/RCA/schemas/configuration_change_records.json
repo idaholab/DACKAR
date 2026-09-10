@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ConfigurationChangeRecords",
+  "description": "Configuration change records (ECNs, setpoint changes, firmware/software revisions) relevant to the RCA window.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["configuration_change_context_id", "event_id", "asset_id", "generated_at", "records"],
+  "properties": {
+    "configuration_change_context_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "asset_id": { "type": ["string", "null"] },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["change_id", "change_type", "implemented_at", "status"],
+        "properties": {
+          "change_id": { "type": "string" },
+          "change_type": {
+            "type": "string",
+            "enum": ["ecn", "setpoint_change", "firmware_update", "software_update", "temporary_modification", "procedure_change", "other"]
+          },
+          "status": { "type": "string", "enum": ["planned", "approved", "implemented", "rolled_back", "cancelled", "unknown"] },
+          "implemented_at": { "type": "string", "format": "date-time" },
+          "reverted_at": { "type": ["string", "null"], "format": "date-time" },
+          "component_ids": { "type": "array", "items": { "type": "string" } },
+          "system_ids": { "type": "array", "items": { "type": "string" } },
+          "summary": { "type": "string" },
+          "reason": { "type": "string" },
+          "approver": { "type": ["string", "null"] },
+          "document_refs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "coverage_status": { "type": "string", "enum": ["complete", "partial", "missing"] },
+        "quality_flags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_by"],
+      "properties": {
+        "generated_by": { "type": "string" }
+      }
+    }
+  }
+}

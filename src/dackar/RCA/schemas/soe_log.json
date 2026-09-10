@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SOELog",
+  "description": "Sequence of Events (SOE) recorder export for an RCA analysis window. Captures high-resolution protection and control transitions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["soe_id", "event_id", "asset_id", "window", "generated_at", "records"],
+  "properties": {
+    "soe_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "asset_id": { "type": ["string", "null"] },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "string", "format": "date-time" },
+        "end": { "type": "string", "format": "date-time" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "recorder_id": { "type": "string" },
+        "source_system": { "type": "string" },
+        "timezone": { "type": "string" }
+      }
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["record_id", "timestamp", "signal_id", "transition"],
+        "properties": {
+          "record_id": { "type": "string" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "sequence_index": { "type": "integer", "minimum": 0 },
+          "signal_id": { "type": "string" },
+          "signal_label": { "type": "string" },
+          "component_id": { "type": ["string", "null"] },
+          "transition": {
+            "type": "string",
+            "enum": ["assert", "deassert", "open", "close", "trip", "reset", "state_change", "unknown"]
+          },
+          "old_state": { "type": ["string", "null"] },
+          "new_state": { "type": ["string", "null"] },
+          "priority": { "type": "string", "enum": ["critical", "high", "medium", "low", "informational", "unknown"] },
+          "is_protection_signal": { "type": "boolean" },
+          "protection_logic_ref": { "type": ["string", "null"] },
+          "remarks": { "type": "string" }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clock_sync_ok": { "type": "boolean" },
+        "dropped_record_count": { "type": "integer", "minimum": 0 },
+        "duplicate_record_count": { "type": "integer", "minimum": 0 },
+        "quality_flags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_by"],
+      "properties": {
+        "generated_by": { "type": "string" },
+        "query_params": { "type": "object", "additionalProperties": true }
+      }
+    }
+  }
+}
