@@ -1,0 +1,64 @@
+{
+  "protection_logic_context_id": "PLC-E2026-03-10-001",
+  "event_id": "E2026-03-10-001",
+  "asset_id": "U1-RPS-CORE",
+  "generated_at": "2026-03-10T16:00:00Z",
+  "logic_sets": [
+    {
+      "logic_id": "LOGIC-RPS-NI-TRIP",
+      "logic_type": "trip",
+      "description": "Reactor Protection System trip on high neutron flux. Any single NI channel exceeding 105% rated power initiates a SCRAM. 2-of-4 logic applies for low-low power range; high power range (>25%) uses 1-of-4 trip logic.",
+      "setpoints": [
+        {
+          "parameter": "neutron_flux",
+          "comparison": ">=",
+          "threshold": 105.0,
+          "unit": "percent_rated"
+        }
+      ],
+      "input_signals": ["U1-NI-RPS-1A", "U1-NI-RPS-2A", "U1-NI-RPS-3A", "U1-NI-RPS-4A"],
+      "output_signals": ["U1-RPS-SCRAM-SIG"],
+      "document_refs": ["EOP-E.0", "SOP-U1-NI-001", "TS-3.3.1"]
+    },
+    {
+      "logic_id": "LOGIC-RPS-SCRAM",
+      "logic_type": "trip",
+      "description": "SCRAM actuation — all CRD banks insert on RPS trip signal. Design basis: all banks inserted within 2.7 seconds from trip initiation.",
+      "setpoints": [],
+      "input_signals": ["U1-RPS-SCRAM-SIG"],
+      "output_signals": ["U1-CRD-BANK-A-INSERT", "U1-CRD-BANK-B-INSERT", "U1-CRD-BANK-C-INSERT", "U1-CRD-BANK-D-INSERT"],
+      "document_refs": ["EOP-E.0", "TS-3.1.5"]
+    },
+    {
+      "logic_id": "LOGIC-TURB-TRIP-ON-SCRAM",
+      "logic_type": "interlock",
+      "description": "Turbine trip interlock on reactor SCRAM. Turbine trip follows SCRAM signal automatically.",
+      "setpoints": [],
+      "input_signals": ["U1-RPS-SCRAM-SIG"],
+      "output_signals": ["U1-TURB-TRIP-SIG"],
+      "document_refs": ["EOP-E.0"]
+    }
+  ],
+  "barrier_states": [
+    {
+      "barrier_id": "BARRIER-CORE-SUBCRITICAL",
+      "sf_id": "SF-REACTIVITY-CONTROL",
+      "state": "held",
+      "state_timestamp": "2026-03-10T14:22:06Z",
+      "evidence_refs": ["SOE-003", "SOE-004"],
+      "rationale": "All CRD banks inserted within 2.4 seconds of SCRAM signal. Core confirmed subcritical. Reactor trip barrier performed as designed."
+    },
+    {
+      "barrier_id": "BARRIER-TURB-TRIP",
+      "sf_id": "SF-TURBINE-INTEGRITY",
+      "state": "held",
+      "state_timestamp": "2026-03-10T14:22:07Z",
+      "evidence_refs": ["SOE-004"],
+      "rationale": "Turbine trip interlock actuated on SCRAM signal. Turbine secured within design basis."
+    }
+  ],
+  "provenance": {
+    "generated_by": "show-and-tell-fixture-generator",
+    "query_params": {"test_case": "TC-4", "scenario": "reactor-trip-ni-spurious"}
+  }
+}

@@ -1,0 +1,249 @@
+\section{Methods}
+
+\subsection{Problem Formulation}
+
+A nuclear power plant outage is modeled as a stochastic resource-constrained project scheduling problem (RCPSP) subject to precedence, resource, spatial, and operational constraints. The goal is to quantify schedule robustness (resistance to disruptions) and resilience (ability to recover from disruptions).
+
+Let:
+\begin{itemize}
+\item $\mathcal{A} = \{1,\dots,n\}$ be the set of planned activities
+\item $\mathcal{E}$ be the set of emergent activities
+\item $\mathcal{R} = \{1,\dots,m\}$ be the set of resource types
+\item $\mathcal{Z} = \{1,\dots,q\}$ be the set of spatial zones
+\end{itemize}
+
+Each activity $i \in \mathcal{A} \cup \mathcal{E}$ is defined by:
+\begin{itemize}
+\item Planned duration $p_i$, stochastic duration $D_i$
+\item Planned start time $s_i$, realized start time $S_i$
+\item Resource demand $x_{ir}$
+\item Zone assignment $z_i \in \mathcal{Z}$
+\item Predecessor set $P(i)$
+\end{itemize}
+
+The outage completion time is:
+\begin{equation}
+C = \max_{i} (S_i + D_i)
+\end{equation}
+
+The baseline completion time is:
+\begin{equation}
+C^0 = \max_{i \in \mathcal{A}} (s_i + p_i)
+\end{equation}
+
+\subsection{Constraints}
+
+\subsubsection{Precedence Constraints}
+\begin{equation}
+S_i \ge F_j \quad \forall j \in P(i)
+\end{equation}
+
+\subsubsection{Resource Constraints}
+\begin{equation}
+\sum_i x_{ir} \mathbf{1}\{S_i \le t < F_i\} \le A_r(t)
+\end{equation}
+
+\subsubsection{Spatial Constraints}
+\begin{equation}
+\sum_{i: z_i = z} \mathbf{1}\{S_i \le t < F_i\} \le K_z(t)
+\end{equation}
+
+\subsubsection{System-State Constraints}
+\begin{equation}
+\mathbf{1}\{S_i \le t < F_i\} \le M_k(t)
+\end{equation}
+
+\subsection{Stochastic Modeling}
+
+\subsubsection{Activity Duration Uncertainty}
+\begin{equation}
+D_i \sim \mathcal{P}_i
+\end{equation}
+
+with mean $\mu_i$ and variance $\sigma_i^2$.
+
+\subsubsection{Emergent Work}
+Emergent activities arrive dynamically and are characterized by arrival time, duration, and resource requirements.
+
+\subsubsection{Resource Availability}
+\begin{equation}
+A_r(t) = \bar{A}_r(t) - L_r(t)
+\end{equation}
+
+\subsection{Robustness and Resilience}
+
+\subsubsection{Robustness}
+\begin{equation}
+\mathrm{Rob} = \mathbb{P}(C \le C^0)
+\end{equation}
+
+\subsubsection{Resilience}
+For disruption scenario $\omega$:
+\begin{equation}
+\mathrm{Res}(\omega) =
+\frac{C^{nr}(\omega) - C^{ar}(\omega)}
+{C^{nr}(\omega) - C^0}
+\end{equation}
+
+\begin{equation}
+\mathrm{Res} = \mathbb{E}[\mathrm{Res}(\omega)]
+\end{equation}
+
+\subsection{Metrics}
+
+\subsubsection{Activity-Level Metrics}
+
+\begin{equation}
+\varepsilon_i = \frac{D_i - p_i}{p_i}
+\end{equation}
+
+\begin{equation}
+AUI_i = \frac{\sigma_i}{\mu_i}
+\end{equation}
+
+\begin{equation}
+TOP_i = \mathbb{P}(D_i > p_i)
+\end{equation}
+
+\begin{equation}
+FCR_i = \mathbb{P}(D_i - p_i > TF_i)
+\end{equation}
+
+\subsubsection{Schedule-Level Metrics}
+
+\begin{equation}
+\Delta C = C - C^0
+\end{equation}
+
+\begin{equation}
+CTV = \mathrm{Var}(C)
+\end{equation}
+
+\begin{equation}
+DEP(\tau) = \mathbb{P}(C - C^0 > \tau)
+\end{equation}
+
+\subsubsection{Critical Path Metrics}
+
+\begin{equation}
+CPV = 1 - \mathbb{P}(CP(\omega) = CP^0)
+\end{equation}
+
+\subsubsection{Emergent Work Metrics}
+
+\begin{equation}
+EWR = \frac{|\mathcal{E}|}{|\mathcal{A}| + |\mathcal{E}|}
+\end{equation}
+
+\begin{equation}
+EWI = C - C^{base}
+\end{equation}
+
+\begin{equation}
+EAE = 1 - \frac{EWI}{\sum_{e \in \mathcal{E}} D_e}
+\end{equation}
+
+\subsubsection{Resource Metrics}
+
+\begin{equation}
+\rho_r(t) = \frac{U_r(t)}{A_r(t)}
+\end{equation}
+
+\begin{equation}
+RSI_r^{max} = \max_t \rho_r(t)
+\end{equation}
+
+\begin{equation}
+RIV_r = \mathrm{Var}(\rho_r(t))
+\end{equation}
+
+\subsubsection{Congestion Metrics}
+
+\begin{equation}
+ZCR_z(t) = \frac{\sum_{i:z_i=z} \mathbf{1}\{S_i \le t < F_i\}}{K_z(t)}
+\end{equation}
+
+\begin{equation}
+CB = \sum_z \int_0^T \max(0, ZCR_z(t) - 1) dt
+\end{equation}
+
+\subsubsection{Schedule Stability}
+
+\begin{equation}
+SN = \frac{1}{n} \sum_i \mathbf{1}\{s_i^{(k)} \neq s_i^{(k-1)}\}
+\end{equation}
+
+\subsection{Monte Carlo Estimation}
+
+For $k = 1,\dots,N$:
+\begin{enumerate}
+\item Sample activity durations $D_i^{(k)}$
+\item Sample emergent work realization
+\item Sample resource availability
+\item Generate feasible schedule
+\item Compute metrics
+\end{enumerate}
+
+\begin{equation}
+\widehat{\mathrm{Rob}} = \frac{1}{N} \sum_k \mathbf{1}(C^{(k)} \le C^0)
+\end{equation}
+
+---
+
+\section{Integration with Optimization Framework}
+
+\subsection{RCPSP Formulation}
+
+The outage scheduling problem is formulated as a Resource-Constrained Project Scheduling Problem (RCPSP), where the objective is not only to minimize makespan but to optimize robustness and resilience metrics.
+
+Let $\pi$ denote a priority rule used by a Schedule Generation Scheme (SGS). The SGS maps $\pi$ into a feasible schedule $S(\pi)$.
+
+\subsection{Multi-Objective Optimization}
+
+We define a composite fitness function:
+
+\begin{equation}
+\mathcal{F}(\pi) =
+w_1 \cdot \mathbb{E}[C(\pi)] +
+w_2 \cdot CTV(\pi) +
+w_3 \cdot (1 - \mathrm{Rob}(\pi)) +
+w_4 \cdot (1 - \mathrm{Res}(\pi)) +
+w_5 \cdot RSI^{max}(\pi) +
+w_6 \cdot CB(\pi) +
+w_7 \cdot SN(\pi)
+\end{equation}
+
+where $w_i$ are user-defined weights.
+
+\subsection{Genetic Programming for Priority Rule Evolution}
+
+Instead of predefined priority rules (e.g., minimum slack), Genetic Programming (GP) is used to evolve priority functions:
+
+\begin{equation}
+\pi(i) = f(\text{slack}_i, AUI_i, RSI_i, z_i, \text{risk}_i, \dots)
+\end{equation}
+
+The GP searches over symbolic expressions $f(\cdot)$ to optimize $\mathcal{F}(\pi)$.
+
+\subsection{Evaluation Loop}
+
+For each candidate priority rule $\pi$:
+\begin{enumerate}
+\item Generate schedule using SGS
+\item Perform Monte Carlo simulation
+\item Compute robustness and resilience metrics
+\item Evaluate fitness $\mathcal{F}(\pi)$
+\end{enumerate}
+
+\subsection{Key Advantage}
+
+This formulation transforms outage scheduling from a deterministic makespan minimization problem into a stochastic, multi-objective optimization problem that explicitly accounts for:
+\begin{itemize}
+\item uncertainty in activity durations
+\item emergent work
+\item resource constraints
+\item congestion and spatial conflicts
+\item schedule stability
+\end{itemize}
+
+This enables the discovery of adaptive scheduling policies that are better aligned with real outage execution conditions.
