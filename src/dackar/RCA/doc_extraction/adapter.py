@@ -340,7 +340,7 @@ def _make_ner_cs_factory(
     ssc_patterns = [{"label": "SSC", "pattern": t, "id": "SSC"} for t in dict.fromkeys(ssc_texts)]
 
     def factory(text: str, nlp: Any) -> Any:
-        from dackar.RCA.causal.CausalSentence import CausalSentence  # noqa: PLC0415
+        from dackar.causal.CausalSentence import CausalSentence  # noqa: PLC0415
         cs = CausalSentence(nlp)
         cs.addEntityPattern("ner_ssc_entities", ssc_patterns)
         cs.addEntityPattern("ner_causal_keywords", _CAUSAL_KEYWORD_PATTERNS)
