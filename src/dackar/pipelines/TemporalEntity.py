@@ -74,8 +74,13 @@ class Temporal(object):
     ordinalPattern = r"\b(?:" + "|".join(ordinals) + r")\b"
 
     exceptions = [
-        "hour", "hours", "minute", "minutes", "day", "days", "decade", "decades", "century", "centuries", "week", "weeks", "month",
-        "months", "year", "years"
+        "hour", "hours", "hr", "hrs",
+        "minute", "minutes", "min", "mins",
+        "second", "seconds", "sec", "secs",
+        "millisecond", "milliseconds", "ms",
+        "day", "days", "week", "weeks",
+        "month", "months", "year", "years",
+        "decade", "decades", "century", "centuries"
       ]
 
     exceptionsPattern = r"(?:" + "|".join(exceptions) + r")\b"
@@ -167,9 +172,9 @@ class Temporal(object):
         )
         |
         (?:
-            \d+
+            \b\d+
             (?:\-|\s+)?
-            """ + exceptionsPattern + """
+            """ + exceptionsPattern + r"""
         )
     """
 
@@ -212,37 +217,9 @@ class Temporal(object):
     newEnts = []
     for match in matches:
       startChar, endChar = match.span()
-      # Convert character offsets to token offsets
-      startToken = None
-      endToken = None
-      for token in doc:
-        if token.idx == startChar:
-          startToken = token.i
-        if token.idx + len(token.text) == endChar:
-          endToken = token.i
-      if startToken is not None and endToken is not None:
-        # hitText = doc.text[startChar:endChar]
-        ent = Span(doc, startToken, endToken + 1, label="Temporal")
-        newEnts.append(ent)
-
-        ## Following is used to add a custom attribute to indicate Temporal
-        # parsed_date = dateparser.parse(hitText)
-        # if parsed_date:  # Ensure the matched string is a valid date
-        #   ent = Span(doc, startToken, endToken + 1, label="Temporal")
-        #   ent._.date = parsed_date
-        #   newEnts.append(ent)
-        # else:
-        #   # Replace each ordinal in hitText with its numeric representation
-        #   for ordinal, number in self.ordinalToNumber.items():
-        #     hitText = hitText.replace(ordinal, number)
-
-        #   # Remove the word "of" from hitText
-        #   new_date = hitText.replace(" of ", " ")
-
-        #   parsed_date = dateparser.parse(new_date)
-        #   ent = Span(doc, startToken, endToken + 1, label="Temporal")
-        #   ent._.date = parsed_date
-        #   newEnts.append(ent)
+      span = doc.char_span(startChar, endChar, label="Temporal", alignment_mode="expand")
+      if span is not None:
+        newEnts.append(span)
     # Combine the new entities with existing entities, ensuring no overlap
 
     doc.ents = filter_spans(newEnts+list(doc.ents))

@@ -1,6 +1,7 @@
 # Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 
 from spacy.language import Language
+from spacy.pipeline import EntityRuler
 
 from ..utils.nlp.CreatePatterns import CreatePatterns
 from ..config import nlpConfig
@@ -51,10 +52,8 @@ class ConjectureEntity(object):
       patterns = conjecturePatterns.getPatterns()
     if not isinstance(patterns, list) and isinstance(patterns, dict):
       patterns = [patterns]
-    # do we need to pop out other pipes?
-    if not nlp.has_pipe('entity_ruler'):
-      nlp.add_pipe('entity_ruler')
-    self.entityRuler = nlp.get_pipe('entity_ruler')
+    # Standalone ruler — not added to the pipeline to avoid double-application
+    self.entityRuler = EntityRuler(nlp, name='conjecture_entity_ruler', overwrite_ents=False)
     self.entityRuler.add_patterns(patterns)
 
   def __call__(self, doc):

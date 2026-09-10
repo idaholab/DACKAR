@@ -1,6 +1,5 @@
 # Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED
 
-from spacy.matcher import PhraseMatcher
 from spacy.tokens import Span
 from spacy.language import Language
 from quantulum3 import parser
@@ -11,6 +10,10 @@ from spacy.util import filter_spans
 import logging
 logging.getLogger('quantulum3').setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
+
+# Structured measurement data attached to each matched span
+if not Span.has_extension('measurement'):
+  Span.set_extension('measurement', default=None)
 
 
 @Language.factory("unit_entity")
@@ -54,18 +57,28 @@ class UnitEntity(object):
 
       doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
-    text = doc.text
-    quants = parser.parse(text)
+    quants = parser.parse(doc.text)
     newEnts = []
     for quant in quants:
-      if quant.unit.entity.name not in ['dimensionless', 'time']:
-        start, end = quant.span
-        span = doc[:].char_span(start, end, label=self.label)
-        # When '.' is used at the end of unit, the char_span will return None
-        # The workaround is to include '.' in the span
-        # Other solution, text can be preprocessed to strip '.'
-        if span is None:
-          span = doc[:].char_span(start, end+1, label=self.label)
-        newEnts.append(span)
-    doc.ents = filter_spans(newEnts+list(doc.ents))
+      entity_name = quant.unit.entity.name
+      unit_name = quant.unit.name
+      # Exclude time — handled by TemporalEntity
+      if entity_name == 'time':
+        continue
+      # Exclude dimensionless except percentages, which are meaningful in plant context
+      is_percentage = 'percent' in unit_name.lower() or unit_name.strip() == '%'
+      if entity_name == 'dimensionless' and not is_percentage:
+        continue
+      start, end = quant.span
+      # alignment_mode="expand" handles trailing punctuation robustly
+      span = doc.char_span(start, end, label=self.label, alignment_mode="expand")
+      if span is None:
+        continue
+      span._.measurement = {
+        'value': quant.value,
+        'unit': unit_name,
+        'entity_type': entity_name,
+      }
+      newEnts.append(span)
+    doc.ents = filter_spans(newEnts + list(doc.ents))
     return doc
