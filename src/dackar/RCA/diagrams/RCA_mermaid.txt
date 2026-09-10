@@ -1,0 +1,83 @@
+flowchart LR
+    %% =========================
+    %% Vector Store (Text Artifacts)
+    %% =========================
+    subgraph VS[Vector Store]
+      VS_CR[Condition Report Chunks]
+      VS_WO[Work Order Chunks]
+      VS_SOP[SOP / Procedure Chunks]
+      VS_META[Metadata: mbse_links - IDs, provenance]
+    end
+
+    %% =========================
+    %% MBSE Knowledge Graph
+    %% =========================
+    subgraph KG[Knowledge Graph]
+      S[System]
+      A[Asset]
+      C[Component]
+      SE[Sensor]
+      AL[Alarm]
+      FM[FailureMode]
+      P[Procedure -SOP]
+      SC[SafetyControl]
+      CR[ConditionReport]
+    end
+
+    %% =========================
+    %% Telemetry Store (Numeric)
+    %% =========================
+    subgraph TS[Telemetry Store]
+      T1[(Time-series: vibration, temperature, pressure)]
+      T2[Anomaly metadata: score, threshold, confidence]
+    end
+
+    %% =========================
+    %% Orchestration & User
+    %% =========================
+    Eng[Engineer Prompt]
+    Q[LLM Orchestrator]
+    Out[Structured RCA + Actions + SOP IDs + SafetyControls + Citations]
+
+    %% ========== Data Flow ==========
+    Eng --> Q
+    Q -->|Graph queries -paths, neighbors| KG
+    KG -->|Node/Edge IDs + subgraphs| Q
+
+    Q -->|Semantic search| VS_CR
+    Q -->|Semantic search| VS_WO
+    Q -->|Semantic search| VS_SOP
+    Q -->|Metadata filters| VS_META
+    VS_META -->|mbse_links IDs| KG
+
+    Q -->|Telemetry slices| TS
+    TS -->|Numeric context -values + anomalies| Q
+
+    Q --> Out
+
+    %% ========== KG Edges ==========
+    C -->|observed_by| SE
+    C -->|causes| FM
+    FM -->|reported_in| CR
+    P -->|mitigates| FM
+    P -->|requires| SC
+
+    %% VS-to-KG linkage
+    VS_CR -->|links via condition_report_id| CR
+    VS_SOP -->|links via procedure_id| P
+    VS_WO -->|links via asset_id/component_id| A
+    VS_WO -->|optional link| C
+
+    %% Telemetry linkage
+    TS -->|sensor_id/component_id| SE
+    TS -->|asset_id| A
+
+    %% Styling
+    classDef agent fill:#DFF5E1,stroke:#096,stroke-width:1.5px,color:#093;
+    classDef kg fill:#E8F0FE,stroke:#3B6ED4,stroke-width:1.2px,color:#0B3C8A;
+    classDef vs fill:#FFF5D6,stroke:#BD7C00,stroke-width:1.2px,color:#7A4A00;
+    classDef ts fill:#F0F9FF,stroke:#0077B6,stroke-width:1.2px,color:#023E8A;
+    class Q agent;
+    class S,A,C,SE,AL,FM,P,SC,CR kg;
+    class VS_CR,VS_SOP,VS_WO,VS_META vs;
+    class T1,T2 ts;
