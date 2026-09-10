@@ -1,0 +1,199 @@
+{
+  "_comment": [
+    "Default plant profile for document reference and alarm ID extraction.",
+    "Copy this file, rename it to your-plant-id_profile.json, and override only the",
+    "fields that differ from the defaults.  Pass the path to extract_doc_refs() and",
+    "extract_alarm_ids() via the profile_path argument.",
+    "",
+    "doc_ref_types: each entry defines one document class.",
+    "  type        - canonical document type (used in DocRef.doc_type)",
+    "  label       - NER label (doc_ref_<type>) for schema routing",
+    "  description - human-readable name",
+    "  prefixes    - list of prefix strings that appear before the separator",
+    "  patterns    - list of raw regex strings.  {PREFIX} is replaced with a",
+    "                non-capturing alternation of all prefixes for this type.",
+    "                If omitted the generic patterns below are applied.",
+    "",
+    "alarm_patterns: ordered list of pattern entries.",
+    "  name    - stable identifier (used as source_id in SourceHit)",
+    "  pattern - raw regex string; full match is the alarm ID",
+    "  score   - confidence score assigned to this pattern (0-1)",
+    "",
+    "false_positive_filters: global exclusion rules applied after extraction.",
+    "  min_year / max_year - year values outside this range are rejected",
+    "  excluded_prefixes   - uppercase prefix strings never treated as doc refs"
+  ],
+
+  "plant_id": "default",
+
+  "doc_ref_types": [
+    {
+      "type": "CR",
+      "label": "doc_ref_cr",
+      "description": "Condition Report",
+      "prefixes": ["CR"],
+      "patterns": [
+        "\\bCR-(?:19|20)\\d{2}-\\d{3,8}\\b",
+        "\\bCR-\\d{5,8}\\b"
+      ]
+    },
+    {
+      "type": "CAP",
+      "label": "doc_ref_cap",
+      "description": "Corrective Action Program entry (alternate CR naming)",
+      "prefixes": ["CAP"],
+      "patterns": [
+        "\\bCAP-(?:19|20)\\d{2}-\\d{3,8}\\b",
+        "\\bCAP-\\d{5,9}\\b",
+        "\\bCAP(?:19|20)\\d{2}-\\d{3,8}\\b"
+      ]
+    },
+    {
+      "type": "WO",
+      "label": "doc_ref_wo",
+      "description": "Work Order",
+      "prefixes": ["WO"],
+      "patterns": [
+        "\\bWO-\\d{5,9}\\b",
+        "\\bWO\\s+\\d{5,9}\\b"
+      ]
+    },
+    {
+      "type": "PM",
+      "label": "doc_ref_pm",
+      "description": "Preventive Maintenance Work Order",
+      "prefixes": ["PM"],
+      "patterns": [
+        "\\bPM-\\d{4,8}\\b",
+        "\\bPM\\s+\\d{4,8}\\b"
+      ]
+    },
+    {
+      "type": "ECA",
+      "label": "doc_ref_eca",
+      "description": "Engineering Change / Change Authorization",
+      "prefixes": ["ECA", "EC", "DCN", "ECN"],
+      "patterns": [
+        "\\bECA-(?:19|20)\\d{2}-\\d{3,6}\\b",
+        "\\bECA-\\d{4,7}\\b",
+        "\\bEC-\\d{4,7}\\b",
+        "\\bDCN-\\d{4,7}\\b",
+        "\\bECN-\\d{4,7}\\b"
+      ]
+    },
+    {
+      "type": "SOP",
+      "label": "doc_ref_sop",
+      "description": "Procedure reference (OP / MP / SP / EOP / AOP)",
+      "prefixes": ["OP", "MP", "SP", "EOP", "AOP", "FNP", "GOP", "SOP"],
+      "patterns": [
+        "\\b(?:EOP|AOP|GOP|SOP|FNP)-[A-Z0-9]{1,4}-[0-9]{1,4}(?:[.]\\d+)*\\b",
+        "\\b(?:OP|MP|SP)-[0-9]{2,4}(?:[.]\\d+)*\\b"
+      ]
+    },
+    {
+      "type": "LER",
+      "label": "doc_ref_ler",
+      "description": "NRC Licensee Event Report",
+      "prefixes": ["LER"],
+      "patterns": [
+        "\\bLER-\\d{3}-(?:19|20)\\d{2}-\\d{3}\\b",
+        "\\bLER\\s+\\d{3}-(?:19|20)\\d{2}-\\d{3}\\b"
+      ]
+    },
+    {
+      "type": "GL",
+      "label": "doc_ref_gl",
+      "description": "NRC Generic Letter",
+      "prefixes": ["GL"],
+      "patterns": [
+        "\\bGL-(?:19|20)\\d{2}-\\d{2,3}\\b",
+        "\\bGL\\s+(?:19|20)\\d{2}-\\d{2,3}\\b"
+      ]
+    },
+    {
+      "type": "IN",
+      "label": "doc_ref_in",
+      "description": "NRC Information Notice",
+      "prefixes": ["IN"],
+      "patterns": [
+        "\\bIN-(?:19|20)\\d{2}-\\d{2,3}\\b",
+        "\\bIN\\s+(?:19|20)\\d{2}-\\d{2,3}\\b"
+      ]
+    },
+    {
+      "type": "BUL",
+      "label": "doc_ref_bul",
+      "description": "NRC Bulletin",
+      "prefixes": ["BUL", "BULLETIN"],
+      "patterns": [
+        "\\bBUL-(?:19|20)\\d{2}-\\d{2,3}\\b",
+        "\\bBULLETIN\\s+(?:19|20)\\d{2}-\\d{2,3}\\b"
+      ]
+    },
+    {
+      "type": "OE",
+      "label": "doc_ref_oe",
+      "description": "Operating Experience report (INPO SER / IER / OE)",
+      "prefixes": ["SER", "IER", "OE"],
+      "patterns": [
+        "\\bSER-(?:19|20)\\d{2}-\\d{2,4}\\b",
+        "\\bIER-(?:19|20)\\d{2}-\\d{2,4}\\b",
+        "\\bOE-\\d{4,6}\\b"
+      ]
+    },
+    {
+      "type": "NCR",
+      "label": "doc_ref_ncr",
+      "description": "Non-Conformance Report",
+      "prefixes": ["NCR", "PER", "AR"],
+      "patterns": [
+        "\\bNCR-(?:19|20)\\d{2}-\\d{3,7}\\b",
+        "\\bNCR-\\d{5,8}\\b",
+        "\\bPER-(?:19|20)\\d{2}-\\d{3,7}\\b",
+        "\\bAR-\\d{5,8}\\b"
+      ]
+    }
+  ],
+
+  "alarm_patterns": [
+    {
+      "name": "train_qualified_condition",
+      "description": "Unit-train-system-condition tag: e.g. 1-RC-P-1A-HI-PRESS or 1-FW-LO-FLOW",
+      "pattern": "\\b\\d-[A-Z]{2,6}(?:-[A-Z0-9]{1,6}){1,4}-(?:HI-HI|LO-LO|HI|LO|TRIP|ALARM|ACTUAT|SCRAM|SI|EFAS|AFAS)\\b",
+      "score": 0.90
+    },
+    {
+      "name": "short_alarm_id",
+      "description": "Short numeric alarm ID: ALM-1234, ALM-1234A",
+      "pattern": "\\bALM-\\d{3,6}[A-Z]?\\b",
+      "score": 0.88
+    },
+    {
+      "name": "annunciator_window",
+      "description": "Annunciator window reference: ANN-A-1, ANNUNC-B-12, WINDOW A-14",
+      "pattern": "\\b(?:ANN(?:UNC)?)-[A-Z]-\\d{1,3}\\b|\\bWINDOW\\s+[A-Z]-\\d{1,3}\\b",
+      "score": 0.85
+    },
+    {
+      "name": "process_alarm_setpoint",
+      "description": "Process alarm with loop tag and setpoint qualifier: e.g. PAS-1234-HI",
+      "pattern": "\\bP(?:AS|AH|AL|AHH|ALL)-\\d{3,6}(?:-(?:HI|LO))?\\b",
+      "score": 0.82
+    },
+    {
+      "name": "kla_point",
+      "description": "KLA/KLR process computer point names common at some sites: RC-0001A",
+      "pattern": "\\b[A-Z]{1,4}-\\d{4}[A-Z]?\\b",
+      "score": 0.65,
+      "_note": "Lower score — overlaps with equipment tags; context required"
+    }
+  ],
+
+  "false_positive_filters": {
+    "min_year": 1960,
+    "max_year": 2035,
+    "excluded_prefixes_from_doc_ref": ["PT", "FT", "LT", "TT", "AT", "MOV", "AOV", "FCV", "PCV"],
+    "excluded_prefixes_from_alarm": ["CR", "WO", "ECA", "PM", "SOP", "GL", "IN", "LER"]
+  }
+}
