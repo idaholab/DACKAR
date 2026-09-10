@@ -231,6 +231,24 @@ class CausalBase(object):
     """
       Stable public entrypoint for adapter/integration use.
       Returns self so callers can inspect normalized outputs.
+
+      Args:
+
+        text: str, the text to be processed
+        extract: bool, if True (default) run extractInformation() after
+          collecting the matched sentences, populating the entity/status and
+          relation outputs; if False, only the matched sentences are collected
+        screen: bool, if True print the collected information (sentences,
+          entities, statuses, relations) to the screen; defaults to False
+        reset: bool, if True (default) call reset() to clear any state from a
+          previous run (matched sentences, rule-based matcher, cached
+          outputs) before processing this text; set to False to accumulate
+          results across successive run() calls
+
+      Returns:
+
+        self, the extractor instance, so callers can chain and inspect the
+          normalized outputs after processing
     """
     if reset:
       self.reset()
