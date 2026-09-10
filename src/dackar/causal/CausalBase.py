@@ -227,6 +227,34 @@ class CausalBase(object):
     self._relationGeneral = None
     self._allRelPairs = []
 
+  def run(self, text, extract=True, screen=False, reset=True):
+    """
+      Stable public entrypoint for adapter/integration use.
+      Returns self so callers can inspect normalized outputs.
+
+      Args:
+
+        text: str, the text to be processed
+        extract: bool, if True (default) run extractInformation() after
+          collecting the matched sentences, populating the entity/status and
+          relation outputs; if False, only the matched sentences are collected
+        screen: bool, if True print the collected information (sentences,
+          entities, statuses, relations) to the screen; defaults to False
+        reset: bool, if True (default) call reset() to clear any state from a
+          previous run (matched sentences, rule-based matcher, cached
+          outputs) before processing this text; set to False to accumulate
+          results across successive run() calls
+
+      Returns:
+
+        self, the extractor instance, so callers can chain and inspect the
+          normalized outputs after processing
+    """
+    if reset:
+      self.reset()
+    self.__call__(text, extract=extract, screen=screen)
+    return self
+
   def getAttribute(self, name):
     """Get self attribute data
 
@@ -539,10 +567,20 @@ class CausalBase(object):
 
         customEnts: list, the customEnts associates with the "labels"
     """
+    if ents is None:
+      return None
+    if labels is None:
+      return None
     customEnts = [ent for ent in ents if ent.label_ in labels]
     if len(customEnts) == 0:
       customEnts = None
     return customEnts
+
+  def getEntityLabels(self, ent_id):
+    """
+      Safe accessor for configured entity labels.
+    """
+    return self._entityLabels.get(ent_id, set())
 
   def getPhrase(self, ent, start, end, include=False):
     """
@@ -859,8 +897,15 @@ class CausalBase(object):
     """
     matchedSents = []
     matchedSentsForVis = []
+    if doc is None or not hasattr(doc, "ents"):
+      return matchedSents, matchedSentsForVis
+    valid_labels = self.getEntityLabels(self._entID)
+    if not valid_labels:
+      return matchedSents, matchedSentsForVis
     for span in doc.ents:
       if span.ent_id_ != self._entID:
+        continue
+      if span.label_ not in valid_labels:
         continue
       sent = span.sent
       # Append mock entity for match in displaCy style to matched_sents
@@ -875,6 +920,62 @@ class CausalBase(object):
         matchedSents.append(sent)
       matchedSentsForVis.append({"text": sent.text, "ents": matchEnts})
     return matchedSents, matchedSentsForVis
+
+  def to_stage5_dict(self):
+    """
+      Normalized export used by adapters.
+      Keeps legacy internals encapsulated.
+    """
+    causals = []
+    for row in self._extractedCausals or []:
+      cause = row[0] if len(row) > 0 else None
+      cause_hs = row[1] if len(row) > 1 else None
+      keyword = row[2] if len(row) > 2 else None
+      effect = row[3] if len(row) > 3 else None
+      effect_hs = row[4] if len(row) > 4 else None
+      sent = row[5] if len(row) > 5 else None
+      conjecture = row[6] if len(row) > 6 else None
+      negated = row[7] if len(row) > 7 else None
+      causals.append({
+        "cause_text": getattr(cause, "text", str(cause) if cause is not None else ""),
+        "cause_status": getattr(cause_hs, "text", str(cause_hs) if cause_hs is not None else ""),
+        "connector": getattr(keyword, "text", str(keyword) if keyword is not None else ""),
+        "effect_text": getattr(effect, "text", str(effect) if effect is not None else ""),
+        "effect_status": getattr(effect_hs, "text", str(effect_hs) if effect_hs is not None else ""),
+        "sentence": getattr(sent, "text", str(sent) if sent is not None else ""),
+        "conjecture": bool(conjecture) if conjecture is not None else False,
+        "negated": bool(negated) if negated is not None else False,
+      })
+
+    entity_status = []
+    if self._entStatus is not None:
+      try:
+        entity_status = self._entStatus.to_dict(orient="records")
+      except Exception:
+        entity_status = []
+
+    entity_health = []
+    if self._entHS is not None:
+      try:
+        entity_health = self._entHS.to_dict(orient="records")
+      except Exception:
+        entity_health = []
+
+    general_rel = []
+    if self._relationGeneral is not None:
+      try:
+        general_rel = self._relationGeneral.to_dict(orient="records")
+      except Exception:
+        general_rel = []
+
+    return {
+      "extractor": self.__class__.__name__,
+      "entity_status": entity_status,
+      "entity_health_status": entity_health,
+      "causal_relations": causals,
+      "general_relations": general_rel,
+      "matched_sentence_count": len(self._matchedSents or []),
+    }
 
 #############################################################################
 # some useful methods, but currently they are not used
