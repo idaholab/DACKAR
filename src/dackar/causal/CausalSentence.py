@@ -64,7 +64,9 @@ class CausalSentence(CausalBase):
 
     rows = []
     for sent in self._matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      ents = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
+      if ents is None:
+        continue
       for ent in ents:
         if ent._.health_status is not None:
           row = {'entity':ent.text, 'label':ent.label_, 'alias':ent._.alias, 'root':ent._.ent_status_verb, 'status keyword':ent._.hs_keyword, 'health status':ent._.health_status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
@@ -76,7 +78,9 @@ class CausalSentence(CausalBase):
 
     rows = []
     for sent in self._matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      ents = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
+      if ents is None:
+        continue
       for ent in ents:
         if ent._.status is not None:
           row = {'entity':ent.text, 'label':ent.label_, 'alias':ent._.alias, 'status keyword':ent._.ent_status_verb, 'status':ent._.status, 'conjecture':ent._.conjecture, 'sentence':sent.text.strip('\n'),
@@ -150,8 +154,8 @@ class CausalSentence(CausalBase):
       valid = self.validSent(sent)
       causalEnts = None
       if self._causalKeywordID in self._entityLabels:
-        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+        causalEnts = self.getCustomEnts(sent.ents, self.getEntityLabels(self._causalKeywordID))
+      ents = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
       if ents is None:
         continue
       causalStatus = [sent.root.lemma_.lower()] in self._causalKeywords['VERB'] and [sent.root.lemma_.lower()] not in self._statusKeywords['VERB']
@@ -509,10 +513,13 @@ class CausalSentence(CausalBase):
     allCauseEffectPairs = []
     for sent in matchedSents:
       if self._causalKeywordID in self._entityLabels:
-        causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
+        causalEnts = self.getCustomEnts(sent.ents, self.getEntityLabels(self._causalKeywordID))
       else:
         continue
-      sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      sscEnts = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
+      if sscEnts is None:
+        self._causalSentsNoEnts.append(sent)
+        continue
       sscEnts = self.getConjuncts(sscEnts)
       logger.debug(f'Conjuncts pairs: {sscEnts}')
       if causalEnts is None: #  no causal keyword is found, skipping
@@ -529,8 +536,10 @@ class CausalSentence(CausalBase):
       logger.debug(f'Sentence contains causal keywords: {causalEnts}. \n {sent.text}')
 
       # grab all ents
-      labelList = self._entityLabels[self._causalKeywordID].union(self._entityLabels[self._entID])
+      labelList = self.getEntityLabels(self._causalKeywordID).union(self.getEntityLabels(self._entID))
       ents = self.getCustomEnts(sent.ents, labelList)
+      if ents is None:
+        continue
       mEnts = copy.copy(ents)
       root = sent.root
       i = root.i
@@ -942,6 +951,8 @@ class CausalSentence(CausalBase):
         doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines
     """
     matchedSents = []
+    if doc is None:
+      return matchedSents
     for sent in doc.sents:
       for ent in sent.ents:
         if ent.ent_id_ != self._causalKeywordID:
@@ -950,7 +961,15 @@ class CausalSentence(CausalBase):
           matchedSents.append(sent)
     return matchedSents
 
-
+  def to_stage5_dict(self):
+    """
+      Sentence-aware normalized export for adapter consumption.
+    """
+    out = super().to_stage5_dict()
+    out["has_causal_output"] = bool(self._extractedCausals)
+    out["has_health_status_output"] = self._entHS is not None and len(self._entHS) > 0
+    out["has_status_output"] = self._entStatus is not None and len(self._entStatus) > 0
+    return out
 
   def getHealthStatusForPobj(self, ent, include=False):
     """Get the status for ent root pos ``pobj``
