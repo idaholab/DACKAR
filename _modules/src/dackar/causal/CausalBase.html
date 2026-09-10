@@ -440,6 +440,37 @@
     <span class="bp">self</span><span class="o">.</span><span class="n">_allRelPairs</span> <span class="o">=</span> <span class="p">[]</span></div>
 
 
+<div class="viewcode-block" id="CausalBase.run">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalBase/index.html#src.dackar.causal.CausalBase.CausalBase.run">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">extract</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">screen</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">reset</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">      Stable public entrypoint for adapter/integration use.</span>
+<span class="sd">      Returns self so callers can inspect normalized outputs.</span>
+
+<span class="sd">      Args:</span>
+
+<span class="sd">        text: str, the text to be processed</span>
+<span class="sd">        extract: bool, if True (default) run extractInformation() after</span>
+<span class="sd">          collecting the matched sentences, populating the entity/status and</span>
+<span class="sd">          relation outputs; if False, only the matched sentences are collected</span>
+<span class="sd">        screen: bool, if True print the collected information (sentences,</span>
+<span class="sd">          entities, statuses, relations) to the screen; defaults to False</span>
+<span class="sd">        reset: bool, if True (default) call reset() to clear any state from a</span>
+<span class="sd">          previous run (matched sentences, rule-based matcher, cached</span>
+<span class="sd">          outputs) before processing this text; set to False to accumulate</span>
+<span class="sd">          results across successive run() calls</span>
+
+<span class="sd">      Returns:</span>
+
+<span class="sd">        self, the extractor instance, so callers can chain and inspect the</span>
+<span class="sd">          normalized outputs after processing</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">reset</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="fm">__call__</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">extract</span><span class="o">=</span><span class="n">extract</span><span class="p">,</span> <span class="n">screen</span><span class="o">=</span><span class="n">screen</span><span class="p">)</span>
+    <span class="k">return</span> <span class="bp">self</span></div>
+
+
 <div class="viewcode-block" id="CausalBase.getAttribute">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalBase/index.html#src.dackar.causal.CausalBase.CausalBase.getAttribute">[docs]</a>
   <span class="k">def</span><span class="w"> </span><span class="nf">getAttribute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
@@ -793,10 +824,23 @@
 
 <span class="sd">        customEnts: list, the customEnts associates with the "labels"</span>
 <span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">ents</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">labels</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">return</span> <span class="kc">None</span>
     <span class="n">customEnts</span> <span class="o">=</span> <span class="p">[</span><span class="n">ent</span> <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">ents</span> <span class="k">if</span> <span class="n">ent</span><span class="o">.</span><span class="n">label_</span> <span class="ow">in</span> <span class="n">labels</span><span class="p">]</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">customEnts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
       <span class="n">customEnts</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">return</span> <span class="n">customEnts</span></div>
+
+
+<div class="viewcode-block" id="CausalBase.getEntityLabels">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalBase/index.html#src.dackar.causal.CausalBase.CausalBase.getEntityLabels">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">getEntityLabels</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ent_id</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">      Safe accessor for configured entity labels.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entityLabels</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ent_id</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span></div>
 
 
 <div class="viewcode-block" id="CausalBase.getPhrase">
@@ -1155,8 +1199,15 @@
 <span class="sd">    """</span>
     <span class="n">matchedSents</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">matchedSentsForVis</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">doc</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="s2">"ents"</span><span class="p">):</span>
+      <span class="k">return</span> <span class="n">matchedSents</span><span class="p">,</span> <span class="n">matchedSentsForVis</span>
+    <span class="n">valid_labels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">getEntityLabels</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_entID</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">valid_labels</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">matchedSents</span><span class="p">,</span> <span class="n">matchedSentsForVis</span>
     <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">:</span>
       <span class="k">if</span> <span class="n">span</span><span class="o">.</span><span class="n">ent_id_</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entID</span><span class="p">:</span>
+        <span class="k">continue</span>
+      <span class="k">if</span> <span class="n">span</span><span class="o">.</span><span class="n">label_</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">valid_labels</span><span class="p">:</span>
         <span class="k">continue</span>
       <span class="n">sent</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">sent</span>
       <span class="c1"># Append mock entity for match in displaCy style to matched_sents</span>
@@ -1171,6 +1222,65 @@
         <span class="n">matchedSents</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sent</span><span class="p">)</span>
       <span class="n">matchedSentsForVis</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"text"</span><span class="p">:</span> <span class="n">sent</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="s2">"ents"</span><span class="p">:</span> <span class="n">matchEnts</span><span class="p">})</span>
     <span class="k">return</span> <span class="n">matchedSents</span><span class="p">,</span> <span class="n">matchedSentsForVis</span></div>
+
+
+<div class="viewcode-block" id="CausalBase.to_stage5_dict">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/causal/CausalBase/index.html#src.dackar.causal.CausalBase.CausalBase.to_stage5_dict">[docs]</a>
+  <span class="k">def</span><span class="w"> </span><span class="nf">to_stage5_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">      Normalized export used by adapters.</span>
+<span class="sd">      Keeps legacy internals encapsulated.</span>
+<span class="sd">    """</span>
+    <span class="n">causals</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extractedCausals</span> <span class="ow">or</span> <span class="p">[]:</span>
+      <span class="n">cause</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">cause_hs</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">keyword</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">effect</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">effect_hs</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">4</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">sent</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">5</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">5</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">conjecture</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">6</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">6</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">negated</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="mi">7</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">7</span> <span class="k">else</span> <span class="kc">None</span>
+      <span class="n">causals</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+        <span class="s2">"cause_text"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cause</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">cause</span><span class="p">)</span> <span class="k">if</span> <span class="n">cause</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"cause_status"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">cause_hs</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">cause_hs</span><span class="p">)</span> <span class="k">if</span> <span class="n">cause_hs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"connector"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">keyword</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">keyword</span><span class="p">)</span> <span class="k">if</span> <span class="n">keyword</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"effect_text"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">effect</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">effect</span><span class="p">)</span> <span class="k">if</span> <span class="n">effect</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"effect_status"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">effect_hs</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">effect_hs</span><span class="p">)</span> <span class="k">if</span> <span class="n">effect_hs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"sentence"</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">sent</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">sent</span><span class="p">)</span> <span class="k">if</span> <span class="n">sent</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"conjecture"</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">conjecture</span><span class="p">)</span> <span class="k">if</span> <span class="n">conjecture</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"negated"</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">negated</span><span class="p">)</span> <span class="k">if</span> <span class="n">negated</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">False</span><span class="p">,</span>
+      <span class="p">})</span>
+
+    <span class="n">entity_status</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entStatus</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">try</span><span class="p">:</span>
+        <span class="n">entity_status</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entStatus</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">"records"</span><span class="p">)</span>
+      <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">entity_status</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">entity_health</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entHS</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">try</span><span class="p">:</span>
+        <span class="n">entity_health</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_entHS</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">"records"</span><span class="p">)</span>
+      <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">entity_health</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="n">general_rel</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_relationGeneral</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">try</span><span class="p">:</span>
+        <span class="n">general_rel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_relationGeneral</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">"records"</span><span class="p">)</span>
+      <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">general_rel</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+      <span class="s2">"extractor"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+      <span class="s2">"entity_status"</span><span class="p">:</span> <span class="n">entity_status</span><span class="p">,</span>
+      <span class="s2">"entity_health_status"</span><span class="p">:</span> <span class="n">entity_health</span><span class="p">,</span>
+      <span class="s2">"causal_relations"</span><span class="p">:</span> <span class="n">causals</span><span class="p">,</span>
+      <span class="s2">"general_relations"</span><span class="p">:</span> <span class="n">general_rel</span><span class="p">,</span>
+      <span class="s2">"matched_sentence_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_matchedSents</span> <span class="ow">or</span> <span class="p">[]),</span>
+    <span class="p">}</span></div>
 
 
 <span class="c1">#############################################################################</span>
