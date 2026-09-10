@@ -80,7 +80,7 @@ class CausalSimple(CausalBase):
       Reset rule-based matcher
     """
     super().reset()
-    self._entInfoNames = None
+    self._entInfoNames = ['entity', 'label', 'status', 'amod', 'action', 'dep', 'alias', 'negation', 'conjecture', 'sentence']
 
   def textProcess(self):
     """
@@ -114,7 +114,7 @@ class CausalSimple(CausalBase):
     if self._screen:
       # print collected info
       for sent in self._matchedSents:
-        ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+        ents = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
         if ents is not None:
           print('Sentence:', sent)
           print('... Conjecture:', sent._.conjecture)
@@ -132,7 +132,7 @@ class CausalSimple(CausalBase):
 
     entInfo = []
     for sent in self._matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      ents = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
       if ents is not None:
         for ent in ents:
             entInfo.append([ent.text, ent.label_, ent._.status, ent._.status_amod, ent._.action, ent._.edep, ent._.alias, ent._.neg_text, sent._.conjecture, sent.text.strip('\n')])
@@ -158,11 +158,7 @@ class CausalSimple(CausalBase):
       logger.info('End of causal relation extraction!')
       if len(self._rawCausalList) > 0:
         # self._rawCausalList contains all identified entities ordered by index
-        for l in self._rawCausalList:
-          print(l, l[0].sent)
-        # print(self._rawCausalList)
-
-
+        logger.debug('Collected raw causal ordering output.')
 
   def extractStatus(self, matchedSents, predSynonyms=[], exclPrepos=[]):
     """
@@ -177,7 +173,7 @@ class CausalSimple(CausalBase):
     # procedure to process OPG CWS data
     # collect status, negation, conjecture information
     for sent in matchedSents:
-      ents = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      ents = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
       if ents is None:
         continue
 
@@ -365,12 +361,12 @@ class CausalSimple(CausalBase):
       causalPairs = []
       root = sent.root
       passive = self.isPassive(root)
-      causalEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._causalKeywordID])
+      causalEnts = self.getCustomEnts(sent.ents, self.getEntityLabels(self._causalKeywordID))
       if causalEnts is None:
         continue
       causalPairs.extend([(ent, ent.start) for ent in causalEnts])
 
-      sscEnts = self.getCustomEnts(sent.ents, self._entityLabels[self._entID])
+      sscEnts = self.getCustomEnts(sent.ents, self.getEntityLabels(self._entID))
       if sscEnts is not None:
         causalPairs.extend([(ent, ent.start) for ent in sscEnts])
 
@@ -397,6 +393,21 @@ class CausalSimple(CausalBase):
       allCausalPairs.append(causalPairs)
     self._rawCausalList.extend(allCausalPairs)
 
+  def to_stage5_dict(self):
+    """
+      Summarize extractor state as a plain dict for the Stage-5 adapter.
+
+      Returns:
+
+        dict, serializable summary of this extractor's output
+    """
+    out = super().to_stage5_dict()
+    out["raw_causal_ordering"] = [
+      [getattr(x, "text", str(x)) for x in row]
+      for row in (self._rawCausalList or [])
+    ]
+    out["has_status_output"] = self._entStatus is not None and len(self._entStatus) > 0
+    return out
 
   def isSubElements(self, elem1, elemList):
     """
