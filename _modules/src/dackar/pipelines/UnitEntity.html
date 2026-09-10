@@ -82,7 +82,6 @@
   <h1>Source code for src.dackar.pipelines.UnitEntity</h1><div class="highlight"><pre>
 <span></span><span class="c1"># Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">spacy.matcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">PhraseMatcher</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">spacy.tokens</span><span class="w"> </span><span class="kn">import</span> <span class="n">Span</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">spacy.language</span><span class="w"> </span><span class="kn">import</span> <span class="n">Language</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">quantulum3</span><span class="w"> </span><span class="kn">import</span> <span class="n">parser</span>
@@ -96,6 +95,10 @@
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/pipelines/UnitEntity/index.html#src.dackar.pipelines.UnitEntity.logger">[docs]</a>
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
 
+
+<span class="c1"># Structured measurement data attached to each matched span</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">Span</span><span class="o">.</span><span class="n">has_extension</span><span class="p">(</span><span class="s1">'measurement'</span><span class="p">):</span>
+  <span class="n">Span</span><span class="o">.</span><span class="n">set_extension</span><span class="p">(</span><span class="s1">'measurement'</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
 
 
 <span class="nd">@Language</span><span class="o">.</span><span class="n">factory</span><span class="p">(</span><span class="s2">"unit_entity"</span><span class="p">)</span>
@@ -155,20 +158,30 @@
 
 <span class="sd">      doc: spacy.tokens.doc.Doc, the processed document using nlp pipelines</span>
 <span class="sd">    """</span>
-    <span class="n">text</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span>
-    <span class="n">quants</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">quants</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
     <span class="n">newEnts</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">quant</span> <span class="ow">in</span> <span class="n">quants</span><span class="p">:</span>
-      <span class="k">if</span> <span class="n">quant</span><span class="o">.</span><span class="n">unit</span><span class="o">.</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">'dimensionless'</span><span class="p">,</span> <span class="s1">'time'</span><span class="p">]:</span>
-        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">quant</span><span class="o">.</span><span class="n">span</span>
-        <span class="n">span</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[:]</span><span class="o">.</span><span class="n">char_span</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
-        <span class="c1"># When '.' is used at the end of unit, the char_span will return None</span>
-        <span class="c1"># The workaround is to include '.' in the span</span>
-        <span class="c1"># Other solution, text can be preprocessed to strip '.'</span>
-        <span class="k">if</span> <span class="n">span</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-          <span class="n">span</span> <span class="o">=</span> <span class="n">doc</span><span class="p">[:]</span><span class="o">.</span><span class="n">char_span</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
-        <span class="n">newEnts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">span</span><span class="p">)</span>
-    <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="n">filter_spans</span><span class="p">(</span><span class="n">newEnts</span><span class="o">+</span><span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">))</span>
+      <span class="n">entity_name</span> <span class="o">=</span> <span class="n">quant</span><span class="o">.</span><span class="n">unit</span><span class="o">.</span><span class="n">entity</span><span class="o">.</span><span class="n">name</span>
+      <span class="n">unit_name</span> <span class="o">=</span> <span class="n">quant</span><span class="o">.</span><span class="n">unit</span><span class="o">.</span><span class="n">name</span>
+      <span class="c1"># Exclude time — handled by TemporalEntity</span>
+      <span class="k">if</span> <span class="n">entity_name</span> <span class="o">==</span> <span class="s1">'time'</span><span class="p">:</span>
+        <span class="k">continue</span>
+      <span class="c1"># Exclude dimensionless except percentages, which are meaningful in plant context</span>
+      <span class="n">is_percentage</span> <span class="o">=</span> <span class="s1">'percent'</span> <span class="ow">in</span> <span class="n">unit_name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">or</span> <span class="n">unit_name</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="o">==</span> <span class="s1">'%'</span>
+      <span class="k">if</span> <span class="n">entity_name</span> <span class="o">==</span> <span class="s1">'dimensionless'</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_percentage</span><span class="p">:</span>
+        <span class="k">continue</span>
+      <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">quant</span><span class="o">.</span><span class="n">span</span>
+      <span class="c1"># alignment_mode="expand" handles trailing punctuation robustly</span>
+      <span class="n">span</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">char_span</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">label</span><span class="p">,</span> <span class="n">alignment_mode</span><span class="o">=</span><span class="s2">"expand"</span><span class="p">)</span>
+      <span class="k">if</span> <span class="n">span</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">continue</span>
+      <span class="n">span</span><span class="o">.</span><span class="n">_</span><span class="o">.</span><span class="n">measurement</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">'value'</span><span class="p">:</span> <span class="n">quant</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+        <span class="s1">'unit'</span><span class="p">:</span> <span class="n">unit_name</span><span class="p">,</span>
+        <span class="s1">'entity_type'</span><span class="p">:</span> <span class="n">entity_name</span><span class="p">,</span>
+      <span class="p">}</span>
+      <span class="n">newEnts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">span</span><span class="p">)</span>
+    <span class="n">doc</span><span class="o">.</span><span class="n">ents</span> <span class="o">=</span> <span class="n">filter_spans</span><span class="p">(</span><span class="n">newEnts</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">ents</span><span class="p">))</span>
     <span class="k">return</span> <span class="n">doc</span></div>
 </div>
 
