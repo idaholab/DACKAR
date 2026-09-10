@@ -1,68 +1,65 @@
-
 title = "Safety and Risk Graph Schema"
-version = 1.0
+version = "1.0"
 
-# ====================
-# Node Entities
-# ====================
+# ============================================================
+# NODE ENTITIES
+# ============================================================
 
 [node.basic_event]
 node_description = "A fundamental event in a fault tree representing a component failure or human error with an associated probability."
-properties = [
-  { name = "description", type = "string", optional = false, description = "Narrative of the event" },
-  { name = "value", type = "floating", optional = false, description = "Probability or frequency of occurrence" },
-  { name = "unit",  type = "string", optional = false, description = "Unit of the probability or frequency (e.g., per year)" }
+node_properties = [
+  { name = "id",          type = "string", optional = false, description = "Stable unique identifier for the basic event." },
+  { name = "name",        type = "string", optional = true,  description = "Short human-readable label for the basic event." },
+  { name = "description", type = "string", optional = false, description = "Narrative of the event." },
+  { name = "value", type = "float", optional = false, description = "Probability or frequency of occurrence." },
+  { name = "unit", type = "string", optional = false, description = "Unit of the probability or frequency, such as per year." }
 ]
 
-[node.failure_mode]
-node_description = "A specific manner or mode in which a component or system can fail, used in FMEA to assess risk."
-properties = [
-  { name = "failure mode description", type = "string", optional = false, description = "Description of the failure mechanism" },
-  { name = "failure cause", type = "string", optional = true, description = "Root cause of the failure" },
-  { name = "failure effect", type = "string", optional = true, description = "Impact of the failure on the system or mission" },
-  { name = "likelihood of occurrence", type = "floating", optional = true, description = "Estimated probability of the failure mode" },
-  { name = "likelihood of detection", type = "floating", optional = true, description = "Probability that the failure will be detected before it causes harm" },
-  { name = "severity", type = "floating", optional = true, description = "Impact severity score (e.g., 1–10)" },
-  { name = "current controls", type = "string", optional = true, description = "Existing mitigation or detection mechanisms" }
-]
+# failure_mode is defined in fmeaSchema.toml (canonical, merged FMEA + PRA definition)
+# and cross-referenced here via the subject_to and represented_in_pra_by relations.
 
 [node.fault_tree]
 node_description = "A logical model representing how basic events combine to cause a top-level system failure."
-properties = [
-  { name = "top event", type = "string", optional = false, description = "The undesired event being analyzed" },
-  { name = "gate type", type = "string", optional = false, description = "Logical gate type (e.g., AND, OR)" }
+node_properties = [
+  { name = "id",        type = "string", optional = false, description = "Stable unique identifier for the fault tree." },
+  { name = "name",      type = "string", optional = true,  description = "Short human-readable name for the fault tree." },
+  { name = "top_event", type = "string", optional = false, description = "The undesired event being analyzed." },
+  { name = "gate_type", type = "string", optional = false, description = "Logical gate type, such as AND or OR." }
 ]
 
 [node.event_tree]
 node_description = "A forward logic model used in PRA to evaluate possible outcomes following an initiating event."
-properties = [
-  { name = "initiating event", type = "string", optional = false, description = "Triggering event for the sequence" },
-  { name = "sequence outcome", type = "string", optional = false, description = "End state or consequence of the sequence" }
+node_properties = [
+  { name = "id",               type = "string", optional = false, description = "Stable unique identifier for the event tree." },
+  { name = "name",             type = "string", optional = true,  description = "Short human-readable name for the event tree." },
+  { name = "initiating_event", type = "string", optional = false, description = "Triggering event for the sequence." },
+  { name = "sequence_outcome", type = "string", optional = false, description = "End state or consequence of the sequence." }
 ]
 
 [node.initiating_event]
 node_description = "An event that initiates a sequence of events potentially leading to an accident or system failure."
-properties = [
-  { name = "event description", type = "string", optional = false, description = "Narrative of the initiating event" },
-  { name = "frequency", type = "floating", optional = false, description = "Expected frequency of the event" },
-  { name = "unit", type = "string", optional = false, description = "Unit of frequency (e.g., per year)" }
+node_properties = [
+  { name = "id", type = "string", optional = false, description = "Stable unique identifier for the initiating event." },
+  { name = "description", type = "string", optional = false, description = "Narrative of the initiating event." },
+  { name = "frequency", type = "float", optional = false, description = "Expected frequency of the event." },
+  { name = "unit", type = "string", optional = false, description = "Unit of frequency, such as per year." }
 ]
 
-# ====================
-# Relationships
-# ====================
+# ============================================================
+# RELATIONS
+# ============================================================
 
-[relation.subject_to]
-relation_description = "Links an MBSE entity (e.g., component or function) to its associated failure mode."
-from_entity = "mbse_entity"
+[relation.definition_subject_to]
+relation_description = "Links an architectural element definition to a failure mode it is subject to at the type level. For plant-specific installed assets use subject_to (defined in fmeaSchema.toml)."
+from_entity = "element_definition"
 to_entity = "failure_mode"
 
-[relation.represented_in_PRA_by]
+[relation.represented_in_pra_by]
 relation_description = "Maps a failure mode to a basic event used in PRA quantification."
 from_entity = "failure_mode"
 to_entity = "basic_event"
 
-[relation.modeled_in_PRA_by]
+[relation.modeled_in_pra_by]
 relation_description = "Connects an initiating event to its corresponding event tree model."
 from_entity = "initiating_event"
 to_entity = "event_tree"
@@ -72,12 +69,12 @@ relation_description = "Links an event tree to another event tree that further e
 from_entity = "event_tree"
 to_entity = "event_tree"
 
-[relation.dictate_branching_in]
+[relation.dictates_branching_in]
 relation_description = "Indicates that an initiating event determines the branching logic in a fault tree."
 from_entity = "initiating_event"
 to_entity = "fault_tree"
 
-[relation.called_in_PRA_in]
+[relation.called_in_pra_in]
 relation_description = "Shows that a basic event is used within a fault tree structure."
 from_entity = "basic_event"
 to_entity = "fault_tree"

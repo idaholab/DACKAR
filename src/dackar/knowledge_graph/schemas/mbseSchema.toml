@@ -1,0 +1,1402 @@
+title   = "Pragmatic MBSE-Inspired Knowledge Graph Metamodel for Nuclear Plant Architecture"
+version = "3.4"
+
+# ============================================================
+# CHANGELOG v3.3 → v3.4
+# ============================================================
+#
+# 1. [HIGH]    Added `plant_mode` node for plant operating state modeling.
+#              mode_category is a free-form string (no closed enum) to
+#              accommodate PWR/BWR/SMR/research reactor naming conventions
+#              and plant-specific outage sub-states.
+#
+# 2. [HIGH]    Added four plant-mode relations:
+#              - required_in_mode  (function_definition → plant_mode):
+#                safety function operability scoping per Technical Specs
+#              - applicable_in_mode (requirement → plant_mode):
+#                mode-conditional requirement applicability
+#              - available_in_mode  (element_usage → plant_mode):
+#                equipment operability requirement in a specific mode
+#              - normal_state_in_mode (element_usage → plant_mode):
+#                normal position/alignment of an element in a specific mode
+#
+#              Note: mode transition ordering (precedes_mode) is deferred to
+#              a future release.
+#
+# ============================================================
+# CHANGELOG v3.2 → v3.3
+# ============================================================
+#
+# 1. [HIGH]    Added `interface_role` enum property to `exposes_interface`
+#              relation to distinguish provided vs required interface contracts
+#              (maps to SysML v1 conjugate InterfaceBlock / conjugate port).
+#              Values: ["provided", "required", "bidirectional"].
+#
+# 2. [HIGH]    Narrowed `refines_requirement` to strict same-abstraction-level
+#              use (SysML «refineReqt»).  Added new `derives_requirement`
+#              relation (SysML «deriveReqt») for cross-abstraction-boundary
+#              derivation across the regulatory hierarchy
+#              (10 CFR 50 → FSAR → design req → component req).
+#
+# 3. [MEDIUM]  Added `function_input_flow` and `function_output_flow` relations
+#              (function_definition → flow_definition) to model what a function
+#              consumes and produces, enabling functional data-flow tracing
+#              (maps to SysML Activity input/output ObjectFlow pins).
+#
+# 4. [MEDIUM]  Added `connector_kind` enum property to `connector` node to
+#              distinguish assembly connectors (peer-to-peer within a context)
+#              from delegation connectors (boundary port → interior part port).
+#              Values: ["assembly", "delegation", "unspecified"].
+#
+# 5. [MEDIUM]  Harmonized `requirement_type` and `specification_type` enums to
+#              the same canonical set:
+#              ["design","safety","licensing","operational","maintenance",
+#               "performance","environmental"].
+#              Added "environmental" to requirement_type; added "maintenance"
+#              to specification_type; reordered both to match.
+#
+# 6. [LOW]     Corrected `port_type` description: previously stated "Maps to
+#              SysML ProxyPort typed by an InterfaceBlock" (confused port kind
+#              with port type).  Now correctly states: "Maps to a reusable
+#              Block or simplified InterfaceBlock used as the structural type
+#              of a port."
+#
+# 7. [LOW]     Added `primary_key = "id"` field to all 10 node definitions,
+#              making the MERGE key contract between schema and ingestion layer
+#              explicit and unambiguous.
+#
+# ============================================================
+# CHANGELOG v3.1 → v3.2
+# ============================================================
+#
+# 1. [HIGH]    Added `references_element` and `references_element_usage` relations
+#              to distinguish non-ownership reference/aggregation from structural
+#              composition (has_part / has_part_usage).  Maps to SysML reference
+#              property (UML association without composition ownership).
+#
+# 2. [MEDIUM]  Revised `interaction_kind` enum across port, port_type, and
+#              flow_definition:
+#                - Removed "mechanical"  (physical domain label, not an
+#                  interaction kind; captured by element discipline field).
+#                - Removed "control"     (ambiguous; replaced by "command_signal").
+#                - Split  "signal"       into "signal_analog" and "signal_digital"
+#                  to reflect the I&C distinction between continuous measurable
+#                  signals (4-20 mA, RTD) and discrete binary signals (contact I/O).
+#                - Added  "force_mechanical" for shaft coupling, torque transmission,
+#                  and kinematic linkages that convey mechanical force or motion.
+#              Final enum: ["energy", "material", "signal_analog", "signal_digital",
+#                           "data", "command_signal", "force_mechanical"]
+#
+# 3. [MEDIUM]  Added `interface_block` node and `exposes_interface` relation for
+#              full protocol-level port typing (SysML InterfaceBlock).  Primarily
+#              relevant to I&C and digital control systems.
+#
+# 4. [MEDIUM]  Renamed `decomposes` → `has_subfunction` to unambiguously express
+#              the parent-to-child direction in functional decomposition.
+#
+# 5. [LOW]     Added "equipment" to `structural_kind` enum in element_definition to
+#              match nuclear plant CMMS and configuration management terminology.
+#
+# 6. [LOW]     Added `traces_to` relation for non-formal requirement traceability
+#              (SysML «trace»); weaker than satisfies / refines_requirement.
+#
+# 7. [LOW]     Clarified `allocated_to` and `allocated_to_usage` descriptions to
+#              note the directional inversion relative to SysML v2 «perform»
+#              (which goes from usage → function; this schema goes function →
+#              element, which is the allocation direction used in engineering
+#              databases and is the correct direction for KG querying).
+#
+# ============================================================
+
+
+# ============================================================
+# NODE ENTITIES
+# ============================================================
+
+[node.element_definition]
+primary_key = "id"
+node_description = """
+Represents a reusable, type-level architectural definition of a system element.
+This is the conceptual building block of the architecture: it describes what a
+system, subsystem, assembly, component, or equipment class *is* independently
+of any specific plant occurrence or installed asset.
+
+Maps to SysML Block (v1) and PartDef / BlockDef (v2).  Each element_definition
+may be instantiated by one or more element_usage nodes via the instance_of
+relation, refined through specializes, and decomposed through has_part.
+
+Properties note:
+  structural_kind distinguishes the decomposition level within the architecture
+  hierarchy (system → subsystem → assembly → component / equipment).
+  discipline captures the primary engineering domain.
+  safety_class carries the governing nuclear safety classification.
+  source_model_id and source_tool support traceability to the originating MBSE
+  tool (e.g., Capella, Cameo, CATIA Magic, or a design database export).
+"""
+node_properties = [
+  { name = "id",             type = "string", optional = false, description = "Stable unique identifier for the element definition within the knowledge graph or the imported architecture source." },
+  { name = "name",           type = "string", optional = false, description = "Preferred human-readable name of the architectural definition, such as 'Emergency Diesel Generator', 'Reactor Coolant Pump', or 'High-Pressure Safety Injection System'." },
+  { name = "structural_kind", type = "enum",  optional = false, description = "Structural decomposition level or role of the element within the architecture hierarchy. 'system' is the highest level; 'subsystem' sits within a system; 'assembly' is a self-contained functional grouping within a subsystem; 'component' is a leaf-level structural element; 'equipment' is a plant-tagged physical asset (used primarily in CMMS and configuration management contexts).", enum_values = ["system", "subsystem", "assembly", "component", "equipment"] },
+  { name = "domain_category", type = "string", optional = true, description = "Domain-oriented classification label for the element, such as pump, valve, heat exchanger, tank, breaker, transformer, controller, sensor, cable, pipe, or civil structure. Provides finer granularity than discipline for equipment classification queries." },
+  { name = "description",   type = "string", optional = true, description = "Narrative explanation of the definition, including purpose, functional scope, modeling assumptions, design basis context, and distinguishing characteristics from similar definitions." },
+  { name = "discipline",    type = "enum",   optional = true, description = "Primary engineering discipline associated with the element definition.", enum_values = ["mechanical", "electrical", "I&C", "process", "civil", "thermal_hydraulic"] },
+  { name = "safety_class",  type = "string", optional = true, description = "Nuclear safety classification assigned to the element definition according to the governing regulatory or quality-assurance scheme (e.g., Safety Class 1, Seismic Category I, Quality Level A)." },
+  { name = "source_model_id", type = "string", optional = true, description = "Identifier of the corresponding element in the originating MBSE model, design repository, or imported architecture dataset. Used to maintain traceability back to the source tool." },
+  { name = "source_tool",   type = "string", optional = true, description = "Name of the source tool, repository, or modeling environment from which the element definition was imported or derived (e.g., Capella, Cameo Systems Modeler, CATIA Magic, Teamcenter)." }
+]
+
+[node.element_usage]
+primary_key = "id"
+node_description = """
+Represents a specific plant occurrence, realized asset, or context-specific
+usage of an element definition.  An element_usage answers the question 'which
+specific installed unit or tagged component is this?'
+
+Maps to SysML PartProperty / PartUsage (v2) — the occurrence of a type in a
+particular context.  Every element_usage should be linked to its defining
+type via the instance_of relation so that type-level properties can be
+inherited by query traversal.
+
+Plant-specific attributes (tag, asset_id, unit, train, division) directly
+support nuclear plant redundancy analysis, maintenance queries, and SAR
+section generation.  The status field tracks the current lifecycle state of
+the physical asset.
+"""
+node_properties = [
+  { name = "id",           type = "string", optional = false, description = "Stable unique identifier for the element usage within the knowledge graph." },
+  { name = "name",         type = "string", optional = false, description = "Preferred human-readable name of the specific plant occurrence or installed asset, such as 'EDG-A', 'Pump P-17A', or 'RCP-1A'." },
+  { name = "tag",          type = "string", optional = true,  description = "Plant equipment tag, instrument tag, functional location tag, or other operational identifier assigned in plant documentation, P&IDs, or operational systems." },
+  { name = "asset_id",     type = "string", optional = true,  description = "Identifier of the asset in an asset management, maintenance, reliability, or configuration management system (e.g., SAP PM functional location, CMMS asset number)." },
+  { name = "status",       type = "enum",   optional = true,  description = "Current lifecycle or availability status of the installed asset in the plant context.", enum_values = ["active", "inactive", "under_maintenance", "decommissioned"] },
+  { name = "unit",         type = "string", optional = true,  description = "Plant unit, reactor unit, block, or unit-level designation to which the usage belongs (e.g., Unit 1, Unit 2)." },
+  { name = "train",        type = "string", optional = true,  description = "Train designation of the usage (e.g., Train A, Train B).  Supports redundancy-aware analysis and querying of safety system independence." },
+  { name = "division",     type = "string", optional = true,  description = "Division, channel, or independence grouping associated with the usage under the plant's classification scheme (e.g., Division I, Division II, Class 1E Channel A)." },
+  { name = "location",     type = "string", optional = true,  description = "Physical or logical location of the installed asset, such as building, room number, panel identifier, cabinet, elevation, or functional location in the plant layout." },
+  { name = "source_model_id", type = "string", optional = true, description = "Identifier of the corresponding usage, part, or occurrence in the originating architecture model or imported source dataset." }
+]
+
+[node.port]
+primary_key = "id"
+node_description = """
+Represents an interaction point owned by an architectural element.  Ports are
+the canonical endpoints for connectivity and boundary interaction in the
+knowledge graph.  They separate the internal architecture of an element from
+its external interfaces, enabling boundary-based connectivity analysis.
+
+Maps to SysML Port (v1) and PortUsage (v2).  A port may be typed by a
+reusable port_type node (typed_by_port_type) and may be further characterized
+by an interface_block node (exposes_interface) when a full protocol-level
+contract is required.
+
+interaction_kind provides lightweight interaction classification for cases
+where no shared port type or interface block is modeled.  When port_type or
+interface_block are present, interaction_kind should be consistent with them.
+
+Enum values for interaction_kind:
+  energy         — bulk electrical, thermal, or pneumatic power transmission
+  material       — bulk fluid flow (liquid coolant, steam, gas, chemicals)
+  signal_analog  — continuous measurable signals (4-20 mA, voltage, RTD output)
+  signal_digital — discrete binary or digital signals (contact I/O, digital DO)
+  data           — structured digital communications (Modbus, PROFIBUS, Ethernet)
+  command_signal — actuator commands, setpoint outputs, control directives
+  force_mechanical — mechanical force, torque, or kinematic motion (shaft coupling)
+"""
+node_properties = [
+  { name = "id",               type = "string", optional = false, description = "Stable unique identifier for the port." },
+  { name = "name",             type = "string", optional = false, description = "Preferred human-readable name of the port, such as 'suction_inlet', 'discharge_outlet', 'power_input_480V', 'speed_signal_out', or 'command_input'." },
+  { name = "direction",        type = "enum",   optional = true,  description = "Declared direction of exchange relative to the owning element at this port.", enum_values = ["in", "out", "inout", "unspecified"] },
+  { name = "interaction_kind", type = "enum",   optional = true,  description = "Lightweight classification of the port by canonical interaction category. Use when a shared port_type or interface_block is not modeled. Must be consistent with any linked port_type if both are present.", enum_values = ["energy", "material", "signal_analog", "signal_digital", "data", "command_signal", "force_mechanical"] },
+  { name = "port_role",        type = "string", optional = true,  description = "Domain-oriented role name for the port within the context of its owning element, such as 'coolant_inlet', 'exhaust_outlet', 'control_power_feed', 'position_feedback', or 'bus_interface'." },
+  { name = "description",      type = "string", optional = true,  description = "Narrative explanation of the port's purpose, intended interaction, boundary semantics, and any modeling assumptions or limitations." }
+]
+
+[node.port_type]
+primary_key = "id"
+node_description = """
+Represents a reusable structural class used to type one or more ports.
+A port_type captures what *class* of interaction point a port is —
+independently of any specific instance, commodity, or connection.
+
+Maps to a reusable Block (or simplified InterfaceBlock) used as the
+structural type of a port in SysML.  This is distinct from the port *kind*
+(SysML distinguishes FullPort vs ProxyPort as kinds of ports): port_type
+describes the structural interface class, not the delegation behavior.
+
+Port type nodes are most valuable when the same interaction class recurs
+across many elements — for example, 'AC480V_Power_Input' or
+'Analog_4-20mA_Output' may type hundreds of ports across the plant
+architecture, enabling type-level queries ('find all elements with an
+AC480V_Power_Input port').
+
+For cases requiring a full protocol-level contract (I&C systems, digital
+communications), use an interface_block node linked via exposes_interface
+instead of, or in addition to, a port_type.
+
+interaction_kind is required for port_type nodes and must represent the
+canonical interaction category that all ports typed by this port_type carry.
+"""
+node_properties = [
+  { name = "id",               type = "string", optional = false, description = "Stable unique identifier for the port type." },
+  { name = "name",             type = "string", optional = false, description = "Preferred human-readable name of the port type, such as 'FluidOutletPort_150psi', 'AC_480V_Power_Input', 'Analog_4-20mA_Output', or 'Digital_Contact_Input'." },
+  { name = "interaction_kind", type = "enum",   optional = false, description = "Canonical category of interaction supported by all ports typed by this port_type. Must be one of the standard interaction categories.", enum_values = ["energy", "material", "signal_analog", "signal_digital", "data", "command_signal", "force_mechanical"] },
+  { name = "description",      type = "string", optional = true,  description = "Narrative explanation of the structural semantics of this port type, including typical use cases, physical or logical characteristics, and applicable standards or conventions." }
+]
+
+[node.interface_block]
+primary_key = "id"
+node_description = """
+Represents a reusable interface contract that fully defines the set of flows,
+signals, data items, and interaction semantics that a Full Port or Proxy Port
+must satisfy.  Used primarily for I&C systems, digital control networks, and
+communication interfaces where a port must conform to a specific protocol or
+physical standard.
+
+Maps to SysML InterfaceBlock (v1/v2).  While port_type captures what *kind*
+of interaction point a port is, interface_block captures the complete
+*behavioral and structural contract* of that port — including the protocol
+standard, message types, timing constraints, and admissible flow types.
+
+Examples in nuclear plant context:
+  - IEC 61850 GOOSE messaging interface
+  - Modbus RTU over RS-485
+  - PROFIBUS DP device interface
+  - IEEE C37.118 synchrophasor data port
+  - Hardwired 4-20 mA analog interface per ISA-5.1
+
+An interface_block is linked to ports via the exposes_interface relation and
+may optionally be linked to flow_definition nodes representing the items it
+conveys.
+"""
+node_properties = [
+  { name = "id",            type = "string", optional = false, description = "Stable unique identifier for the interface block." },
+  { name = "name",          type = "string", optional = false, description = "Preferred human-readable name of the interface block, such as 'IEC61850_GOOSE_Interface', 'Modbus_RTU_Slave_Interface', or 'Analog_4-20mA_Process_Variable_Interface'." },
+  { name = "protocol",      type = "string", optional = true,  description = "Governing communication protocol, physical standard, or interface convention that defines this interface block (e.g., IEC 61850, Modbus RTU, PROFIBUS DP, ISA-5.1, IEEE C37.118)." },
+  { name = "standard",      type = "string", optional = true,  description = "Applicable engineering or regulatory standard that governs the interface definition (e.g., 'IEC 61850-8-1', 'ISA-5.1-2009', 'IEEE 802.3')." },
+  { name = "interaction_kind", type = "enum", optional = true, description = "Primary interaction category supported by this interface block.", enum_values = ["energy", "material", "signal_analog", "signal_digital", "data", "command_signal", "force_mechanical"] },
+  { name = "description",   type = "string", optional = true,  description = "Narrative explanation of the interface contract, including admissible message types, timing requirements, physical layer characteristics, and applicable use cases in the plant architecture." }
+]
+
+[node.flow_definition]
+primary_key = "id"
+node_description = """
+Represents a reusable definition of what is conveyed across a connection or
+exposed at an architecture boundary.  This node is used for commodities,
+signal classes, control exchanges, and data exchanges that recur across
+the architecture.
+
+Maps to SysML FlowSpecification / ItemFlow typed item.  A flow_definition
+answers 'what flows?' while a connector answers 'between which ports?' and
+a port answers 'at which boundary point?'
+
+interaction_kind must match the category of the conveyed item.  The commodity
+field provides specific engineering identification (e.g., 'demineralized water',
+'480V AC 3-phase', 'breaker position contact').
+
+Note on interaction_kind values:
+  energy         — electrical power, thermal energy, steam enthalpy flux
+  material       — borated water, reactor coolant, compressed air, lubricating oil
+  signal_analog  — 4-20 mA process variable, thermocouple EMF, pressure transmitter output
+  signal_digital — contact input state, digital DO actuation, binary status
+  data           — Modbus register set, PROFIBUS data telegram, Ethernet frame payload
+  command_signal — actuator open/close command, speed setpoint, interlock trip signal
+  force_mechanical — shaft torque, gear train force, hydraulic cylinder rod force
+"""
+node_properties = [
+  { name = "id",               type = "string", optional = false, description = "Stable unique identifier for the flow definition." },
+  { name = "name",             type = "string", optional = false, description = "Preferred human-readable name of the flow, such as 'Borated Reactor Coolant', '480V AC Power', 'RCP Speed Signal (4-20mA)', 'Breaker Status Contact', or 'Emergency Trip Command'." },
+  { name = "interaction_kind", type = "enum",   optional = false, description = "Canonical category of the conveyed item or exchange. Must unambiguously characterize the nature of what flows across the connection.", enum_values = ["energy", "material", "signal_analog", "signal_digital", "data", "command_signal", "force_mechanical"] },
+  { name = "commodity",        type = "string", optional = true,  description = "Specific engineering substance, signal class, energy form, fluid type, or conveyed item represented by the flow definition (e.g., 'demineralized water at 150 psia', '480V 3-phase AC', '4-20 mA level transmitter output')." },
+  { name = "protocol",         type = "string", optional = true,  description = "Protocol, signaling convention, physical standard, or exchange convention associated with the flow when it is a digital or communication flow." },
+  { name = "units",            type = "string", optional = true,  description = "Relevant engineering units associated with the flow when the conveyed item is routinely quantified (e.g., gpm, kW, mA, psi, °F, Mbps)." },
+  { name = "description",      type = "string", optional = true,  description = "Narrative explanation of the conveyed item, including physical or logical characteristics, typical operating range, and relevant engineering or safety context." }
+]
+
+[node.connector]
+primary_key = "id"
+node_description = """
+Represents a connection pathway or linkage between ports.  A connector is
+the canonical graph construct for expressing plant architecture connectivity.
+It should be used instead of proliferating custom relation verbs between
+elements, so that connectivity can be queried uniformly.
+
+Maps to SysML Connector (structural) combined with ItemFlow (what it carries).
+The connector node expresses the structural link; the conveys_flow relation
+to a flow_definition expresses what travels through it.
+
+A connector normally belongs to an architectural context — the element whose
+interior it connects — and this ownership is expressed via owned_by_context
+(definition level) or owned_by_context_usage (usage/plant level).  Connectors
+that cross context boundaries (boundary-crossing connections) may omit these
+context relations.
+
+The connects_port relation links a connector to its endpoint ports.  A
+well-formed connector should have at least two connects_port relations
+(one per endpoint), though KG-level enforcement of exactly two endpoints
+is the responsibility of the ingestion layer.
+
+normal_state captures the design or licensing basis state of the pathway
+(e.g., 'open', 'closed', 'energized', 'isolated') which is critical for
+plant licensing and safety-function analysis.
+"""
+node_properties = [
+  { name = "id",              type = "string", optional = false, description = "Stable unique identifier for the connector." },
+  { name = "name",            type = "string", optional = true,  description = "Human-readable name, label, or identifier of the connector pathway, such as a cable ID, pipe segment designation, logical link name, or analyst-assigned label." },
+  { name = "connector_kind",   type = "enum",   optional = true,  description = "Structural kind of the connector as defined in SysML IBD modeling. 'assembly' connects ports of two peer parts within the same architectural context (the most common case in plant connectivity models). 'delegation' connects the context element's own boundary port inward to a port of one of its contained parts, delegating the external interaction into the interior. 'unspecified' is used when the connector kind is not known or not relevant.", enum_values = ["assembly", "delegation", "unspecified"] },
+  { name = "directionality",  type = "enum",   optional = true,  description = "Overall intended directionality of the connection pathway as modeled.", enum_values = ["unidirectional", "bidirectional", "unspecified"] },
+  { name = "normal_state",    type = "string", optional = true,  description = "Expected nominal design or licensing basis state of the connection pathway (e.g., 'normally open', 'normally closed', 'energized', 'de-energized', 'isolated', 'available')." },
+  { name = "redundancy_class", type = "string", optional = true, description = "Redundancy, train, division, channel, or independence designation associated with the connector (e.g., 'Train A', 'Division I', 'Class 1E Channel A')." },
+  { name = "safety_class",    type = "string", optional = true,  description = "Nuclear safety classification assigned to the connection or pathway." },
+  { name = "description",     type = "string", optional = true,  description = "Narrative explanation of the connection including scope, routing assumptions, realization in the plant (pipe number, cable ID, etc.), and modeling notes." }
+]
+
+[node.function_definition]
+primary_key = "id"
+node_description = """
+Represents an architecture-level function performed, supported, or realized
+by system elements.  This node captures functional intent, allocation
+traceability, and requirement linkage without requiring full behavior modeling
+(statecharts, activity diagrams, or simulation models).
+
+Maps to SysML Activity (v1) or ActionUsage / PerformAction (v2).  A function
+can be decomposed into subfunctions via has_subfunction, allocated to elements
+via allocated_to / allocated_to_usage, and linked to requirements via
+satisfies_function.
+
+Note on direction vs SysML v2:  In SysML v2, a PartUsage *performs* a
+function (usage → function direction).  In this schema, allocated_to goes
+from function_definition → element_definition (the engineering database
+convention: 'this function is allocated to this element').  Importers of
+SysML v2 models should reverse the edge direction when mapping «perform»
+relations into allocated_to / allocated_to_usage edges.
+
+function_category carries domain-specific classification labels relevant to
+nuclear plant safety analysis (e.g., 'protection', 'cooling', 'actuation').
+"""
+node_properties = [
+  { name = "id",                type = "string", optional = false, description = "Stable unique identifier for the function definition." },
+  { name = "name",              type = "string", optional = false, description = "Preferred human-readable name of the function, such as 'Provide Emergency AC Power', 'Remove Decay Heat', 'Initiate High-Pressure Safety Injection', or 'Monitor Reactor Coolant Pressure'." },
+  { name = "description",       type = "string", optional = true,  description = "Narrative explanation of the function including its purpose, scope, triggering conditions, expected outcomes, and modeling assumptions or boundary conditions." },
+  { name = "criticality",       type = "enum",   optional = true,  description = "Relative importance of the function to plant operation, safety, mission success, or availability.", enum_values = ["low", "medium", "high", "mission_critical"] },
+  { name = "function_category", type = "string", optional = true,  description = "Domain-specific classification label for the function. Typical values in the nuclear plant context include: protection (reactor trip, ESF actuation), cooling (decay heat removal, emergency core cooling), monitoring (process measurement, post-accident monitoring), control (normal process regulation), actuation (valve actuation, pump start), and support (instrument air supply, component cooling)." }
+]
+
+[node.requirement]
+primary_key = "id"
+node_description = """
+Represents a governing statement that expresses a need, obligation,
+constraint, acceptance criterion, or required condition applicable to
+architecture, functions, or plant elements.
+
+Maps to SysML «requirement» stereotype.  Requirements participate in a rich
+traceability web:
+  - satisfies / satisfies_usage / satisfies_function: element or function
+    that meets this requirement
+  - refines_requirement: another requirement that this one operationalizes
+  - derived_from_requirement: technical specification derived from this
+  - traces_to: informal traceability to another requirement (non-committing)
+  - referenced_by_requirement: source document for this requirement
+  - verifies: document that provides verification evidence
+
+requirement_type reflects the governance layer: 'licensing' requirements
+originate from NRC regulations; 'safety' from design basis; 'design' from
+engineering specifications; 'operational' from plant procedures.
+
+verification_method records the primary intended method per IEEE 1012 /
+NUREG-0800 verification and validation convention.
+"""
+node_properties = [
+  { name = "id",                  type = "string", optional = false, description = "Stable unique identifier for the requirement." },
+  { name = "name",                type = "string", optional = false, description = "Short human-readable title or label for the requirement." },
+  { name = "text",                type = "string", optional = true,  description = "Normalized or authoritative textual content of the requirement, including all conditions and acceptance criteria." },
+  { name = "requirement_type",    type = "enum",   optional = true,  description = "Category of the requirement according to its governing role in the nuclear plant engineering and licensing hierarchy.", enum_values = ["design", "safety", "licensing", "operational", "maintenance", "performance", "environmental"] },
+  { name = "priority",            type = "enum",   optional = true,  description = "Relative priority or importance assigned to the requirement.", enum_values = ["low", "medium", "high", "critical"] },
+  { name = "source",              type = "string", optional = true,  description = "Origin or authority from which the requirement was derived, such as a regulatory standard (10 CFR 50), NUREG section, FSAR chapter, design basis document, or stakeholder need statement." },
+  { name = "verification_method", type = "enum",   optional = true,  description = "Primary intended method for demonstrating that the requirement is met, per standard V&V practice.", enum_values = ["test", "analysis", "inspection", "demonstration", "review"] },
+  { name = "source_document_id",  type = "string", optional = true,  description = "Identifier of the source document, section, clause, or external reference in which the requirement originates or is stated authoritatively." }
+]
+
+[node.plant_mode]
+primary_key = "id"
+node_description = """
+Represents a defined plant operating state or mode that conditions which
+safety functions must be operable, which requirements are applicable, and
+what the normal configuration of installed elements is.
+
+In the nuclear plant context, plant operating modes are the primary mechanism
+for scoping safety analyses, Technical Specifications applicability, and
+surveillance frequency requirements.  Common examples include the NUREG-0800
+PWR modes (Mode 1 Power Operation through Mode 6 Refueling), equivalent
+BWR and SMR operating states, and plant-specific outage sub-states (e.g.,
+'Maintenance Outage with RHR in service').
+
+This node is intentionally schema-open: mode_category is a free-form string
+rather than a closed enum, accommodating PWR, BWR, SMR, research reactor,
+and non-standard plant-specific naming conventions.  The description and
+condition fields carry the normative definition; mode_category is for
+classification and query filtering only.
+
+Typical usage patterns:
+  - A function_definition is linked to the modes in which it must be operable
+    via required_in_mode.
+  - A requirement is linked to its applicable modes via applicable_in_mode.
+  - A specific installed element_usage is linked to the modes in which it must
+    be available via available_in_mode, and its normal alignment in each mode
+    is captured via normal_state_in_mode.
+"""
+node_properties = [
+  { name = "id",            type = "string", optional = false, description = "Stable unique identifier for the plant mode node." },
+  { name = "name",          type = "string", optional = false, description = "Human-readable name for the plant operating mode, such as 'Mode 1 — Power Operation', 'Mode 5 — Cold Shutdown', 'Refueling Outage Day 3 — Fuel Move', or 'Hot Functional Testing'." },
+  { name = "mode_code",     type = "string", optional = true,  description = "Short code, number, or abbreviation for the mode, such as '1', '2', '3', '1-3', 'RFO', 'MO', or 'HFT'. Composite mode ranges (e.g., 'Modes 1-4') are allowed." },
+  { name = "mode_category", type = "string", optional = true,  description = "Classification label for the mode used for filtering and reporting. Free-form to accommodate different reactor types and plant-specific naming conventions. Suggested values for PWR (NUREG-0800): 'power_operation', 'startup', 'hot_standby', 'hot_shutdown', 'cold_shutdown', 'refueling'. For plant-specific states: 'outage', 'maintenance', 'fuel_handling', 'hot_functional_testing', 'custom'." },
+  { name = "condition",     type = "string", optional = true,  description = "Defining condition or entry criterion for the mode, expressed as a plain-text engineering statement. Examples: 'Keff >= 0.99 and Tavg > 350°F', 'RCS temperature <= 200°F', 'Reactor vessel head removed'." },
+  { name = "description",   type = "string", optional = true,  description = "Narrative explanation of the mode, its safety significance, applicable Technical Specification sections, and any plant-specific conventions or extensions." }
+]
+
+[node.technical_specification]
+primary_key = "id"
+node_description = """
+Represents a measurable technical limit, rating, threshold, setpoint, range,
+or quantitative engineering specification that constrains an architecture
+element, function, or interaction.
+
+This node is a pragmatic knowledge-graph construct for engineering traceability
+and query use.  It is not a full parametric model (SysML ConstraintBlock) but
+captures the quantitative facts needed for licensing and safety analysis queries:
+'what is the design pressure of this vessel?', 'what is the trip setpoint for
+this protection function?', 'what is the rated capacity of this pump?'
+
+Numeric fields (value, min_value, max_value, tolerance) are stored as strings
+to accommodate engineering expressions, uncertainty notation, and unit suffixes
+without imposing a strict numeric schema on imported data.
+
+A technical specification is linked to what it constrains via constrains /
+constrains_usage / constrains_function and to its source requirement via
+derived_from_requirement.
+"""
+node_properties = [
+  { name = "id",                 type = "string", optional = false, description = "Stable unique identifier for the technical specification." },
+  { name = "name",               type = "string", optional = false, description = "Human-readable title or label for the technical specification (e.g., 'RCP Design Pressure', 'ECCS Actuation Setpoint', 'EDG Rated Output Capacity')." },
+  { name = "parameter",          type = "string", optional = false, description = "Name of the parameter or measurable attribute constrained by the specification, such as 'design pressure', 'rated flow rate', 'actuation setpoint', 'response time', or 'insulation resistance'." },
+  { name = "value",              type = "string", optional = true,  description = "Single normalized value or engineering expression when the specification is a point value (e.g., '2500 psia', '12,500 gpm', '1.5 seconds')." },
+  { name = "unit",               type = "string", optional = true,  description = "Engineering unit associated with the specification value (e.g., psia, gpm, kW, °F, seconds, ohm)." },
+  { name = "min_value",          type = "string", optional = true,  description = "Lower bound of an acceptable or required range when the specification is expressed as an interval or band." },
+  { name = "max_value",          type = "string", optional = true,  description = "Upper bound of an acceptable or required range when the specification is expressed as an interval or band." },
+  { name = "tolerance",          type = "string", optional = true,  description = "Allowed deviation or engineering tolerance associated with the specification value (e.g., '±2%', '+0/-5 psi')." },
+  { name = "specification_type", type = "enum",   optional = true,  description = "Category of technical specification according to engineering or regulatory context.", enum_values = ["design", "safety", "licensing", "operational", "maintenance", "performance", "environmental"] },
+  { name = "source",             type = "string", optional = true,  description = "Origin or authority from which the technical specification was derived (e.g., ASME BPVC Section III, vendor design report, FSAR Table 5.4-1)." },
+  { name = "rationale",          type = "string", optional = true,  description = "Engineering basis, safety significance, or consequence justification associated with the specification value." },
+  { name = "source_document_id", type = "string", optional = true,  description = "Identifier of the source document, section, table, clause, or calculation in which the specification is stated or derived." }
+]
+
+
+# ============================================================
+# RELATIONS — STRUCTURAL (ELEMENT HIERARCHY)
+# ============================================================
+
+[relation.instance_of]
+relation_description = """
+Connects a plant-specific element_usage to the reusable element_definition of
+which it is an instance, realization, or context-specific occurrence.
+
+Maps to SysML typing relationship between a PartUsage and its PartDef (v2) or
+between a property and its Block type (v1).  This relation is the primary
+mechanism for inheriting type-level properties, functions, requirements, and
+specifications by graph traversal from a usage node to its definition.
+
+A single element_definition may have many element_usage nodes (e.g., 'EDG-A'
+and 'EDG-B' are both instances of 'Emergency Diesel Generator').  The inverse
+of this relation supports queries such as 'find all installed occurrences of
+this equipment type'.
+"""
+from_entity = "element_usage"
+to_entity   = "element_definition"
+relation_properties = [
+  { name = "instantiation_basis", type = "string", optional = true, description = "Explanation of the basis for the instance mapping, such as source model typing, asset classification, engineering interpretation, or analyst curation." },
+  { name = "confidence",          type = "enum",   optional = true, description = "Confidence in the correctness of the instance mapping when derived from imperfect or indirect source data.", enum_values = ["low", "medium", "high"] }
+]
+
+[relation.has_part]
+relation_description = """
+Represents a strong whole-part structural composition between two element
+definitions.  In UML/SysML terms, this is composite aggregation (filled
+diamond): the part is owned by the whole and shares its lifecycle — when
+the whole is decommissioned, its composed parts are also decommissioned.
+
+Use has_part exclusively for structural composition (the part is an
+inseparable constituent of the whole).  For non-ownership structural
+references — where the referenced element has an independent lifecycle or
+is shared across multiple elements — use references_element instead.
+
+Examples of correct use:
+  Motor -[has_part]-> Impeller (impeller is a constituent part of the pump)
+  EDG   -[has_part]-> Fuel Oil System (fuel system is owned by the EDG)
+  Turbine -[has_part]-> Governor (governor is a constituent of the turbine)
+
+Applies at the definition level only.  For usage-level composition, use
+has_part_usage.
+"""
+from_entity = "element_definition"
+to_entity   = "element_definition"
+relation_properties = [
+  { name = "part_role",    type = "string",  optional = true, description = "Role name or contextual designation of the part within the whole, such as 'primary coolant pump', 'backup power source', 'injection branch A', or 'suction train'." },
+  { name = "cardinality",  type = "string",  optional = true, description = "Multiplicity or expected count of the part within the whole, expressed as a modeling string (e.g., '1', '2', '1..*', '0..1')." },
+  { name = "is_mandatory", type = "boolean", optional = true, description = "True if the part is structurally required for the intended completeness of the whole within the current modeling scope." }
+]
+
+[relation.has_part_usage]
+relation_description = """
+Represents a strong whole-part structural composition between two plant-
+specific element usages.  Mirrors has_part at the usage/realization level.
+
+Use has_part_usage for plant-instance decomposition (e.g., 'RCP-1A contains
+Motor-1A').  For non-ownership references between usages — where the
+referenced usage has an independent lifecycle — use references_element_usage.
+
+realization_note may describe plant-specific configuration details or
+deviations from the definition-level decomposition modeled by has_part.
+"""
+from_entity = "element_usage"
+to_entity   = "element_usage"
+relation_properties = [
+  { name = "part_role",         type = "string",  optional = true, description = "Role name or contextual designation of the child usage within the parent usage." },
+  { name = "cardinality",       type = "string",  optional = true, description = "Multiplicity or expected count of the child usage within the parent usage." },
+  { name = "is_mandatory",      type = "boolean", optional = true, description = "True if the child usage is required for the intended structural completeness of the parent usage." },
+  { name = "realization_note",  type = "string",  optional = true, description = "Note describing how the usage-level composition relates to or deviates from the definition-level composition in has_part." }
+]
+
+[relation.specializes]
+relation_description = """
+Represents a definition-level generalization/specialization (inheritance)
+relationship in which the source definition is a more specific form of the
+target definition.
+
+Maps to UML/SysML Generalization (open arrowhead).  The source definition
+inherits all structural properties, ports, functions, and requirements of
+the target definition and may add or constrain them.
+
+Direction: child (specific) → parent (general).
+Example: 'High-Pressure Safety Injection Pump' specializes 'Centrifugal Pump'.
+"""
+from_entity = "element_definition"
+to_entity   = "element_definition"
+relation_properties = [
+  { name = "specialization_basis", type = "string", optional = true, description = "Explanation of the basis for the specialization, such as engineering taxonomy, source model inheritance hierarchy, regulatory sub-classification, or analyst-defined categorization." }
+]
+
+[relation.references_element]
+relation_description = """
+Represents a non-ownership reference or weak aggregation between two element
+definitions.  The referenced element has an independent lifecycle and may be
+shared by multiple referencing elements.
+
+Maps to UML association without composite aggregation (SysML reference
+property).  Use this relation where there is a meaningful architectural
+dependency or association between elements that does NOT imply structural
+composition or part ownership.
+
+Examples of correct use:
+  Reactor Protection System -[references_element]-> Neutron Flux Monitoring System
+    (RPS depends on flux monitoring but does not own it)
+  Emergency Diesel Generator -[references_element]-> Class 1E Switchgear
+    (EDG supplies switchgear but the switchgear is not a part of the EDG)
+  I&C Controller -[references_element]-> Process Sensor
+    (the controller reads the sensor but the sensor is not a controller part)
+
+Contrast with has_part, where the part is structurally owned by and shares
+the lifecycle of the whole.
+"""
+from_entity = "element_definition"
+to_entity   = "element_definition"
+relation_properties = [
+  { name = "reference_role",  type = "string", optional = true, description = "Functional or architectural role that the referenced element plays relative to the referencing element, such as 'power supply', 'signal source', 'actuation target', 'support system', or 'interface peer'." },
+  { name = "dependency_kind", type = "enum",   optional = true, description = "Characterization of how the referencing element depends on or uses the referenced element.", enum_values = ["functional_dependency", "power_dependency", "signal_dependency", "data_dependency", "support_dependency", "interface_peer"] }
+]
+
+[relation.references_element_usage]
+relation_description = """
+Represents a non-ownership reference or weak aggregation between two plant-
+specific element usages.  Mirrors references_element at the usage level.
+
+Use this relation when a specific installed asset references or depends on
+another specific installed asset without owning it.
+
+Example: 'RPS-Processor-A' (usage) references 'NI-Channel-A' (usage) as its
+neutron flux signal source.  The neutron flux channel has an independent
+lifecycle and is shared by multiple protection system channels.
+"""
+from_entity = "element_usage"
+to_entity   = "element_usage"
+relation_properties = [
+  { name = "reference_role",  type = "string", optional = true, description = "Functional or architectural role that the referenced usage plays relative to the referencing usage." },
+  { name = "dependency_kind", type = "enum",   optional = true, description = "Characterization of the dependency between the two usages.", enum_values = ["functional_dependency", "power_dependency", "signal_dependency", "data_dependency", "support_dependency", "interface_peer"] }
+]
+
+
+# ============================================================
+# RELATIONS — PORT AND CONNECTIVITY
+# ============================================================
+
+[relation.owns_port]
+relation_description = """
+Connects an element definition to a port that is part of its architectural
+boundary or structural interaction description.
+
+Maps to SysML owned port of a Block (v1) or PortUsage owned by a PartDef (v2).
+A port owned by a definition is available to all usages of that definition
+(inherited by instance_of traversal) unless overridden at the usage level.
+"""
+from_entity = "element_definition"
+to_entity   = "port"
+relation_properties = [
+  { name = "role", type = "string", optional = true, description = "Contextual role of the port relative to its owning definition, such as 'primary_coolant_inlet', 'exhaust_gas_outlet', 'control_power_feed', 'position_feedback_output', or 'network_interface'." }
+]
+
+[relation.owns_port_usage]
+relation_description = """
+Connects an element usage to a port at the plant-specific realization level.
+Used when a port must be explicitly represented for a specific installed asset
+rather than being inherited from its element_definition.
+
+This relation is typically used for plant-tag-level ports that have asset-
+specific identifiers, configurations, or physical connection details that
+differ from the definition-level model.
+"""
+from_entity = "element_usage"
+to_entity   = "port"
+relation_properties = [
+  { name = "role", type = "string", optional = true, description = "Contextual role of the port relative to its owning usage." }
+]
+
+[relation.typed_by_port_type]
+relation_description = """
+Connects a port to the reusable port_type that characterizes what structural
+class of interaction point it is.
+
+Maps to SysML port typing by a Block or InterfaceBlock (simplified form using
+port_type rather than a full InterfaceBlock).  Most valuable when the same
+port type class (e.g., 'AC_480V_Power_Input') is shared across many ports in
+the architecture, enabling type-level querying ('find all elements with an
+AC_480V_Power_Input port').
+
+When a full protocol contract is needed (I&C interfaces), use exposes_interface
+to link to an interface_block instead of, or in addition to, typed_by_port_type.
+"""
+from_entity = "port"
+to_entity   = "port_type"
+relation_properties = [
+  { name = "is_primary",    type = "boolean", optional = true, description = "True if the target port_type is the primary structural typing for the port when multiple typings are present." },
+  { name = "typing_basis",  type = "string",  optional = true, description = "Explanation of how the port typing was established: source model declaration, engineering interpretation, import transformation, or analyst curation." }
+]
+
+[relation.exposes_interface]
+relation_description = """
+Connects a port to an interface_block that defines the full protocol-level
+contract for what the port must satisfy.
+
+Maps to SysML Full Port or Proxy Port typed by an InterfaceBlock.  This
+relation adds protocol-level specificity beyond port_type, capturing the
+complete behavioral and structural contract including message types, timing,
+physical layer, and applicable standards.
+
+Primarily used for I&C systems, digital control networks, and communication
+interfaces where port compatibility must be asserted at the protocol level.
+
+Example: a digital I&C output port is linked to an 'IEC61850_GOOSE_Interface'
+interface_block, asserting that the port conforms to IEC 61850 GOOSE messaging.
+"""
+from_entity = "port"
+to_entity   = "interface_block"
+relation_properties = [
+  { name = "interface_role", type = "enum",    optional = true, description = "Whether the port provides the interface (supplies the contract to clients) or requires it (demands the contract from a peer). In SysML v1 terminology, a required interface is typed by the conjugate InterfaceBlock. This property makes that distinction explicit without requiring a separate conjugate node.", enum_values = ["provided", "required", "bidirectional"] },
+  { name = "is_primary",     type = "boolean", optional = true, description = "True if the target interface_block is the primary interface contract for the port." },
+  { name = "contract_note",  type = "string",  optional = true, description = "Note clarifying how the port satisfies or partially satisfies the interface contract, including any deviations or extensions." }
+]
+
+[relation.exposes_flow]
+relation_description = """
+Connects a port to a flow_definition representing what the port is designed
+to expose, admit, emit, or support at the architecture boundary.
+
+Maps to SysML FlowProperty on an InterfaceBlock or FlowPort (v1 simplified).
+While typed_by_port_type and exposes_interface characterize the *structural
+class* of the port, exposes_flow characterizes the *item that flows* at that
+port boundary.
+
+direction_role must be interpreted relative to the owning element:
+  incoming — the element receives this flow through the port
+  outgoing — the element emits or provides this flow through the port
+  bidirectional — the flow travels both ways (e.g., a shared data bus port)
+"""
+from_entity = "port"
+to_entity   = "flow_definition"
+relation_properties = [
+  { name = "direction_role", type = "enum",    optional = true, description = "Direction of the exposed flow relative to the owning element.", enum_values = ["incoming", "outgoing", "bidirectional", "unspecified"] },
+  { name = "is_primary",     type = "boolean", optional = true, description = "True if this is the primary intended flow associated with the port." }
+]
+
+[relation.connects_port]
+relation_description = """
+Connects a connector to one of the ports that participates in the connection.
+The connector node together with its connects_port relations expresses
+architectural connectivity between elements.
+
+A well-formed connector should have at least two connects_port relations —
+one per endpoint.  The endpoint_role and direction_hint properties together
+describe how each port participates in the connection (e.g., 'source' vs
+'destination', 'inlet' vs 'outlet').
+
+Maps to SysML ConnectorEnd — the endpoint of a Connector that references a
+specific Port or PartProperty port.
+"""
+from_entity = "connector"
+to_entity   = "port"
+relation_properties = [
+  { name = "endpoint_role",   type = "string", optional = true, description = "Role of this port within the connector: source, destination, inlet, outlet, sender, receiver, branch, monitored_endpoint, or analyst-assigned label." },
+  { name = "sequence_index",  type = "integer", optional = true, description = "Optional ordering index when endpoint ordering has meaning (e.g., in branching connectors or when preserving source-model ordering)." },
+  { name = "direction_hint",  type = "enum",   optional = true, description = "Endpoint-local directional hint for how exchange is oriented at this specific endpoint within the connection.", enum_values = ["source", "sink", "bidirectional", "unspecified"] }
+]
+
+[relation.owned_by_context]
+relation_description = """
+Connects a connector to the element definition whose internal architectural
+context the connector belongs to.  A connector at the definition level should
+normally be owned by the element whose interior it traverses.
+
+Maps to the SysML relationship between a Connector and its owning Block.
+This relation is required for connectors that represent internal architecture
+connections at the type level and enables queries such as 'find all internal
+connections within this system definition'.
+
+Connectors that cross architectural context boundaries (e.g., cross-system
+interface connectors) may omit this relation.
+"""
+from_entity = "connector"
+to_entity   = "element_definition"
+relation_properties = [
+  { name = "context_role", type = "string", optional = true, description = "Optional role name or note describing the connector's structural position within the containing architectural context." }
+]
+
+[relation.owned_by_context_usage]
+relation_description = """
+Connects a connector to the plant-specific element usage whose realized
+architectural context the connector belongs to.  Mirrors owned_by_context
+at the plant/usage level.
+
+Use for connectors that represent physical plant connections within a
+specific installed system context (e.g., a pipe segment is owned by the
+RCS-Unit-1 context rather than the generic RCS definition context).
+"""
+from_entity = "connector"
+to_entity   = "element_usage"
+relation_properties = [
+  { name = "context_role", type = "string", optional = true, description = "Optional role name or note describing the connector's structural position within the containing realized context." }
+]
+
+[relation.conveys_flow]
+relation_description = """
+Connects a connector to a flow_definition representing what the connector
+carries, transports, communicates, or transmits along its pathway.
+
+Maps to SysML ItemFlow associated with a Connector.  While connects_port
+establishes which ports the connector links, conveys_flow establishes what
+travels through the connection.
+
+A connector may convey multiple flows (e.g., a multi-conductor cable conveys
+both power and signal; a pipe segment conveys coolant flow and also heat energy).
+Use multiple conveys_flow relations for such cases, with is_primary flagging
+the dominant flow.
+"""
+from_entity = "connector"
+to_entity   = "flow_definition"
+relation_properties = [
+  { name = "is_primary",      type = "boolean", optional = true, description = "True if the target flow_definition is the primary conveyed flow for the connector." },
+  { name = "transport_note",  type = "string",  optional = true, description = "Note describing the conveyed flow in the context of this specific connection, such as operating mode conditions, routing assumptions, or design basis context." }
+]
+
+
+# ============================================================
+# RELATIONS — FUNCTIONAL
+# ============================================================
+
+[relation.has_subfunction]
+relation_description = """
+Represents a parent-to-child functional decomposition between architecture-
+level function definitions.  The source (parent) function is decomposed into
+the target (child) subfunction.
+
+Direction: parent → child (the parent function 'has' the child as a
+constituent subfunction).  This unambiguous naming replaces the prior
+'decomposes' verb, which could be misread in either direction.
+
+Maps to SysML Activity decomposition via nested CallBehaviorActions (v1) or
+nested PerformAction / ActionUsage (v2).
+
+A complete functional decomposition tree can be reconstructed by traversing
+has_subfunction edges from the root function downward to all leaf-level
+subfunctions.  The is_exhaustive property indicates whether the child
+subfunctions fully cover the parent's functional scope within the model.
+"""
+from_entity = "function_definition"
+to_entity   = "function_definition"
+relation_properties = [
+  { name = "decomposition_basis", type = "string",  optional = true, description = "Explanation of the functional decomposition rationale, such as engineering discipline subdivision, safety-function sub-grouping, or regulatory decomposition scheme." },
+  { name = "is_exhaustive",       type = "boolean", optional = true, description = "True if the modeled subfunctions completely exhaust the parent function within the scope of the current model (no unmodeled subfunctions remain)." }
+]
+
+[relation.function_input_flow]
+relation_description = """
+Connects a function definition to a flow_definition representing what the
+function consumes, receives, or requires as an input in order to execute.
+
+Maps to SysML ObjectFlow on an input pin of an Activity (v1) or input
+ItemUsage of an ActionUsage (v2).  Capturing functional inputs and outputs
+enables functional dependency analysis and flow-balance checking across the
+architecture: every function_output_flow of one function should have a
+corresponding function_input_flow in a downstream function.
+
+Examples in nuclear plant context:
+  'Remove Decay Heat' function inputs: reactor coolant flow (material),
+    pump speed signal (signal_analog), low-pressure trip signal (signal_digital)
+  'Initiate Safety Injection' function inputs: actuation signal (command_signal),
+    emergency AC power (energy)
+
+is_mandatory distinguishes required inputs (function cannot execute without them)
+from optional or conditional inputs (function degrades gracefully without them).
+"""
+from_entity = "function_definition"
+to_entity   = "flow_definition"
+relation_properties = [
+  { name = "is_mandatory",   type = "boolean", optional = true, description = "True if the function requires this input flow to execute at all. False if the function can execute in a degraded mode without it." },
+  { name = "flow_condition", type = "string",  optional = true, description = "Operating condition, mode, or trigger under which this input flow is consumed or required by the function." }
+]
+
+[relation.function_output_flow]
+relation_description = """
+Connects a function definition to a flow_definition representing what the
+function produces, emits, or provides as an output when it executes.
+
+Maps to SysML ObjectFlow on an output pin of an Activity (v1) or output
+ItemUsage of an ActionUsage (v2).  Together with function_input_flow,
+this relation enables complete functional data-flow tracing across the
+architecture without requiring a full behavioral simulation model.
+
+Examples in nuclear plant context:
+  'Remove Decay Heat' function outputs: cooled reactor coolant (material),
+    decay heat removal rate (energy), system status signal (signal_digital)
+  'Monitor Reactor Coolant Pressure' outputs: pressure measurement (signal_analog),
+    high-pressure alarm (signal_digital)
+
+is_primary flags the dominant output when a function produces multiple flows.
+"""
+from_entity = "function_definition"
+to_entity   = "flow_definition"
+relation_properties = [
+  { name = "is_primary",     type = "boolean", optional = true, description = "True if this is the primary intended output of the function." },
+  { name = "flow_condition", type = "string",  optional = true, description = "Operating condition, mode, or trigger under which this output flow is produced by the function." }
+]
+
+[relation.allocated_to]
+relation_description = """
+Connects an architecture-level function to the element definition that is
+responsible for realizing, providing, or supporting that function in the
+structural architecture.
+
+Maps to SysML «allocate» from a Function/Activity to a Block (v1) or the
+reverse of SysML v2 «perform» (which goes from PartUsage → function).
+In this schema the direction is function → element (engineering database
+convention: 'this safety function is allocated to this system'), which
+is the natural direction for licensing queries ('which element satisfies
+this safety function?').
+
+Note for SysML v2 model import: the SysML v2 «perform» edge goes from
+PartUsage → ActionUsage (element → function).  When importing SysML v2
+models, reverse the direction to produce allocated_to (function → element).
+
+allocation_strength characterizes whether the element is the sole provider
+of the function (primary), a backup (supporting), or shared with other
+elements (shared).
+"""
+from_entity = "function_definition"
+to_entity   = "element_definition"
+relation_properties = [
+  { name = "allocation_basis",    type = "string", optional = true, description = "Explanation of the basis for the function allocation: source model mapping, design documentation, safety analysis, engineering interpretation, or requirement traceability." },
+  { name = "allocation_strength", type = "enum",   optional = true, description = "Strength or role of the allocation: primary (sole provider), supporting (backup or auxiliary), shared (co-allocated with other elements), or provisional (tentative, pending review).", enum_values = ["primary", "supporting", "shared", "provisional"] }
+]
+
+[relation.allocated_to_usage]
+relation_description = """
+Connects an architecture-level function to a plant-specific element usage when
+the function must be traced to a specific realized asset or installed occurrence.
+
+Use this relation when licensing or safety analysis requires traceability to
+a specific train or tagged component (e.g., 'Emergency Core Cooling function
+is allocated to HPSI Pump P-3A').  Complements allocated_to (definition level)
+without replacing it.
+
+See allocated_to for the note on SysML v2 «perform» direction.
+"""
+from_entity = "function_definition"
+to_entity   = "element_usage"
+relation_properties = [
+  { name = "allocation_basis",    type = "string", optional = true, description = "Explanation of why the function is allocated specifically to this plant usage." },
+  { name = "allocation_strength", type = "enum",   optional = true, description = "Strength or role of the usage-level allocation.", enum_values = ["primary", "supporting", "shared", "provisional"] }
+]
+
+
+# ============================================================
+# RELATIONS — REQUIREMENTS TRACEABILITY
+# ============================================================
+
+[relation.satisfies]
+relation_description = """
+Connects an element definition to a requirement that the architectural
+definition is designed or claimed to satisfy, support, or comply with.
+
+Maps to SysML «satisfies» dependency (NamedElement → Requirement).
+Direction: element → requirement (the element satisfies the requirement).
+
+compliance_status reflects the current modeled state of compliance and should
+be updated as verification evidence accumulates.  verification_method records
+the primary method by which satisfaction is demonstrated.
+"""
+from_entity = "element_definition"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "compliance_status",   type = "enum",   optional = true, description = "Current modeled status of requirement satisfaction by the element definition.", enum_values = ["met", "unmet", "partial", "unknown"] },
+  { name = "verification_method", type = "enum",   optional = true, description = "Method by which satisfaction is intended to be or has been verified.", enum_values = ["test", "analysis", "inspection", "demonstration", "review"] },
+  { name = "rationale",           type = "string", optional = true, description = "Explanation of why the element definition is considered to satisfy the requirement, including design features or analyses that support the claim." }
+]
+
+[relation.satisfies_usage]
+relation_description = """
+Connects an element usage to a requirement that the specific installed asset,
+train, or plant occurrence is intended to satisfy, support, or be evaluated
+against.  Used when requirement closure must be tracked at the plant-instance
+level (e.g., Train A satisfies Requirement R-HPSI-001 independently of
+Train B).
+"""
+from_entity = "element_usage"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "compliance_status",   type = "enum",   optional = true, description = "Current modeled status of requirement satisfaction by the element usage.", enum_values = ["met", "unmet", "partial", "unknown"] },
+  { name = "verification_method", type = "enum",   optional = true, description = "Method by which usage-level satisfaction is intended to be or has been verified.", enum_values = ["test", "analysis", "inspection", "demonstration", "review"] },
+  { name = "rationale",           type = "string", optional = true, description = "Explanation of why the specific usage is considered to satisfy the requirement." }
+]
+
+[relation.satisfies_function]
+relation_description = """
+Connects a function definition to a requirement when the requirement is
+satisfied primarily through functional provision rather than through a specific
+structural element.
+
+Used when a functional intent (e.g., 'Provide Emergency Core Cooling')
+satisfies a safety requirement before the structural allocation (which element
+performs the function) is determined or when functional satisfaction is
+independent of specific structural realization.
+"""
+from_entity = "function_definition"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "compliance_status",   type = "enum",   optional = true, description = "Current modeled status of requirement satisfaction by the function.", enum_values = ["met", "unmet", "partial", "unknown"] },
+  { name = "verification_method", type = "enum",   optional = true, description = "Method by which functional satisfaction is intended to be or has been verified.", enum_values = ["test", "analysis", "inspection", "demonstration", "review"] },
+  { name = "rationale",           type = "string", optional = true, description = "Explanation of why the function is considered to satisfy or support the requirement." }
+]
+
+[relation.refines_requirement]
+relation_description = """
+Connects a refining (child) requirement to a parent requirement that it
+elaborates, clarifies, or adds detail to at approximately the same level
+of abstraction.
+
+Maps to SysML «refineReqt» dependency (strict sense).
+Direction: refining (child) → refined (parent).
+
+Use refines_requirement when the child requirement does NOT cross an
+abstraction boundary — it is more detailed, more explicit, or more
+operationalized than the parent but addresses the same engineering concern
+at the same level.  Example: a component-level performance criterion refines
+a subsystem performance requirement that already lives at the design level.
+
+For cross-abstraction-boundary derivation — e.g., a design-basis requirement
+derived from a regulatory mandate — use derives_requirement instead, which
+maps to SysML «deriveReqt».
+
+refinement_strength characterizes whether the refinement is a direct
+formal derivation, a supporting elaboration, or an engineering interpretation.
+"""
+from_entity = "requirement"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "refinement_basis",    type = "string", optional = true, description = "Explanation of how the source requirement refines the target at the same abstraction level, such as adding acceptance criteria, specifying measurable thresholds, or expanding scope." },
+  { name = "refinement_strength", type = "enum",   optional = true, description = "Strength or character of the refinement relation.", enum_values = ["direct", "supporting", "inferred"] }
+]
+
+[relation.derives_requirement]
+relation_description = """
+Connects a derived (child) requirement to the master (parent) requirement
+from which it was derived across an abstraction boundary.
+
+Maps to SysML «deriveReqt» dependency.
+Direction: derived (child, more specific) → master (parent, more general).
+
+Use derives_requirement for the vertical traceability chain across
+abstraction levels in the nuclear plant regulatory hierarchy:
+
+  10 CFR 50 GDC (regulatory)
+      ← derives_requirement ←
+  FSAR safety function requirement (licensing basis)
+      ← derives_requirement ←
+  System design requirement (design basis)
+      ← derives_requirement ←
+  Subsystem / component design requirement
+
+The key distinction from refines_requirement is the crossing of an
+abstraction boundary: the derived requirement is at a finer level of
+the engineering hierarchy and introduces new detail that was not present
+at the master level.  If the child only adds detail to an existing statement
+at the same level, use refines_requirement instead.
+
+derivation_method records the engineering process used to produce the derived
+requirement (e.g., design basis calculation, design margin analysis, vendor
+qualification, regulatory interpretation).
+"""
+from_entity = "requirement"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "derivation_method",   type = "string", optional = true, description = "Engineering method or process used to derive the child requirement from the master, such as design basis calculation, regulatory interpretation, design margin analysis, or qualification testing." },
+  { name = "derivation_strength", type = "enum",   optional = true, description = "Strength of the derivation relationship.", enum_values = ["direct", "supporting", "inferred"] }
+]
+
+[relation.traces_to]
+relation_description = """
+Represents a non-formal, informational traceability link from one requirement
+to another requirement that it is meaningfully related to, without asserting
+formal satisfaction, derivation, or refinement.
+
+Maps to SysML «trace» dependency — the weakest requirement traceability
+relation.  Use traces_to when an upstream-to-downstream relationship exists
+but the nature of the connection is too informal or complex to categorize as
+refines_requirement or derived_from_requirement.
+
+Typical uses in nuclear plant context:
+  - A regulatory requirement traces to a design basis document that informed it
+  - A licensing commitment traces to the FSAR section that documents it
+  - A maintenance requirement traces to the safety function it supports
+  - A plant procedure step traces to the operational requirement it implements
+
+traces_to is intentionally non-committing: it does not assert that the source
+requirement satisfies, refines, or derives from the target.  If a stronger
+relationship applies, use satisfies_function, refines_requirement, or
+derived_from_requirement instead.
+"""
+from_entity = "requirement"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "trace_rationale", type = "string", optional = true, description = "Explanation of the informational relationship between the two requirements, describing why the trace exists and what it is intended to communicate." },
+  { name = "trace_kind",      type = "enum",   optional = true, description = "Optional characterization of the trace for filtering and reporting purposes.", enum_values = ["upstream_reference", "downstream_implementation", "related_concern", "historical_basis", "other"] }
+]
+
+
+# ============================================================
+# RELATIONS — TECHNICAL SPECIFICATIONS
+# ============================================================
+
+[relation.constrains]
+relation_description = """
+Connects a technical specification to the element definition that the
+specification constrains, characterizes, bounds, rates, or quantitatively
+qualifies.
+
+Maps to SysML ConstraintBlock constraint on a Block property (simplified).
+The constraint_role property describes the engineering relationship (e.g.,
+a pressure rating constrains the element's maximum operating pressure; a
+trip setpoint constrains the allowable process band).
+"""
+from_entity = "technical_specification"
+to_entity   = "element_definition"
+relation_properties = [
+  { name = "constraint_role",   type = "string", optional = true, description = "Role played by the specification relative to the constrained definition, such as 'design_pressure_rating', 'rated_flow_capacity', 'seismic_qualification_level', 'insulation_class', or 'operating_temperature_range'." },
+  { name = "compliance_status", type = "enum",   optional = true, description = "Current modeled status of whether the definition is considered to meet the specification.", enum_values = ["met", "unmet", "partial", "unknown"] },
+  { name = "rationale",         type = "string", optional = true, description = "Explanation of how and why the specification constrains or characterizes the element definition." }
+]
+
+[relation.constrains_usage]
+relation_description = """
+Connects a technical specification to a plant-specific element usage when the
+specification applies to a realized installed asset.  Used for as-left
+acceptance criteria, plant-specific ratings, or calibration setpoints
+associated with a specific tagged component.
+"""
+from_entity = "technical_specification"
+to_entity   = "element_usage"
+relation_properties = [
+  { name = "constraint_role",   type = "string", optional = true, description = "Role played by the specification relative to the usage, such as 'as-left_acceptance_criterion', 'operational_limit', 'surveillance_test_acceptance_limit', or 'plant-specific_calibration_setpoint'." },
+  { name = "compliance_status", type = "enum",   optional = true, description = "Current modeled status of whether the usage is considered to meet the specification.", enum_values = ["met", "unmet", "partial", "unknown"] },
+  { name = "rationale",         type = "string", optional = true, description = "Explanation of why the technical specification is associated with this specific usage." }
+]
+
+[relation.constrains_function]
+relation_description = """
+Connects a technical specification to a function definition when the
+specification quantitatively limits, bounds, or characterizes the function's
+required performance.
+
+Examples: a response time limit constrains the reactor trip function; a minimum
+flow rate constrains the emergency core cooling function; a minimum
+voltage constrains the battery-backed actuation function.
+"""
+from_entity = "technical_specification"
+to_entity   = "function_definition"
+relation_properties = [
+  { name = "constraint_role",   type = "string", optional = true, description = "Role played by the specification relative to the function, such as 'response_time_limit', 'minimum_performance_threshold', 'required_actuation_setpoint', or 'allowable_operating_band'." },
+  { name = "compliance_status", type = "enum",   optional = true, description = "Current modeled status of whether the function meets the specification.", enum_values = ["met", "unmet", "partial", "unknown"] },
+  { name = "rationale",         type = "string", optional = true, description = "Explanation of how the specification quantitatively constrains or characterizes the function." }
+]
+
+[relation.derived_from_requirement]
+relation_description = """
+Connects a technical specification to the requirement from which it was
+derived, refined, quantified, or operationalized.
+
+Maps to SysML «deriveReqt» applied to the specification-requirement edge.
+Supports the traceability chain: regulatory requirement → design basis
+requirement → technical specification → constrained element / function.
+
+Example: the ECCS injection flow rate specification is derived from the
+10 CFR 50 Appendix A GDC-35 emergency core cooling requirement.
+"""
+from_entity = "technical_specification"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "derivation_basis",    type = "string", optional = true, description = "Explanation of how the technical specification was quantified, bounded, or operationalized from the parent requirement, including the engineering calculation or analysis method used." },
+  { name = "derivation_strength", type = "enum",   optional = true, description = "Strength of the derivation relationship.", enum_values = ["primary", "supporting", "inferred"] }
+]
+
+
+# ============================================================
+# RELATIONS — PLANT OPERATING MODES
+# ============================================================
+
+[relation.required_in_mode]
+relation_description = """
+Connects a function definition to a plant mode in which that function must
+be operable, available, or capable of fulfilling its intended safety purpose.
+
+This relation is the primary mechanism for mode-scoped safety function
+analysis: it directly encodes the Technical Specifications and design basis
+applicability of each safety function to specific plant operating states.
+
+Direction: function_definition → plant_mode (the function is required
+in the specified mode).  A function may be required in multiple modes
+via multiple required_in_mode edges.
+
+Typical use in nuclear plant context:
+  'High-Pressure Safety Injection' -[required_in_mode]-> 'Mode 1'
+  'High-Pressure Safety Injection' -[required_in_mode]-> 'Mode 2'
+  'High-Pressure Safety Injection' -[required_in_mode]-> 'Mode 3'
+  'Spent Fuel Pool Cooling' -[required_in_mode]-> 'Mode 6 — Refueling'
+
+operability_basis records the regulatory or design basis source that
+establishes the mode applicability (e.g., TS LCO 3.5.2, GDC-35, FSAR
+Chapter 6 safety analysis).
+"""
+from_entity = "function_definition"
+to_entity   = "plant_mode"
+relation_properties = [
+  { name = "operability_basis",  type = "string", optional = true, description = "Regulatory, licensing, or design basis citation that establishes the requirement for this function to be operable in the specified mode (e.g., 'TS LCO 3.5.2', '10 CFR 50 Appendix A GDC-35', 'FSAR Section 6.3')." },
+  { name = "allowed_outage_time", type = "string", optional = true, description = "Maximum allowed outage time for this function in this mode before a plant mode change or corrective action is required, per Technical Specifications (e.g., '72 hours', '7 days')." }
+]
+
+[relation.applicable_in_mode]
+relation_description = """
+Connects a requirement to a plant mode in which the requirement is in force,
+applicable, or must be demonstrated as met.
+
+This relation scopes requirement applicability to specific plant operating
+states, enabling mode-conditional queries such as 'which requirements apply
+in Mode 5?' or 'is this seismic requirement applicable in Mode 1 only?'
+
+Direction: requirement → plant_mode (the requirement applies in the
+specified mode).  A requirement may apply in multiple modes via multiple
+applicable_in_mode edges.
+
+Typical use:
+  A single-failure criterion requirement is applicable in Modes 1–3.
+  A seismic qualification requirement is applicable in all modes.
+  A refueling interlocks requirement is applicable in Mode 6 only.
+
+applicability_basis records the specific source of the mode-scoping
+(e.g., Technical Specification LCO number, NUREG section, FSAR assumption).
+"""
+from_entity = "requirement"
+to_entity   = "plant_mode"
+relation_properties = [
+  { name = "applicability_basis", type = "string", optional = true, description = "Regulatory, licensing, or design basis citation that establishes the applicability of this requirement in the specified mode." },
+  { name = "is_limiting",         type = "boolean", optional = true, description = "True if this mode is the limiting or bounding mode for the requirement — the mode in which meeting the requirement is most challenging or most safety-significant." }
+]
+
+[relation.available_in_mode]
+relation_description = """
+Connects a specific installed element usage to a plant mode in which that
+element must be available, operable, or in its required functional state.
+
+This relation captures equipment operability requirements at the plant-instance
+level, enabling queries such as 'which specific pumps must be available in
+Mode 3?' or 'is Train B available during this outage mode?'
+
+Direction: element_usage → plant_mode (the usage is required to be available
+in the specified mode).
+
+Distinct from normal_state_in_mode, which captures the normal configuration
+alignment of an element in a mode.  available_in_mode expresses operability
+(the element must be capable of performing its function); normal_state_in_mode
+expresses normal position or state (the element's typical configuration or
+alignment in that mode, independent of whether it is actively performing
+a function).
+
+availability_basis typically references a Technical Specification LCO or
+design basis document that establishes the availability requirement.
+"""
+from_entity = "element_usage"
+to_entity   = "plant_mode"
+relation_properties = [
+  { name = "availability_basis",  type = "string", optional = true, description = "Regulatory, licensing, or design basis citation that establishes the availability requirement for this usage in the specified mode (e.g., 'TS LCO 3.5.1', 'Design Basis FSAR 9.2.5')." },
+  { name = "allowed_outage_time", type = "string", optional = true, description = "Maximum allowed outage time for this specific usage in this mode before a Technical Specification action level, mode change, or compensatory measure is required." },
+  { name = "train_required",      type = "string", optional = true, description = "Minimum number of trains or divisions of this type of usage required to be available in this mode (e.g., '2 of 2', '1 of 2', '2 of 3')." }
+]
+
+[relation.normal_state_in_mode]
+relation_description = """
+Connects a specific installed element usage to a plant mode, recording
+the element's normal position, alignment, configuration, or state in that
+mode as defined in the plant's design basis or operating procedures.
+
+This relation extends the connector.normal_state property to a mode-specific,
+element-level context: instead of a static single normal state for a connector,
+it captures per-mode normal states for specific installed elements.
+
+Examples:
+  MSIV-1A (element_usage) -[normal_state_in_mode]->
+    Mode 1 (power operation):  normal_state = "open"
+  MSIV-1A (element_usage) -[normal_state_in_mode]->
+    Mode 3 (hot standby):      normal_state = "open"
+  MSIV-1A (element_usage) -[normal_state_in_mode]->
+    Mode 5 (cold shutdown):    normal_state = "closed"
+
+  Containment Isolation Valve (element_usage) -[normal_state_in_mode]->
+    Mode 1:  normal_state = "open", position_source = "FSAR Table 6.2-12"
+  Containment Isolation Valve (element_usage) -[normal_state_in_mode]->
+    Mode 6:  normal_state = "closed"
+
+normal_state is the primary property; it should use consistent vocabulary
+across the plant model (e.g., "open", "closed", "energized", "de-energized",
+"auto", "manual", "isolated", "available", "standby").
+"""
+from_entity = "element_usage"
+to_entity   = "plant_mode"
+relation_properties = [
+  { name = "normal_state",    type = "string", optional = false, description = "Normal position, alignment, or configuration of the element in the specified plant operating mode (e.g., 'open', 'closed', 'energized', 'de-energized', 'standby', 'auto', 'isolated', 'available')." },
+  { name = "position_source", type = "string", optional = true,  description = "Source document that establishes the normal state for this element in this mode, such as an FSAR table, P&ID, design basis document, or plant procedure (e.g., 'FSAR Table 6.2-12', 'SOP-3.1 Attachment A', 'P&ID M-101 Rev. 6')." },
+  { name = "is_safety_related", type = "boolean", optional = true, description = "True if the normal state in this mode is safety-significant — i.e., a deviation from this normal state could affect a safety function or initiate a plant event." }
+]
+
+
+# ============================================================
+# RELATIONS — DOCUMENT PROVENANCE
+# ============================================================
+#
+# These relations reference the `document` node type defined in
+# documentSchema.toml, which must be loaded alongside this schema.
+
+[relation.referenced_by]
+relation_description = """
+Connects an element definition to a document or record that references,
+governs, describes, justifies, or provides engineering evidence about it.
+The document is the evidence source; the element definition is the subject.
+
+Direction: element_definition → document (the element is referenced by the
+document).  The reference_role property classifies the evidentiary role:
+whether the document is a design basis source, licensing basis document,
+calculation, maintenance guidance, or vendor specification.
+"""
+from_entity = "element_definition"
+to_entity   = "document"
+relation_properties = [
+  { name = "reference_role", type = "string", optional = true, description = "Role of the document relative to the element definition, such as 'design_basis', 'licensing_basis', 'calculation_source', 'maintenance_guidance', 'vendor_specification', 'inspection_record', or 'evidence'." },
+  { name = "citation",       type = "string", optional = true, description = "Granular locator within the source document identifying the relevant content, such as section number, page, table, figure, appendix, or clause identifier." }
+]
+
+[relation.referenced_by_usage]
+relation_description = """
+Connects an element usage to a document or record that references, governs,
+describes, or provides evidence about that specific installed asset.  Used for
+plant-specific records such as installation inspection reports, outage work
+packages, surveillance test records, and as-built documentation.
+"""
+from_entity = "element_usage"
+to_entity   = "document"
+relation_properties = [
+  { name = "reference_role", type = "string", optional = true, description = "Role of the document relative to the usage, such as 'installation_record', 'outage_work_package', 'surveillance_test_record', 'as-built_drawing', 'maintenance_history', or 'plant-specific_procedure'." },
+  { name = "citation",       type = "string", optional = true, description = "Granular locator within the source document relevant to this usage." }
+]
+
+[relation.referenced_by_function]
+relation_description = """
+Connects a function definition to a document or record that describes,
+governs, analyzes, verifies, or justifies the function.  Supports traceability
+from safety function definitions to their licensing and design basis evidence.
+"""
+from_entity = "function_definition"
+to_entity   = "document"
+relation_properties = [
+  { name = "reference_role", type = "string", optional = true, description = "Role of the document relative to the function, such as 'functional_basis', 'safety_analysis', 'design_description', 'verification_evidence', or 'FSAR_chapter'." },
+  { name = "citation",       type = "string", optional = true, description = "Granular locator within the source document relevant to the function." }
+]
+
+[relation.referenced_by_requirement]
+relation_description = """
+Connects a requirement to a document or record in which the requirement
+originates, is stated, is justified, or is authoritatively referenced.
+"""
+from_entity = "requirement"
+to_entity   = "document"
+relation_properties = [
+  { name = "reference_role", type = "string", optional = true, description = "Role of the document relative to the requirement, such as 'source_authority', 'governing_standard', 'FSAR_basis', 'licensing_commitment', 'verification_record', or 'licensing_artifact'." },
+  { name = "citation",       type = "string", optional = true, description = "Granular locator identifying where the requirement is stated or supported within the source document." }
+]
+
+[relation.referenced_by_technical_specification]
+relation_description = """
+Connects a technical specification to a document or record in which the
+specification is stated, derived, justified, or verified.  Supports
+traceability from quantitative design values to their authoritative sources.
+"""
+from_entity = "technical_specification"
+to_entity   = "document"
+relation_properties = [
+  { name = "reference_role", type = "string", optional = true, description = "Role of the document relative to the technical specification, such as 'source_authority', 'design_calculation', 'vendor_data_sheet', 'licensing_basis', 'surveillance_procedure', or 'verification_evidence'." },
+  { name = "citation",       type = "string", optional = true, description = "Granular locator identifying where the specification is stated or justified within the source document." }
+]
+
+[relation.verifies]
+relation_description = """
+Connects a document or record to a requirement that the artifact verifies,
+confirms, tests, inspects, analyzes, or otherwise provides evidence for.
+
+Maps to SysML «verify» dependency (verification artifact → Requirement).
+In this schema the 'verification artifact' is a document node (test report,
+analysis calculation, inspection record, or demonstration package).
+
+verification_status reflects the current state of the verification activity
+(planned, partial, complete, superseded, or unknown).
+
+Note: This relation goes document → requirement, which is the SysML-conventional
+direction for «verify» (the test case verifies the requirement).
+"""
+from_entity = "document"
+to_entity   = "requirement"
+relation_properties = [
+  { name = "verification_method", type = "enum",   optional = true, description = "Method by which the source document verifies the requirement.", enum_values = ["test", "analysis", "inspection", "demonstration", "review"] },
+  { name = "verification_status", type = "enum",   optional = true, description = "Current modeled status of the verification relationship.", enum_values = ["planned", "partial", "complete", "superseded", "unknown"] },
+  { name = "citation",            type = "string", optional = true, description = "Granular locator within the source document identifying the specific verification evidence (test case number, analysis section, inspection checklist item, etc.)." }
+]
