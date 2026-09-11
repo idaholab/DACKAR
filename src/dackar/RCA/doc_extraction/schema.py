@@ -179,6 +179,12 @@ class DocExtractionRecord:
         return " | ".join(p for p in parts if p)
 
     def is_null_record(self) -> bool:
+        """Return True when no semantic content was extracted (all three core fields empty).
+
+        Null records are the sentinel produced for a document with no extractable causal
+        language; they are stored and retrievable by metadata but never surface in
+        similarity queries (their embed_text is a single space).
+        """
         return not any([self.identified_effect, self.assessed_cause, self.inferred_fm_label])
 
     def is_recurrence_eligible(self) -> bool:

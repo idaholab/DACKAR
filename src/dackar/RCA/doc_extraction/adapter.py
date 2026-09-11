@@ -149,7 +149,7 @@ class DocExtractionAdapter:
         # Chain fields: root node → inferred_fm_label (root cause);
         # proximate node ([-2]) → assessed_cause; terminal node ([-1]) → identified_effect.
         # cause_is_symptom = True when intermediate nodes exist (chain length > 2).
-        for ci, chain_dict in enumerate(causal_chains):
+        for chain_dict in causal_chains:
             nodes = chain_dict.get("nodes", [])
             if len(nodes) < 2:
                 continue
@@ -183,7 +183,10 @@ class DocExtractionAdapter:
 
             records.append(DocExtractionRecord(
                 doc_id=doc_id,
-                chain_index=ci,
+                # Assign the id from the running record count (§ chain_index must be
+                # collision-free across chain records AND statement records for the
+                # same doc — {doc_id}::chain::{index} is the Chroma primary key).
+                chain_index=len(records),
                 identified_effect=terminal_text or None,
                 assessed_cause=proximate_text or None,
                 inferred_fm_label=inferred_fm,
@@ -201,7 +204,6 @@ class DocExtractionAdapter:
             ))
 
         # Step C-stmt: one record per statement not covered by any chain above.
-        chain_record_count = len(records)
         for i, stmt in enumerate(causal_statements):
             if stmt.get("statement_id") in covered_stmt_ids:
                 continue
@@ -240,7 +242,9 @@ class DocExtractionAdapter:
 
             records.append(DocExtractionRecord(
                 doc_id=doc_id,
-                chain_index=chain_record_count + i,
+                # Running record count → contiguous, collision-free with the chain
+                # records appended above (see chain-record note).
+                chain_index=len(records),
                 identified_effect=identified_effect,
                 assessed_cause=assessed_cause,
                 inferred_fm_label=inferred_fm_label,
@@ -325,9 +329,14 @@ def _make_ner_cs_factory(
     dep_fallback on every document. This factory bridges the NER pipeline output
     into the CausalSentence input contract.
 
-    Note: EntityRuler patterns are added to the shared nlp pipeline and persist
-    across documents. Pattern accumulation is benign for nuclear domain entities
-    (all terms remain valid SSC candidates) but grows linearly with corpus size.
+    Reproducibility note: the factory closes over *this* document's ``ssc_patterns``,
+    and each per-document ``CausalSentence(nlp)`` construction calls ``resetPipeline``
+    (CausalBase.__init__), which removes the ``entity_ruler`` pipe from the shared
+    ``nlp`` before ``addEntityPattern`` rebuilds it. The ruler is therefore reset and
+    repopulated with *only* the current document's SSC + causal-keyword patterns on
+    every call — patterns do NOT accumulate across documents, so extraction is
+    order-independent. (The 26 keyword patterns are re-added per document as a
+    consequence of that reset; the cost is negligible relative to NER/parse.)
 
     Returns None when no entity spans are available (CausalSentence would return
     empty anyway; dep_fallback remains the active extractor).

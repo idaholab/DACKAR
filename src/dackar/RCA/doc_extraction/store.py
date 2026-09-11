@@ -53,10 +53,20 @@ class SemanticMatch:
 
     @property
     def confidence_weight(self) -> float:
+        """Numeric weight for this match's confidence level (HIGH=1.0, MEDIUM=0.7, LOW=0.3).
+
+        Used as a multiplier in semantic_contribution (§4.3) so lower-confidence
+        extractions contribute proportionally less to effective_recurrence_count.
+        """
         return {ConfidenceLevel.HIGH: 1.0, ConfidenceLevel.MEDIUM: 0.7, ConfidenceLevel.LOW: 0.3}[self.confidence]
 
     @property
     def cause_is_symptom_factor(self) -> float:
+        """Down-weight factor when the assessed cause is itself a symptom (0.5) vs. a mechanism (1.0).
+
+        A symptom-as-cause is a weaker recurrence signal than a true failure mechanism,
+        so it halves this match's semantic_contribution.
+        """
         return 0.5 if self.cause_is_symptom else 1.0
 
     @property
@@ -65,7 +75,17 @@ class SemanticMatch:
         return self.similarity_score * self.confidence_weight * self.cause_is_symptom_factor
 
 
-class EmbeddingModelVersionError(RuntimeError):
+class DocExtractionStoreError(RuntimeError):
+    """Base error for DocExtractionStore backend failures (Chroma / embedding backend).
+
+    query() and resolve_fm_candidates() deliberately degrade to empty/zero results on
+    backend failure rather than raising, recording each event via _record_degradation()
+    so it surfaces in the run manifest (see store_health_summary()).  Callers that prefer
+    fail-loud semantics can inspect store_health_summary()["degraded"] and escalate.
+    """
+
+
+class EmbeddingModelVersionError(DocExtractionStoreError):
     """Raised when the query-time embedding model does not match the collection's stored model."""
 
 
@@ -103,6 +123,11 @@ class DocExtractionStore:
         self.fm_resolution_threshold = fm_resolution_threshold  # 0.88 = auto_resolved boundary
         self.epistemics_classifier = epistemics_classifier  # EpistemicClassifier | None
         self._collection = None  # lazy-initialized on first use
+        self._embedder = None    # lazy-initialized embedder, cached on first use
+        # Degraded (error-swallowed) operations, surfaced to the run manifest via
+        # store_health_summary() so a backend failure is not read downstream as a
+        # legitimate "no semantic recurrence" (silent under-count).
+        self._degraded_operations: List[Dict[str, Any]] = []
 
     @property
     def embedding_model_version(self) -> str:
@@ -113,8 +138,16 @@ class DocExtractionStore:
     # ------------------------------------------------------------------
 
     def _get_embedder(self):
-        from langchain_community.embeddings import OllamaEmbeddings
-        return OllamaEmbeddings(base_url=self.ollama_base_url, model=self.embed_model)
+        if self._embedder is not None:
+            return self._embedder
+        # langchain_community.embeddings.OllamaEmbeddings is deprecated in favour of the
+        # dedicated langchain_ollama package; prefer it when installed, fall back otherwise.
+        try:
+            from langchain_ollama import OllamaEmbeddings  # noqa: PLC0415
+        except ImportError:
+            from langchain_community.embeddings import OllamaEmbeddings  # noqa: PLC0415
+        self._embedder = OllamaEmbeddings(base_url=self.ollama_base_url, model=self.embed_model)
+        return self._embedder
 
     def _get_collection(self):
         if self._collection is not None:
@@ -137,7 +170,19 @@ class DocExtractionStore:
         return self._get_embedder().embed_query(text)
 
     def _chroma_collection(self):
-        return self._get_collection()._collection
+        # NOTE: reaches into langchain_chroma's private ``._collection`` (the raw chromadb
+        # Collection) to call upsert()/get()/query()/update() with precomputed embeddings —
+        # the public langchain_chroma API does not expose those. Assumes langchain_chroma>=0.1;
+        # guarded with getattr so an upstream rename fails loudly here instead of raising an
+        # opaque AttributeError deep inside a query.
+        vs = self._get_collection()
+        collection = getattr(vs, "_collection", None)
+        if collection is None:
+            raise DocExtractionStoreError(
+                "langchain_chroma Chroma object exposes no '_collection' attribute; the "
+                "installed langchain_chroma version is incompatible with DocExtractionStore."
+            )
+        return collection
 
     # ------------------------------------------------------------------
     # Upsert
@@ -248,6 +293,7 @@ class DocExtractionStore:
             raw = collection.query(**kwargs)
         except Exception as exc:
             logger.error("DocExtractionStore.query failed: %s", exc)
+            self._record_degradation("query", exc)
             return [], []
 
         ids = (raw.get("ids") or [[]])[0]
@@ -356,6 +402,7 @@ class DocExtractionStore:
             )
         except Exception as exc:
             logger.warning("resolve_fm_candidates: failed to fetch unresolved records: %s", exc)
+            self._record_degradation("resolve_fm_candidates", exc)
             return 0
 
         ids = result.get("ids") or []
@@ -392,8 +439,19 @@ class DocExtractionStore:
         updated_metas: List[Dict[str, Any]] = []
         resolved_count: int = 0  # only auto_resolved + ambiguous (non-empty fm_id_candidate)
 
-        # Ambiguity boundary: [ambiguity_floor, threshold) → "ambiguous"; < ambiguity_floor → "unresolved"
+        # Ambiguity boundary: [ambiguity_floor, threshold) → "ambiguous"; < ambiguity_floor → "unresolved".
+        # A caller-supplied resolution_threshold below the floor would make the "ambiguous"
+        # band empty/inverted; clamp the floor to the threshold so the tiers stay consistent
+        # (auto_resolved / unresolved only) and warn rather than silently disabling a band.
         _AMBIGUITY_FLOOR = 0.80
+        ambiguity_floor = _AMBIGUITY_FLOOR
+        if threshold < ambiguity_floor:
+            logger.warning(
+                "resolve_fm_candidates: resolution_threshold %.3f is below the ambiguity floor "
+                "%.3f; clamping floor to threshold ('ambiguous' band disabled).",
+                threshold, ambiguity_floor,
+            )
+            ambiguity_floor = threshold
 
         for label, label_emb in zip(unique_labels, label_embeddings):
             sims = [_cosine_similarity(label_emb, fm_emb) for fm_emb in fm_embeddings]
@@ -409,15 +467,15 @@ class DocExtractionStore:
                 alt_fm_id = ""
                 if len(sorted_indices) > 1:
                     alt_idx = sorted_indices[1]
-                    if sims[alt_idx] >= _AMBIGUITY_FLOOR:
+                    if sims[alt_idx] >= ambiguity_floor:
                         alt_fm_id = fm_ids[alt_idx]
-            elif best_sim >= _AMBIGUITY_FLOOR:
+            elif best_sim >= ambiguity_floor:
                 resolution_status = "ambiguous"
                 best_fm_id = fm_ids[best_idx]
                 alt_fm_id = ""
                 if len(sorted_indices) > 1:
                     alt_idx = sorted_indices[1]
-                    if sims[alt_idx] >= _AMBIGUITY_FLOOR:
+                    if sims[alt_idx] >= ambiguity_floor:
                         alt_fm_id = fm_ids[alt_idx]
             else:
                 resolution_status = "unresolved"
@@ -459,6 +517,40 @@ class DocExtractionStore:
             logger.info("DocExtractionStore: deleted records for doc_id '%s'.", doc_id)
         except Exception as exc:
             logger.warning("DocExtractionStore.delete_by_doc_id failed for '%s': %s", doc_id, exc)
+
+    # ------------------------------------------------------------------
+    # Degradation signalling (surfaced to the run manifest)
+    # ------------------------------------------------------------------
+
+    def _record_degradation(self, operation: str, exc: Exception) -> None:
+        """Record a degraded (error-swallowed) operation for run-manifest surfacing.
+
+        query() and resolve_fm_candidates() degrade to empty/zero results on backend
+        failure rather than crashing a batch run; each such event is captured here so
+        store_health_summary() can report it and the failure is not misread downstream
+        as a legitimate "no semantic recurrence".
+        """
+        self._degraded_operations.append(
+            {"operation": operation, "error_type": type(exc).__name__, "error": str(exc)}
+        )
+
+    @property
+    def degraded(self) -> bool:
+        """True when any query/resolve operation swallowed a backend error this run."""
+        return bool(self._degraded_operations)
+
+    def store_health_summary(self) -> Dict[str, Any]:
+        """Degradation summary for run_manifest (store_health section).
+
+        Returns ``{"degraded": bool, "degraded_operation_count": int, "events": [...]}``.
+        The orchestrator stamps this onto the run manifest so a swallowed Chroma/embedding
+        error surfaces as an explicit degraded-run signal instead of a silent under-count.
+        """
+        return {
+            "degraded": self.degraded,
+            "degraded_operation_count": len(self._degraded_operations),
+            "events": list(self._degraded_operations),
+        }
 
 
 # ---------------------------------------------------------------------------
