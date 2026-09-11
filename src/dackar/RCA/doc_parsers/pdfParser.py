@@ -97,7 +97,7 @@ def infer_doc_type(filename: str, early_text: str = "") -> str:
 # Helpers
 # ------------------------------
 def _now_iso() -> str:
-    return datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 def _clean_table_cell(x: Any) -> str:
     text = "" if x is None else str(x)
@@ -105,10 +105,6 @@ def _clean_table_cell(x: Any) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
     text = re.sub(r'([A-Za-z])\.([A-Za-z])', r'\1\2', text)
     text = re.sub(r'^[\.\,\;\:\-]+\s*', '', text)
-    if re.fullmatch(r'.*maintenance', text, flags=re.IGNORECASE):
-        text = "Maintenance"
-    elif re.fullmatch(r'.*engineering', text, flags=re.IGNORECASE):
-        text = "Engineering"
     return text
 
 
@@ -315,7 +311,6 @@ def pdfParser(
         raise FileNotFoundError("red_filepath must be provided.")
     fullpath = os.path.join(home_folder, red_filepath) if home_folder else red_filepath
     if not os.path.exists(fullpath):
-        print(os.getcwd())
         raise FileNotFoundError(f"PDF file not found: {fullpath}")
     if not source_path:
         source_path = red_filepath
@@ -324,9 +319,9 @@ def pdfParser(
     try:
         with open(fullpath, "rb") as _fh:
             _file_bytes = _fh.read()
-        doc_id = hashlib.sha256(_file_bytes).hexdigest()[:12]
-        # doc_version reuses the same hash; set it here so it's available early
+        # doc_version is the full content hash; doc_id reuses its first 12 chars.
         doc_version = hashlib.sha256(_file_bytes).hexdigest()
+        doc_id = doc_version[:12]
     except Exception:
         doc_id = hashlib.sha1(source_path.encode("utf-8")).hexdigest()[:12]
         doc_version = None
@@ -336,11 +331,6 @@ def pdfParser(
 
     # Prepare output folders
     filename = get_file_name_no_extension(red_filepath)
-    file_folder = os.path.dirname(red_filepath) or ""
-    # Guard: ensure file_folder is never absolute (prevents escaping destination_folder)
-    if os.path.isabs(file_folder):
-        # collapse to basename (we intentionally drop parent pieces to keep outputs inside destination_folder)
-        file_folder = os.path.basename(file_folder) or ""
     # Build a safe data dump folder rooted under destination_folder
     data_dump_folder = os.path.join(destination_folder, doc_id)
 

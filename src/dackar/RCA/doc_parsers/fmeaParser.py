@@ -49,10 +49,7 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-try:
-    from doc_parsers.fmea_normalizer import normalize_fmea_records
-except ModuleNotFoundError:
-    from dackar.RCA.doc_parsers.fmea_normalizer import normalize_fmea_records  # type: ignore
+from .fmea_normalizer import classify_anomaly_pattern, normalize_fmea_records
 
 LOGGER = logging.getLogger("fmeaParser")
 if not LOGGER.handlers:
@@ -147,7 +144,6 @@ DEFAULT_COLUMN_MAP: Dict[str, List[str]] = {
         r"^detection$",
         r"^det$",
         r"^d$",
-        r"detection[\s_-]?rating",
         r"detection[\s_-]?\(d\)",
     ],
     "detection_rating": [
@@ -284,34 +280,12 @@ PROFILE_COLUMN_MAPS: Dict[str, Dict[str, List[str]]] = {
 }
 
 # Allowed values for expected_anomaly_pattern (from kg_context failure_modes schema).
+# The keyword→pattern map itself lives in fmea_normalizer.classify_anomaly_pattern
+# (single source of truth); this enum is only for exact-value pass-through here.
 _ANOMALY_PATTERN_ENUM = frozenset({
     "step_change", "gradual_drift", "spike",
     "oscillation", "dropout", "sustained_exceedance", "unknown",
 })
-
-# Keyword → canonical anomaly pattern normalisation map.
-_ANOMALY_PATTERN_KEYWORDS: Dict[str, str] = {
-    "step": "step_change",
-    "step change": "step_change",
-    "drift": "gradual_drift",
-    "gradual": "gradual_drift",
-    "gradual drift": "gradual_drift",
-    "ramp": "gradual_drift",
-    "spike": "spike",
-    "transient": "spike",
-    "impulse": "spike",
-    "oscillat": "oscillation",
-    "fluctuat": "oscillation",
-    "cycle": "oscillation",
-    "dropout": "dropout",
-    "drop out": "dropout",
-    "loss of signal": "dropout",
-    "signal loss": "dropout",
-    "exceedance": "sustained_exceedance",
-    "sustained": "sustained_exceedance",
-    "high": "sustained_exceedance",
-    "overload": "sustained_exceedance",
-}
 
 # Effect text delimiters used to split local_effect into symptom list.
 _EFFECT_SPLIT_RE = re.compile(r"[;,/|]|\band\b|\bor\b", re.IGNORECASE)
@@ -354,9 +328,10 @@ def _resolve_anomaly_pattern(raw: Optional[str]) -> Optional[str]:
     normed = _norm(raw)
     if normed in _ANOMALY_PATTERN_ENUM:
         return normed
-    for keyword, canonical in _ANOMALY_PATTERN_KEYWORDS.items():
-        if keyword in normed:
-            return canonical
+    classified = classify_anomaly_pattern(normed)
+    if classified is not None:
+        return classified
+    # A value was explicitly provided but is unrecognised → record "unknown".
     return "unknown"
 
 
@@ -410,9 +385,10 @@ class FmeaColumnResolver:
     """Resolve actual spreadsheet column headers to canonical field names.
 
     Resolution is purely regex-based: each header is tested against every
-    pattern list in the column map.  The first match wins; if a header matches
-    multiple canonical fields the first canonical field (alphabetical order)
-    wins and a warning is logged.
+    pattern list in the column map.  For a given header the first canonical
+    field (in the column map's insertion order) whose pattern matches wins.
+    If two headers resolve to the same canonical field, the later one is
+    ignored and a warning is logged.
 
     Args:
         column_map: Merged column map (defaults + overrides).
@@ -463,8 +439,9 @@ class FmeaColumnResolver:
             source: Human-readable source description for the error message.
 
         Raises:
-            ValueError: If ``component_type`` or ``failure_mode_name`` cannot
-                be resolved, with a list of all detected headers included.
+            ValueError: If any of ``component_type``, ``failure_mode_name``, or
+                ``failure_mechanism`` cannot be resolved, with a list of all
+                detected canonical fields included.
         """
         missing = [
             f
@@ -483,6 +460,18 @@ class FmeaColumnResolver:
 # ---------------------------------------------------------------------------
 # Row builder
 # ---------------------------------------------------------------------------
+
+class _RowValidationSkip(Exception):
+    """Signal that a single data row should be skipped and reported.
+
+    Raised by :func:`_build_record` when a row is structurally present but has a
+    blank required *cell* (e.g. ``failure_mechanism``).  The parse loop catches
+    it, counts the row, logs a warning, and continues — so one bad row no longer
+    aborts the whole file (and, via :func:`parse_fmea_files`, the whole batch).
+    A missing required *column* is a different, file-level error still raised by
+    :meth:`FmeaColumnResolver.validate_required`.
+    """
+
 
 def _build_record(
     cells: Dict[str, Any],
@@ -503,9 +492,8 @@ def _build_record(
     if not component_type or not fm_name:
         return None  # blank or header-repeat row
     if not mechanism:
-        raise ValueError(
-            f"FMEA parse error in '{fmea_source_ref}' row {row_index}: "
-            "required field 'failure_mechanism' is empty."
+        raise _RowValidationSkip(
+            f"row {row_index}: required field 'failure_mechanism' is empty — row skipped"
         )
 
     # Derive stable canonical ID.
@@ -515,6 +503,10 @@ def _build_record(
     severity = _to_int(cells.get("severity"))
     occurrence = _to_int(cells.get("occurrence"))
     detection = _to_int(cells.get("detection"))
+    # Prefer an explicit detection_rating column, else fall back to detection.
+    # Use ``is not None`` so a legitimate 0 is not dropped by an ``or`` fallback.
+    _detection_rating = _to_int(cells.get("detection_rating"))
+    detection_effective = _detection_rating if _detection_rating is not None else detection
     rpn_raw = _to_int(cells.get("rpn"))
     # Derive RPN if the column is missing but all three components are present.
     rpn: Optional[int] = rpn_raw
@@ -547,8 +539,8 @@ def _build_record(
         "detection_method": str(cells.get("detection_method") or "").strip() or None,
         "severity": severity,
         "occurrence": occurrence,
-        "detection_rating": _to_int(cells.get("detection_rating")) or detection,
-        "detection": _to_int(cells.get("detection_rating")) or detection,
+        "detection_rating": detection_effective,
+        "detection": detection_effective,
         "rpn": rpn,
         "safety_function_impact": str(cells.get("safety_function_impact") or "").strip() or None,
         "tech_spec_applicability": str(cells.get("tech_spec_applicability") or "").strip() or None,
@@ -652,6 +644,16 @@ def parse_fmea_file(
         sheet_filter: For multi-sheet workbooks, only parse the sheets whose
             names are in this list.  Pass ``None`` (default) to parse all
             sheets.
+        profile_name: FMEA format profile forwarded to
+            :func:`~doc_parsers.fmea_normalizer.normalize_fmea_records`
+            (e.g. ``"auto"``, ``"aiag_4th"``, ``"aiag_5th"``,
+            ``"mil_std_1629a"``, ``"iec_60812"``, ``"nuclear_generic"``).  It
+            also selects profile-specific header patterns via
+            :data:`PROFILE_COLUMN_MAPS`.
+        include_normalization_metadata: When ``True`` (default), attach the
+            per-field ``_field_quality`` tags, ``_normalization_profile``, and
+            the shared ``_fmea_ingestion_quality`` report to each record; when
+            ``False`` these normalization-metadata keys are stripped.
 
     Returns:
         List of record dicts.  Each dict contains at minimum:
@@ -660,8 +662,11 @@ def parse_fmea_file(
 
     Raises:
         ValueError: If required columns (``component_type``,
-            ``failure_mode_name``) cannot be resolved in a sheet, or if the
-            file extension is not recognised.
+            ``failure_mode_name``, ``failure_mechanism``) cannot be resolved in
+            a sheet, or if the file extension is not recognised.  A row whose
+            ``failure_mechanism`` *cell* is blank is skipped and counted in the
+            ingestion-quality report's ``rows_skipped_missing_mechanism`` rather
+            than raising.
         FileNotFoundError: If *path* does not exist.
     """
     path = Path(path)
@@ -691,6 +696,7 @@ def parse_fmea_file(
         )
 
     records: List[Dict[str, Any]] = []
+    rows_skipped_missing_mechanism = 0
 
     for sheet_name, raw_rows in sheets:
         if sheet_filter is not None and sheet_name not in sheet_filter:
@@ -732,7 +738,12 @@ def parse_fmea_file(
                 canonical: row[col_idx] if col_idx < len(row) else None
                 for canonical, col_idx in resolved_cols.items()
             }
-            rec = _build_record(cells, row_offset, fmea_source_ref, sheet_name)
+            try:
+                rec = _build_record(cells, row_offset, fmea_source_ref, sheet_name)
+            except _RowValidationSkip as skip:
+                rows_skipped_missing_mechanism += 1
+                LOGGER.warning("Skipping FMEA row in '%s': %s", source_label, skip)
+                continue
             if rec is not None:
                 records.append(rec)
                 sheet_records += 1
@@ -747,12 +758,15 @@ def parse_fmea_file(
         fmea_source_ref, len(records), len(sheets),
     )
     normalized, report = normalize_fmea_records(records, profile_name=profile_name)
+    report["rows_skipped_missing_mechanism"] = rows_skipped_missing_mechanism
     LOGGER.info(
-        "FMEA normalization (%s): derived=%d, nlp_inferred=%d, critical_missing=%d",
+        "FMEA normalization (%s): derived=%d, nlp_inferred=%d, critical_missing=%d, "
+        "rows_skipped_missing_mechanism=%d",
         report.get("profile_used"),
         int(report.get("derived_field_count", 0) or 0),
         int(report.get("nlp_inferred_field_count", 0) or 0),
         int(report.get("critical_field_missing_count", 0) or 0),
+        rows_skipped_missing_mechanism,
     )
     if include_normalization_metadata:
         for rec in normalized:
@@ -821,6 +835,9 @@ def _merge_ingestion_reports(
     merged["orphaned_fm_count"] = int(current.get("orphaned_fm_count", 0) or 0) + int(
         incoming.get("orphaned_fm_count", 0) or 0
     )
+    merged["rows_skipped_missing_mechanism"] = int(
+        current.get("rows_skipped_missing_mechanism", 0) or 0
+    ) + int(incoming.get("rows_skipped_missing_mechanism", 0) or 0)
 
     cur_profile = str(current.get("profile_used") or "auto")
     in_profile = str(incoming.get("profile_used") or "auto")
