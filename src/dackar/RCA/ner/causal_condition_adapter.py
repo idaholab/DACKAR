@@ -307,8 +307,6 @@ def calibrate_chain_threshold(
         dict with keys "results" (list of per-threshold dicts) and
         "best_threshold" (float).
     """
-    import itertools
-
     if thresholds is None:
         thresholds = [round(t * 0.05, 2) for t in range(2, 19)]  # 0.10 … 0.90
 
@@ -711,7 +709,11 @@ Return ONLY the JSON array."""
         effect = str(item.get("effect_text") or "").strip()
         if not cause and not effect:
             continue
-        conf = float(item.get("confidence", 0.5))
+        try:
+            conf = float(item.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            # malformed confidence from the LLM; skip this item rather than dropping the list
+            continue
         statements.append({
             "statement_id": f"{doc_id}::{chunk_index}::llm_implicit::{i}",
             "sentence_text": chunk_text[:300],
@@ -859,7 +861,11 @@ Return ONLY the JSON array."""
         effect = str(item.get("effect_text") or "").strip()
         if not cause and not effect:
             continue
-        conf = float(item.get("confidence", 0.5))
+        try:
+            conf = float(item.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            # malformed confidence from the LLM; skip this item rather than dropping the list
+            continue
         statements.append({
             "statement_id":  f"{doc_id}::{chunk_index}::llm_all::{i}",
             "sentence_text": chunk_text[:300],
@@ -1857,14 +1863,6 @@ def _dep_causal_fallback(
         conj_idx += 1
 
     return statements
-
-
-def _find_causal_token(sent: Any) -> Any:
-    """Return the first token in a spaCy Span whose lemma is a causal verb."""
-    for token in sent:
-        if token.lemma_.lower() in _DEP_CAUSAL_VERB_LEMMAS:
-            return token
-    return None
 
 
 def _find_all_causal_tokens(sent: Any) -> List[Any]:

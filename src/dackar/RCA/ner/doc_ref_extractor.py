@@ -87,7 +87,12 @@ def _compile_profile(profile: Dict) -> List[Tuple[str, str, List[re.Pattern]]]:
         doc_type = entry.get("type", "UNKNOWN").upper()
         label = entry.get("label", f"doc_ref_{doc_type.lower()}")
         raw_patterns = entry.get("patterns", [])
-        compiled = [re.compile(p, re.IGNORECASE) for p in raw_patterns]
+        compiled = []
+        for p in raw_patterns:
+            try:
+                compiled.append(re.compile(p, re.IGNORECASE))
+            except re.error:
+                pass  # silently skip malformed patterns (mirrors _compile_alarm_profile)
         if compiled:
             result.append((doc_type, label, compiled))
     return result

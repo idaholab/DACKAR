@@ -238,7 +238,11 @@ class LLMDisambiguator:
         label = resp.get("label") or resp.get("label_id")
         if not label or label == "NO_LABEL":
             return None
-        score = float(resp.get("score", 0.5))
+        try:
+            score = float(resp.get("score", 0.5))
+        except (TypeError, ValueError):
+            # malformed score from the LLM (e.g. null, "high"); skip this hypothesis
+            return None
         rationale = str(resp.get("rationale", "")).strip()
         # Build a LabelHypothesis (adapt to your models.py constructor)
         lh = LabelHypothesis(label=label, score=score, rationale=rationale)

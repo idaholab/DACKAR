@@ -144,6 +144,8 @@ def extract_equipment_ids(
             count += 1
             if count >= max_ids:
                 break
+        if count >= max_ids:
+            break
 
     # Containment filter: drop shorter tags that are trailing segments of a longer tag.
     # E.g. if "AFW-P-101" is found, drop "P-101" since it's a suffix component of it.

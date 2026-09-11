@@ -355,7 +355,7 @@ class DescriptionEmbedGenerator:
         Rule 1: deg_mech requires mechanism cue in span OR near-span context
         Rule 2: G1_PHYSICAL requires label-specific cue token overlap IN SPAN (not context)
         """
-        from hybrid_ner.models import LabelHypothesis
+        from ..models import LabelHypothesis
 
         doc_text = doc.text or ""
 
