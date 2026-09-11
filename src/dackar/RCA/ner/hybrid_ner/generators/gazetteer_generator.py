@@ -267,8 +267,8 @@ class GazetteerGenerator(CandidateGenerator):
 
         Output schema:
           {
-            "exclusive_by_group": { "G1_PHYSICAL": {tokens...}, "G5_MECHANISMS": {tokens...}, ... },
-            "token_to_groups": { "token": {"G1_PHYSICAL","G5_MECHANISMS",...}, ... }
+            "exclusive_by_group": { "G1_PHYSICAL_COMPONENT": {tokens...}, "G4_MECHANISM_PROCESS": {tokens...}, ... },
+            "token_to_groups": { "token": {"G1_PHYSICAL_COMPONENT","G4_MECHANISM_PROCESS",...}, ... }
           }
 
         A token is *exclusive* to a group if it only appears in gazetteer terms whose labels map to that group.

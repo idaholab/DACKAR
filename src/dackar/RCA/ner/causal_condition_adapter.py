@@ -1725,7 +1725,8 @@ def _dep_causal_fallback(
         # skip if already covered by a dep-tree result for this connector
         already = any(
             s["connector"].lower() in connector.lower()
-            and (s["cause_text"] in before_text or s["effect_text"] in after_text)
+            and ((s["cause_text"] and s["cause_text"] in before_text)
+                 or (s["effect_text"] and s["effect_text"] in after_text))
             for s in statements
         )
         if already:
@@ -2160,7 +2161,7 @@ def _derive_condition_state(
     # LLM fallback: both states still unknown and an LLM is configured.
     # A single LLM call classifies the overall condition; the result is applied
     # to whichever state(s) are still None so at most one LLM call is made.
-    if llm_cfg and (as_found is None or as_left is None):
+    if llm_cfg and llm_cfg.get("enabled") and (as_found is None or as_left is None):
         llm_state = _llm_condition_state_fallback(
             chunk_text=chunk_text,
             doc_type=doc_type,

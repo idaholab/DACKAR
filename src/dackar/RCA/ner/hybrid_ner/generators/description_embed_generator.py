@@ -421,10 +421,9 @@ class DescriptionEmbedGenerator:
                 cues = self._label_lexical_cues.get(lbl, set())
                 cues = {c for c in cues if len(c) >= 3 and c not in _STOP}
                 if cues and not (span_tokens & cues):
-                    continue
-                # Also: if span has mechanism cues and NO component cues, reject.
-                # (Prevents "wear" being labeled as a component.)
-                if span_has_mech and cues and not (span_tokens & cues):
+                    # Rejects component labels for spans lacking a component cue, which
+                    # already covers the "wear"-as-component case (mechanism-only spans
+                    # carry no component cue), so no separate span_has_mech check is needed.
                     continue
 
             out.append(LabelHypothesis(label=lbl, score=prob, group=group, rationale="desc_embed"))

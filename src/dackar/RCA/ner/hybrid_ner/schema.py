@@ -56,6 +56,8 @@ class SchemaLoader:
         # --- Format B: top-level {"groups": [...]} ---
         if isinstance(raw, dict) and isinstance(raw.get("groups", None), list):
             for g in raw.get("groups", []):
+                if "id" not in g:
+                    raise ValueError(f"group entry missing required 'id': {g!r}")
                 gid = g["id"]
                 labels = set(g.get("labels", []))
                 group_to_labels[gid] = labels
@@ -80,6 +82,10 @@ class SchemaLoader:
         pair_decision: Dict[Tuple[str, str], str] = {}
         if isinstance(raw, dict):
             for p in raw.get("group_pair_matrix", {}).get("pairs", []):
+                if not all(k in p for k in ("g1", "g2", "decision")):
+                    raise ValueError(
+                        f"group_pair_matrix pair missing required keys (g1, g2, decision): {p!r}"
+                    )
                 g1, g2, d = p["g1"], p["g2"], p["decision"]
                 pair_decision[(g1, g2)] = d
                 pair_decision[(g2, g1)] = d
@@ -88,7 +94,13 @@ class SchemaLoader:
         rules: List[ConditionalRule] = []
         if isinstance(raw, dict):
             for r in raw.get("conditional_rules", []):
-                applies = [(x["g1"], x["g2"]) for x in r.get("applies_to_pairs", [])]
+                if "id" not in r:
+                    raise ValueError(f"conditional_rule missing required 'id': {r!r}")
+                applies = [
+                    (x["g1"], x["g2"])
+                    for x in r.get("applies_to_pairs", [])
+                    if "g1" in x and "g2" in x
+                ]
                 rules.append(
                     ConditionalRule(
                         rule_id=r["id"],

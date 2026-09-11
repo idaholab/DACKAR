@@ -94,8 +94,9 @@ class HybridNERPipeline:
                     if toks and (toks & STOP_TOKENS):
                         # keep gazetteer/classifier labels, but drop desc_gen hypotheses
                         c.proposed_labels = [h for h in c.proposed_labels if getattr(h, "source", "") != "desc_embed"]
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.debug(f"STOP_TOKENS admin/meta filter skipped: {e}")
 
 
         # Build role-aware token sets (component vs mechanism) from generator gazetteers.

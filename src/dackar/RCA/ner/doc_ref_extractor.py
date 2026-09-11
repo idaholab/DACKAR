@@ -129,7 +129,7 @@ def _make_fp_checker(profile: Dict):
     max_year = int(fp.get("max_year", 2035))
     excluded = {p.upper() for p in fp.get("excluded_prefixes_from_doc_ref", [])}
 
-    _year_re = re.compile(r"(?:19|20)\d{2}")
+    _year_re = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 
     def is_fp(doc_type: str, norm: str) -> bool:
         prefix = norm.split("-")[0] if "-" in norm else norm[:3]

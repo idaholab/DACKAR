@@ -271,11 +271,10 @@ class CompatibilityEngine:
         if allow:
             return _accept(selected, "Accepted with multi-label (schema/rule-allowed).", triggered_rule_ids=triggered)
 
-        # Try R2 split for G1 + G6 (although unlikely here since pair is G1+G5, keep for generality)
-        if "G1_PHYSICAL_COMPONENT" in pair_set and "G5_FAILURE_OUTCOME" in pair_set:
-            split_decision = self._try_split_physical_outcome(doc, cand, selected)
-            if split_decision is not None:
-                return split_decision, []
+        # (No R2 physical+outcome split here: this branch is reached only for the
+        # whitelisted {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS} pair, so
+        # G5_FAILURE_OUTCOME is never present. The split runs in the non-whitelisted
+        # branch above.)
 
         # No rule/split allowed and exclusive evidence missing -> prefer defer over forced collapse
         missing = []

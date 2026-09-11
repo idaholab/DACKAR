@@ -137,6 +137,8 @@ class LLMDisambiguator:
 
     # Main entry: disambiguate a list of candidates, augment their proposed_labels with llm hypotheses
     def disambiguate(self, doc_text: str, candidates: List[CandidateSpan]) -> None:
+        if not self.llm_ok:
+            return
         for c in candidates:
             if not self.should_call(c):
                 continue
@@ -150,8 +152,9 @@ class LLMDisambiguator:
             # parse & attach
             hypothesis = self._parse_llm_response(resp, c)
             if hypothesis:
-                # Only attach if label is known in schema
-                if hypothesis.label in self.schema.label_to_group:
+                # Only attach if label is known in schema and clears min_confidence
+                if (hypothesis.label in self.schema.label_to_group
+                        and getattr(hypothesis, "score", 0.0) >= self.config.min_confidence):
                     # assign group
                     hypothesis.group = self.schema.label_to_group[hypothesis.label]
                     c.proposed_labels.append(hypothesis)
@@ -165,12 +168,13 @@ class LLMDisambiguator:
         prompt = self._build_prompt(doc_text, c, candidate_labels)
 
         if self.config.use_cli:
-            # example: ollama generate MODEL --prompt '...' --json
-            cmd = [self.config.cli_binary, "generate", self.config.model, "--prompt", prompt, "--json"]
+            # `ollama run MODEL PROMPT` prints the model output to stdout.
+            cmd = [self.config.cli_binary, "run", self.config.model, prompt]
             try:
                 p = subprocess.run(cmd, capture_output=True, text=True, timeout=self.config.timeout)
                 text = p.stdout.strip()
-                return json.loads(text) if text else {"label": "NO_LABEL", "score": 0.0, "rationale": "empty"}
+                parsed = self._extract_json_object(text)
+                return parsed if parsed is not None else {"label": "NO_LABEL", "score": 0.0, "rationale": "empty"}
             except Exception as e:
                 return {"label": "NO_LABEL", "score": 0.0, "rationale": f"error:{e}"}
         else:
