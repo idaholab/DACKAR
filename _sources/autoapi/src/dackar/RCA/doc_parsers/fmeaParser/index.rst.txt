@@ -1,0 +1,271 @@
+src.dackar.RCA.doc_parsers.fmeaParser
+=====================================
+
+.. py:module:: src.dackar.RCA.doc_parsers.fmeaParser
+
+.. autoapi-nested-parse::
+
+   fmeaParser.py
+   ─────────────────────────────────────────────────────────────────────────────
+   FMEA spreadsheet (CSV / Excel) → canonical FMEA record list.
+
+   Each non-empty input row becomes a dict with normalised canonical field names.
+   Column headings are matched against a configurable regex map so that plant-
+   specific naming variations (e.g. "SEV" vs "Severity") are handled
+   transparently.
+
+   Supported formats
+   ─────────────────
+   • CSV  — any delimiter recognised by csv.Sniffer; UTF-8 or latin-1
+   • .xlsx — via openpyxl (already a project dependency)
+   • .xls  — via xlrd  (already a project dependency)
+   • Multi-sheet workbooks — all sheets parsed; records carry ``_sheet``
+
+   Output schema (canonical keys)
+   ───────────────────────────────
+   Required (hard-fail if absent):
+     fmea_source_ref     str   source filename (set from the input path)
+     component_type      str   equipment class (e.g. "centrifugal_pump")
+     failure_mode_id     str   FM:<slug(component_type)>:<slug(failure_mode_name)>
+     failure_mode_name   str   human-readable failure mode label
+
+   Optional:
+     failure_mechanism        str    physical mechanism (fatigue, corrosion, …)
+     local_effect             str    local / end effect description
+     severity                 int    1–10
+     occurrence               int    1–10
+     detection                int    1–10
+     rpn                      int    explicit or derived = S × O × D
+     expected_latency_min_hours  float  converted from min_days × 24
+     expected_latency_max_hours  float  converted from max_days × 24
+     expected_anomaly_pattern    str    normalised to enum values
+     expected_symptoms           list[str]  split from local_effect text
+     corrective_actions          list[str]
+     notes                       str
+     _sheet                      str    Excel sheet name; None for CSV
+     _row_index                  int    1-based row number after header
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.fmeaParser.LOGGER
+   src.dackar.RCA.doc_parsers.fmeaParser._ch
+   src.dackar.RCA.doc_parsers.fmeaParser.DEFAULT_COLUMN_MAP
+   src.dackar.RCA.doc_parsers.fmeaParser.PROFILE_COLUMN_MAPS
+   src.dackar.RCA.doc_parsers.fmeaParser._ANOMALY_PATTERN_ENUM
+   src.dackar.RCA.doc_parsers.fmeaParser._EFFECT_SPLIT_RE
+
+
+Exceptions
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.fmeaParser._RowValidationSkip
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.fmeaParser.FmeaColumnResolver
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.fmeaParser._slug
+   src.dackar.RCA.doc_parsers.fmeaParser._norm
+   src.dackar.RCA.doc_parsers.fmeaParser._to_int
+   src.dackar.RCA.doc_parsers.fmeaParser._to_float
+   src.dackar.RCA.doc_parsers.fmeaParser._resolve_anomaly_pattern
+   src.dackar.RCA.doc_parsers.fmeaParser._split_effect_to_symptoms
+   src.dackar.RCA.doc_parsers.fmeaParser._split_actions
+   src.dackar.RCA.doc_parsers.fmeaParser._split_causes
+   src.dackar.RCA.doc_parsers.fmeaParser._build_column_map
+   src.dackar.RCA.doc_parsers.fmeaParser._build_record
+   src.dackar.RCA.doc_parsers.fmeaParser._rows_from_csv
+   src.dackar.RCA.doc_parsers.fmeaParser._rows_from_xlsx
+   src.dackar.RCA.doc_parsers.fmeaParser._rows_from_xls
+   src.dackar.RCA.doc_parsers.fmeaParser.parse_fmea_file
+   src.dackar.RCA.doc_parsers.fmeaParser.parse_fmea_files
+   src.dackar.RCA.doc_parsers.fmeaParser._merge_ingestion_reports
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: _ch
+
+.. py:data:: DEFAULT_COLUMN_MAP
+   :type:  Dict[str, List[str]]
+
+.. py:data:: PROFILE_COLUMN_MAPS
+   :type:  Dict[str, Dict[str, List[str]]]
+
+.. py:data:: _ANOMALY_PATTERN_ENUM
+
+.. py:data:: _EFFECT_SPLIT_RE
+
+.. py:function:: _slug(text)
+
+   Return a lowercase, underscore-separated identifier-safe string.
+
+
+.. py:function:: _norm(value)
+
+   Strip and lower a cell value.
+
+
+.. py:function:: _to_int(value)
+
+.. py:function:: _to_float(value)
+
+.. py:function:: _resolve_anomaly_pattern(raw)
+
+.. py:function:: _split_effect_to_symptoms(effect_text)
+
+.. py:function:: _split_actions(raw)
+
+.. py:function:: _split_causes(raw)
+
+.. py:function:: _build_column_map(*, profile_name, column_map_override = None)
+
+.. py:class:: FmeaColumnResolver(column_map)
+
+   Resolve actual spreadsheet column headers to canonical field names.
+
+   Resolution is purely regex-based: each header is tested against every
+   pattern list in the column map.  For a given header the first canonical
+   field (in the column map's insertion order) whose pattern matches wins.
+   If two headers resolve to the same canonical field, the later one is
+   ignored and a warning is logged.
+
+   :param column_map: Merged column map (defaults + overrides).
+
+
+   .. py:attribute:: _map
+
+
+   .. py:method:: resolve(headers)
+
+      Return a dict mapping canonical field name → 0-based column index.
+
+      Unrecognised headers are silently ignored.
+
+      :param headers: Raw header strings from the spreadsheet.
+
+      :returns: ``{canonical_field: col_index}`` for every resolved column.
+
+
+
+   .. py:method:: validate_required(resolved, source)
+
+      Raise :class:`ValueError` if required fields are missing.
+
+      :param resolved: Output of :meth:`resolve`.
+      :param source: Human-readable source description for the error message.
+
+      :raises ValueError: If any of ``component_type``, ``failure_mode_name``, or
+          ``failure_mechanism`` cannot be resolved, with a list of all
+          detected canonical fields included.
+
+
+
+.. py:exception:: _RowValidationSkip
+
+   Bases: :py:obj:`Exception`
+
+
+   Signal that a single data row should be skipped and reported.
+
+   Raised by :func:`_build_record` when a row is structurally present but has a
+   blank required *cell* (e.g. ``failure_mechanism``).  The parse loop catches
+   it, counts the row, logs a warning, and continues — so one bad row no longer
+   aborts the whole file (and, via :func:`parse_fmea_files`, the whole batch).
+   A missing required *column* is a different, file-level error still raised by
+   :meth:`FmeaColumnResolver.validate_required`.
+
+
+.. py:function:: _build_record(cells, row_index, fmea_source_ref, sheet)
+
+   Convert a resolved cell dict into a canonical FMEA record.
+
+   Returns ``None`` for rows that are entirely empty or have no
+   ``component_type`` / ``failure_mode_name`` after stripping.
+
+
+.. py:function:: _rows_from_csv(path)
+
+   Read a CSV file and return ``[(None, rows)]`` where rows is a list of
+   cell lists (all strings).
+
+
+.. py:function:: _rows_from_xlsx(path)
+
+   Read all sheets from an .xlsx workbook using openpyxl.
+
+
+.. py:function:: _rows_from_xls(path)
+
+   Read all sheets from an .xls workbook using xlrd.
+
+
+.. py:function:: parse_fmea_file(path, *, column_map_override = None, sheet_filter = None, profile_name = 'auto', include_normalization_metadata = True)
+
+   Parse a FMEA spreadsheet into a list of canonical FMEA record dicts.
+
+   :param path: Path to a ``.csv``, ``.xlsx``, or ``.xls`` file.
+   :param column_map_override: Optional dict that is **merged** into
+                               :data:`DEFAULT_COLUMN_MAP`.  Keys must be canonical field names;
+                               values are lists of additional regex patterns to try before the
+                               defaults.  Use this to add plant-specific column naming without
+                               replacing the default patterns.
+   :param sheet_filter: For multi-sheet workbooks, only parse the sheets whose
+                        names are in this list.  Pass ``None`` (default) to parse all
+                        sheets.
+   :param profile_name: FMEA format profile forwarded to
+                        :func:`~doc_parsers.fmea_normalizer.normalize_fmea_records`
+                        (e.g. ``"auto"``, ``"aiag_4th"``, ``"aiag_5th"``,
+                        ``"mil_std_1629a"``, ``"iec_60812"``, ``"nuclear_generic"``).  It
+                        also selects profile-specific header patterns via
+                        :data:`PROFILE_COLUMN_MAPS`.
+   :param include_normalization_metadata: When ``True`` (default), attach the
+                                          per-field ``_field_quality`` tags, ``_normalization_profile``, and
+                                          the shared ``_fmea_ingestion_quality`` report to each record; when
+                                          ``False`` these normalization-metadata keys are stripped.
+
+   :returns: ``fmea_source_ref``, ``component_type``, ``failure_mode_id``,
+             ``failure_mode_name``.
+   :rtype: List of record dicts.  Each dict contains at minimum
+
+   :raises ValueError: If required columns (``component_type``,
+       ``failure_mode_name``, ``failure_mechanism``) cannot be resolved in
+       a sheet, or if the file extension is not recognised.  A row whose
+       ``failure_mechanism`` *cell* is blank is skipped and counted in the
+       ingestion-quality report's ``rows_skipped_missing_mechanism`` rather
+       than raising.
+   :raises FileNotFoundError: If *path* does not exist.
+
+
+.. py:function:: parse_fmea_files(paths, **kwargs)
+
+   Parse multiple FMEA files and return a combined record list.
+
+   :param paths: Iterable of file paths.
+   :param \*\*kwargs: Forwarded to :func:`parse_fmea_file`.
+
+   :returns: Combined list of all records from all files.
+
+
+.. py:function:: _merge_ingestion_reports(current, incoming)
+

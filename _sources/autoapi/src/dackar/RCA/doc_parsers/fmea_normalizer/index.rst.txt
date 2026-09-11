@@ -1,0 +1,281 @@
+src.dackar.RCA.doc_parsers.fmea_normalizer
+==========================================
+
+.. py:module:: src.dackar.RCA.doc_parsers.fmea_normalizer
+
+.. autoapi-nested-parse::
+
+   fmea_normalizer.py
+   ─────────────────────────────────────────────────────────────────────────────
+   Normalization helpers for parsed FMEA rows.
+
+   This module is intentionally format-aware but lightweight: it takes the
+   already-parsed row dictionaries produced by ``fmeaParser.parse_fmea_file`` and
+   applies profile detection, derivation rules, and per-field quality tagging.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.fmea_normalizer.JsonDict
+   src.dackar.RCA.doc_parsers.fmea_normalizer.CANONICAL_REQUIRED_FIELDS
+   src.dackar.RCA.doc_parsers.fmea_normalizer.CANONICAL_STANDARD_OPTIONAL_FIELDS
+   src.dackar.RCA.doc_parsers.fmea_normalizer.CANONICAL_ENRICHMENT_FIELDS
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_PRESENT
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_DERIVED
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_NLP
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_MISSING_CRITICAL
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_MISSING_OPTIONAL
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_MISSING_ENRICHMENT
+   src.dackar.RCA.doc_parsers.fmea_normalizer._ANOMALY_PATTERN_KEYWORDS
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FMEA_FORMAT_PROFILES
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.fmea_normalizer.FmeaFormatProfile
+   src.dackar.RCA.doc_parsers.fmea_normalizer.AiagFmeaProfile
+   src.dackar.RCA.doc_parsers.fmea_normalizer.Aiag5thFmeaProfile
+   src.dackar.RCA.doc_parsers.fmea_normalizer.MilStd1629aProfile
+   src.dackar.RCA.doc_parsers.fmea_normalizer.Iec60812Profile
+   src.dackar.RCA.doc_parsers.fmea_normalizer.NuclearGenericProfile
+   src.dackar.RCA.doc_parsers.fmea_normalizer.AutoDetectProfile
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.fmea_normalizer.classify_anomaly_pattern
+   src.dackar.RCA.doc_parsers.fmea_normalizer._split_listish
+   src.dackar.RCA.doc_parsers.fmea_normalizer._to_float
+   src.dackar.RCA.doc_parsers.fmea_normalizer._to_int
+   src.dackar.RCA.doc_parsers.fmea_normalizer._derive_rpn
+   src.dackar.RCA.doc_parsers.fmea_normalizer._derive_occurrence_from_lambda
+   src.dackar.RCA.doc_parsers.fmea_normalizer._derive_severity_from_criticality
+   src.dackar.RCA.doc_parsers.fmea_normalizer._derive_end_effect
+   src.dackar.RCA.doc_parsers.fmea_normalizer._split_cause_effect_text
+   src.dackar.RCA.doc_parsers.fmea_normalizer._mark_nlp_field
+   src.dackar.RCA.doc_parsers.fmea_normalizer._derive_potential_causes
+   src.dackar.RCA.doc_parsers.fmea_normalizer._derive_local_effect_from_mechanism
+   src.dackar.RCA.doc_parsers.fmea_normalizer._infer_pattern_from_local_effect
+   src.dackar.RCA.doc_parsers.fmea_normalizer._profile_by_name
+   src.dackar.RCA.doc_parsers.fmea_normalizer._autodetect_profile
+   src.dackar.RCA.doc_parsers.fmea_normalizer.normalize_fmea_records
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: CANONICAL_REQUIRED_FIELDS
+   :value: ('component_type', 'failure_mode_name', 'failure_mechanism')
+
+
+.. py:data:: CANONICAL_STANDARD_OPTIONAL_FIELDS
+   :value: ('local_effect', 'system_effect', 'end_effect', 'potential_causes', 'detection_method',...
+
+
+.. py:data:: CANONICAL_ENRICHMENT_FIELDS
+   :value: ('expected_latency_min_hours', 'expected_latency_max_hours', 'expected_anomaly_pattern',...
+
+
+.. py:data:: FIELD_STATUS_PRESENT
+   :value: 'present_native'
+
+
+.. py:data:: FIELD_STATUS_DERIVED
+   :value: 'derived'
+
+
+.. py:data:: FIELD_STATUS_NLP
+   :value: 'nlp_inferred'
+
+
+.. py:data:: FIELD_STATUS_MISSING_CRITICAL
+   :value: 'missing_critical'
+
+
+.. py:data:: FIELD_STATUS_MISSING_OPTIONAL
+   :value: 'missing_optional'
+
+
+.. py:data:: FIELD_STATUS_MISSING_ENRICHMENT
+   :value: 'missing_enrichment'
+
+
+.. py:data:: _ANOMALY_PATTERN_KEYWORDS
+   :type:  Dict[str, str]
+
+.. py:function:: classify_anomaly_pattern(text)
+
+   Map free text describing an anomaly to a canonical enum value.
+
+   Returns the matched enum string, or ``None`` when no keyword matches so the
+   caller decides the fallback: the parser records ``"unknown"`` for a value
+   that was explicitly provided but is unrecognised, whereas the normalizer
+   leaves the field missing so it is flagged in the ingestion-quality report.
+
+
+.. py:function:: _split_listish(value)
+
+.. py:function:: _to_float(value)
+
+.. py:function:: _to_int(value)
+
+.. py:function:: _derive_rpn(row)
+
+.. py:function:: _derive_occurrence_from_lambda(row)
+
+.. py:function:: _derive_severity_from_criticality(row)
+
+.. py:function:: _derive_end_effect(row)
+
+.. py:function:: _split_cause_effect_text(text)
+
+   Heuristic split for mixed cause/effect prose.
+   Returns (causes, effect_text, used_nlp_heuristic).
+
+
+.. py:function:: _mark_nlp_field(row, field_name)
+
+.. py:function:: _derive_potential_causes(row)
+
+.. py:function:: _derive_local_effect_from_mechanism(row)
+
+.. py:function:: _infer_pattern_from_local_effect(row)
+
+.. py:class:: FmeaFormatProfile
+
+   .. py:attribute:: name
+      :type:  str
+
+
+   .. py:attribute:: required_fields
+      :type:  Sequence[str]
+      :value: ('component_type', 'failure_mode_name', 'failure_mechanism')
+
+
+
+   .. py:attribute:: optional_fields
+      :type:  Sequence[str]
+      :value: ('local_effect', 'system_effect', 'end_effect', 'potential_causes', 'detection_method',...
+
+
+
+   .. py:attribute:: enrichment_fields
+      :type:  Sequence[str]
+      :value: ('expected_latency_min_hours', 'expected_latency_max_hours', 'expected_anomaly_pattern',...
+
+
+
+   .. py:attribute:: derived_fields
+      :type:  Dict[str, Callable[[JsonDict], Any]]
+
+
+.. py:class:: AiagFmeaProfile
+
+   Bases: :py:obj:`FmeaFormatProfile`
+
+
+   .. py:attribute:: name
+      :type:  str
+      :value: 'aiag_4th'
+
+
+
+   .. py:attribute:: derived_fields
+      :type:  Dict[str, Callable[[JsonDict], Any]]
+
+
+.. py:class:: Aiag5thFmeaProfile
+
+   Bases: :py:obj:`AiagFmeaProfile`
+
+
+   .. py:attribute:: name
+      :type:  str
+      :value: 'aiag_5th'
+
+
+
+.. py:class:: MilStd1629aProfile
+
+   Bases: :py:obj:`FmeaFormatProfile`
+
+
+   .. py:attribute:: name
+      :type:  str
+      :value: 'mil_std_1629a'
+
+
+
+   .. py:attribute:: derived_fields
+      :type:  Dict[str, Callable[[JsonDict], Any]]
+
+
+.. py:class:: Iec60812Profile
+
+   Bases: :py:obj:`FmeaFormatProfile`
+
+
+   .. py:attribute:: name
+      :type:  str
+      :value: 'iec_60812'
+
+
+
+   .. py:attribute:: derived_fields
+      :type:  Dict[str, Callable[[JsonDict], Any]]
+
+
+.. py:class:: NuclearGenericProfile
+
+   Bases: :py:obj:`FmeaFormatProfile`
+
+
+   .. py:attribute:: name
+      :type:  str
+      :value: 'nuclear_generic'
+
+
+
+   .. py:attribute:: derived_fields
+      :type:  Dict[str, Callable[[JsonDict], Any]]
+
+
+.. py:class:: AutoDetectProfile
+
+   Bases: :py:obj:`FmeaFormatProfile`
+
+
+   .. py:attribute:: name
+      :type:  str
+      :value: 'auto'
+
+
+
+   .. py:attribute:: derived_fields
+      :type:  Dict[str, Callable[[JsonDict], Any]]
+
+
+.. py:data:: FMEA_FORMAT_PROFILES
+   :type:  Dict[str, Callable[[], FmeaFormatProfile]]
+
+.. py:function:: _profile_by_name(name)
+
+.. py:function:: _autodetect_profile(records)
+
+.. py:function:: normalize_fmea_records(records, *, profile_name = 'auto')
+
+   Normalize parsed records and attach field-level quality status.
+
+

@@ -1,0 +1,703 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.doc_parsers.pdfParser &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.doc_parsers.pdfParser</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.doc_parsers.pdfParser</h1><div class="highlight"><pre>
+<span></span>
+<span class="c1"># pdfParser.py</span>
+<span class="c1"># -------------------------------------------------------------------------</span>
+<span class="c1"># PDF -&gt; Text (Markdown), Figures (images), Tables (normalized JSON)</span>
+<span class="c1"># Produces a document index with rich metadata and provenance.</span>
+<span class="c1">#</span>
+<span class="c1"># Optional Enhancements implemented:</span>
+<span class="c1">#  - Robust logging &amp; error handling</span>
+<span class="c1">#  - Normalized table outputs to JSON (for both marker and pdfplumber modes)</span>
+<span class="c1">#  - Page-aware figure indexing (parsing Marker filenames)</span>
+<span class="c1">#  - Document index return + write to disk</span>
+<span class="c1"># -------------------------------------------------------------------------</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+
+<span class="c1"># External tools</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">marker.converters.pdf</span><span class="w"> </span><span class="kn">import</span> <span class="n">PdfConverter</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">marker.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_model_dict</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">marker.output</span><span class="w"> </span><span class="kn">import</span> <span class="n">text_from_rendered</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">marker.converters.table</span><span class="w"> </span><span class="kn">import</span> <span class="n">TableConverter</span>
+<span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+    <span class="c1"># Allow module import for environments without marker; runtime checks will guard usage</span>
+<div class="viewcode-block" id="PdfConverter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser.PdfConverter">[docs]</a>
+    <span class="n">PdfConverter</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+    <span class="n">TableConverter</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">create_model_dict</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">text_from_rendered</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pdfplumber</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Logging configuration</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"pdfParser"</span><span class="p">)</span></div>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">LOGGER</span><span class="o">.</span><span class="n">handlers</span><span class="p">:</span>
+<div class="viewcode-block" id="handler">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser.handler">[docs]</a>
+    <span class="n">handler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span></div>
+
+    <span class="n">formatter</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span>
+        <span class="n">fmt</span><span class="o">=</span><span class="s2">"</span><span class="si">%(asctime)s</span><span class="s2"> | </span><span class="si">%(levelname)s</span><span class="s2"> | </span><span class="si">%(name)s</span><span class="s2"> | </span><span class="si">%(message)s</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">datefmt</span><span class="o">=</span><span class="s2">"%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S"</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">handler</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">formatter</span><span class="p">)</span>
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">handler</span><span class="p">)</span>
+<span class="n">LOGGER</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+
+<span class="c1"># Canonical filename prefix patterns → doc_type</span>
+<div class="viewcode-block" id="_DOC_TYPE_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._DOC_TYPE_PATTERNS">[docs]</a>
+<span class="n">_DOC_TYPE_PATTERNS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bCR\b"</span><span class="p">,</span>      <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"CR"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bWO\b"</span><span class="p">,</span>      <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"WO"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bSOP\b"</span><span class="p">,</span>     <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"SOP"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bECA\b"</span><span class="p">,</span>     <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"ECA"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bMR\b"</span><span class="p">,</span>      <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"WO"</span><span class="p">),</span>   <span class="c1"># Maintenance Request → WO</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\bPM\b"</span><span class="p">,</span>      <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"WO"</span><span class="p">),</span>   <span class="c1"># PM task record → WO</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"procedure"</span><span class="p">,</span>   <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"SOP"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"work.?order"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"WO"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"condition.?report"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"CR"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"engineering.?change"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"ECA"</span><span class="p">),</span>
+<span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="_EARLY_TEXT_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._EARLY_TEXT_PATTERNS">[docs]</a>
+<span class="n">_EARLY_TEXT_PATTERNS</span> <span class="o">=</span> <span class="p">[</span>
+     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"condition\s+report"</span><span class="p">,</span>    <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"CR"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"apparent\s+cause|immediate\s+actions?|condition\s+description"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"CR"</span><span class="p">),</span>
+     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"work\s+order"</span><span class="p">,</span>          <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"WO"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"as[- ]found|as[- ]left|work\s+performed"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"WO"</span><span class="p">),</span>
+     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"standard\s+operating\s+procedure|SOP\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"SOP"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"preconditions?|procedure\s+steps?|references"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"SOP"</span><span class="p">),</span>
+     <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"engineering\s+change\s+analysis|ECA\b"</span><span class="p">,</span>  <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"ECA"</span><span class="p">),</span>
+    <span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"causal\s+factors?|evidence\s*/\s*data|recommended\s+followups?"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">I</span><span class="p">),</span> <span class="s2">"ECA"</span><span class="p">),</span>
+ <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="infer_doc_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser.infer_doc_type">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">infer_doc_type</span><span class="p">(</span><span class="n">filename</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">early_text</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Infer doc_type from filename first, then first ~500 chars of text.</span>
+<span class="sd">    Returns one of: CR | WO | SOP | ECA | OTHER</span>
+<span class="sd">    """</span>
+    <span class="n">stem</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span><span class="o">.</span><span class="n">stem</span> <span class="k">if</span> <span class="n">filename</span> <span class="k">else</span> <span class="s2">""</span>
+    <span class="k">for</span> <span class="n">pat</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">in</span> <span class="n">_DOC_TYPE_PATTERNS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">pat</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">stem</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">dtype</span>
+    <span class="k">for</span> <span class="n">pat</span><span class="p">,</span> <span class="n">dtype</span> <span class="ow">in</span> <span class="n">_EARLY_TEXT_PATTERNS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">pat</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">early_text</span><span class="p">[:</span><span class="mi">500</span><span class="p">]):</span>
+            <span class="k">return</span> <span class="n">dtype</span>
+    <span class="k">return</span> <span class="s2">"OTHER"</span></div>
+
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Helpers</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="_now_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._now_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_now_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">microsecond</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"+00:00"</span><span class="p">,</span> <span class="s2">"Z"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_clean_table_cell">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._clean_table_cell">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_clean_table_cell</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="s2">""</span> <span class="k">if</span> <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[\u200b\u200c\u200d\u00ad\u2060]'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'\s+'</span><span class="p">,</span> <span class="s1">' '</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'([A-Za-z])\.([A-Za-z])'</span><span class="p">,</span> <span class="sa">r</span><span class="s1">'\1\2'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'^[\.\,\;\:\-]+\s*'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">text</span></div>
+
+
+
+<div class="viewcode-block" id="_clean_table_obj">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._clean_table_obj">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_clean_table_obj</span><span class="p">(</span><span class="n">t</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"columns"</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">_clean_table_cell</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"columns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])]</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"rows"</span><span class="p">]</span> <span class="o">=</span> <span class="p">[[</span><span class="n">_clean_table_cell</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])]</span>
+    <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"caption"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"caption"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_clean_table_cell</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">"caption"</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="_estimate_text_extraction_quality">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._estimate_text_extraction_quality">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_estimate_text_extraction_quality</span><span class="p">(</span><span class="n">markdown_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">page_count</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Lightweight extraction-quality heuristic for Stage 1 provenance.</span>
+<span class="sd">    """</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="p">(</span><span class="n">markdown_text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">char_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">line_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">splitlines</span><span class="p">())</span> <span class="k">if</span> <span class="n">text</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">alpha_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">text</span> <span class="k">if</span> <span class="n">ch</span><span class="o">.</span><span class="n">isalpha</span><span class="p">())</span>
+    <span class="n">alpha_ratio</span> <span class="o">=</span> <span class="p">(</span><span class="n">alpha_count</span> <span class="o">/</span> <span class="n">char_count</span><span class="p">)</span> <span class="k">if</span> <span class="n">char_count</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+    <span class="n">chars_per_page</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">page_count</span> <span class="ow">and</span> <span class="n">page_count</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">chars_per_page</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">char_count</span> <span class="o">/</span> <span class="n">page_count</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="n">image_only_like</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">page_count</span> <span class="ow">and</span> <span class="n">char_count</span> <span class="o">&lt;</span> <span class="nb">max</span><span class="p">(</span><span class="mi">500</span><span class="p">,</span> <span class="mi">150</span> <span class="o">*</span> <span class="n">page_count</span><span class="p">))</span>
+    <span class="n">low_confidence_parse</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">char_count</span> <span class="o">&lt;</span> <span class="mi">300</span> <span class="ow">or</span> <span class="n">alpha_ratio</span> <span class="o">&lt;</span> <span class="mf">0.35</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"char_count"</span><span class="p">:</span> <span class="n">char_count</span><span class="p">,</span>
+        <span class="s2">"line_count"</span><span class="p">:</span> <span class="n">line_count</span><span class="p">,</span>
+        <span class="s2">"alpha_ratio"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">alpha_ratio</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+        <span class="s2">"chars_per_page"</span><span class="p">:</span> <span class="n">chars_per_page</span><span class="p">,</span>
+        <span class="s2">"image_only_like"</span><span class="p">:</span> <span class="n">image_only_like</span><span class="p">,</span>
+        <span class="s2">"low_confidence_parse"</span><span class="p">:</span> <span class="n">low_confidence_parse</span><span class="p">,</span>
+        <span class="s2">"ocr_used"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="get_file_name_no_extension">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser.get_file_name_no_extension">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_file_name_no_extension</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return filename without extension from a path."""</span>
+    <span class="n">filename</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">filename</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_ensure_dir">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._ensure_dir">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_ensure_dir</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_parse_marker_image_key">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._parse_marker_image_key">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_marker_image_key</span><span class="p">(</span><span class="n">image_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Marker images are commonly saved with names like '_page_12_Picture_3.jpeg'.</span>
+<span class="sd">    Extract page/index if present; otherwise return None values.</span>
+<span class="sd">    """</span>
+    <span class="c1"># Accept keys like '_page_12_Picture_3.jpeg' or 'someprefix_page_12_Picture_3.jpeg'</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"_page_(\d+)_Picture_(\d+)\.(?:jpg|jpeg|png)$"</span><span class="p">,</span> <span class="n">image_key</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+    <span class="n">page</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="n">m</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span> <span class="k">if</span> <span class="n">m</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"page"</span><span class="p">:</span> <span class="n">page</span><span class="p">,</span> <span class="s2">"index"</span><span class="p">:</span> <span class="n">index</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_normalize_table_markdown_to_json">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._normalize_table_markdown_to_json">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_table_markdown_to_json</span><span class="p">(</span><span class="n">md_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Convert Marker-produced Markdown tables into a normalized JSON structure:</span>
+<span class="sd">    [</span>
+<span class="sd">      { "columns": [...], "rows": [[...], ...], "caption": None, "page": None }</span>
+<span class="sd">    ]</span>
+<span class="sd">    Assumes tables are separated in MD by blank lines and follow pipe '|' syntax.</span>
+<span class="sd">    """</span>
+    <span class="n">tables</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="n">ln</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span> <span class="k">for</span> <span class="n">ln</span> <span class="ow">in</span> <span class="n">md_text</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()]</span>
+
+    <span class="n">current_table</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">in_table</span> <span class="o">=</span> <span class="kc">False</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">finish_table</span><span class="p">():</span>
+        <span class="k">nonlocal</span> <span class="n">current_table</span>
+        <span class="k">if</span> <span class="n">current_table</span> <span class="ow">and</span> <span class="n">current_table</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"columns"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">current_table</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">tables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">current_table</span><span class="p">)</span>
+        <span class="n">current_table</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">lines</span><span class="p">):</span>
+        <span class="c1"># Skip empty lines; they can delimit tables</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">in_table</span><span class="p">:</span>
+                <span class="n">in_table</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="n">finish_table</span><span class="p">()</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Detect header line (pipes) and a following separator line (---)</span>
+        <span class="k">if</span> <span class="s2">"|"</span> <span class="ow">in</span> <span class="n">line</span> <span class="ow">and</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\|\s*:?[-]{3,}"</span><span class="p">,</span> <span class="n">line</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Potential header (we'll confirm by checking next line)</span>
+            <span class="n">next_line</span> <span class="o">=</span> <span class="n">lines</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span> <span class="k">else</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\|\s*:?[-]{3,}"</span><span class="p">,</span> <span class="n">next_line</span><span class="p">):</span>
+                <span class="c1"># Start a new table</span>
+                <span class="n">in_table</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">header_cells</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"|"</span><span class="p">)]</span>
+                <span class="c1"># Remove empty cells caused by leading/trailing pipes</span>
+                <span class="n">header_cells</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">header_cells</span> <span class="k">if</span> <span class="n">c</span> <span class="o">!=</span> <span class="s2">""</span><span class="p">]</span>
+                <span class="n">current_table</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"columns"</span><span class="p">:</span> <span class="n">header_cells</span><span class="p">,</span> <span class="s2">"rows"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"caption"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"page"</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
+                <span class="k">continue</span>
+
+        <span class="c1"># Row lines inside a table</span>
+        <span class="k">if</span> <span class="n">in_table</span> <span class="ow">and</span> <span class="s2">"|"</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+            <span class="n">row_cells</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"|"</span><span class="p">)]</span>
+            <span class="n">row_cells</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">row_cells</span> <span class="k">if</span> <span class="n">c</span> <span class="o">!=</span> <span class="s2">""</span><span class="p">]</span>
+            <span class="c1"># Some rows can be alignment lines like :---:, skip those</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^:?-{3,}:?$"</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">row_cells</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">current_table</span><span class="p">[</span><span class="s2">"rows"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row_cells</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Non-table content; if a table was open and we encounter non-pipe content, close the table</span>
+            <span class="k">if</span> <span class="n">in_table</span><span class="p">:</span>
+                <span class="n">in_table</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="n">finish_table</span><span class="p">()</span>
+            <span class="c1"># Could parse captions here if marker emits them, but often it doesn't. Leave as None.</span>
+            <span class="k">continue</span>
+
+    <span class="c1"># Finish last table</span>
+    <span class="k">if</span> <span class="n">in_table</span><span class="p">:</span>
+        <span class="n">finish_table</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">tables</span></div>
+
+
+
+<div class="viewcode-block" id="_tables_from_pdfplumber">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser._tables_from_pdfplumber">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_tables_from_pdfplumber</span><span class="p">(</span><span class="n">filename</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Extract tables using pdfplumber and normalize to JSON objects."""</span>
+    <span class="n">table_objs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">with</span> <span class="n">pdfplumber</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">pdf</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">page_num</span><span class="p">,</span> <span class="n">page</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">pdf</span><span class="o">.</span><span class="n">pages</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">tables</span> <span class="o">=</span> <span class="n">page</span><span class="o">.</span><span class="n">extract_tables</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">tbl</span> <span class="ow">in</span> <span class="n">tables</span> <span class="ow">or</span> <span class="p">[]:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">tbl</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">tbl</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+                    <span class="c1"># Need at least header + one row</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Skipping a small/invalid table on page </span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span> <span class="n">page_num</span><span class="p">)</span>
+                    <span class="k">continue</span>
+                <span class="n">header</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tbl</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+                <span class="n">rows</span> <span class="o">=</span> <span class="p">[[</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">tbl</span><span class="p">[</span><span class="mi">1</span><span class="p">:]]</span>
+                <span class="n">table_objs</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s2">"columns"</span><span class="p">:</span> <span class="n">header</span><span class="p">,</span>
+                    <span class="s2">"rows"</span><span class="p">:</span> <span class="n">rows</span><span class="p">,</span>
+                    <span class="s2">"caption"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"page"</span><span class="p">:</span> <span class="n">page_num</span>
+                <span class="p">})</span>
+    <span class="k">return</span> <span class="n">table_objs</span></div>
+
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Main API</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="pdfParser">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser.pdfParser">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pdfParser</span><span class="p">(</span>
+    <span class="n">home_folder</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">red_filepath</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">destination_folder</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">text2markdown</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"marker"</span><span class="p">,</span>
+    <span class="n">tableParser</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"marker"</span><span class="p">,</span>
+    <span class="n">classification</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"internal"</span><span class="p">,</span>
+    <span class="n">ingest_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>          <span class="c1"># NEW</span>
+    <span class="n">source_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>        <span class="c1"># NEW (relative path)</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Parse a PDF file into:</span>
+<span class="sd">      - text markdown</span>
+<span class="sd">      - figures (images)</span>
+<span class="sd">      - tables (normalized JSON)</span>
+<span class="sd">    Emit:</span>
+<span class="sd">      - document_index.json (paths + metadata)</span>
+<span class="sd">      - text.md</span>
+<span class="sd">      - tables.json</span>
+<span class="sd">      - figures/*.jpeg</span>
+<span class="sd">      - metadata.json (Marker-render metadata when available)</span>
+<span class="sd">    Return:</span>
+<span class="sd">      - index dict mirroring document_index.json</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    home_folder : Optional[str]</span>
+<span class="sd">        Base folder for relative path `red_filepath`.</span>
+<span class="sd">    red_filepath : Optional[str]</span>
+<span class="sd">        File path relative to `home_folder` (or absolute if `home_folder` is None).</span>
+<span class="sd">    destination_folder : Optional[str]</span>
+<span class="sd">        Root destination for parsed outputs.</span>
+<span class="sd">    text2markdown : str</span>
+<span class="sd">        Only 'marker' supported for now.</span>
+<span class="sd">    tableParser : str</span>
+<span class="sd">        'marker' or 'pdfplumber'.</span>
+<span class="sd">    classification : str</span>
+<span class="sd">        Data classification tag.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Dict[str, Any]</span>
+<span class="sd">        Document index with artifact paths and rich metadata.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    FileNotFoundError</span>
+<span class="sd">        If input or destination paths are invalid.</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        For unsupported options.</span>
+<span class="sd">    """</span>
+
+    <span class="c1"># Resolve paths</span>
+    <span class="k">if</span> <span class="n">red_filepath</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="s2">"red_filepath must be provided."</span><span class="p">)</span>
+    <span class="n">fullpath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">home_folder</span><span class="p">,</span> <span class="n">red_filepath</span><span class="p">)</span> <span class="k">if</span> <span class="n">home_folder</span> <span class="k">else</span> <span class="n">red_filepath</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">fullpath</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"PDF file not found: </span><span class="si">{</span><span class="n">fullpath</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">source_path</span><span class="p">:</span>
+        <span class="n">source_path</span> <span class="o">=</span> <span class="n">red_filepath</span>
+    <span class="n">doc_name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">source_path</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">fullpath</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">_fh</span><span class="p">:</span>
+            <span class="n">_file_bytes</span> <span class="o">=</span> <span class="n">_fh</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="c1"># doc_version is the full content hash; doc_id reuses its first 12 chars.</span>
+        <span class="n">doc_version</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">_file_bytes</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()</span>
+        <span class="n">doc_id</span> <span class="o">=</span> <span class="n">doc_version</span><span class="p">[:</span><span class="mi">12</span><span class="p">]</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="n">doc_id</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha1</span><span class="p">(</span><span class="n">source_path</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">"utf-8"</span><span class="p">))</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()[:</span><span class="mi">12</span><span class="p">]</span>
+        <span class="n">doc_version</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">destination_folder</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="s2">"destination_folder must be defined."</span><span class="p">)</span>
+
+    <span class="c1"># Prepare output folders</span>
+    <span class="n">filename</span> <span class="o">=</span> <span class="n">get_file_name_no_extension</span><span class="p">(</span><span class="n">red_filepath</span><span class="p">)</span>
+    <span class="c1"># Build a safe data dump folder rooted under destination_folder</span>
+    <span class="n">data_dump_folder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">destination_folder</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">)</span>
+
+    <span class="n">textFolder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_dump_folder</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">)</span>
+    <span class="n">figuresFolder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_dump_folder</span><span class="p">,</span> <span class="s2">"figures"</span><span class="p">)</span>
+    <span class="n">tablesFolder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_dump_folder</span><span class="p">,</span> <span class="s2">"tables"</span><span class="p">)</span>
+    <span class="n">metaFolder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_dump_folder</span><span class="p">,</span> <span class="s2">"meta"</span><span class="p">)</span>
+    <span class="n">indexFolder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">data_dump_folder</span><span class="p">,</span> <span class="s2">"index"</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="p">[</span><span class="n">textFolder</span><span class="p">,</span> <span class="n">figuresFolder</span><span class="p">,</span> <span class="n">tablesFolder</span><span class="p">,</span> <span class="n">metaFolder</span><span class="p">,</span> <span class="n">indexFolder</span><span class="p">]:</span>
+        <span class="n">_ensure_dir</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+
+    <span class="c1"># Convert text to Markdown via Marker</span>
+    <span class="n">markdown_text</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span>
+    <span class="n">images_index</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">marker_metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">extraction_method_text</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">extraction_quality</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">page_count</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">if</span> <span class="n">text2markdown</span> <span class="o">!=</span> <span class="s2">"marker"</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"text2markdown option not allowed. Allowed: 'marker'."</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Unsupported text2markdown option."</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">PdfConverter</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"Marker PDF converter is not available in this environment."</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Marker is required for text conversion."</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="n">pdfplumber</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">fullpath</span><span class="p">)</span> <span class="k">as</span> <span class="n">pdf</span><span class="p">:</span>
+            <span class="n">page_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pdf</span><span class="o">.</span><span class="n">pages</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Could not determine page count for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">fullpath</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Rendering PDF to Markdown via Marker: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">fullpath</span><span class="p">)</span>
+        <span class="n">converter</span> <span class="o">=</span> <span class="n">PdfConverter</span><span class="p">(</span><span class="n">artifact_dict</span><span class="o">=</span><span class="n">create_model_dict</span><span class="p">())</span>
+        <span class="n">rendered</span> <span class="o">=</span> <span class="n">converter</span><span class="p">(</span><span class="n">fullpath</span><span class="p">)</span>
+        <span class="n">markdown_text</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">images</span> <span class="o">=</span> <span class="n">text_from_rendered</span><span class="p">(</span><span class="n">rendered</span><span class="p">)</span>
+        <span class="n">marker_metadata</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">rendered</span><span class="p">,</span> <span class="s2">"metadata"</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">extraction_method_text</span> <span class="o">=</span> <span class="s2">"marker"</span>
+        <span class="n">extraction_quality</span> <span class="o">=</span> <span class="n">_estimate_text_extraction_quality</span><span class="p">(</span><span class="n">markdown_text</span><span class="p">,</span> <span class="n">page_count</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">extraction_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"low_confidence_parse"</span><span class="p">):</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Low-confidence text extraction detected for </span><span class="si">%s</span><span class="s2"> (chars/page=</span><span class="si">%s</span><span class="s2">, alpha_ratio=</span><span class="si">%s</span><span class="s2">)."</span><span class="p">,</span>
+                <span class="n">fullpath</span><span class="p">,</span>
+                <span class="n">extraction_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chars_per_page"</span><span class="p">),</span>
+                <span class="n">extraction_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alpha_ratio"</span><span class="p">),</span>
+            <span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"Marker text conversion failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="k">raise</span>
+
+    <span class="c1"># Save Markdown text</span>
+    <span class="n">md_fileID</span> <span class="o">=</span> <span class="n">filename</span> <span class="o">+</span> <span class="s2">".md"</span>
+    <span class="n">text_md_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">textFolder</span><span class="p">,</span> <span class="n">md_fileID</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">text_md_path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">markdown_text</span><span class="p">)</span>  
+
+    <span class="n">doc_type</span> <span class="o">=</span> <span class="n">infer_doc_type</span><span class="p">(</span><span class="n">doc_name</span><span class="p">,</span> <span class="n">markdown_text</span><span class="p">[:</span><span class="mi">500</span><span class="p">])</span>
+
+    <span class="c1"># Save figures and build index (parse page/index from filename)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">image_key</span> <span class="ow">in</span> <span class="n">images</span><span class="p">:</span>
+            <span class="n">img_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">figuresFolder</span><span class="p">,</span> <span class="n">image_key</span><span class="p">)</span>
+            <span class="n">images</span><span class="p">[</span><span class="n">image_key</span><span class="p">]</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">img_path</span><span class="p">)</span>
+            <span class="n">info</span> <span class="o">=</span> <span class="n">_parse_marker_image_key</span><span class="p">(</span><span class="n">image_key</span><span class="p">)</span>
+            <span class="n">images_index</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"path"</span><span class="p">:</span> <span class="n">img_path</span><span class="p">,</span>
+                <span class="s2">"name"</span><span class="p">:</span> <span class="n">image_key</span><span class="p">,</span>
+                <span class="s2">"page"</span><span class="p">:</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page"</span><span class="p">),</span>
+                <span class="s2">"figure_index"</span><span class="p">:</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"index"</span><span class="p">),</span>
+                <span class="s2">"caption"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"extraction_confidence"</span><span class="p">:</span> <span class="mf">0.8</span> <span class="k">if</span> <span class="n">info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.6</span><span class="p">,</span>
+                <span class="s2">"source"</span><span class="p">:</span> <span class="s2">"marker_image_render"</span><span class="p">,</span>
+            <span class="p">})</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"Failed saving images: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="c1"># Proceed; images may be optional</span>
+
+    <span class="c1"># Extract tables</span>
+    <span class="n">tables_json_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">tablesFolder</span><span class="p">,</span> <span class="n">filename</span> <span class="o">+</span> <span class="s2">"_tables.json"</span><span class="p">)</span>
+    <span class="n">tables_index</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">extraction_method_tables</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">table_extraction_error</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">tableParser</span> <span class="o">==</span> <span class="s2">"marker"</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">TableConverter</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"Marker TableConverter is unavailable."</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"Marker is required for 'marker' tableParser."</span><span class="p">)</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Extracting tables via Marker: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">fullpath</span><span class="p">)</span>
+            <span class="n">table_converter</span> <span class="o">=</span> <span class="n">TableConverter</span><span class="p">(</span><span class="n">artifact_dict</span><span class="o">=</span><span class="n">create_model_dict</span><span class="p">())</span>
+            <span class="n">rendered_tbl</span> <span class="o">=</span> <span class="n">table_converter</span><span class="p">(</span><span class="n">fullpath</span><span class="p">)</span>
+            <span class="n">md_table_text</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">tbl_images</span> <span class="o">=</span> <span class="n">text_from_rendered</span><span class="p">(</span><span class="n">rendered_tbl</span><span class="p">)</span>
+
+            <span class="c1"># Normalize table markdown to JSON</span>
+            <span class="n">tables_objs</span> <span class="o">=</span> <span class="n">_normalize_table_markdown_to_json</span><span class="p">(</span><span class="n">md_table_text</span><span class="p">)</span>
+            <span class="n">extraction_method_tables</span> <span class="o">=</span> <span class="s2">"marker"</span>
+
+        <span class="k">elif</span> <span class="n">tableParser</span> <span class="o">==</span> <span class="s2">"pdfplumber"</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Extracting tables via pdfplumber: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">fullpath</span><span class="p">)</span>
+            <span class="n">tables_objs</span> <span class="o">=</span> <span class="n">_tables_from_pdfplumber</span><span class="p">(</span><span class="n">fullpath</span><span class="p">)</span>
+            <span class="n">extraction_method_tables</span> <span class="o">=</span> <span class="s2">"pdfplumber"</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"tableParser option not allowed. Allowed: 'marker' or 'pdfplumber'."</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Unsupported tableParser option."</span><span class="p">)</span>
+
+        <span class="c1"># Persist tables JSON</span>
+        <span class="n">tables_objs</span> <span class="o">=</span> <span class="p">[</span><span class="n">_clean_table_obj</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tables_objs</span><span class="p">]</span>
+        <span class="c1"># Persist tables JSON</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tables_json_path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">tables_objs</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># Build tables index entries</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tables_objs</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">tables_index</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"path"</span><span class="p">:</span> <span class="n">tables_json_path</span><span class="p">,</span>
+                <span class="s2">"table_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">_table_</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"page"</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page"</span><span class="p">),</span>
+                <span class="s2">"caption"</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"caption"</span><span class="p">),</span>
+                <span class="s2">"columns"</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"columns"</span><span class="p">),</span>
+                <span class="s2">"rows_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+                <span class="s2">"extraction_method"</span><span class="p">:</span> <span class="n">extraction_method_tables</span><span class="p">,</span>
+            <span class="p">})</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"Table extraction failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+        <span class="n">tables_json_path</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">tables_index</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">table_extraction_error</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+
+    <span class="c1"># Persist marker metadata</span>
+    <span class="n">metadata_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">metaFolder</span><span class="p">,</span> <span class="s2">"metadata.json"</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Include parser-level fields for provenance</span>
+        <span class="n">marker_metadata</span> <span class="o">=</span> <span class="n">marker_metadata</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">marker_metadata</span><span class="o">.</span><span class="n">update</span><span class="p">({</span>
+            <span class="s2">"extraction_method_text"</span><span class="p">:</span> <span class="n">extraction_method_text</span><span class="p">,</span>
+            <span class="s2">"extraction_method_tables"</span><span class="p">:</span> <span class="n">extraction_method_tables</span><span class="p">,</span>
+            <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">(),</span>
+            <span class="s2">"classification"</span><span class="p">:</span> <span class="n">classification</span><span class="p">,</span>
+            <span class="s2">"source_fullpath"</span><span class="p">:</span> <span class="n">fullpath</span><span class="p">,</span>
+            <span class="s2">"source_relpath"</span><span class="p">:</span> <span class="n">red_filepath</span><span class="p">,</span>
+            <span class="s2">"parser_version"</span><span class="p">:</span> <span class="s2">"pdfParser-2.1.0"</span><span class="p">,</span>
+            <span class="s2">"page_count"</span><span class="p">:</span> <span class="n">page_count</span><span class="p">,</span>
+            <span class="s2">"extraction_quality"</span><span class="p">:</span> <span class="n">extraction_quality</span><span class="p">,</span>
+        <span class="p">})</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">metadata_path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">jf</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">marker_metadata</span><span class="p">,</span> <span class="n">jf</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"Failed to write metadata.json: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+
+    <span class="n">document_index</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+        <span class="s2">"doc_type"</span><span class="p">:</span> <span class="n">doc_type</span><span class="p">,</span> 
+        <span class="s2">"doc_type_source"</span><span class="p">:</span> <span class="s2">"filename_or_early_text_inference"</span><span class="p">,</span>                                         
+        <span class="s2">"authority_level"</span><span class="p">:</span> <span class="s2">"mandatory"</span> <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"SOP"</span> <span class="k">else</span> <span class="s2">"informational"</span><span class="p">,</span> 
+        <span class="s2">"source_path"</span><span class="p">:</span> <span class="n">source_path</span><span class="p">,</span>
+        <span class="s2">"doc_name"</span><span class="p">:</span> <span class="n">doc_name</span><span class="p">,</span>
+        <span class="s2">"ingest_id"</span><span class="p">:</span> <span class="n">ingest_id</span><span class="p">,</span>
+        <span class="s2">"text_md_path"</span><span class="p">:</span> <span class="n">text_md_path</span><span class="p">,</span>
+        <span class="s2">"figures"</span><span class="p">:</span> <span class="n">images_index</span><span class="p">,</span>
+        <span class="s2">"tables_paths"</span><span class="p">:</span> <span class="p">[</span><span class="n">tables_json_path</span><span class="p">]</span> <span class="k">if</span> <span class="n">tables_json_path</span> <span class="k">else</span> <span class="p">[],</span>
+        <span class="s2">"tables_index"</span><span class="p">:</span> <span class="n">tables_index</span><span class="p">,</span>
+        <span class="s2">"metadata_path"</span><span class="p">:</span> <span class="n">metadata_path</span><span class="p">,</span>
+        <span class="s2">"source"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"fullpath"</span><span class="p">:</span> <span class="n">fullpath</span><span class="p">,</span> <span class="s2">"relpath"</span><span class="p">:</span> <span class="n">red_filepath</span><span class="p">},</span>
+        <span class="s2">"content_hash"</span><span class="p">:</span> <span class="n">doc_version</span><span class="p">,</span>
+        <span class="s2">"doc_version"</span><span class="p">:</span> <span class="n">doc_version</span><span class="p">,</span>
+        <span class="s2">"page_count"</span><span class="p">:</span> <span class="n">page_count</span><span class="p">,</span>
+        <span class="s2">"extraction_quality"</span><span class="p">:</span> <span class="n">extraction_quality</span><span class="p">,</span>
+        <span class="s2">"low_confidence_parse"</span><span class="p">:</span> <span class="n">extraction_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"low_confidence_parse"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="s2">"image_only_like"</span><span class="p">:</span> <span class="n">extraction_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"image_only_like"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+        <span class="s2">"extraction"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"text"</span><span class="p">:</span> <span class="n">extraction_method_text</span><span class="p">,</span>
+            <span class="s2">"tables"</span><span class="p">:</span> <span class="n">extraction_method_tables</span><span class="p">,</span>
+            <span class="s2">"table_extraction_error"</span><span class="p">:</span> <span class="n">table_extraction_error</span><span class="p">,</span>
+            <span class="s2">"table_extraction_succeeded"</span><span class="p">:</span> <span class="n">table_extraction_error</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"tables_detected"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">tables_index</span><span class="p">),</span>
+        <span class="p">},</span>
+        <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">(),</span>
+        <span class="s2">"classification"</span><span class="p">:</span> <span class="n">classification</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">index_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">indexFolder</span><span class="p">,</span> <span class="s2">"document_index.json"</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">index_path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">idxf</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">document_index</span><span class="p">,</span> <span class="n">idxf</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"Failed to write document_index.json: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Parsing complete for: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">fullpath</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">document_index</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+    <span class="c1"># Example usage scaffold (golden file test idea)</span>
+    <span class="c1"># python pdfParser.py /path/to/home rel/path/to/file.pdf /destination/root</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"Usage: python pdfParser.py &lt;home_folder or -&gt; &lt;red_filepath&gt; &lt;destination_folder&gt;"</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<div class="viewcode-block" id="home">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/pdfParser/index.html#src.dackar.RCA.doc_parsers.pdfParser.home">[docs]</a>
+    <span class="n">home</span> <span class="o">=</span> <span class="kc">None</span> <span class="k">if</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="s2">"-"</span> <span class="k">else</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span></div>
+
+    <span class="n">rel</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+    <span class="n">dest</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span>
+    <span class="n">idx</span> <span class="o">=</span> <span class="n">pdfParser</span><span class="p">(</span><span class="n">home_folder</span><span class="o">=</span><span class="n">home</span><span class="p">,</span> <span class="n">red_filepath</span><span class="o">=</span><span class="n">rel</span><span class="p">,</span> <span class="n">destination_folder</span><span class="o">=</span><span class="n">dest</span><span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

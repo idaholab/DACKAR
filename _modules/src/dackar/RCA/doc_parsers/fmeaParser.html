@@ -1,0 +1,1048 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.doc_parsers.fmeaParser &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.doc_parsers.fmeaParser</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.doc_parsers.fmeaParser</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">fmeaParser.py</span>
+<span class="sd">─────────────────────────────────────────────────────────────────────────────</span>
+<span class="sd">FMEA spreadsheet (CSV / Excel) → canonical FMEA record list.</span>
+
+<span class="sd">Each non-empty input row becomes a dict with normalised canonical field names.</span>
+<span class="sd">Column headings are matched against a configurable regex map so that plant-</span>
+<span class="sd">specific naming variations (e.g. "SEV" vs "Severity") are handled</span>
+<span class="sd">transparently.</span>
+
+<span class="sd">Supported formats</span>
+<span class="sd">─────────────────</span>
+<span class="sd">• CSV  — any delimiter recognised by csv.Sniffer; UTF-8 or latin-1</span>
+<span class="sd">• .xlsx — via openpyxl (already a project dependency)</span>
+<span class="sd">• .xls  — via xlrd  (already a project dependency)</span>
+<span class="sd">• Multi-sheet workbooks — all sheets parsed; records carry ``_sheet``</span>
+
+<span class="sd">Output schema (canonical keys)</span>
+<span class="sd">───────────────────────────────</span>
+<span class="sd">Required (hard-fail if absent):</span>
+<span class="sd">  fmea_source_ref     str   source filename (set from the input path)</span>
+<span class="sd">  component_type      str   equipment class (e.g. "centrifugal_pump")</span>
+<span class="sd">  failure_mode_id     str   FM:&lt;slug(component_type)&gt;:&lt;slug(failure_mode_name)&gt;</span>
+<span class="sd">  failure_mode_name   str   human-readable failure mode label</span>
+
+<span class="sd">Optional:</span>
+<span class="sd">  failure_mechanism        str    physical mechanism (fatigue, corrosion, …)</span>
+<span class="sd">  local_effect             str    local / end effect description</span>
+<span class="sd">  severity                 int    1–10</span>
+<span class="sd">  occurrence               int    1–10</span>
+<span class="sd">  detection                int    1–10</span>
+<span class="sd">  rpn                      int    explicit or derived = S × O × D</span>
+<span class="sd">  expected_latency_min_hours  float  converted from min_days × 24</span>
+<span class="sd">  expected_latency_max_hours  float  converted from max_days × 24</span>
+<span class="sd">  expected_anomaly_pattern    str    normalised to enum values</span>
+<span class="sd">  expected_symptoms           list[str]  split from local_effect text</span>
+<span class="sd">  corrective_actions          list[str]</span>
+<span class="sd">  notes                       str</span>
+<span class="sd">  _sheet                      str    Excel sheet name; None for CSV</span>
+<span class="sd">  _row_index                  int    1-based row number after header</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">csv</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">unicodedata</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.fmea_normalizer</span><span class="w"> </span><span class="kn">import</span> <span class="n">classify_anomaly_pattern</span><span class="p">,</span> <span class="n">normalize_fmea_records</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"fmeaParser"</span><span class="p">)</span></div>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">LOGGER</span><span class="o">.</span><span class="n">handlers</span><span class="p">:</span>
+<div class="viewcode-block" id="_ch">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._ch">[docs]</a>
+    <span class="n">_ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span></div>
+
+    <span class="n">_ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">"</span><span class="si">%(asctime)s</span><span class="s2"> | </span><span class="si">%(levelname)s</span><span class="s2"> | </span><span class="si">%(name)s</span><span class="s2"> | </span><span class="si">%(message)s</span><span class="s2">"</span><span class="p">))</span>
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">_ch</span><span class="p">)</span>
+<span class="n">LOGGER</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Default column name map</span>
+<span class="c1"># Keys are canonical field names; values are lists of regex patterns matched</span>
+<span class="c1"># case-insensitively against the stripped column header.</span>
+<span class="c1"># Plants override by passing ``column_map_override`` to ``parse_fmea_file``.</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DEFAULT_COLUMN_MAP">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.DEFAULT_COLUMN_MAP">[docs]</a>
+<span class="n">DEFAULT_COLUMN_MAP</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"component_type"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"component[\s_-]?type"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"equipment[\s_-]?type"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"item[\s_-]?type"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^item$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^component$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^equipment$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"asset[\s_-]?type"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"failure_mode_name"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"failure[\s_-]?mode"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"potential[\s_-]?failure[\s_-]?mode"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"mode[\s_-]?of[\s_-]?failure"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^fm$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^fm[\s_-]?name$"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"item_function"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"item[\s_-]?function"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"function"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"system[\s_-]?element"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"failure_mechanism"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"failure[\s_-]?mechanism"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"mechanism"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"physical[\s_-]?mechanism"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"cause[\s_-]?mechanism"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"degradation[\s_-]?mechanism"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"local_effect"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"local[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"failure[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"symptom"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"consequence"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"system_effect"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"system[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"sub[\s_-]?system[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"next[\s_-]?higher[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"higher[\s_-]?effect"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"end_effect"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"end[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"mission[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"safety[\s_-]?effect"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"effect[\s_-]?on[\s_-]?plant"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"potential[\s_-]?causes?"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"cause\(s\)"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"root[\s_-]?causes?"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"failure[\s_-]?causes?"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"detection_method"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"detection[\s_-]?method"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"current[\s_-]?controls?[\s_-]?\(detection\)"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"how[\s_-]?detected"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"severity"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"^severity$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^sev$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^s$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"severity[\s_-]?rating"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"severity[\s_-]?\(s\)"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"occurrence"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"^occurrence$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^occ$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^o$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"occurrence[\s_-]?rating"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"occurrence[\s_-]?\(o\)"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"frequency"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"detection"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"^detection$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^det$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^d$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"detection[\s_-]?\(d\)"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"detection_rating"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"detection[\s_-]?rating"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"current[\s_-]?controls?[\s_-]?\(detection\)"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"rpn"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"^rpn$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"risk[\s_-]?priority[\s_-]?number"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"risk[\s_-]?number"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"expected_latency_min_days"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"latency[\s_-]?min"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"min[\s_-]?latency"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"minimum[\s_-]?latency"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"progression[\s_-]?min"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"min[\s_-]?days"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"latency[\s_-]?min[\s_-]?\(days?\)"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"expected_latency_max_days"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"latency[\s_-]?max"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"max[\s_-]?latency"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"maximum[\s_-]?latency"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"progression[\s_-]?max"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"max[\s_-]?days"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"latency[\s_-]?max[\s_-]?\(days?\)"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"anomaly[\s_-]?pattern"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"telemetry[\s_-]?pattern"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"signal[\s_-]?pattern"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"expected[\s_-]?pattern"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"corrective_actions"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"corrective[\s_-]?action"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"recommended[\s_-]?action"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"action[\s_-]?item"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"mitigation"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"safety_function_impact"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"safety[\s_-]?function[\s_-]?impact"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"affected[\s_-]?safety[\s_-]?functions?"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"safety[\s_-]?impact"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"tech_spec_applicability"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"tech[\s_-]?spec[\s_-]?applicability"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"lco[\s_-]?applicability"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"technical[\s_-]?spec"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"failure_rate"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"failure[\s_-]?rate"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"lambda"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^λ$"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"failure_mode_ratio"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"failure[\s_-]?mode[\s_-]?ratio"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"alpha"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^α$"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"mission_time_hours"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"mission[\s_-]?time"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"operating[\s_-]?hours"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"mission[\s_-]?hours"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"\bt\b"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"criticality"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"criticality"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"criticality[\s_-]?rank"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"class[\s_-]?[ivx]+"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"notes"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"^notes?$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^comment"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"^remarks?$"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"additional[\s_-]?info"</span><span class="p">,</span>
+    <span class="p">],</span>
+    <span class="s2">"fmea_revision_date"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="sa">r</span><span class="s2">"fmea[\s_-]?revision[\s_-]?date"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"revision[\s_-]?date"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"last[\s_-]?updated"</span><span class="p">,</span>
+    <span class="p">],</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Profile-specific header patterns (prepended before defaults).</span>
+<div class="viewcode-block" id="PROFILE_COLUMN_MAPS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.PROFILE_COLUMN_MAPS">[docs]</a>
+<span class="n">PROFILE_COLUMN_MAPS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"mil_std_1629a"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"component_type"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"item"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"assembly"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"line[\s_-]?replaceable[\s_-]?unit"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"lru"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s2">"failure_mode_name"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"potential[\s_-]?failure[\s_-]?mode"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"failure[\s_-]?mode[\s_-]?description"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s2">"failure_mechanism"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"cause[\s_-]?of[\s_-]?failure"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"failure[\s_-]?cause"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"mechanism[\s_-]?of[\s_-]?failure"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s2">"criticality"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"criticality[\s_-]?class"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"class[\s_-]?[ivx]+"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s2">"failure_rate"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"failure[\s_-]?rate[\s_-]?\(λ\)"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"lambda[\s_-]?\(λ\)"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s2">"mission_time_hours"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"mission[\s_-]?time[\s_-]?\(h(rs)?\)"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"mission[\s_-]?duration"</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">},</span>
+    <span class="s2">"aiag_5th"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"detection_rating"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"detection[\s_-]?control[\s_-]?rating"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"detection[\s_-]?ranking"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s2">"occurrence"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"occurrence[\s_-]?ranking"</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">},</span>
+    <span class="s2">"nuclear_generic"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"safety_function_impact"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"affected[\s_-]?safety[\s_-]?function"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"safety[\s_-]?function"</span><span class="p">,</span>
+        <span class="p">],</span>
+        <span class="s2">"tech_spec_applicability"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="sa">r</span><span class="s2">"technical[\s_-]?spec[\s_-]?applicability"</span><span class="p">,</span>
+            <span class="sa">r</span><span class="s2">"lco"</span><span class="p">,</span>
+        <span class="p">],</span>
+    <span class="p">},</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Allowed values for expected_anomaly_pattern (from kg_context failure_modes schema).</span>
+<span class="c1"># The keyword→pattern map itself lives in fmea_normalizer.classify_anomaly_pattern</span>
+<span class="c1"># (single source of truth); this enum is only for exact-value pass-through here.</span>
+<div class="viewcode-block" id="_ANOMALY_PATTERN_ENUM">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._ANOMALY_PATTERN_ENUM">[docs]</a>
+<span class="n">_ANOMALY_PATTERN_ENUM</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="s2">"step_change"</span><span class="p">,</span> <span class="s2">"gradual_drift"</span><span class="p">,</span> <span class="s2">"spike"</span><span class="p">,</span>
+    <span class="s2">"oscillation"</span><span class="p">,</span> <span class="s2">"dropout"</span><span class="p">,</span> <span class="s2">"sustained_exceedance"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">,</span>
+<span class="p">})</span></div>
+
+
+<span class="c1"># Effect text delimiters used to split local_effect into symptom list.</span>
+<div class="viewcode-block" id="_EFFECT_SPLIT_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._EFFECT_SPLIT_RE">[docs]</a>
+<span class="n">_EFFECT_SPLIT_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[;,/|]|\band\b|\bor\b"</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Internal helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_slug">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._slug">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_slug</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a lowercase, underscore-separated identifier-safe string."""</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">unicodedata</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="s2">"NFKC"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[^\w\s-]"</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[\s\-]+"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">"_"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_norm">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._norm">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_norm</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Strip and lower a cell value."""</span>
+    <span class="k">return</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">())</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span></div>
+
+
+
+<div class="viewcode-block" id="_to_int">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._to_int">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_int</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()))</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_to_float">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._to_float">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_float</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_resolve_anomaly_pattern">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._resolve_anomaly_pattern">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_anomaly_pattern</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">raw</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">normed</span> <span class="o">=</span> <span class="n">_norm</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">normed</span> <span class="ow">in</span> <span class="n">_ANOMALY_PATTERN_ENUM</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">normed</span>
+    <span class="n">classified</span> <span class="o">=</span> <span class="n">classify_anomaly_pattern</span><span class="p">(</span><span class="n">normed</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">classified</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">classified</span>
+    <span class="c1"># A value was explicitly provided but is unrecognised → record "unknown".</span>
+    <span class="k">return</span> <span class="s2">"unknown"</span></div>
+
+
+
+<div class="viewcode-block" id="_split_effect_to_symptoms">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._split_effect_to_symptoms">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_split_effect_to_symptoms</span><span class="p">(</span><span class="n">effect_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">effect_text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">_EFFECT_SPLIT_RE</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">effect_text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span></div>
+
+
+
+<div class="viewcode-block" id="_split_actions">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._split_actions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_split_actions</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">raw</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[;|]|\n|\d+\."</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">raw</span><span class="p">))</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span></div>
+
+
+
+<div class="viewcode-block" id="_split_causes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._split_causes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_split_causes</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">raw</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[;|/]|\band\b"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">raw</span><span class="p">),</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span></div>
+
+
+
+<div class="viewcode-block" id="_build_column_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._build_column_map">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_column_map</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">profile_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">column_map_override</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+    <span class="c1"># Merge precedence: override &gt; profile &gt; defaults</span>
+    <span class="n">merged_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">profile_map</span> <span class="o">=</span> <span class="n">PROFILE_COLUMN_MAPS</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">profile_name</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="p">{})</span>
+    <span class="k">for</span> <span class="n">canonical</span><span class="p">,</span> <span class="n">patterns</span> <span class="ow">in</span> <span class="n">DEFAULT_COLUMN_MAP</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">extra</span> <span class="o">=</span> <span class="p">(</span><span class="n">column_map_override</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">canonical</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">profile_patterns</span> <span class="o">=</span> <span class="n">profile_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">canonical</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">merged_map</span><span class="p">[</span><span class="n">canonical</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">extra</span><span class="p">)</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">profile_patterns</span><span class="p">)</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">patterns</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">canonical</span><span class="p">,</span> <span class="n">patterns</span> <span class="ow">in</span> <span class="n">profile_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">canonical</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">merged_map</span><span class="p">:</span>
+            <span class="n">merged_map</span><span class="p">[</span><span class="n">canonical</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">patterns</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">canonical</span><span class="p">,</span> <span class="n">patterns</span> <span class="ow">in</span> <span class="p">(</span><span class="n">column_map_override</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">canonical</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">merged_map</span><span class="p">:</span>
+            <span class="n">merged_map</span><span class="p">[</span><span class="n">canonical</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">patterns</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">merged_map</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Column resolver</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="FmeaColumnResolver">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.FmeaColumnResolver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FmeaColumnResolver</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Resolve actual spreadsheet column headers to canonical field names.</span>
+
+<span class="sd">    Resolution is purely regex-based: each header is tested against every</span>
+<span class="sd">    pattern list in the column map.  For a given header the first canonical</span>
+<span class="sd">    field (in the column map's insertion order) whose pattern matches wins.</span>
+<span class="sd">    If two headers resolve to the same canonical field, the later one is</span>
+<span class="sd">    ignored and a warning is logged.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        column_map: Merged column map (defaults + overrides).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">column_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]):</span>
+<div class="viewcode-block" id="FmeaColumnResolver._map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.FmeaColumnResolver._map">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_map</span> <span class="o">=</span> <span class="n">column_map</span></div>
+
+
+<div class="viewcode-block" id="FmeaColumnResolver.resolve">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.FmeaColumnResolver.resolve">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">headers</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return a dict mapping canonical field name → 0-based column index.</span>
+
+<span class="sd">        Unrecognised headers are silently ignored.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            headers: Raw header strings from the spreadsheet.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            ``{canonical_field: col_index}`` for every resolved column.</span>
+<span class="sd">        """</span>
+        <span class="n">resolved</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">col_idx</span><span class="p">,</span> <span class="n">raw_header</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">headers</span><span class="p">):</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="n">_norm</span><span class="p">(</span><span class="n">raw_header</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">header</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">matched</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">for</span> <span class="n">canonical</span><span class="p">,</span> <span class="n">patterns</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">patterns</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="n">pat</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">):</span>
+                        <span class="k">if</span> <span class="n">canonical</span> <span class="ow">in</span> <span class="n">resolved</span><span class="p">:</span>
+                            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                                <span class="s2">"Column '</span><span class="si">%s</span><span class="s2">' matches canonical field '</span><span class="si">%s</span><span class="s2">' which is already "</span>
+                                <span class="s2">"resolved to column </span><span class="si">%d</span><span class="s2"> — skipping duplicate."</span><span class="p">,</span>
+                                <span class="n">raw_header</span><span class="p">,</span> <span class="n">canonical</span><span class="p">,</span> <span class="n">resolved</span><span class="p">[</span><span class="n">canonical</span><span class="p">],</span>
+                            <span class="p">)</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">resolved</span><span class="p">[</span><span class="n">canonical</span><span class="p">]</span> <span class="o">=</span> <span class="n">col_idx</span>
+                        <span class="n">matched</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="k">break</span>
+                <span class="k">if</span> <span class="n">matched</span><span class="p">:</span>
+                    <span class="k">break</span>
+        <span class="k">return</span> <span class="n">resolved</span></div>
+
+
+<div class="viewcode-block" id="FmeaColumnResolver.validate_required">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.FmeaColumnResolver.validate_required">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_required</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resolved</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">source</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Raise :class:`ValueError` if required fields are missing.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            resolved: Output of :meth:`resolve`.</span>
+<span class="sd">            source: Human-readable source description for the error message.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If any of ``component_type``, ``failure_mode_name``, or</span>
+<span class="sd">                ``failure_mechanism`` cannot be resolved, with a list of all</span>
+<span class="sd">                detected canonical fields included.</span>
+<span class="sd">        """</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">f</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"component_type"</span><span class="p">,</span> <span class="s2">"failure_mode_name"</span><span class="p">,</span> <span class="s2">"failure_mechanism"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">f</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">resolved</span>
+        <span class="p">]</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"FMEA parse error in '</span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">': required column(s) </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2"> could not be "</span>
+                <span class="sa">f</span><span class="s2">"resolved. Detected canonical fields: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">resolved</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="sa">f</span><span class="s2">"Check that the spreadsheet has columns matching the DEFAULT_COLUMN_MAP "</span>
+                <span class="sa">f</span><span class="s2">"patterns or supply a column_map_override."</span>
+            <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Row builder</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_RowValidationSkip">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._RowValidationSkip">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">_RowValidationSkip</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Signal that a single data row should be skipped and reported.</span>
+
+<span class="sd">    Raised by :func:`_build_record` when a row is structurally present but has a</span>
+<span class="sd">    blank required *cell* (e.g. ``failure_mechanism``).  The parse loop catches</span>
+<span class="sd">    it, counts the row, logs a warning, and continues — so one bad row no longer</span>
+<span class="sd">    aborts the whole file (and, via :func:`parse_fmea_files`, the whole batch).</span>
+<span class="sd">    A missing required *column* is a different, file-level error still raised by</span>
+<span class="sd">    :meth:`FmeaColumnResolver.validate_required`.</span>
+<span class="sd">    """</span></div>
+
+
+
+<div class="viewcode-block" id="_build_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._build_record">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_record</span><span class="p">(</span>
+    <span class="n">cells</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">row_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">fmea_source_ref</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">sheet</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Convert a resolved cell dict into a canonical FMEA record.</span>
+
+<span class="sd">    Returns ``None`` for rows that are entirely empty or have no</span>
+<span class="sd">    ``component_type`` / ``failure_mode_name`` after stripping.</span>
+<span class="sd">    """</span>
+    <span class="n">component_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">fm_name</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_name"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="n">mechanism</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mechanism"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">component_type</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">fm_name</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>  <span class="c1"># blank or header-repeat row</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mechanism</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">_RowValidationSkip</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"row </span><span class="si">{</span><span class="n">row_index</span><span class="si">}</span><span class="s2">: required field 'failure_mechanism' is empty — row skipped"</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Derive stable canonical ID.</span>
+    <span class="n">failure_mode_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"FM:</span><span class="si">{</span><span class="n">_slug</span><span class="p">(</span><span class="n">component_type</span><span class="p">)</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">_slug</span><span class="p">(</span><span class="n">fm_name</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+
+    <span class="c1"># Numeric risk fields.</span>
+    <span class="n">severity</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">))</span>
+    <span class="n">occurrence</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"occurrence"</span><span class="p">))</span>
+    <span class="n">detection</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection"</span><span class="p">))</span>
+    <span class="c1"># Prefer an explicit detection_rating column, else fall back to detection.</span>
+    <span class="c1"># Use ``is not None`` so a legitimate 0 is not dropped by an ``or`` fallback.</span>
+    <span class="n">_detection_rating</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">))</span>
+    <span class="n">detection_effective</span> <span class="o">=</span> <span class="n">_detection_rating</span> <span class="k">if</span> <span class="n">_detection_rating</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">detection</span>
+    <span class="n">rpn_raw</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rpn"</span><span class="p">))</span>
+    <span class="c1"># Derive RPN if the column is missing but all three components are present.</span>
+    <span class="n">rpn</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">rpn_raw</span>
+    <span class="k">if</span> <span class="n">rpn</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="n">severity</span><span class="p">,</span> <span class="n">occurrence</span><span class="p">,</span> <span class="n">detection</span><span class="p">)):</span>
+        <span class="n">rpn</span> <span class="o">=</span> <span class="p">(</span><span class="n">severity</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">occurrence</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">detection</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># Latency — stored in hours in the KG (hours is what _fetch_failure_modes returns).</span>
+    <span class="n">lat_min_days</span> <span class="o">=</span> <span class="n">_to_float</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_min_days"</span><span class="p">))</span>
+    <span class="n">lat_max_days</span> <span class="o">=</span> <span class="n">_to_float</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_max_days"</span><span class="p">))</span>
+    <span class="n">lat_min_hours</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">lat_min_days</span> <span class="o">*</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="n">lat_min_days</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="n">lat_max_hours</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">lat_max_days</span> <span class="o">*</span> <span class="mi">24</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="k">if</span> <span class="n">lat_max_days</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+    <span class="n">local_effect</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"local_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span>
+    <span class="n">system_effect</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span>
+    <span class="n">end_effect</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span>
+    <span class="n">expected_symptoms</span> <span class="o">=</span> <span class="n">_split_effect_to_symptoms</span><span class="p">(</span><span class="n">local_effect</span><span class="p">)</span>
+    <span class="n">anomaly_pattern</span> <span class="o">=</span> <span class="n">_resolve_anomaly_pattern</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_anomaly_pattern"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"fmea_source_ref"</span><span class="p">:</span> <span class="n">fmea_source_ref</span><span class="p">,</span>
+        <span class="s2">"component_type"</span><span class="p">:</span> <span class="n">component_type</span><span class="p">,</span>
+        <span class="s2">"failure_mode_id"</span><span class="p">:</span> <span class="n">failure_mode_id</span><span class="p">,</span>
+        <span class="s2">"failure_mode_name"</span><span class="p">:</span> <span class="n">fm_name</span><span class="p">,</span>
+        <span class="s2">"item_function"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"item_function"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"failure_mechanism"</span><span class="p">:</span> <span class="n">mechanism</span><span class="p">,</span>
+        <span class="s2">"local_effect"</span><span class="p">:</span> <span class="n">local_effect</span><span class="p">,</span>
+        <span class="s2">"system_effect"</span><span class="p">:</span> <span class="n">system_effect</span><span class="p">,</span>
+        <span class="s2">"end_effect"</span><span class="p">:</span> <span class="n">end_effect</span><span class="p">,</span>
+        <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="n">_split_causes</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"potential_causes"</span><span class="p">)),</span>
+        <span class="s2">"detection_method"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_method"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"severity"</span><span class="p">:</span> <span class="n">severity</span><span class="p">,</span>
+        <span class="s2">"occurrence"</span><span class="p">:</span> <span class="n">occurrence</span><span class="p">,</span>
+        <span class="s2">"detection_rating"</span><span class="p">:</span> <span class="n">detection_effective</span><span class="p">,</span>
+        <span class="s2">"detection"</span><span class="p">:</span> <span class="n">detection_effective</span><span class="p">,</span>
+        <span class="s2">"rpn"</span><span class="p">:</span> <span class="n">rpn</span><span class="p">,</span>
+        <span class="s2">"safety_function_impact"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_function_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"tech_spec_applicability"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"tech_spec_applicability"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"failure_rate"</span><span class="p">:</span> <span class="n">_to_float</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_rate"</span><span class="p">)),</span>
+        <span class="s2">"failure_mode_ratio"</span><span class="p">:</span> <span class="n">_to_float</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_ratio"</span><span class="p">)),</span>
+        <span class="s2">"mission_time_hours"</span><span class="p">:</span> <span class="n">_to_float</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mission_time_hours"</span><span class="p">)),</span>
+        <span class="s2">"criticality"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"expected_latency_min_hours"</span><span class="p">:</span> <span class="n">lat_min_hours</span><span class="p">,</span>
+        <span class="s2">"expected_latency_max_hours"</span><span class="p">:</span> <span class="n">lat_max_hours</span><span class="p">,</span>
+        <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="n">anomaly_pattern</span><span class="p">,</span>
+        <span class="s2">"fmea_revision_date"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fmea_revision_date"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"expected_symptoms"</span><span class="p">:</span> <span class="n">expected_symptoms</span><span class="p">,</span>
+        <span class="s2">"corrective_actions"</span><span class="p">:</span> <span class="n">_split_actions</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"corrective_actions"</span><span class="p">)),</span>
+        <span class="s2">"notes"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">cells</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"notes"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"_sheet"</span><span class="p">:</span> <span class="n">sheet</span><span class="p">,</span>
+        <span class="s2">"_row_index"</span><span class="p">:</span> <span class="n">row_index</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Format-specific row readers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_rows_from_csv">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._rows_from_csv">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_rows_from_csv</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]]:</span>
+<span class="w">    </span><span class="sd">"""Read a CSV file and return ``[(None, rows)]`` where rows is a list of</span>
+<span class="sd">    cell lists (all strings)."""</span>
+    <span class="k">for</span> <span class="n">encoding</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"utf-8-sig"</span><span class="p">,</span> <span class="s2">"utf-8"</span><span class="p">,</span> <span class="s2">"latin-1"</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">encoding</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+                <span class="n">sample</span> <span class="o">=</span> <span class="n">fh</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="mi">4096</span><span class="p">)</span>
+                <span class="n">fh</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">dialect</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">Sniffer</span><span class="p">()</span><span class="o">.</span><span class="n">sniff</span><span class="p">(</span><span class="n">sample</span><span class="p">,</span> <span class="n">delimiters</span><span class="o">=</span><span class="s2">",;</span><span class="se">\t</span><span class="s2">|"</span><span class="p">)</span>
+                <span class="k">except</span> <span class="n">csv</span><span class="o">.</span><span class="n">Error</span><span class="p">:</span>
+                    <span class="n">dialect</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">excel</span>
+                <span class="n">reader</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">reader</span><span class="p">(</span><span class="n">fh</span><span class="p">,</span> <span class="n">dialect</span><span class="p">)</span>
+                <span class="n">rows</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">reader</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[(</span><span class="kc">None</span><span class="p">,</span> <span class="n">rows</span><span class="p">)]</span>
+        <span class="k">except</span> <span class="ne">UnicodeDecodeError</span><span class="p">:</span>
+            <span class="k">continue</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Cannot decode CSV file: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_rows_from_xlsx">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._rows_from_xlsx">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_rows_from_xlsx</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]]]:</span>
+<span class="w">    </span><span class="sd">"""Read all sheets from an .xlsx workbook using openpyxl."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">openpyxl</span>  <span class="c1"># already in project deps</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s2">"openpyxl is required to parse .xlsx files"</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="n">wb</span> <span class="o">=</span> <span class="n">openpyxl</span><span class="o">.</span><span class="n">load_workbook</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">data_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">result</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">sheet_name</span> <span class="ow">in</span> <span class="n">wb</span><span class="o">.</span><span class="n">sheetnames</span><span class="p">:</span>
+        <span class="n">ws</span> <span class="o">=</span> <span class="n">wb</span><span class="p">[</span><span class="n">sheet_name</span><span class="p">]</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[[</span><span class="n">cell</span><span class="o">.</span><span class="n">value</span> <span class="k">for</span> <span class="n">cell</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">ws</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">()]</span>
+        <span class="c1"># Skip empty sheets.</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">):</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">sheet_name</span><span class="p">,</span> <span class="n">rows</span><span class="p">))</span>
+    <span class="n">wb</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<div class="viewcode-block" id="_rows_from_xls">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._rows_from_xls">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_rows_from_xls</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]]]:</span>
+<span class="w">    </span><span class="sd">"""Read all sheets from an .xls workbook using xlrd."""</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">xlrd</span>  <span class="c1"># already in project deps</span>
+    <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span><span class="s2">"xlrd is required to parse .xls files"</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="n">wb</span> <span class="o">=</span> <span class="n">xlrd</span><span class="o">.</span><span class="n">open_workbook</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+    <span class="n">result</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">sheet_name</span> <span class="ow">in</span> <span class="n">wb</span><span class="o">.</span><span class="n">sheet_names</span><span class="p">():</span>
+        <span class="n">ws</span> <span class="o">=</span> <span class="n">wb</span><span class="o">.</span><span class="n">sheet_by_name</span><span class="p">(</span><span class="n">sheet_name</span><span class="p">)</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[</span><span class="n">ws</span><span class="o">.</span><span class="n">row_values</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ws</span><span class="o">.</span><span class="n">nrows</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">sheet_name</span><span class="p">,</span> <span class="n">rows</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Public API</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="parse_fmea_file">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.parse_fmea_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_fmea_file</span><span class="p">(</span>
+    <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">column_map_override</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">sheet_filter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">profile_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"auto"</span><span class="p">,</span>
+    <span class="n">include_normalization_metadata</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Parse a FMEA spreadsheet into a list of canonical FMEA record dicts.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        path: Path to a ``.csv``, ``.xlsx``, or ``.xls`` file.</span>
+<span class="sd">        column_map_override: Optional dict that is **merged** into</span>
+<span class="sd">            :data:`DEFAULT_COLUMN_MAP`.  Keys must be canonical field names;</span>
+<span class="sd">            values are lists of additional regex patterns to try before the</span>
+<span class="sd">            defaults.  Use this to add plant-specific column naming without</span>
+<span class="sd">            replacing the default patterns.</span>
+<span class="sd">        sheet_filter: For multi-sheet workbooks, only parse the sheets whose</span>
+<span class="sd">            names are in this list.  Pass ``None`` (default) to parse all</span>
+<span class="sd">            sheets.</span>
+<span class="sd">        profile_name: FMEA format profile forwarded to</span>
+<span class="sd">            :func:`~doc_parsers.fmea_normalizer.normalize_fmea_records`</span>
+<span class="sd">            (e.g. ``"auto"``, ``"aiag_4th"``, ``"aiag_5th"``,</span>
+<span class="sd">            ``"mil_std_1629a"``, ``"iec_60812"``, ``"nuclear_generic"``).  It</span>
+<span class="sd">            also selects profile-specific header patterns via</span>
+<span class="sd">            :data:`PROFILE_COLUMN_MAPS`.</span>
+<span class="sd">        include_normalization_metadata: When ``True`` (default), attach the</span>
+<span class="sd">            per-field ``_field_quality`` tags, ``_normalization_profile``, and</span>
+<span class="sd">            the shared ``_fmea_ingestion_quality`` report to each record; when</span>
+<span class="sd">            ``False`` these normalization-metadata keys are stripped.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        List of record dicts.  Each dict contains at minimum:</span>
+<span class="sd">        ``fmea_source_ref``, ``component_type``, ``failure_mode_id``,</span>
+<span class="sd">        ``failure_mode_name``.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        ValueError: If required columns (``component_type``,</span>
+<span class="sd">            ``failure_mode_name``, ``failure_mechanism``) cannot be resolved in</span>
+<span class="sd">            a sheet, or if the file extension is not recognised.  A row whose</span>
+<span class="sd">            ``failure_mechanism`` *cell* is blank is skipped and counted in the</span>
+<span class="sd">            ingestion-quality report's ``rows_skipped_missing_mechanism`` rather</span>
+<span class="sd">            than raising.</span>
+<span class="sd">        FileNotFoundError: If *path* does not exist.</span>
+<span class="sd">    """</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"FMEA file not found: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="c1"># Build merged column map (override &gt; profile &gt; defaults).</span>
+    <span class="n">merged_map</span> <span class="o">=</span> <span class="n">_build_column_map</span><span class="p">(</span>
+        <span class="n">profile_name</span><span class="o">=</span><span class="n">profile_name</span><span class="p">,</span>
+        <span class="n">column_map_override</span><span class="o">=</span><span class="n">column_map_override</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">resolver</span> <span class="o">=</span> <span class="n">FmeaColumnResolver</span><span class="p">(</span><span class="n">merged_map</span><span class="p">)</span>
+    <span class="n">fmea_source_ref</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">name</span>
+    <span class="n">suffix</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">suffix</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">suffix</span> <span class="o">==</span> <span class="s2">".csv"</span><span class="p">:</span>
+        <span class="n">sheets</span> <span class="o">=</span> <span class="n">_rows_from_csv</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">suffix</span> <span class="o">==</span> <span class="s2">".xlsx"</span><span class="p">:</span>
+        <span class="n">sheets</span> <span class="o">=</span> <span class="n">_rows_from_xlsx</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">suffix</span> <span class="o">==</span> <span class="s2">".xls"</span><span class="p">:</span>
+        <span class="n">sheets</span> <span class="o">=</span> <span class="n">_rows_from_xls</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Unsupported file extension '</span><span class="si">{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">'. "</span>
+            <span class="sa">f</span><span class="s2">"Expected .csv, .xlsx, or .xls."</span>
+        <span class="p">)</span>
+
+    <span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">rows_skipped_missing_mechanism</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="n">sheet_name</span><span class="p">,</span> <span class="n">raw_rows</span> <span class="ow">in</span> <span class="n">sheets</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">sheet_filter</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">sheet_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sheet_filter</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Skipping sheet '</span><span class="si">%s</span><span class="s2">' (not in sheet_filter)."</span><span class="p">,</span> <span class="n">sheet_name</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Find the header row: the first row that resolves at least one required field.</span>
+        <span class="n">header_row_idx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">resolved_cols</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">raw_rows</span><span class="p">):</span>
+            <span class="n">headers</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="s2">""</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span>
+            <span class="n">candidate</span> <span class="o">=</span> <span class="n">resolver</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="n">headers</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">"component_type"</span> <span class="ow">in</span> <span class="n">candidate</span> <span class="ow">or</span> <span class="s2">"failure_mode_name"</span> <span class="ow">in</span> <span class="n">candidate</span><span class="p">:</span>
+                <span class="n">header_row_idx</span> <span class="o">=</span> <span class="n">i</span>
+                <span class="n">resolved_cols</span> <span class="o">=</span> <span class="n">candidate</span>
+                <span class="k">break</span>
+
+        <span class="n">source_label</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">fmea_source_ref</span><span class="si">}</span><span class="s2">[</span><span class="si">{</span><span class="n">sheet_name</span><span class="si">}</span><span class="s2">]"</span> <span class="k">if</span> <span class="n">sheet_name</span> <span class="k">else</span> <span class="n">fmea_source_ref</span>
+        <span class="k">if</span> <span class="n">header_row_idx</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"No recognisable header row found in '</span><span class="si">%s</span><span class="s2">' — sheet skipped. "</span>
+                <span class="s2">"Check column names against DEFAULT_COLUMN_MAP."</span><span class="p">,</span>
+                <span class="n">source_label</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">resolver</span><span class="o">.</span><span class="n">validate_required</span><span class="p">(</span><span class="n">resolved_cols</span><span class="p">,</span> <span class="n">source_label</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+                <span class="s2">"Required columns missing in '</span><span class="si">%s</span><span class="s2">'. Resolved so far: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="n">source_label</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">resolved_cols</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span>
+            <span class="p">)</span>
+            <span class="k">raise</span>
+
+        <span class="n">sheet_records</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">row_offset</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">raw_rows</span><span class="p">[</span><span class="n">header_row_idx</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">cells</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">canonical</span><span class="p">:</span> <span class="n">row</span><span class="p">[</span><span class="n">col_idx</span><span class="p">]</span> <span class="k">if</span> <span class="n">col_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="k">for</span> <span class="n">canonical</span><span class="p">,</span> <span class="n">col_idx</span> <span class="ow">in</span> <span class="n">resolved_cols</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="p">}</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">rec</span> <span class="o">=</span> <span class="n">_build_record</span><span class="p">(</span><span class="n">cells</span><span class="p">,</span> <span class="n">row_offset</span><span class="p">,</span> <span class="n">fmea_source_ref</span><span class="p">,</span> <span class="n">sheet_name</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">_RowValidationSkip</span> <span class="k">as</span> <span class="n">skip</span><span class="p">:</span>
+                <span class="n">rows_skipped_missing_mechanism</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Skipping FMEA row in '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">source_label</span><span class="p">,</span> <span class="n">skip</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">rec</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+                <span class="n">sheet_records</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"Parsed </span><span class="si">%d</span><span class="s2"> FMEA records from '</span><span class="si">%s</span><span class="s2">'."</span><span class="p">,</span>
+            <span class="n">sheet_records</span><span class="p">,</span> <span class="n">source_label</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">"Total FMEA records from '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%d</span><span class="s2"> across </span><span class="si">%d</span><span class="s2"> sheet(s)."</span><span class="p">,</span>
+        <span class="n">fmea_source_ref</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">sheets</span><span class="p">),</span>
+    <span class="p">)</span>
+    <span class="n">normalized</span><span class="p">,</span> <span class="n">report</span> <span class="o">=</span> <span class="n">normalize_fmea_records</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">profile_name</span><span class="o">=</span><span class="n">profile_name</span><span class="p">)</span>
+    <span class="n">report</span><span class="p">[</span><span class="s2">"rows_skipped_missing_mechanism"</span><span class="p">]</span> <span class="o">=</span> <span class="n">rows_skipped_missing_mechanism</span>
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">"FMEA normalization (</span><span class="si">%s</span><span class="s2">): derived=</span><span class="si">%d</span><span class="s2">, nlp_inferred=</span><span class="si">%d</span><span class="s2">, critical_missing=</span><span class="si">%d</span><span class="s2">, "</span>
+        <span class="s2">"rows_skipped_missing_mechanism=</span><span class="si">%d</span><span class="s2">"</span><span class="p">,</span>
+        <span class="n">report</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"profile_used"</span><span class="p">),</span>
+        <span class="nb">int</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"derived_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+        <span class="nb">int</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nlp_inferred_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+        <span class="nb">int</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"critical_field_missing_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+        <span class="n">rows_skipped_missing_mechanism</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">include_normalization_metadata</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">normalized</span><span class="p">:</span>
+            <span class="n">rec</span><span class="p">[</span><span class="s2">"_fmea_ingestion_quality"</span><span class="p">]</span> <span class="o">=</span> <span class="n">report</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">normalized</span><span class="p">:</span>
+            <span class="n">rec</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"_field_quality"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">rec</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"_normalization_profile"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">normalized</span></div>
+
+
+
+<div class="viewcode-block" id="parse_fmea_files">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser.parse_fmea_files">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_fmea_files</span><span class="p">(</span>
+    <span class="n">paths</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">],</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Parse multiple FMEA files and return a combined record list.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        paths: Iterable of file paths.</span>
+<span class="sd">        **kwargs: Forwarded to :func:`parse_fmea_file`.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Combined list of all records from all files.</span>
+<span class="sd">    """</span>
+    <span class="n">all_records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">merged_report</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span><span class="p">:</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="n">parse_fmea_file</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="n">all_records</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+        <span class="n">file_report</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">maybe</span> <span class="o">=</span> <span class="n">records</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_fmea_ingestion_quality"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">maybe</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="n">file_report</span> <span class="o">=</span> <span class="n">maybe</span>
+        <span class="k">if</span> <span class="n">file_report</span><span class="p">:</span>
+            <span class="n">merged_report</span> <span class="o">=</span> <span class="n">_merge_ingestion_reports</span><span class="p">(</span><span class="n">merged_report</span><span class="p">,</span> <span class="n">file_report</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">merged_report</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">all_records</span><span class="p">:</span>
+            <span class="n">rec</span><span class="p">[</span><span class="s2">"_fmea_ingestion_quality"</span><span class="p">]</span> <span class="o">=</span> <span class="n">merged_report</span>
+    <span class="k">return</span> <span class="n">all_records</span></div>
+
+
+
+<div class="viewcode-block" id="_merge_ingestion_reports">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmeaParser/index.html#src.dackar.RCA.doc_parsers.fmeaParser._merge_ingestion_reports">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_merge_ingestion_reports</span><span class="p">(</span>
+    <span class="n">current</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="n">incoming</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">current</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">incoming</span><span class="p">)</span>
+
+    <span class="n">merged</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">current</span><span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"total_fms_ingested"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_fms_ingested"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_fms_ingested"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+    <span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"critical_field_missing_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"critical_field_missing_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"critical_field_missing_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"enrichment_field_missing_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enrichment_field_missing_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enrichment_field_missing_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"derived_field_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"derived_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"derived_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+    <span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"nlp_inferred_field_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nlp_inferred_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nlp_inferred_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"orphaned_fm_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"orphaned_fm_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"orphaned_fm_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+    <span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"rows_skipped_missing_mechanism"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span>
+        <span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows_skipped_missing_mechanism"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="nb">int</span><span class="p">(</span><span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows_skipped_missing_mechanism"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">cur_profile</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"profile_used"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"auto"</span><span class="p">)</span>
+    <span class="n">in_profile</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"profile_used"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"auto"</span><span class="p">)</span>
+    <span class="n">merged</span><span class="p">[</span><span class="s2">"profile_used"</span><span class="p">]</span> <span class="o">=</span> <span class="n">cur_profile</span> <span class="k">if</span> <span class="n">cur_profile</span> <span class="o">==</span> <span class="n">in_profile</span> <span class="k">else</span> <span class="s2">"mixed"</span>
+
+    <span class="n">total</span> <span class="o">=</span> <span class="n">merged</span><span class="p">[</span><span class="s2">"total_fms_ingested"</span><span class="p">]</span>
+    <span class="n">cur_weight</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_fms_ingested"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">in_weight</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_fms_ingested"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">cur_conf</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">current</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"format_autodetect_confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">in_conf</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">incoming</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"format_autodetect_confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">merged</span><span class="p">[</span><span class="s2">"format_autodetect_confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="p">((</span><span class="n">cur_conf</span> <span class="o">*</span> <span class="n">cur_weight</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="n">in_conf</span> <span class="o">*</span> <span class="n">in_weight</span><span class="p">))</span> <span class="o">/</span> <span class="n">total</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">merged</span><span class="p">[</span><span class="s2">"format_autodetect_confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="n">merged</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

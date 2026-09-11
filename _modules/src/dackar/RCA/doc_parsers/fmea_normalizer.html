@@ -1,0 +1,740 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.doc_parsers.fmea_normalizer &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.doc_parsers.fmea_normalizer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.doc_parsers.fmea_normalizer</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">fmea_normalizer.py</span>
+<span class="sd">─────────────────────────────────────────────────────────────────────────────</span>
+<span class="sd">Normalization helpers for parsed FMEA rows.</span>
+
+<span class="sd">This module is intentionally format-aware but lightweight: it takes the</span>
+<span class="sd">already-parsed row dictionaries produced by ``fmeaParser.parse_fmea_file`` and</span>
+<span class="sd">applies profile detection, derivation rules, and per-field quality tagging.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="CANONICAL_REQUIRED_FIELDS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.CANONICAL_REQUIRED_FIELDS">[docs]</a>
+<span class="n">CANONICAL_REQUIRED_FIELDS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"component_type"</span><span class="p">,</span> <span class="s2">"failure_mode_name"</span><span class="p">,</span> <span class="s2">"failure_mechanism"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CANONICAL_STANDARD_OPTIONAL_FIELDS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.CANONICAL_STANDARD_OPTIONAL_FIELDS">[docs]</a>
+<span class="n">CANONICAL_STANDARD_OPTIONAL_FIELDS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"local_effect"</span><span class="p">,</span>
+    <span class="s2">"system_effect"</span><span class="p">,</span>
+    <span class="s2">"end_effect"</span><span class="p">,</span>
+    <span class="s2">"potential_causes"</span><span class="p">,</span>
+    <span class="s2">"detection_method"</span><span class="p">,</span>
+    <span class="s2">"corrective_actions"</span><span class="p">,</span>
+    <span class="s2">"severity"</span><span class="p">,</span>
+    <span class="s2">"occurrence"</span><span class="p">,</span>
+    <span class="s2">"detection_rating"</span><span class="p">,</span>
+    <span class="s2">"rpn"</span><span class="p">,</span>
+    <span class="s2">"safety_function_impact"</span><span class="p">,</span>
+    <span class="s2">"tech_spec_applicability"</span><span class="p">,</span>
+<span class="p">)</span></div>
+
+<div class="viewcode-block" id="CANONICAL_ENRICHMENT_FIELDS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.CANONICAL_ENRICHMENT_FIELDS">[docs]</a>
+<span class="n">CANONICAL_ENRICHMENT_FIELDS</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"expected_latency_min_hours"</span><span class="p">,</span>
+    <span class="s2">"expected_latency_max_hours"</span><span class="p">,</span>
+    <span class="s2">"expected_anomaly_pattern"</span><span class="p">,</span>
+    <span class="s2">"fmea_revision_date"</span><span class="p">,</span>
+<span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="FIELD_STATUS_PRESENT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_PRESENT">[docs]</a>
+<span class="n">FIELD_STATUS_PRESENT</span> <span class="o">=</span> <span class="s2">"present_native"</span></div>
+
+<div class="viewcode-block" id="FIELD_STATUS_DERIVED">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_DERIVED">[docs]</a>
+<span class="n">FIELD_STATUS_DERIVED</span> <span class="o">=</span> <span class="s2">"derived"</span></div>
+
+<div class="viewcode-block" id="FIELD_STATUS_NLP">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_NLP">[docs]</a>
+<span class="n">FIELD_STATUS_NLP</span> <span class="o">=</span> <span class="s2">"nlp_inferred"</span></div>
+
+<div class="viewcode-block" id="FIELD_STATUS_MISSING_CRITICAL">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_MISSING_CRITICAL">[docs]</a>
+<span class="n">FIELD_STATUS_MISSING_CRITICAL</span> <span class="o">=</span> <span class="s2">"missing_critical"</span></div>
+
+<div class="viewcode-block" id="FIELD_STATUS_MISSING_OPTIONAL">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_MISSING_OPTIONAL">[docs]</a>
+<span class="n">FIELD_STATUS_MISSING_OPTIONAL</span> <span class="o">=</span> <span class="s2">"missing_optional"</span></div>
+
+<div class="viewcode-block" id="FIELD_STATUS_MISSING_ENRICHMENT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FIELD_STATUS_MISSING_ENRICHMENT">[docs]</a>
+<span class="n">FIELD_STATUS_MISSING_ENRICHMENT</span> <span class="o">=</span> <span class="s2">"missing_enrichment"</span></div>
+
+
+
+<span class="c1"># Canonical keyword → anomaly-pattern map. Single source of truth shared by the</span>
+<span class="c1"># parser's ``_resolve_anomaly_pattern`` and this module's local-effect inference,</span>
+<span class="c1"># so the two keyword tables can no longer drift apart.</span>
+<div class="viewcode-block" id="_ANOMALY_PATTERN_KEYWORDS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._ANOMALY_PATTERN_KEYWORDS">[docs]</a>
+<span class="n">_ANOMALY_PATTERN_KEYWORDS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"step"</span><span class="p">:</span> <span class="s2">"step_change"</span><span class="p">,</span>
+    <span class="s2">"step change"</span><span class="p">:</span> <span class="s2">"step_change"</span><span class="p">,</span>
+    <span class="s2">"drift"</span><span class="p">:</span> <span class="s2">"gradual_drift"</span><span class="p">,</span>
+    <span class="s2">"gradual"</span><span class="p">:</span> <span class="s2">"gradual_drift"</span><span class="p">,</span>
+    <span class="s2">"gradual drift"</span><span class="p">:</span> <span class="s2">"gradual_drift"</span><span class="p">,</span>
+    <span class="s2">"ramp"</span><span class="p">:</span> <span class="s2">"gradual_drift"</span><span class="p">,</span>
+    <span class="s2">"spike"</span><span class="p">:</span> <span class="s2">"spike"</span><span class="p">,</span>
+    <span class="s2">"transient"</span><span class="p">:</span> <span class="s2">"spike"</span><span class="p">,</span>
+    <span class="s2">"impulse"</span><span class="p">:</span> <span class="s2">"spike"</span><span class="p">,</span>
+    <span class="s2">"oscillat"</span><span class="p">:</span> <span class="s2">"oscillation"</span><span class="p">,</span>
+    <span class="s2">"fluctuat"</span><span class="p">:</span> <span class="s2">"oscillation"</span><span class="p">,</span>
+    <span class="s2">"cycle"</span><span class="p">:</span> <span class="s2">"oscillation"</span><span class="p">,</span>
+    <span class="s2">"dropout"</span><span class="p">:</span> <span class="s2">"dropout"</span><span class="p">,</span>
+    <span class="s2">"drop out"</span><span class="p">:</span> <span class="s2">"dropout"</span><span class="p">,</span>
+    <span class="s2">"loss of signal"</span><span class="p">:</span> <span class="s2">"dropout"</span><span class="p">,</span>
+    <span class="s2">"signal loss"</span><span class="p">:</span> <span class="s2">"dropout"</span><span class="p">,</span>
+    <span class="s2">"exceedance"</span><span class="p">:</span> <span class="s2">"sustained_exceedance"</span><span class="p">,</span>
+    <span class="s2">"sustained"</span><span class="p">:</span> <span class="s2">"sustained_exceedance"</span><span class="p">,</span>
+    <span class="s2">"high"</span><span class="p">:</span> <span class="s2">"sustained_exceedance"</span><span class="p">,</span>
+    <span class="s2">"overload"</span><span class="p">:</span> <span class="s2">"sustained_exceedance"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="classify_anomaly_pattern">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.classify_anomaly_pattern">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">classify_anomaly_pattern</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Map free text describing an anomaly to a canonical enum value.</span>
+
+<span class="sd">    Returns the matched enum string, or ``None`` when no keyword matches so the</span>
+<span class="sd">    caller decides the fallback: the parser records ``"unknown"`` for a value</span>
+<span class="sd">    that was explicitly provided but is unrecognised, whereas the normalizer</span>
+<span class="sd">    leaves the field missing so it is flagged in the ingestion-quality report.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">normed</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">())</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">normed</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">keyword</span><span class="p">,</span> <span class="n">canonical</span> <span class="ow">in</span> <span class="n">_ANOMALY_PATTERN_KEYWORDS</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">keyword</span> <span class="ow">in</span> <span class="n">normed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">canonical</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_split_listish">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._split_listish">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_split_listish</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">value</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[;,|]|\band\b|/"</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">parts</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span></div>
+
+
+
+<div class="viewcode-block" id="_to_float">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._to_float">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_float</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_to_int">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._to_int">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_int</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())))</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_derive_rpn">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._derive_rpn">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_derive_rpn</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">))</span>
+    <span class="n">o</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"occurrence"</span><span class="p">))</span>
+    <span class="n">d</span> <span class="o">=</span> <span class="n">_to_int</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">))</span>
+    <span class="k">if</span> <span class="kc">None</span> <span class="ow">in</span> <span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">o</span><span class="p">,</span> <span class="n">d</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">s</span> <span class="o">*</span> <span class="n">o</span> <span class="o">*</span> <span class="n">d</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_derive_occurrence_from_lambda">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._derive_occurrence_from_lambda">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_derive_occurrence_from_lambda</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+    <span class="n">lam</span> <span class="o">=</span> <span class="n">_to_float</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_rate"</span><span class="p">))</span>
+    <span class="n">mission_h</span> <span class="o">=</span> <span class="n">_to_float</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mission_time_hours"</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">lam</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">mission_h</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">expected_events</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">lam</span> <span class="o">*</span> <span class="n">mission_h</span><span class="p">)</span>
+    <span class="c1"># Coarse monotonic bucket mapping to AIAG-style 1..10.</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">0.01</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">0.05</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">2</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">0.10</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">3</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">0.25</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">4</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">0.50</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">5</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">1.00</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">6</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">2.00</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">7</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">4.00</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">8</span>
+    <span class="k">if</span> <span class="n">expected_events</span> <span class="o">&lt;</span> <span class="mf">8.00</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">9</span>
+    <span class="k">return</span> <span class="mi">10</span></div>
+
+
+
+<div class="viewcode-block" id="_derive_severity_from_criticality">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._derive_severity_from_criticality">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_derive_severity_from_criticality</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+    <span class="n">crit</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">crit</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">mapping</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"i"</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="s2">"ii"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="s2">"iii"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
+        <span class="s2">"iv"</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="s2">"class i"</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="s2">"class ii"</span><span class="p">:</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="s2">"class iii"</span><span class="p">:</span> <span class="mi">5</span><span class="p">,</span>
+        <span class="s2">"class iv"</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+        <span class="s2">"critical"</span><span class="p">:</span> <span class="mi">9</span><span class="p">,</span>
+        <span class="s2">"major"</span><span class="p">:</span> <span class="mi">7</span><span class="p">,</span>
+        <span class="s2">"minor"</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">mapping</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">crit</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_derive_end_effect">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._derive_end_effect">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_derive_end_effect</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">val</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">val</span> <span class="ow">or</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_split_cause_effect_text">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._split_cause_effect_text">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_split_cause_effect_text</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Heuristic split for mixed cause/effect prose.</span>
+<span class="sd">    Returns (causes, effect_text, used_nlp_heuristic).</span>
+<span class="sd">    """</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">raw</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[],</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">False</span>
+
+    <span class="n">low</span> <span class="o">=</span> <span class="n">raw</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="c1"># Effect markers: "... leads to X", "... results in X"</span>
+    <span class="n">effect_markers</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"results in"</span><span class="p">,</span> <span class="s2">"leads to"</span><span class="p">,</span> <span class="s2">"causes"</span><span class="p">,</span> <span class="s2">"resulting in"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">marker</span> <span class="ow">in</span> <span class="n">effect_markers</span><span class="p">:</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">low</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">marker</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">cause_part</span> <span class="o">=</span> <span class="n">raw</span><span class="p">[:</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">" ,.;:-"</span><span class="p">)</span>
+            <span class="n">effect_part</span> <span class="o">=</span> <span class="n">raw</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">marker</span><span class="p">):]</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">" ,.;:-"</span><span class="p">)</span>
+            <span class="n">causes</span> <span class="o">=</span> <span class="n">_split_listish</span><span class="p">(</span><span class="n">cause_part</span><span class="p">)</span>
+            <span class="n">effect</span> <span class="o">=</span> <span class="n">effect_part</span> <span class="ow">or</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="n">causes</span><span class="p">,</span> <span class="n">effect</span><span class="p">,</span> <span class="kc">True</span>
+
+    <span class="c1"># Cause markers: "X due to Y", "X caused by Y", "X from Y"</span>
+    <span class="n">cause_markers</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"due to"</span><span class="p">,</span> <span class="s2">"caused by"</span><span class="p">,</span> <span class="s2">"from"</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">marker</span> <span class="ow">in</span> <span class="n">cause_markers</span><span class="p">:</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">low</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">marker</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">idx</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">effect_part</span> <span class="o">=</span> <span class="n">raw</span><span class="p">[:</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">" ,.;:-"</span><span class="p">)</span>
+            <span class="n">cause_part</span> <span class="o">=</span> <span class="n">raw</span><span class="p">[</span><span class="n">idx</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">marker</span><span class="p">):]</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">" ,.;:-"</span><span class="p">)</span>
+            <span class="n">causes</span> <span class="o">=</span> <span class="n">_split_listish</span><span class="p">(</span><span class="n">cause_part</span><span class="p">)</span>
+            <span class="n">effect</span> <span class="o">=</span> <span class="n">effect_part</span> <span class="ow">or</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="n">causes</span><span class="p">,</span> <span class="n">effect</span><span class="p">,</span> <span class="kc">True</span>
+
+    <span class="c1"># Fallback: plain list split with no explicit cause/effect separation.</span>
+    <span class="k">return</span> <span class="n">_split_listish</span><span class="p">(</span><span class="n">raw</span><span class="p">),</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="_mark_nlp_field">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._mark_nlp_field">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_mark_nlp_field</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">field_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">marks</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"_nlp_inferred_fields"</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">marks</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">field_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">marks</span><span class="p">:</span>
+        <span class="n">marks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_derive_potential_causes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._derive_potential_causes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_derive_potential_causes</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+    <span class="n">mech</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mechanism"</span><span class="p">)</span>
+    <span class="n">causes</span><span class="p">,</span> <span class="n">_effect</span><span class="p">,</span> <span class="n">heuristic</span> <span class="o">=</span> <span class="n">_split_cause_effect_text</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">mech</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">heuristic</span><span class="p">:</span>
+        <span class="n">_mark_nlp_field</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"potential_causes"</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">causes</span>
+    <span class="k">return</span> <span class="n">out</span> <span class="ow">or</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_derive_local_effect_from_mechanism">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._derive_local_effect_from_mechanism">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_derive_local_effect_from_mechanism</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">mech</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mechanism"</span><span class="p">)</span>
+    <span class="n">_causes</span><span class="p">,</span> <span class="n">effect</span><span class="p">,</span> <span class="n">heuristic</span> <span class="o">=</span> <span class="n">_split_cause_effect_text</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">mech</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">heuristic</span> <span class="ow">and</span> <span class="n">effect</span><span class="p">:</span>
+        <span class="n">_mark_nlp_field</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="s2">"local_effect"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">effect</span></div>
+
+
+
+<div class="viewcode-block" id="_infer_pattern_from_local_effect">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._infer_pattern_from_local_effect">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_infer_pattern_from_local_effect</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="c1"># Delegates to the shared classifier; returns None on no-match so the</span>
+    <span class="c1"># derivation step leaves the field missing (flagged in the quality report)</span>
+    <span class="c1"># rather than fabricating an "unknown" value.</span>
+    <span class="k">return</span> <span class="n">classify_anomaly_pattern</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"local_effect"</span><span class="p">))</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="FmeaFormatProfile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FmeaFormatProfile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FmeaFormatProfile</span><span class="p">:</span>
+<div class="viewcode-block" id="FmeaFormatProfile.name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FmeaFormatProfile.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="FmeaFormatProfile.required_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FmeaFormatProfile.required_fields">[docs]</a>
+    <span class="n">required_fields</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">CANONICAL_REQUIRED_FIELDS</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FmeaFormatProfile.optional_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FmeaFormatProfile.optional_fields">[docs]</a>
+    <span class="n">optional_fields</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">CANONICAL_STANDARD_OPTIONAL_FIELDS</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FmeaFormatProfile.enrichment_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FmeaFormatProfile.enrichment_fields">[docs]</a>
+    <span class="n">enrichment_fields</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="n">CANONICAL_ENRICHMENT_FIELDS</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="FmeaFormatProfile.derived_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FmeaFormatProfile.derived_fields">[docs]</a>
+    <span class="n">derived_fields</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="AiagFmeaProfile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.AiagFmeaProfile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AiagFmeaProfile</span><span class="p">(</span><span class="n">FmeaFormatProfile</span><span class="p">):</span>
+<div class="viewcode-block" id="AiagFmeaProfile.name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.AiagFmeaProfile.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"aiag_4th"</span></div>
+
+<div class="viewcode-block" id="AiagFmeaProfile.derived_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.AiagFmeaProfile.derived_fields">[docs]</a>
+    <span class="n">derived_fields</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"rpn"</span><span class="p">:</span> <span class="n">_derive_rpn</span><span class="p">,</span>
+            <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="n">_derive_potential_causes</span><span class="p">,</span>
+            <span class="s2">"end_effect"</span><span class="p">:</span> <span class="n">_derive_end_effect</span><span class="p">,</span>
+            <span class="s2">"local_effect"</span><span class="p">:</span> <span class="n">_derive_local_effect_from_mechanism</span><span class="p">,</span>
+            <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="n">_infer_pattern_from_local_effect</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="Aiag5thFmeaProfile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.Aiag5thFmeaProfile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Aiag5thFmeaProfile</span><span class="p">(</span><span class="n">AiagFmeaProfile</span><span class="p">):</span>
+<div class="viewcode-block" id="Aiag5thFmeaProfile.name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.Aiag5thFmeaProfile.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"aiag_5th"</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="MilStd1629aProfile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.MilStd1629aProfile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MilStd1629aProfile</span><span class="p">(</span><span class="n">FmeaFormatProfile</span><span class="p">):</span>
+<div class="viewcode-block" id="MilStd1629aProfile.name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.MilStd1629aProfile.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"mil_std_1629a"</span></div>
+
+<div class="viewcode-block" id="MilStd1629aProfile.derived_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.MilStd1629aProfile.derived_fields">[docs]</a>
+    <span class="n">derived_fields</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"severity"</span><span class="p">:</span> <span class="n">_derive_severity_from_criticality</span><span class="p">,</span>
+            <span class="s2">"occurrence"</span><span class="p">:</span> <span class="n">_derive_occurrence_from_lambda</span><span class="p">,</span>
+            <span class="s2">"rpn"</span><span class="p">:</span> <span class="n">_derive_rpn</span><span class="p">,</span>
+            <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="n">_derive_potential_causes</span><span class="p">,</span>
+            <span class="s2">"end_effect"</span><span class="p">:</span> <span class="n">_derive_end_effect</span><span class="p">,</span>
+            <span class="s2">"local_effect"</span><span class="p">:</span> <span class="n">_derive_local_effect_from_mechanism</span><span class="p">,</span>
+            <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="n">_infer_pattern_from_local_effect</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="Iec60812Profile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.Iec60812Profile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Iec60812Profile</span><span class="p">(</span><span class="n">FmeaFormatProfile</span><span class="p">):</span>
+<div class="viewcode-block" id="Iec60812Profile.name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.Iec60812Profile.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"iec_60812"</span></div>
+
+<div class="viewcode-block" id="Iec60812Profile.derived_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.Iec60812Profile.derived_fields">[docs]</a>
+    <span class="n">derived_fields</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"rpn"</span><span class="p">:</span> <span class="n">_derive_rpn</span><span class="p">,</span>
+            <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="n">_derive_potential_causes</span><span class="p">,</span>
+            <span class="s2">"end_effect"</span><span class="p">:</span> <span class="n">_derive_end_effect</span><span class="p">,</span>
+            <span class="s2">"local_effect"</span><span class="p">:</span> <span class="n">_derive_local_effect_from_mechanism</span><span class="p">,</span>
+            <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="n">_infer_pattern_from_local_effect</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="NuclearGenericProfile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.NuclearGenericProfile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NuclearGenericProfile</span><span class="p">(</span><span class="n">FmeaFormatProfile</span><span class="p">):</span>
+<div class="viewcode-block" id="NuclearGenericProfile.name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.NuclearGenericProfile.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"nuclear_generic"</span></div>
+
+<div class="viewcode-block" id="NuclearGenericProfile.derived_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.NuclearGenericProfile.derived_fields">[docs]</a>
+    <span class="n">derived_fields</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"rpn"</span><span class="p">:</span> <span class="n">_derive_rpn</span><span class="p">,</span>
+            <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="n">_derive_potential_causes</span><span class="p">,</span>
+            <span class="s2">"end_effect"</span><span class="p">:</span> <span class="n">_derive_end_effect</span><span class="p">,</span>
+            <span class="s2">"local_effect"</span><span class="p">:</span> <span class="n">_derive_local_effect_from_mechanism</span><span class="p">,</span>
+            <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="n">_infer_pattern_from_local_effect</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="AutoDetectProfile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.AutoDetectProfile">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AutoDetectProfile</span><span class="p">(</span><span class="n">FmeaFormatProfile</span><span class="p">):</span>
+<div class="viewcode-block" id="AutoDetectProfile.name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.AutoDetectProfile.name">[docs]</a>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"auto"</span></div>
+
+<div class="viewcode-block" id="AutoDetectProfile.derived_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.AutoDetectProfile.derived_fields">[docs]</a>
+    <span class="n">derived_fields</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"rpn"</span><span class="p">:</span> <span class="n">_derive_rpn</span><span class="p">,</span>
+            <span class="s2">"severity"</span><span class="p">:</span> <span class="n">_derive_severity_from_criticality</span><span class="p">,</span>
+            <span class="s2">"occurrence"</span><span class="p">:</span> <span class="n">_derive_occurrence_from_lambda</span><span class="p">,</span>
+            <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="n">_derive_potential_causes</span><span class="p">,</span>
+            <span class="s2">"end_effect"</span><span class="p">:</span> <span class="n">_derive_end_effect</span><span class="p">,</span>
+            <span class="s2">"local_effect"</span><span class="p">:</span> <span class="n">_derive_local_effect_from_mechanism</span><span class="p">,</span>
+            <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="n">_infer_pattern_from_local_effect</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="FMEA_FORMAT_PROFILES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.FMEA_FORMAT_PROFILES">[docs]</a>
+<span class="n">FMEA_FORMAT_PROFILES</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">FmeaFormatProfile</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"aiag_4th"</span><span class="p">:</span> <span class="n">AiagFmeaProfile</span><span class="p">,</span>
+    <span class="s2">"aiag_5th"</span><span class="p">:</span> <span class="n">Aiag5thFmeaProfile</span><span class="p">,</span>
+    <span class="s2">"mil_std_1629a"</span><span class="p">:</span> <span class="n">MilStd1629aProfile</span><span class="p">,</span>
+    <span class="s2">"iec_60812"</span><span class="p">:</span> <span class="n">Iec60812Profile</span><span class="p">,</span>
+    <span class="s2">"nuclear_generic"</span><span class="p">:</span> <span class="n">NuclearGenericProfile</span><span class="p">,</span>
+    <span class="s2">"auto"</span><span class="p">:</span> <span class="n">AutoDetectProfile</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_profile_by_name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._profile_by_name">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_profile_by_name</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">FmeaFormatProfile</span><span class="p">:</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="p">(</span><span class="n">name</span> <span class="ow">or</span> <span class="s2">"auto"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">profile_ctor</span> <span class="o">=</span> <span class="n">FMEA_FORMAT_PROFILES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">FMEA_FORMAT_PROFILES</span><span class="p">[</span><span class="s2">"auto"</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">profile_ctor</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_autodetect_profile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer._autodetect_profile">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_autodetect_profile</span><span class="p">(</span><span class="n">records</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="n">seen_failure_rate</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">_to_float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_rate"</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">)</span>
+    <span class="n">seen_criticality</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"criticality"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">)</span>
+    <span class="n">seen_safety</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_function_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">)</span>
+    <span class="n">seen_detection</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">_to_int</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">)</span>
+    <span class="n">seen_occurrence</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">_to_int</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"occurrence"</span><span class="p">))</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">seen_failure_rate</span> <span class="ow">or</span> <span class="n">seen_criticality</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"mil_std_1629a"</span><span class="p">,</span> <span class="mf">0.85</span>
+    <span class="k">if</span> <span class="n">seen_safety</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"nuclear_generic"</span><span class="p">,</span> <span class="mf">0.75</span>
+    <span class="k">if</span> <span class="n">seen_detection</span> <span class="ow">and</span> <span class="n">seen_occurrence</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"aiag_4th"</span><span class="p">,</span> <span class="mf">0.70</span>
+    <span class="k">return</span> <span class="s2">"iec_60812"</span><span class="p">,</span> <span class="mf">0.55</span></div>
+
+
+
+<div class="viewcode-block" id="normalize_fmea_records">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/fmea_normalizer/index.html#src.dackar.RCA.doc_parsers.fmea_normalizer.normalize_fmea_records">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">normalize_fmea_records</span><span class="p">(</span>
+    <span class="n">records</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">profile_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"auto"</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Normalize parsed records and attach field-level quality status.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">profile_name</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"auto"</span><span class="p">:</span>
+        <span class="n">selected</span><span class="p">,</span> <span class="n">confidence</span> <span class="o">=</span> <span class="n">_autodetect_profile</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+        <span class="n">profile</span> <span class="o">=</span> <span class="n">_profile_by_name</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span>
+        <span class="n">autodetect_conf</span> <span class="o">=</span> <span class="n">confidence</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">profile</span> <span class="o">=</span> <span class="n">_profile_by_name</span><span class="p">(</span><span class="n">profile_name</span><span class="p">)</span>
+        <span class="n">selected</span> <span class="o">=</span> <span class="n">profile</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">autodetect_conf</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+    <span class="n">normalized</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">critical_missing</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">enrichment_missing</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">derived_count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">nlp_count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="c1"># True orphan detection depends on APPLIES_TO resolution and is computed in ingest.</span>
+    <span class="n">orphaned</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="c1"># Canonical compatibility aliases</span>
+        <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"detection_rating"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"detection"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">)</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"potential_causes"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_split_listish</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"potential_causes"</span><span class="p">))</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"corrective_actions"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_split_listish</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"corrective_actions"</span><span class="p">))</span>
+
+        <span class="n">quality</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># Required / optional / enrichment status first.</span>
+        <span class="c1"># (Loop var is ``field_name`` to avoid shadowing ``field`` from dataclasses.)</span>
+        <span class="k">for</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">profile</span><span class="o">.</span><span class="n">required_fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_PRESENT</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_MISSING_CRITICAL</span>
+                <span class="n">critical_missing</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="k">for</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">profile</span><span class="o">.</span><span class="n">optional_fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_PRESENT</span>
+            <span class="k">elif</span> <span class="n">field_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">quality</span><span class="p">:</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_MISSING_OPTIONAL</span>
+        <span class="k">for</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">profile</span><span class="o">.</span><span class="n">enrichment_fields</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_PRESENT</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_MISSING_ENRICHMENT</span>
+                <span class="n">enrichment_missing</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">derivation_method</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># Derivations overwrite missing only.</span>
+        <span class="k">for</span> <span class="n">field_name</span><span class="p">,</span> <span class="n">fn</span> <span class="ow">in</span> <span class="p">(</span><span class="n">profile</span><span class="o">.</span><span class="n">derived_fields</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="k">continue</span>
+            <span class="n">derived</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">derived</span> <span class="ow">in</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="p">[]):</span>
+                <span class="k">continue</span>
+            <span class="c1"># The field was just tagged as missing above; now that derivation</span>
+            <span class="c1"># populates it, reverse the missing count so the ingestion-quality</span>
+            <span class="c1"># report does not double-count it (e.g. expected_anomaly_pattern).</span>
+            <span class="k">if</span> <span class="n">quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span> <span class="o">==</span> <span class="n">FIELD_STATUS_MISSING_CRITICAL</span><span class="p">:</span>
+                <span class="n">critical_missing</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">elif</span> <span class="n">quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field_name</span><span class="p">)</span> <span class="o">==</span> <span class="n">FIELD_STATUS_MISSING_ENRICHMENT</span><span class="p">:</span>
+                <span class="n">enrichment_missing</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">derived</span>
+            <span class="n">nlp_fields</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_nlp_inferred_fields"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">field_name</span> <span class="o">==</span> <span class="s2">"expected_anomaly_pattern"</span> <span class="ow">or</span> <span class="n">field_name</span> <span class="ow">in</span> <span class="n">nlp_fields</span><span class="p">:</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_NLP</span>
+                <span class="n">nlp_count</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">derivation_method</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"nlp:</span><span class="si">{</span><span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">"</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">quality</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">FIELD_STATUS_DERIVED</span>
+                <span class="n">derived_count</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">derivation_method</span><span class="p">[</span><span class="n">field_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">fn</span><span class="o">.</span><span class="vm">__name__</span>
+
+        <span class="c1"># Keep the legacy detection alias consistent after derivation.</span>
+        <span class="k">if</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"detection"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_rating"</span><span class="p">)</span>
+
+        <span class="n">out</span><span class="p">[</span><span class="s2">"_field_quality"</span><span class="p">]</span> <span class="o">=</span> <span class="n">quality</span>
+        <span class="k">if</span> <span class="n">derivation_method</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"_derivation_method"</span><span class="p">]</span> <span class="o">=</span> <span class="n">derivation_method</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"_normalization_profile"</span><span class="p">]</span> <span class="o">=</span> <span class="n">selected</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"_nlp_inferred_fields"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">normalized</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+
+    <span class="n">report</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"total_fms_ingested"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">normalized</span><span class="p">),</span>
+        <span class="s2">"critical_field_missing_count"</span><span class="p">:</span> <span class="n">critical_missing</span><span class="p">,</span>
+        <span class="s2">"enrichment_field_missing_count"</span><span class="p">:</span> <span class="n">enrichment_missing</span><span class="p">,</span>
+        <span class="s2">"derived_field_count"</span><span class="p">:</span> <span class="n">derived_count</span><span class="p">,</span>
+        <span class="s2">"nlp_inferred_field_count"</span><span class="p">:</span> <span class="n">nlp_count</span><span class="p">,</span>
+        <span class="s2">"orphaned_fm_count"</span><span class="p">:</span> <span class="n">orphaned</span><span class="p">,</span>
+        <span class="s2">"profile_used"</span><span class="p">:</span> <span class="n">selected</span><span class="p">,</span>
+        <span class="s2">"format_autodetect_confidence"</span><span class="p">:</span> <span class="n">autodetect_conf</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">normalized</span><span class="p">,</span> <span class="n">report</span></div>
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

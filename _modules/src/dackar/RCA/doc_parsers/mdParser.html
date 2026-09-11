@@ -1,0 +1,1256 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.doc_parsers.mdParser &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.doc_parsers.mdParser</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.doc_parsers.mdParser</h1><div class="highlight"><pre>
+<span></span>
+<span class="c1"># mdParser.py</span>
+<span class="c1"># -------------------------------------------------------------------------</span>
+<span class="c1"># Markdown -&gt; hierarchical sections/chunks + Table/Figure mapping</span>
+<span class="c1"># Enrich with:</span>
+<span class="c1">#  - NER for MBSE entities (dictionary-based) &amp; standards references (regex)</span>
+<span class="c1">#  - Keyword extraction for RAG</span>
+<span class="c1">#  - Provenance + confidence scoring</span>
+<span class="c1"># NOTE: per-section summarization is intentionally not performed here; it is</span>
+<span class="c1"># planned for a dedicated summarizer step in a later MR.</span>
+<span class="c1"># Emits:</span>
+<span class="c1">#  - structured_output.json</span>
+<span class="c1">#  - chunks.jsonl (TextChunk, Table, Figure nodes)</span>
+<span class="c1"># -------------------------------------------------------------------------</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">datetime</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">unicodedata</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">string</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Logging</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">"mdParser"</span><span class="p">)</span></div>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">LOGGER</span><span class="o">.</span><span class="n">handlers</span><span class="p">:</span>
+<div class="viewcode-block" id="ch">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.ch">[docs]</a>
+    <span class="n">ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span></div>
+
+    <span class="n">ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">"</span><span class="si">%(asctime)s</span><span class="s2"> | </span><span class="si">%(levelname)s</span><span class="s2"> | </span><span class="si">%(name)s</span><span class="s2"> | </span><span class="si">%(message)s</span><span class="s2">"</span><span class="p">))</span>
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+<span class="n">LOGGER</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+
+
+<span class="c1"># Canonical section roles per doc type.</span>
+<span class="c1"># Keys are lowercase regex patterns; values are canonical role names.</span>
+<span class="c1"># Extend per plant by adding entries — no YAML dependency needed at this stage.</span>
+<div class="viewcode-block" id="FIELD_LABEL_MAP">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.FIELD_LABEL_MAP">[docs]</a>
+<span class="n">FIELD_LABEL_MAP</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"CR"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="sa">r</span><span class="s2">"description|condition\s+found|condition\s+description|event\s+description"</span><span class="p">:</span> <span class="s2">"description"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"immediate\s+action|initial\s+action|corrective\s+action\s+taken\s+immediately"</span><span class="p">:</span> <span class="s2">"immediate_actions"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"cause|probable\s+cause|root\s+cause|cause\s+statement"</span><span class="p">:</span> <span class="s2">"cause_statement"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"corrective\s+action|recommended\s+action|action\s+item"</span><span class="p">:</span> <span class="s2">"corrective_actions"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"scope|header|title|identification"</span><span class="p">:</span> <span class="s2">"header"</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">"WO"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="sa">r</span><span class="s2">"scope|work\s+scope|description\s+of\s+work|job\s+plan"</span><span class="p">:</span> <span class="s2">"work_scope"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"as.?found|equipment\s+condition\s+found|condition\s+as\s+found"</span><span class="p">:</span> <span class="s2">"as_found"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"work\s+performed|task\s+performed|maintenance\s+performed|work\s+done"</span><span class="p">:</span> <span class="s2">"work_performed"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"as.?left|equipment\s+condition\s+as\s+left|condition\s+as\s+left"</span><span class="p">:</span> <span class="s2">"as_left"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"parts?\s+replaced|material|parts?\s+used"</span><span class="p">:</span> <span class="s2">"parts_replaced"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"scope|header|title|identification"</span><span class="p">:</span> <span class="s2">"header"</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">"SOP"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="sa">r</span><span class="s2">"purpose|objective|scope"</span><span class="p">:</span> <span class="s2">"purpose"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"precondition|initial\s+condition|prerequisites?"</span><span class="p">:</span> <span class="s2">"preconditions"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"safety|caution|warning|hold"</span><span class="p">:</span> <span class="s2">"safety_holds"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"step|procedure\s+step|action"</span><span class="p">:</span> <span class="s2">"steps"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"reference|related\s+document"</span><span class="p">:</span> <span class="s2">"references"</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">"ECA"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="sa">r</span><span class="s2">"event|event\s+description|background"</span><span class="p">:</span> <span class="s2">"event"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"causal\s+factor|cause|contributing\s+cause"</span><span class="p">:</span> <span class="s2">"causal_factors"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"evidence|supporting\s+evidence|data"</span><span class="p">:</span> <span class="s2">"evidence_items"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"rationale|analysis|finding"</span><span class="p">:</span> <span class="s2">"rationale"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"recommendation|corrective\s+action|follow.?up"</span><span class="p">:</span> <span class="s2">"recommended_followups"</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">"OE"</span><span class="p">:</span> <span class="p">{</span>
+        <span class="sa">r</span><span class="s2">"event\s+description|background|event\s+summary|description\s+of\s+event"</span><span class="p">:</span> <span class="s2">"event_description"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"cause|cause\s+determination|root\s+cause|causal\s+factor"</span><span class="p">:</span> <span class="s2">"cause_determination"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"lesson|lessons\s+learned|key\s+finding|takeaway"</span><span class="p">:</span> <span class="s2">"lessons_learned"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"applicability|plant\s+applicability|generic\s+implications?|applicability\s+review"</span><span class="p">:</span> <span class="s2">"applicability"</span><span class="p">,</span>
+        <span class="sa">r</span><span class="s2">"recommendation|recommended\s+action|corrective\s+action|follow.?up\s+action"</span><span class="p">:</span> <span class="s2">"recommended_actions"</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="s2">"OTHER"</span><span class="p">:</span> <span class="p">{},</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Roles that carry high causal/RCA signal — used to set index_in_vector_store priority</span>
+<div class="viewcode-block" id="HIGH_SIGNAL_ROLES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.HIGH_SIGNAL_ROLES">[docs]</a>
+<span class="n">HIGH_SIGNAL_ROLES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"cause_statement"</span><span class="p">,</span> <span class="s2">"as_found"</span><span class="p">,</span> <span class="s2">"as_left"</span><span class="p">,</span> <span class="s2">"causal_factors"</span><span class="p">,</span>
+    <span class="s2">"rationale"</span><span class="p">,</span> <span class="s2">"corrective_actions"</span><span class="p">,</span> <span class="s2">"immediate_actions"</span><span class="p">,</span>
+    <span class="c1"># OE-specific high-signal roles</span>
+    <span class="s2">"cause_determination"</span><span class="p">,</span> <span class="s2">"lessons_learned"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="canonicalize_section_role">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.canonicalize_section_role">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">canonicalize_section_role</span><span class="p">(</span><span class="n">title</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Map a raw section heading to a canonical role name using FIELD_LABEL_MAP.</span>
+<span class="sd">    Falls back to 'body' if no pattern matches.</span>
+<span class="sd">    """</span>
+    <span class="n">label_map</span> <span class="o">=</span> <span class="n">FIELD_LABEL_MAP</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">doc_type</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">title_low</span> <span class="o">=</span> <span class="n">title</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">role</span> <span class="ow">in</span> <span class="n">label_map</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">pattern</span><span class="p">,</span> <span class="n">title_low</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">role</span>
+    <span class="k">return</span> <span class="s2">"body"</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Utilities</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="STOPWORDS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.STOPWORDS">[docs]</a>
+<span class="n">STOPWORDS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"the"</span><span class="p">,</span><span class="s2">"and"</span><span class="p">,</span><span class="s2">"of"</span><span class="p">,</span><span class="s2">"to"</span><span class="p">,</span><span class="s2">"in"</span><span class="p">,</span><span class="s2">"a"</span><span class="p">,</span><span class="s2">"for"</span><span class="p">,</span><span class="s2">"is"</span><span class="p">,</span><span class="s2">"on"</span><span class="p">,</span><span class="s2">"with"</span><span class="p">,</span><span class="s2">"by"</span><span class="p">,</span><span class="s2">"at"</span><span class="p">,</span><span class="s2">"from"</span><span class="p">,</span>
+    <span class="s2">"as"</span><span class="p">,</span><span class="s2">"that"</span><span class="p">,</span><span class="s2">"this"</span><span class="p">,</span><span class="s2">"it"</span><span class="p">,</span><span class="s2">"be"</span><span class="p">,</span><span class="s2">"are"</span><span class="p">,</span><span class="s2">"or"</span><span class="p">,</span><span class="s2">"an"</span><span class="p">,</span><span class="s2">"was"</span><span class="p">,</span><span class="s2">"were"</span><span class="p">,</span><span class="s2">"has"</span><span class="p">,</span><span class="s2">"have"</span><span class="p">,</span><span class="s2">"had"</span><span class="p">,</span>
+    <span class="s2">"which"</span><span class="p">,</span><span class="s2">"not"</span><span class="p">,</span><span class="s2">"can"</span><span class="p">,</span><span class="s2">"may"</span><span class="p">,</span><span class="s2">"will"</span><span class="p">,</span><span class="s2">"within"</span><span class="p">,</span><span class="s2">"per"</span><span class="p">,</span><span class="s2">"performs"</span><span class="p">,</span><span class="s2">"function"</span><span class="p">,</span><span class="s2">"system"</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_now_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser._now_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_now_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">microsecond</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"+00:00"</span><span class="p">,</span> <span class="s2">"Z"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="read_text">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.read_text">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_text</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"r"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="write_json">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.write_json">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">write_json</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">path</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="write_jsonl">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.write_jsonl">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">write_jsonl</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">path</span><span class="p">),</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Markdown parsing</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="HEADING_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.HEADING_RE">[docs]</a>
+<span class="n">HEADING_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^(?P&lt;hashes&gt;#{1,6})\s+(?P&lt;title&gt;.+?)\s*$"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="IMAGE_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.IMAGE_RE">[docs]</a>
+<span class="n">IMAGE_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"!\[(?P&lt;alt&gt;.*?)\]\((?P&lt;path&gt;[^)]+)\)"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="parse_markdown_sections">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.parse_markdown_sections">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_markdown_sections</span><span class="p">(</span><span class="n">md_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Parse headings and build a hierarchical section list.</span>
+<span class="sd">    Each element: {"title", "level", "text", "figures": [...], "tables": [...]}</span>
+<span class="sd">    """</span>
+    <span class="n">lines</span> <span class="o">=</span> <span class="n">md_text</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="n">sections</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">current_section</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">start_section</span><span class="p">(</span><span class="n">title</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">level</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">"title"</span><span class="p">:</span> <span class="n">title</span><span class="p">,</span> <span class="s2">"level"</span><span class="p">:</span> <span class="n">level</span><span class="p">,</span> <span class="s2">"text"</span><span class="p">:</span> <span class="s2">""</span><span class="p">,</span> <span class="s2">"figures"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"tables"</span><span class="p">:</span> <span class="p">[]}</span>
+
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span><span class="p">:</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">HEADING_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">current_section</span> <span class="ow">and</span> <span class="p">(</span><span class="n">current_section</span><span class="p">[</span><span class="s2">"title"</span><span class="p">]</span> <span class="ow">or</span> <span class="n">current_section</span><span class="p">[</span><span class="s2">"text"</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()):</span>
+                <span class="n">sections</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">current_section</span><span class="p">)</span>
+            <span class="n">level</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"hashes"</span><span class="p">))</span>
+            <span class="n">title</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"title"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">current_section</span> <span class="o">=</span> <span class="n">start_section</span><span class="p">(</span><span class="n">title</span><span class="p">,</span> <span class="n">level</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">im</span> <span class="o">=</span> <span class="n">IMAGE_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">im</span><span class="p">:</span>
+            <span class="n">current_section</span> <span class="o">=</span> <span class="n">current_section</span> <span class="ow">or</span> <span class="n">start_section</span><span class="p">(</span><span class="s2">"Untitled"</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="n">current_section</span><span class="p">[</span><span class="s2">"figures"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"alt"</span><span class="p">:</span> <span class="n">im</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"alt"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span>
+                <span class="s2">"path"</span><span class="p">:</span> <span class="n">im</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">"path"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="p">})</span>
+            <span class="n">current_section</span><span class="p">[</span><span class="s2">"text"</span><span class="p">]</span> <span class="o">+=</span> <span class="p">(</span><span class="n">line</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="n">current_section</span> <span class="o">=</span> <span class="n">current_section</span> <span class="ow">or</span> <span class="n">start_section</span><span class="p">(</span><span class="s2">"Untitled"</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+        <span class="n">current_section</span><span class="p">[</span><span class="s2">"text"</span><span class="p">]</span> <span class="o">+=</span> <span class="p">(</span><span class="n">line</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">current_section</span> <span class="ow">and</span> <span class="p">(</span><span class="n">current_section</span><span class="p">[</span><span class="s2">"title"</span><span class="p">]</span> <span class="ow">or</span> <span class="n">current_section</span><span class="p">[</span><span class="s2">"text"</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()):</span>
+        <span class="n">sections</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">current_section</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">sections</span></div>
+
+
+<div class="viewcode-block" id="build_section_paths">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.build_section_paths">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_section_paths</span><span class="p">(</span><span class="n">sections</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Adds a hierarchical section_path based on heading nesting.</span>
+<span class="sd">    """</span>
+    <span class="n">stack</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sections</span><span class="p">:</span>
+        <span class="n">level</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"level"</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+        <span class="n">title</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"title"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"Untitled"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^(\d+)\.\s+"</span><span class="p">,</span> <span class="n">title</span><span class="p">)</span>
+        <span class="n">top_num</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span> <span class="k">if</span> <span class="n">m</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="c1"># Force headings like "1. ...", "2. ..." to be top-level siblings.</span>
+        <span class="c1"># This is more robust for CR/WO/ECA forms where heading levels often drift.</span>
+        <span class="k">if</span> <span class="n">top_num</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">stack</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">eff_level</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">eff_level</span><span class="p">,</span> <span class="n">title</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">while</span> <span class="n">stack</span> <span class="ow">and</span> <span class="n">stack</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">level</span><span class="p">:</span>
+                <span class="n">stack</span><span class="o">.</span><span class="n">pop</span><span class="p">()</span>
+            <span class="n">stack</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">level</span><span class="p">,</span> <span class="n">title</span><span class="p">))</span>
+        <span class="n">ss</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="n">ss</span><span class="p">[</span><span class="s2">"section_path"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">" &gt; "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">t</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">stack</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ss</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Table ingestion (JSON normalized)</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="load_tables_from_json">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.load_tables_from_json">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_tables_from_json</span><span class="p">(</span><span class="n">paths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="n">tables</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span> <span class="ow">or</span> <span class="p">[]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">p</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">p</span><span class="p">):</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Table JSON path missing or not found: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">read_text</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">tables</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="n">clean_table_object</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">data</span><span class="p">])</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Unexpected table JSON format in: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">p</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">"Failed to read table JSON </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">tables</span></div>
+
+
+<div class="viewcode-block" id="_clean_table_cell">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser._clean_table_cell">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_clean_table_cell</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="s2">""</span> <span class="k">if</span> <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">unicodedata</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="s2">"NFKC"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[\u200b\u200c\u200d\u00ad\u2060]'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'\s+'</span><span class="p">,</span> <span class="s1">' '</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="c1"># fix obvious punctuation-inserted word breaks from wrapped extraction</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'([A-Za-z])\.([A-Za-z])'</span><span class="p">,</span> <span class="sa">r</span><span class="s1">'\1\2'</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="c1"># strip stray leading punctuation from wrapped cells</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'^[\.\,\;\:\-]+\s*'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">text</span></div>
+
+
+
+<div class="viewcode-block" id="clean_table_object">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.clean_table_object">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">clean_table_object</span><span class="p">(</span><span class="n">t</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"columns"</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">_clean_table_cell</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"columns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])]</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="p">[[</span><span class="n">_clean_table_cell</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">row</span><span class="p">]</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])]</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"rows"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_repair_wrapped_action_rows</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">"columns"</span><span class="p">],</span> <span class="n">rows</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"caption"</span> <span class="ow">in</span> <span class="n">out</span> <span class="ow">and</span> <span class="n">out</span><span class="p">[</span><span class="s2">"caption"</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"caption"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_clean_table_cell</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="s2">"caption"</span><span class="p">])</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="_repair_wrapped_action_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser._repair_wrapped_action_rows">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_repair_wrapped_action_rows</span><span class="p">(</span><span class="n">columns</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Light repair for common corrective-action tables where wrapped lines corrupt</span>
+<span class="sd">    owner/status columns. Only applies when columns look action-like.</span>
+<span class="sd">    """</span>
+    <span class="n">cols_low</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">columns</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="s2">"owner"</span> <span class="ow">in</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cols_low</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">rows</span>
+
+    <span class="n">repaired</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">owner_idx</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">cols_low</span><span class="p">)</span> <span class="k">if</span> <span class="s2">"owner"</span> <span class="ow">in</span> <span class="n">c</span><span class="p">),</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">owner_idx</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">rows</span>
+
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+        <span class="n">rr</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">rr</span><span class="p">)</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">columns</span><span class="p">):</span>
+            <span class="n">rr</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">""</span><span class="p">)</span>
+        <span class="n">owner</span> <span class="o">=</span> <span class="n">rr</span><span class="p">[</span><span class="n">owner_idx</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="sa">r</span><span class="s1">'.*maintenance'</span><span class="p">,</span> <span class="n">owner</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">):</span>
+            <span class="n">rr</span><span class="p">[</span><span class="n">owner_idx</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"Maintenance"</span>
+        <span class="k">elif</span> <span class="n">re</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="sa">r</span><span class="s1">'.*engineering'</span><span class="p">,</span> <span class="n">owner</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">):</span>
+            <span class="n">rr</span><span class="p">[</span><span class="n">owner_idx</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"Engineering"</span>
+        <span class="n">repaired</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rr</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">repaired</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># NER &amp; references</span>
+<span class="c1"># ------------------------------</span>
+
+<div class="viewcode-block" id="detect_mbse_mentions">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.detect_mbse_mentions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">detect_mbse_mentions</span><span class="p">(</span>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">mbse_entities</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="n">fallback_tags</span> <span class="o">=</span> <span class="n">detect_equipment_tags</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">mbse_entities</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">fallback_tags</span><span class="p">,</span> <span class="p">(</span><span class="mf">0.7</span> <span class="k">if</span> <span class="n">fallback_tags</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="n">found_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">id_matched</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>   <span class="c1"># True = matched by explicit ID, False = label-only</span>
+    <span class="n">text_low</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">mbse_entities</span><span class="p">:</span>
+        <span class="n">ent_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">label</span>  <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">ent</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"label"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">ent_id</span> <span class="ow">and</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">rf</span><span class="s2">"\b</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">ent_id</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span><span class="si">}</span><span class="s2">\b"</span><span class="p">,</span> <span class="n">text_low</span><span class="p">):</span>
+            <span class="n">found_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ent_id</span><span class="p">)</span>
+            <span class="n">id_matched</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>       <span class="c1"># explicit ID hit → high confidence</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">label</span> <span class="ow">and</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">rf</span><span class="s2">"\b</span><span class="si">{</span><span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">label</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span><span class="si">}</span><span class="s2">\b"</span><span class="p">,</span> <span class="n">text_low</span><span class="p">):</span>
+            <span class="n">found_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ent_id</span> <span class="ow">or</span> <span class="n">label</span><span class="p">)</span>
+            <span class="n">id_matched</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>      <span class="c1"># label-only hit → lower confidence</span>
+
+    <span class="n">found_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">found_ids</span><span class="p">))</span>  <span class="c1"># preserve order, deduplicate</span>
+
+    <span class="n">found_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">found_ids</span> <span class="o">+</span> <span class="n">fallback_tags</span><span class="p">))</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">found_ids</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[],</span> <span class="mf">0.0</span>
+
+    <span class="c1"># 0.9 when at least one explicit-ID match; 0.6 for label-only matches</span>
+    <span class="n">conf</span> <span class="o">=</span> <span class="mf">0.9</span> <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">id_matched</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="mf">0.7</span> <span class="k">if</span> <span class="n">fallback_tags</span> <span class="k">else</span> <span class="mf">0.6</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">found_ids</span><span class="p">,</span> <span class="n">conf</span></div>
+
+
+<div class="viewcode-block" id="STANDARD_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.STANDARD_PATTERNS">[docs]</a>
+<span class="n">STANDARD_PATTERNS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="sa">r</span><span class="s2">"\bASME\b.*\bBPVC\b.*\b(Section|Sec\.?|III|NCA|NC|NB|NH)\b"</span><span class="p">,</span>
+    <span class="sa">r</span><span class="s2">"\bIEEE\b.*\b603\b(?:\-\d</span><span class="si">{4}</span><span class="s2">)?"</span><span class="p">,</span>
+    <span class="sa">r</span><span class="s2">"\bANSI\/ANS\-?15\.\d+\b"</span><span class="p">,</span>
+    <span class="sa">r</span><span class="s2">"\bNFPA\b\s?\d+\b"</span><span class="p">,</span>
+    <span class="sa">r</span><span class="s2">"\bASTM\b\s?[A-Z]?\d+\b"</span><span class="p">,</span>
+<span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="TAG_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.TAG_PATTERNS">[docs]</a>
+<span class="n">TAG_PATTERNS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="sa">r</span><span class="s2">"\b[A-Z]{1,4}-\d{2,5}[A-Z]?\b"</span><span class="p">,</span>       <span class="c1"># P-101A, FT-1102</span>
+    <span class="sa">r</span><span class="s2">"\b[A-Z]{2,6}\d{2,5}[A-Z]?\b"</span><span class="p">,</span>        <span class="c1"># more compact variants</span>
+<span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="DOC_REF_PREFIXES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.DOC_REF_PREFIXES">[docs]</a>
+<span class="n">DOC_REF_PREFIXES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"CR"</span><span class="p">,</span> <span class="s2">"WO"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">,</span> <span class="s2">"SOP"</span><span class="p">,</span> <span class="s2">"MR"</span><span class="p">,</span> <span class="s2">"PM"</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="detect_equipment_tags">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.detect_equipment_tags">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">detect_equipment_tags</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">found</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">TAG_PATTERNS</span><span class="p">:</span>
+        <span class="n">found</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">pat</span><span class="p">,</span> <span class="n">text</span><span class="p">))</span>
+    <span class="n">clean</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">tag</span> <span class="ow">in</span> <span class="n">found</span><span class="p">:</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">tag</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"-"</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s2">"-"</span> <span class="ow">in</span> <span class="n">tag</span> <span class="k">else</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^[A-Z]+"</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^[A-Z]+"</span><span class="p">,</span> <span class="n">tag</span><span class="p">)</span> <span class="k">else</span> <span class="s2">""</span>
+        <span class="k">if</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="n">DOC_REF_PREFIXES</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">clean</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">clean</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="detect_document_refs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.detect_document_refs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">detect_document_refs</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">refs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="n">DOC_REF_PREFIXES</span><span class="p">:</span>
+        <span class="n">refs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+            <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">rf</span><span class="s2">"\b</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">-\d</span><span class="se">{{</span><span class="s2">2,5</span><span class="se">}}</span><span class="s2">(?:-\d</span><span class="se">{{</span><span class="s2">2,5</span><span class="se">}}</span><span class="s2">)?[A-Z]?\b"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">refs</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="detect_standard_refs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.detect_standard_refs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">detect_standard_refs</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">float</span><span class="p">]:</span>
+    <span class="n">refs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">pat</span> <span class="ow">in</span> <span class="n">STANDARD_PATTERNS</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">pat</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">):</span>
+            <span class="n">refs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+    <span class="n">refs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">refs</span><span class="p">))</span>
+    <span class="n">conf</span> <span class="o">=</span> <span class="mf">0.9</span> <span class="k">if</span> <span class="n">refs</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="n">refs</span><span class="p">,</span> <span class="n">conf</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Keyword extraction</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="extract_keywords">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.extract_keywords">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">extract_keywords</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">12</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="c1"># Keywords should be computed from cleaned text without markup noise.</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">strip_markup_noise</span><span class="p">(</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="n">tokens</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[A-Za-z0-9\-]+"</span><span class="p">,</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+    <span class="n">tokens</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tokens</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STOPWORDS</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="n">freq</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+    <span class="n">bigrams</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">([</span><span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">tokens</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">tokens</span><span class="p">[</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">)])</span>
+    <span class="n">combined</span> <span class="o">=</span> <span class="p">[(</span><span class="n">w</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">freq</span><span class="o">.</span><span class="n">items</span><span class="p">()]</span>
+    <span class="n">combined</span> <span class="o">+=</span> <span class="p">[(</span><span class="n">bg</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">bg</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bigrams</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">tok</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">STOPWORDS</span> <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">bg</span><span class="o">.</span><span class="n">split</span><span class="p">())]</span>
+    <span class="n">combined</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">w</span> <span class="k">for</span> <span class="n">w</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">combined</span><span class="p">[:</span><span class="n">top_k</span><span class="p">]]</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Table/Figure → Section assignment</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="assign_tables_to_sections">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.assign_tables_to_sections">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">assign_tables_to_sections</span><span class="p">(</span><span class="n">tables</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">sections</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">doc_index</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="n">section_texts</span> <span class="o">=</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">],</span> <span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sections</span><span class="p">)]</span>
+    <span class="n">enriched_tables</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tables</span><span class="p">):</span>
+        <span class="n">text_probe</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"columns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]))</span> <span class="o">+</span> <span class="s2">" "</span> <span class="o">+</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">,</span> <span class="p">[])])</span>
+        <span class="n">best_score</span><span class="p">,</span> <span class="n">best_sec_idx</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span> <span class="kc">None</span>
+        <span class="n">t_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">extract_keywords</span><span class="p">(</span><span class="n">text_probe</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">20</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">si</span><span class="p">,</span> <span class="n">stitle</span><span class="p">,</span> <span class="n">stext</span> <span class="ow">in</span> <span class="n">section_texts</span><span class="p">:</span>
+            <span class="n">s_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">extract_keywords</span><span class="p">(</span><span class="n">stext</span><span class="p">,</span> <span class="n">top_k</span><span class="o">=</span><span class="mi">20</span><span class="p">))</span>
+            <span class="n">overlap</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">t_tokens</span> <span class="o">&amp;</span> <span class="n">s_tokens</span><span class="p">)</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="n">overlap</span> <span class="o">/</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">t_tokens</span><span class="p">)</span> <span class="o">+</span> <span class="mf">1e-6</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;</span> <span class="n">best_score</span><span class="p">:</span>
+                <span class="n">best_score</span><span class="p">,</span> <span class="n">best_sec_idx</span> <span class="o">=</span> <span class="n">score</span><span class="p">,</span> <span class="n">si</span>
+        <span class="k">if</span> <span class="n">best_sec_idx</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">sections</span><span class="p">:</span>
+            <span class="n">best_sec_idx</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">sections</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="n">best_score</span> <span class="o">=</span> <span class="mf">0.5</span>
+        <span class="n">enriched</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+        <span class="n">enriched</span><span class="p">[</span><span class="s2">"belongs_to_section"</span><span class="p">]</span> <span class="o">=</span> <span class="n">sections</span><span class="p">[</span><span class="n">best_sec_idx</span><span class="p">][</span><span class="s2">"title"</span><span class="p">]</span> <span class="k">if</span> <span class="n">best_sec_idx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">enriched</span><span class="p">[</span><span class="s2">"link_confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.5</span> <span class="o">+</span> <span class="n">best_score</span><span class="p">),</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">enriched_tables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">enriched</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">enriched_tables</span></div>
+
+
+<div class="viewcode-block" id="assign_figures_to_sections">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.assign_figures_to_sections">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">assign_figures_to_sections</span><span class="p">(</span>
+    <span class="n">figures_in_text</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="n">sections</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="n">doc_figures</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Build a figure list with section assignments.</span>
+
+<span class="sd">    Sources (merged, deduplicated by path):</span>
+<span class="sd">      1. Inline Markdown image references parsed per section (s["figures"]).</span>
+<span class="sd">      2. `doc_figures`: figures list from document_index (Marker path-indexed).</span>
+<span class="sd">    """</span>
+    <span class="n">fig_records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">seen_paths</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="c1"># Source 1: inline markdown figures already attached to sections</span>
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sections</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">fig</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"figures"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"path"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="n">seen_paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+            <span class="n">fig_records</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"path"</span><span class="p">:</span> <span class="n">path</span><span class="p">,</span>
+                <span class="s2">"alt"</span><span class="p">:</span> <span class="n">fig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alt"</span><span class="p">),</span>
+                <span class="s2">"belongs_to_section"</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">],</span>
+                <span class="s2">"link_confidence"</span><span class="p">:</span> <span class="mf">0.9</span><span class="p">,</span>
+            <span class="p">})</span>
+
+    <span class="c1"># Source 2: Marker-indexed figures not already captured above</span>
+    <span class="k">for</span> <span class="n">fig</span> <span class="ow">in</span> <span class="p">(</span><span class="n">doc_figures</span> <span class="ow">or</span> <span class="p">[]):</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="n">fig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"path"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">seen_paths</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">seen_paths</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="c1"># No inline section reference: mark as unassigned (graph query can resolve later)</span>
+        <span class="n">fig_records</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s2">"path"</span><span class="p">:</span> <span class="n">path</span><span class="p">,</span>
+            <span class="s2">"alt"</span><span class="p">:</span> <span class="n">fig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
+            <span class="s2">"belongs_to_section"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"link_confidence"</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>   <span class="c1"># lower — heuristically unassigned</span>
+        <span class="p">})</span>
+
+    <span class="k">return</span> <span class="n">fig_records</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Main API</span>
+<span class="c1"># ------------------------------</span>
+
+
+<div class="viewcode-block" id="_section_to_chunk">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser._section_to_chunk">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_section_to_chunk</span><span class="p">(</span>
+    <span class="n">s</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">source_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ingest_id</span><span class="p">,</span> <span class="n">classification</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content_hash</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Build a single section-level TextChunk with canonical role."""</span>
+    <span class="n">role</span> <span class="o">=</span> <span class="n">canonicalize_section_role</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">],</span> <span class="n">doc_type</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"TextChunk"</span><span class="p">,</span>
+        <span class="s2">"granularity"</span><span class="p">:</span> <span class="s2">"section"</span><span class="p">,</span>
+        <span class="s2">"chunk_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"chunk:</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">:sec</span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+        <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+        <span class="s2">"doc_type"</span><span class="p">:</span> <span class="n">doc_type</span><span class="p">,</span>
+        <span class="s2">"doc_key"</span><span class="p">:</span> <span class="n">Path</span><span class="p">(</span><span class="n">doc_name</span><span class="p">)</span><span class="o">.</span><span class="n">stem</span><span class="p">,</span>
+        <span class="s2">"section_title"</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">],</span>
+        <span class="s2">"section_path"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_path"</span><span class="p">),</span>
+        <span class="s2">"section_role"</span><span class="p">:</span> <span class="n">role</span><span class="p">,</span>                       <span class="c1"># canonical role — feeds stage3_to_6</span>
+        <span class="s2">"heading_level"</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">"level"</span><span class="p">],</span>
+        <span class="s2">"text"</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">],</span>
+        <span class="s2">"raw_text"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"keywords"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"keywords"</span><span class="p">,</span> <span class="p">[]),</span>
+        <span class="s2">"mentions_component_ids"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mentions_component_ids"</span><span class="p">,</span> <span class="p">[]),</span>
+        <span class="s2">"document_refs"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"document_refs"</span><span class="p">,</span> <span class="p">[]),</span>
+        <span class="s2">"references_standard_refs"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"references_standard_refs"</span><span class="p">,</span> <span class="p">[]),</span>
+        <span class="s2">"nureg_section_ids"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nureg_section_ids"</span><span class="p">,</span> <span class="p">[]),</span>
+        <span class="s2">"page_start"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_start"</span><span class="p">),</span>
+        <span class="s2">"page_end"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_end"</span><span class="p">),</span>
+        <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"source_doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+            <span class="s2">"extraction_method"</span><span class="p">:</span> <span class="s2">"nlp+regex (raw-first)"</span><span class="p">,</span>
+            <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">(),</span>
+            <span class="s2">"confidence"</span><span class="p">:</span> <span class="nb">max</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mentions_confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+                              <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"references_confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+        <span class="p">},</span>
+        <span class="s2">"classification"</span><span class="p">:</span> <span class="n">classification</span><span class="p">,</span>
+        <span class="s2">"index_in_vector_store"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">"index_in_graph"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">"source_path"</span><span class="p">:</span> <span class="n">source_path</span><span class="p">,</span>
+        <span class="s2">"doc_name"</span><span class="p">:</span> <span class="n">doc_name</span><span class="p">,</span>
+        <span class="s2">"ingest_id"</span><span class="p">:</span> <span class="n">ingest_id</span><span class="p">,</span>
+        <span class="s2">"content_hash"</span><span class="p">:</span> <span class="n">content_hash</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_paragraph_subchunks">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser._paragraph_subchunks">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_paragraph_subchunks</span><span class="p">(</span>
+    <span class="n">s</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">sec_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">source_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ingest_id</span><span class="p">,</span> <span class="n">classification</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span>
+    <span class="n">mbse_entities</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Paragraph sub-chunks for a section. Only produced for high-signal roles."""</span>
+    <span class="n">role</span> <span class="o">=</span> <span class="n">canonicalize_section_role</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">],</span> <span class="n">doc_type</span><span class="p">)</span>
+    <span class="c1"># Skip sub-chunking for header/body/reference sections — they add noise</span>
+    <span class="k">if</span> <span class="n">role</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">HIGH_SIGNAL_ROLES</span> <span class="ow">and</span> <span class="n">doc_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"SOP"</span><span class="p">,):</span>
+        <span class="k">return</span> <span class="p">[]</span>
+    <span class="n">paragraphs</span> <span class="o">=</span> <span class="n">split_into_paragraphs</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+    <span class="n">subtexts</span> <span class="o">=</span> <span class="n">chunk_paragraphs</span><span class="p">(</span><span class="n">paragraphs</span><span class="p">,</span> <span class="n">max_chars</span><span class="o">=</span><span class="mi">1400</span><span class="p">,</span> <span class="n">overlap_chars</span><span class="o">=</span><span class="mi">200</span><span class="p">)</span>
+    <span class="n">chunks</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">subtext</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">subtexts</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"TextChunk"</span><span class="p">,</span>
+            <span class="s2">"granularity"</span><span class="p">:</span> <span class="s2">"paragraph"</span><span class="p">,</span>
+            <span class="s2">"chunk_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"chunk:</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">:sec</span><span class="si">{</span><span class="n">sec_idx</span><span class="si">}</span><span class="s2">:p</span><span class="si">{</span><span class="n">j</span><span class="si">:</span><span class="s2">03d</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+            <span class="s2">"doc_type"</span><span class="p">:</span> <span class="n">doc_type</span><span class="p">,</span>
+            <span class="s2">"section_title"</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">],</span>
+            <span class="s2">"section_path"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_path"</span><span class="p">),</span>
+            <span class="s2">"section_role"</span><span class="p">:</span> <span class="n">role</span><span class="p">,</span>
+            <span class="s2">"heading_level"</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">"level"</span><span class="p">],</span>
+            <span class="s2">"section_index"</span><span class="p">:</span> <span class="n">sec_idx</span><span class="p">,</span>
+            <span class="s2">"paragraph_index"</span><span class="p">:</span> <span class="n">j</span><span class="p">,</span>
+            <span class="s2">"text"</span><span class="p">:</span> <span class="n">subtext</span><span class="p">,</span>
+            <span class="s2">"raw_text"</span><span class="p">:</span> <span class="s2">""</span><span class="p">,</span>
+            <span class="s2">"keywords"</span><span class="p">:</span> <span class="n">extract_keywords</span><span class="p">(</span><span class="n">subtext</span><span class="p">),</span>
+            <span class="s2">"mentions_component_ids"</span><span class="p">:</span> <span class="n">detect_mbse_mentions</span><span class="p">(</span><span class="n">subtext</span><span class="p">,</span> <span class="n">mbse_entities</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="s2">"references_standard_refs"</span><span class="p">:</span> <span class="n">detect_standard_refs</span><span class="p">(</span><span class="n">subtext</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="s2">"nureg_section_ids"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nureg_section_ids"</span><span class="p">,</span> <span class="p">[]),</span>
+            <span class="s2">"page_start"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_start"</span><span class="p">),</span>
+            <span class="s2">"page_end"</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_end"</span><span class="p">),</span>
+            <span class="s2">"truncated"</span><span class="p">:</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">subtexts</span><span class="p">),</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"source_doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+                <span class="s2">"extraction_method"</span><span class="p">:</span> <span class="s2">"nlp+regex (raw-first)"</span><span class="p">,</span>
+                <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">(),</span>
+                <span class="s2">"confidence"</span><span class="p">:</span> <span class="mf">0.8</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">"classification"</span><span class="p">:</span> <span class="n">classification</span><span class="p">,</span>
+            <span class="s2">"index_in_vector_store"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"index_in_graph"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+            <span class="s2">"source_path"</span><span class="p">:</span> <span class="n">source_path</span><span class="p">,</span>
+            <span class="s2">"doc_name"</span><span class="p">:</span> <span class="n">doc_name</span><span class="p">,</span>
+            <span class="s2">"ingest_id"</span><span class="p">:</span> <span class="n">ingest_id</span><span class="p">,</span>
+            <span class="s2">"content_hash"</span><span class="p">:</span> <span class="n">content_hash</span><span class="p">,</span>
+        <span class="p">})</span>
+    <span class="k">return</span> <span class="n">chunks</span></div>
+
+
+
+<div class="viewcode-block" id="build_chunks_for_doc_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.build_chunks_for_doc_type">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_chunks_for_doc_type</span><span class="p">(</span>
+    <span class="n">sections</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">doc_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">source_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">ingest_id</span><span class="p">,</span>
+    <span class="n">classification</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">content_hash</span><span class="p">,</span>
+    <span class="n">mbse_entities</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Dispatch to the correct chunking strategy based on doc_type.</span>
+<span class="sd">    All strategies produce section-level chunks with canonical roles.</span>
+<span class="sd">    SOP additionally produces one chunk per step group.</span>
+<span class="sd">    """</span>
+    <span class="n">chunks</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"SOP"</span><span class="p">:</span>
+        <span class="c1"># SOP: each section is a step/step-group; sub-chunk every section</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sections</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_section_to_chunk</span><span class="p">(</span>
+                <span class="n">s</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">doc_name</span><span class="p">,</span>
+                <span class="n">source_path</span><span class="p">,</span> <span class="n">ingest_id</span><span class="p">,</span> <span class="n">classification</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">))</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">_paragraph_subchunks</span><span class="p">(</span>
+                <span class="n">s</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">doc_name</span><span class="p">,</span>
+                <span class="n">source_path</span><span class="p">,</span> <span class="n">ingest_id</span><span class="p">,</span> <span class="n">classification</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">mbse_entities</span><span class="p">))</span>
+
+    <span class="k">elif</span> <span class="n">doc_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"CR"</span><span class="p">,</span> <span class="s2">"WO"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">,</span> <span class="s2">"OE"</span><span class="p">):</span>
+        <span class="c1"># Field-boundary chunking: one chunk per canonical role.</span>
+        <span class="c1"># Sections that map to the same role are merged before chunking.</span>
+        <span class="n">role_buckets</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sections</span><span class="p">:</span>
+            <span class="n">role</span> <span class="o">=</span> <span class="n">canonicalize_section_role</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">],</span> <span class="n">doc_type</span><span class="p">)</span>
+            <span class="n">role_buckets</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">role</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+
+        <span class="n">idx</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">role</span><span class="p">,</span> <span class="n">role_sections</span> <span class="ow">in</span> <span class="n">role_buckets</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">idx</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="c1"># Merge all sections sharing a role into one logical chunk</span>
+            <span class="n">merged_text</span> <span class="o">=</span> <span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">]</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">merged_raw</span> <span class="o">=</span> <span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">merged_keywords</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                <span class="n">kw</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span> <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"keywords"</span><span class="p">,</span> <span class="p">[])))</span>
+            <span class="n">merged_mentions</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                <span class="n">m</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mentions_component_ids"</span><span class="p">,</span> <span class="p">[])))</span>
+            <span class="n">merged_refs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                <span class="n">r</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"references_standard_refs"</span><span class="p">,</span> <span class="p">[])))</span>
+            <span class="n">merged_doc_refs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+                <span class="n">r</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"document_refs"</span><span class="p">,</span> <span class="p">[])))</span>
+
+            <span class="n">synthetic_section</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"title"</span><span class="p">:</span> <span class="n">role_sections</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">"title"</span><span class="p">],</span>
+                <span class="s2">"level"</span><span class="p">:</span> <span class="n">role_sections</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="s2">"level"</span><span class="p">],</span>
+                <span class="s2">"section_path"</span><span class="p">:</span> <span class="n">role_sections</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_path"</span><span class="p">),</span>
+                <span class="s2">"text"</span><span class="p">:</span> <span class="n">merged_text</span><span class="p">,</span>
+                <span class="s2">"raw_text"</span><span class="p">:</span> <span class="n">merged_raw</span><span class="p">,</span>
+                <span class="s2">"keywords"</span><span class="p">:</span> <span class="n">merged_keywords</span><span class="p">,</span>
+                <span class="s2">"mentions_component_ids"</span><span class="p">:</span> <span class="n">merged_mentions</span><span class="p">,</span>
+                <span class="s2">"references_standard_refs"</span><span class="p">:</span> <span class="n">merged_refs</span><span class="p">,</span>
+                <span class="s2">"document_refs"</span><span class="p">:</span> <span class="n">merged_doc_refs</span><span class="p">,</span>
+                <span class="s2">"mentions_confidence"</span><span class="p">:</span> <span class="nb">max</span><span class="p">(</span>
+                    <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mentions_confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span><span class="p">),</span>
+                <span class="s2">"references_confidence"</span><span class="p">:</span> <span class="nb">max</span><span class="p">(</span>
+                    <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"references_confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">role_sections</span><span class="p">),</span>
+                <span class="s2">"nureg_section_ids"</span><span class="p">:</span> <span class="n">role_sections</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nureg_section_ids"</span><span class="p">,</span> <span class="p">[]),</span>
+                <span class="s2">"page_start"</span><span class="p">:</span> <span class="n">role_sections</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_start"</span><span class="p">),</span>
+                <span class="s2">"page_end"</span><span class="p">:</span> <span class="n">role_sections</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_end"</span><span class="p">),</span>
+            <span class="p">}</span>
+            <span class="n">chunk</span> <span class="o">=</span> <span class="n">_section_to_chunk</span><span class="p">(</span>
+                <span class="n">synthetic_section</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">doc_name</span><span class="p">,</span>
+                <span class="n">source_path</span><span class="p">,</span> <span class="n">ingest_id</span><span class="p">,</span> <span class="n">classification</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">)</span>
+            <span class="n">chunk</span><span class="p">[</span><span class="s2">"section_role"</span><span class="p">]</span> <span class="o">=</span> <span class="n">role</span>          <span class="c1"># already set but be explicit</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+
+            <span class="c1"># Sub-chunk high-signal roles only</span>
+            <span class="k">if</span> <span class="n">role</span> <span class="ow">in</span> <span class="n">HIGH_SIGNAL_ROLES</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">merged_text</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">600</span><span class="p">:</span>
+                <span class="n">chunks</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">_paragraph_subchunks</span><span class="p">(</span>
+                    <span class="n">synthetic_section</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">doc_name</span><span class="p">,</span>
+                    <span class="n">source_path</span><span class="p">,</span> <span class="n">ingest_id</span><span class="p">,</span> <span class="n">classification</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">mbse_entities</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># OTHER: original heading-based strategy</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sections</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_section_to_chunk</span><span class="p">(</span>
+                <span class="n">s</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">doc_name</span><span class="p">,</span>
+                <span class="n">source_path</span><span class="p">,</span> <span class="n">ingest_id</span><span class="p">,</span> <span class="n">classification</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">chunks</span></div>
+
+
+<div class="viewcode-block" id="md_parser">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.md_parser">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">md_parser</span><span class="p">(</span>
+    <span class="n">document_index</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="n">destination_folder</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">mbse_entities</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">nureg_section_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Parse a document's extracted Markdown (produced by ``pdfParser``) into</span>
+<span class="sd">    hierarchical sections/chunks enriched with MBSE mentions, standards/document</span>
+<span class="sd">    references, and keywords, then persist ``structured_output.json`` and</span>
+<span class="sd">    ``chunks.jsonl``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    document_index : Dict[str, Any]</span>
+<span class="sd">        The index dict returned by ``pdfParser`` (must include ``text_md_path``).</span>
+<span class="sd">    destination_folder : Optional[str]</span>
+<span class="sd">        Root destination for parsed outputs. If None, it is inferred from the</span>
+<span class="sd">        parent of the Markdown text file's directory.</span>
+<span class="sd">    mbse_entities : Optional[List[Dict[str, Any]]]</span>
+<span class="sd">        Optional MBSE entity dictionary used for dictionary-based NER of</span>
+<span class="sd">        component mentions.</span>
+<span class="sd">    nureg_section_ids : Optional[List[str]]</span>
+<span class="sd">        Optional NUREG section identifiers to attach to every section.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    Dict[str, Any]</span>
+<span class="sd">        The structured output dict (also written to ``structured_output.json``),</span>
+<span class="sd">        mirroring the section/table/figure chunks emitted to ``chunks.jsonl``.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        If ``document_index`` is not a dict.</span>
+<span class="sd">    FileNotFoundError</span>
+<span class="sd">        If ``text_md_path`` is missing or does not exist on disk.</span>
+<span class="sd">    """</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">document_index</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">document_index</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"document_index must be a dict produced by pdfParser."</span><span class="p">)</span>
+    <span class="n">text_md_path</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text_md_path"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text_md_path</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">text_md_path</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"text_md_path not found: </span><span class="si">{</span><span class="n">text_md_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">destination_folder</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">destination_folder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">text_md_path</span><span class="p">))</span>
+
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Reading Markdown text from: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">text_md_path</span><span class="p">)</span>
+    <span class="n">md_text</span> <span class="o">=</span> <span class="n">read_text</span><span class="p">(</span><span class="n">text_md_path</span><span class="p">)</span>
+    <span class="n">sections</span> <span class="o">=</span> <span class="n">parse_markdown_sections</span><span class="p">(</span><span class="n">md_text</span><span class="p">)</span>
+    <span class="n">sections</span> <span class="o">=</span> <span class="n">build_section_paths</span><span class="p">(</span><span class="n">sections</span><span class="p">)</span>
+
+    <span class="n">tables</span> <span class="o">=</span> <span class="n">load_tables_from_json</span><span class="p">(</span><span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"tables_paths"</span><span class="p">))</span>
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Assigning tables to sections with heuristic matching."</span><span class="p">)</span>
+    <span class="n">enriched_tables</span> <span class="o">=</span> <span class="n">assign_tables_to_sections</span><span class="p">(</span><span class="n">tables</span><span class="p">,</span> <span class="n">sections</span><span class="p">,</span> <span class="n">document_index</span><span class="p">)</span>
+    <span class="n">section_path_by_title</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">]:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_path"</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sections</span>
+    <span class="p">}</span>
+
+    <span class="n">enriched_figures</span> <span class="o">=</span> <span class="n">assign_figures_to_sections</span><span class="p">(</span>
+        <span class="n">figures_in_text</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">sections</span><span class="o">=</span><span class="n">sections</span><span class="p">,</span>
+        <span class="n">doc_figures</span><span class="o">=</span><span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"figures"</span><span class="p">,</span> <span class="p">[]),</span>
+    <span class="p">)</span>
+
+    <span class="c1">#Build a lookup: image path -&gt; section title + confidence</span>
+    <span class="n">_fig_section_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">f</span><span class="p">[</span><span class="s2">"path"</span><span class="p">]:</span> <span class="p">{</span>
+            <span class="s2">"section"</span><span class="p">:</span> <span class="n">f</span><span class="p">[</span><span class="s2">"belongs_to_section"</span><span class="p">],</span>
+            <span class="s2">"section_path"</span><span class="p">:</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_path"</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sections</span> <span class="k">if</span> <span class="n">s</span><span class="p">[</span><span class="s2">"title"</span><span class="p">]</span> <span class="o">==</span> <span class="n">f</span><span class="p">[</span><span class="s2">"belongs_to_section"</span><span class="p">]),</span>
+                <span class="kc">None</span><span class="p">,</span>
+            <span class="p">),</span>
+            <span class="s2">"conf"</span><span class="p">:</span> <span class="n">f</span><span class="p">[</span><span class="s2">"link_confidence"</span><span class="p">],</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">enriched_figures</span>
+    <span class="p">}</span>
+
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Running NER and standards detection per section."</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">sections</span><span class="p">:</span>
+        <span class="c1"># Preserve raw extracted text for audit/traceability</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"raw_text"</span><span class="p">]</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+
+        <span class="c1"># Create a safe cleaned text for indexing/keywording/LLM input (if used later)</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">]</span> <span class="o">=</span> <span class="n">normalize_raw_text</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+
+        <span class="n">mentions</span><span class="p">,</span> <span class="n">conf_m</span> <span class="o">=</span> <span class="n">detect_mbse_mentions</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">],</span> <span class="n">mbse_entities</span><span class="p">)</span>
+        <span class="n">doc_refs</span> <span class="o">=</span> <span class="n">detect_document_refs</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">])</span>
+        <span class="n">stds</span><span class="p">,</span> <span class="n">conf_s</span> <span class="o">=</span> <span class="n">detect_standard_refs</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">])</span>
+
+        <span class="n">s</span><span class="p">[</span><span class="s2">"mentions_component_ids"</span><span class="p">]</span> <span class="o">=</span> <span class="n">mentions</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"mentions_confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="n">conf_m</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"document_refs"</span><span class="p">]</span> <span class="o">=</span> <span class="n">doc_refs</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"references_standard_refs"</span><span class="p">]</span> <span class="o">=</span> <span class="n">stds</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"references_confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="n">conf_s</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"nureg_section_ids"</span><span class="p">]</span> <span class="o">=</span> <span class="n">nureg_section_ids</span> <span class="ow">or</span> <span class="p">[]</span>
+        
+        <span class="c1"># Keep raw copy for provenance/audit</span>
+        <span class="n">s</span><span class="p">[</span><span class="s2">"_raw_text"</span><span class="p">]</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+
+        <span class="n">s</span><span class="p">[</span><span class="s2">"keywords"</span><span class="p">]</span> <span class="o">=</span> <span class="n">extract_keywords</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">"text"</span><span class="p">])</span>
+
+    <span class="n">doc_id</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">)</span>
+    <span class="n">source_path</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_path"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relpath"</span><span class="p">)</span>
+    <span class="n">doc_name</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_name"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">source_path</span><span class="p">)</span> <span class="k">if</span> <span class="n">source_path</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">ingest_id</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ingest_id"</span><span class="p">)</span>
+    
+    <span class="n">classification</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"classification"</span><span class="p">,</span> <span class="s2">"internal"</span><span class="p">)</span>
+
+    <span class="c1"># canonical content hash for all chunks (fallback: doc_version)</span>
+    <span class="n">content_hash</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"content_hash"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_version"</span><span class="p">)</span>
+
+    <span class="n">doc_type</span> <span class="o">=</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">,</span> <span class="s2">"OTHER"</span><span class="p">)</span>
+
+    <span class="n">chunks</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="n">build_chunks_for_doc_type</span><span class="p">(</span>
+        <span class="n">sections</span><span class="o">=</span><span class="n">sections</span><span class="p">,</span>
+        <span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span>
+        <span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">,</span>
+        <span class="n">doc_name</span><span class="o">=</span><span class="n">doc_name</span><span class="p">,</span>
+        <span class="n">source_path</span><span class="o">=</span><span class="n">source_path</span><span class="p">,</span>
+        <span class="n">ingest_id</span><span class="o">=</span><span class="n">ingest_id</span><span class="p">,</span>
+        <span class="n">classification</span><span class="o">=</span><span class="n">classification</span><span class="p">,</span>
+        <span class="n">content_hash</span><span class="o">=</span><span class="n">content_hash</span><span class="p">,</span>
+        <span class="n">mbse_entities</span><span class="o">=</span><span class="n">mbse_entities</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">tidx</span><span class="p">,</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">enriched_tables</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">chunk_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"table:</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">tidx</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">headers</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"columns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rows"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">caption</span> <span class="o">=</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"caption"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">table_text</span> <span class="o">=</span> <span class="n">textify_table</span><span class="p">(</span><span class="n">caption</span><span class="p">,</span> <span class="n">headers</span><span class="p">,</span> <span class="n">rows</span><span class="p">)</span>
+        <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"Table"</span><span class="p">,</span>
+            <span class="s2">"granularity"</span><span class="p">:</span> <span class="s2">"table"</span><span class="p">,</span>
+            <span class="s2">"chunk_id"</span><span class="p">:</span> <span class="n">chunk_id</span><span class="p">,</span>
+            <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+            <span class="s2">"belongs_to_section"</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"belongs_to_section"</span><span class="p">),</span>
+            <span class="s2">"section_path"</span><span class="p">:</span> <span class="n">section_path_by_title</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"belongs_to_section"</span><span class="p">)),</span>
+            <span class="s2">"columns"</span><span class="p">:</span> <span class="n">headers</span><span class="p">,</span>
+            <span class="s2">"rows"</span><span class="p">:</span> <span class="n">rows</span><span class="p">,</span>
+            <span class="s2">"caption"</span><span class="p">:</span> <span class="n">caption</span><span class="p">,</span>
+            <span class="s2">"page"</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page"</span><span class="p">),</span>
+            <span class="s2">"text"</span><span class="p">:</span> <span class="n">table_text</span><span class="p">,</span>   <span class="c1"># textual representation indexed by Chroma</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"source_doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+                <span class="s2">"extraction_method"</span><span class="p">:</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"extraction"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"tables"</span><span class="p">),</span>
+                <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">(),</span>
+                <span class="s2">"confidence"</span><span class="p">:</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"link_confidence"</span><span class="p">,</span> <span class="mf">0.6</span><span class="p">)</span>
+            <span class="p">},</span>
+            <span class="s2">"classification"</span><span class="p">:</span> <span class="n">classification</span><span class="p">,</span>
+            <span class="s2">"index_in_vector_store"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"index_in_graph"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"source_path"</span><span class="p">:</span> <span class="n">source_path</span><span class="p">,</span>
+            <span class="s2">"doc_name"</span><span class="p">:</span> <span class="n">doc_name</span><span class="p">,</span>
+            <span class="s2">"ingest_id"</span><span class="p">:</span> <span class="n">ingest_id</span><span class="p">,</span>
+            <span class="s2">"content_hash"</span><span class="p">:</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"content_hash"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_version"</span><span class="p">)</span>
+        <span class="p">})</span>
+
+    <span class="k">for</span> <span class="n">fidx</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"figures"</span><span class="p">,</span> <span class="p">[]),</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">fig_path</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"path"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">section_info</span> <span class="o">=</span> <span class="n">_fig_section_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">fig_path</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="c1"># Compose indexable alt text from available metadata</span>
+        <span class="n">alt_text_parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">[</span><span class="n">f</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span> <span class="n">f</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alt"</span><span class="p">),</span> <span class="n">f</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"caption"</span><span class="p">)]</span> <span class="k">if</span> <span class="n">p</span><span class="p">]</span>
+        <span class="n">alt_text</span> <span class="o">=</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">alt_text_parts</span><span class="p">)</span> <span class="k">if</span> <span class="n">alt_text_parts</span> <span class="k">else</span> <span class="s2">""</span>
+
+        <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"Figure"</span><span class="p">,</span>
+            <span class="s2">"chunk_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"figure:</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">fidx</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+            <span class="s2">"belongs_to_section"</span><span class="p">:</span> <span class="n">section_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section"</span><span class="p">),</span>      
+            <span class="s2">"section_path"</span><span class="p">:</span> <span class="n">section_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_path"</span><span class="p">),</span>
+            <span class="s2">"path"</span><span class="p">:</span> <span class="n">fig_path</span><span class="p">,</span>
+            <span class="s2">"alt"</span><span class="p">:</span> <span class="n">f</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
+            <span class="s2">"caption"</span><span class="p">:</span> <span class="n">f</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"caption"</span><span class="p">),</span>
+            <span class="s2">"page"</span><span class="p">:</span> <span class="n">f</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page"</span><span class="p">),</span>
+            <span class="s2">"text"</span><span class="p">:</span> <span class="n">alt_text</span><span class="p">,</span>                                       
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"source_doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+                <span class="s2">"extraction_method"</span><span class="p">:</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"extraction"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">),</span>
+                <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">(),</span>
+                <span class="s2">"confidence"</span><span class="p">:</span> <span class="n">section_info</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"conf"</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">),</span>
+            <span class="p">},</span>
+            <span class="s2">"classification"</span><span class="p">:</span> <span class="n">classification</span><span class="p">,</span>
+            <span class="s2">"index_in_vector_store"</span><span class="p">:</span> <span class="nb">bool</span><span class="p">(</span><span class="n">alt_text</span><span class="o">.</span><span class="n">strip</span><span class="p">()),</span>
+            <span class="s2">"index_in_graph"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">"source_path"</span><span class="p">:</span> <span class="n">source_path</span><span class="p">,</span>
+            <span class="s2">"doc_name"</span><span class="p">:</span> <span class="n">doc_name</span><span class="p">,</span>
+            <span class="s2">"ingest_id"</span><span class="p">:</span> <span class="n">ingest_id</span><span class="p">,</span>
+            <span class="s2">"content_hash"</span><span class="p">:</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"content_hash"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_version"</span><span class="p">)</span>
+    <span class="p">})</span>
+        
+    <span class="n">base_doc_folder</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">text_md_path</span><span class="p">))</span>
+    <span class="n">out_struct_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">base_doc_folder</span><span class="p">,</span> <span class="s2">"index"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">_structured_output.json"</span><span class="p">)</span>
+    <span class="n">chunks_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">base_doc_folder</span><span class="p">,</span> <span class="s2">"index"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">_chunks.jsonl"</span><span class="p">)</span>
+
+    <span class="n">structured_output</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+        <span class="s2">"sections"</span><span class="p">:</span> <span class="n">sections</span><span class="p">,</span>
+        <span class="s2">"tables"</span><span class="p">:</span> <span class="n">enriched_tables</span><span class="p">,</span>
+        <span class="s2">"figures"</span><span class="p">:</span> <span class="n">document_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"figures"</span><span class="p">,</span> <span class="p">[]),</span>
+        <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">(),</span>
+        <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"source_doc_id"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">,</span>
+            <span class="s2">"extraction_method"</span><span class="p">:</span> <span class="s2">"mdParser-raw-3.0.0"</span><span class="p">,</span>
+            <span class="s2">"timestamp"</span><span class="p">:</span> <span class="n">_now_iso</span><span class="p">()</span>
+        <span class="p">},</span>
+        <span class="s2">"source_path"</span><span class="p">:</span> <span class="n">source_path</span><span class="p">,</span>
+        <span class="s2">"doc_name"</span><span class="p">:</span> <span class="n">doc_name</span><span class="p">,</span>
+        <span class="s2">"ingest_id"</span><span class="p">:</span> <span class="n">ingest_id</span><span class="p">,</span>
+        <span class="s2">"chunks_jsonl_path"</span><span class="p">:</span> <span class="n">chunks_path</span><span class="p">,</span>
+        <span class="s2">"structured_output_path"</span><span class="p">:</span> <span class="n">out_struct_path</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">write_json</span><span class="p">(</span><span class="n">out_struct_path</span><span class="p">,</span> <span class="n">structured_output</span><span class="p">)</span>
+    <span class="n">write_jsonl</span><span class="p">(</span><span class="n">chunks_path</span><span class="p">,</span> <span class="n">chunks</span><span class="p">)</span>
+
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"mdParser complete: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">structured_output</span></div>
+
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Raw-first text cleaning (safe)</span>
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Goal: keep whitespace between words, remove invisible chars / obvious markup noise,</span>
+<span class="c1"># and fix the most common mid-word split artifact (single-letter splits).</span>
+<span class="c1"># IMPORTANT: This is intentionally conservative to avoid "To improve" -&gt; "Toimprove".</span>
+
+<div class="viewcode-block" id="HTML_TAG_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.HTML_TAG_RE">[docs]</a>
+<span class="n">HTML_TAG_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"&lt;[^&gt;]+&gt;"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="MD_IMAGE_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.MD_IMAGE_RE">[docs]</a>
+<span class="n">MD_IMAGE_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"!\[[^\]]*\]\([^)]+\)"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="MD_LINK_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.MD_LINK_RE">[docs]</a>
+<span class="n">MD_LINK_RE</span>  <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\[([^\]]+)\]\([^)]+\)"</span><span class="p">)</span>  <span class="c1"># keep link text, drop URL</span></div>
+
+<div class="viewcode-block" id="MD_EMPH_RE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.MD_EMPH_RE">[docs]</a>
+<span class="n">MD_EMPH_RE</span>  <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"(\*\*|\*|__|_)(.*?)\1"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="strip_markup_noise">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.strip_markup_noise">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">strip_markup_noise</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">text</span>
+    <span class="c1"># Markdown noise</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">MD_IMAGE_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">MD_LINK_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\1"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">MD_EMPH_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\2"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="c1"># HTML-like tags (marker sometimes emits &lt;sup&gt;, &lt;span id=...&gt;, etc.)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">HTML_TAG_RE</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">text</span></div>
+
+
+<div class="viewcode-block" id="normalize_raw_text">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.normalize_raw_text">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">normalize_raw_text</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">text</span>
+
+    <span class="c1"># Unicode normalize + remove invisible/soft hyphen/ZW chars</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">unicodedata</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="s2">"NFKC"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[\u200b\u200c\u200d\u00ad\u2060]'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="c1"># Normalize newlines; keep paragraph breaks</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">'</span><span class="se">\r\n</span><span class="s1">'</span><span class="p">,</span> <span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">'</span><span class="se">\r</span><span class="s1">'</span><span class="p">,</span> <span class="s1">'</span><span class="se">\n</span><span class="s1">'</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'-\s*\n\s*'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>       <span class="c1"># de-hyphenate line breaks</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">'</span><span class="se">\n\n</span><span class="s1">'</span><span class="p">,</span> <span class="s1">'&lt;PARA&gt;'</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'\s*\n\s*'</span><span class="p">,</span> <span class="s1">' '</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>       <span class="c1"># collapse remaining newlines to spaces</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s1">'&lt;PARA&gt;'</span><span class="p">,</span> <span class="s1">'</span><span class="se">\n\n</span><span class="s1">'</span><span class="p">)</span>
+
+    <span class="c1"># Strip markup noise now (keeps human text)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">strip_markup_noise</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+
+    <span class="c1"># Fix spaces inside parentheses ONLY when it looks like an acronym / short token group:</span>
+    <span class="c1"># "( ER )" -&gt; "(ER)", "( N PP s )" -&gt; "(NPPs)"</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_paren_fix</span><span class="p">(</span><span class="n">m</span><span class="p">:</span> <span class="n">re</span><span class="o">.</span><span class="n">Match</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="c1"># Only compress if it's short and mostly alnum/spaces</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">inner</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">12</span> <span class="ow">and</span> <span class="n">re</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[A-Za-z0-9 ]+"</span><span class="p">,</span> <span class="n">inner</span><span class="p">):</span>
+            <span class="n">inner</span> <span class="o">=</span> <span class="n">inner</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="n">inner</span><span class="si">}</span><span class="s2">)"</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\(\s*([^)]+?)\s*\)"</span><span class="p">,</span> <span class="n">_paren_fix</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+
+    <span class="c1"># Very conservative split-word repair:</span>
+    <span class="c1"># only merge lowercase fragments like "re li ability" or "rel i ability"</span>
+    <span class="c1"># and never merge title-case / all-caps plant phrases such as "Train B remained".</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fix_split_word</span><span class="p">(</span><span class="n">m</span><span class="p">):</span>
+        <span class="n">left</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">mid</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+        <span class="n">token</span> <span class="o">=</span> <span class="n">left</span> <span class="o">+</span> <span class="n">mid</span> <span class="o">+</span> <span class="n">right</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">left</span><span class="o">.</span><span class="n">islower</span><span class="p">()</span> <span class="ow">and</span> <span class="n">mid</span><span class="o">.</span><span class="n">islower</span><span class="p">()</span> <span class="ow">and</span> <span class="n">right</span><span class="o">.</span><span class="n">islower</span><span class="p">()):</span>
+            <span class="k">return</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">token</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">6</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">token</span>
+
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span>
+        <span class="sa">r</span><span class="s2">"\b([a-z]{2,})\s+([a-z])\s+([a-z]{2,})\b"</span><span class="p">,</span>
+        <span class="n">_fix_split_word</span><span class="p">,</span>
+        <span class="n">text</span><span class="p">)</span>
+
+    <span class="c1"># Clean spacing around punctuation</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\s+([,.;:?!%])"</span><span class="p">,</span> <span class="sa">r</span><span class="s2">"\1"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[ \t]{2,}"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+
+
+<span class="c1">########### Splitting chunks into paragraphs ########### </span>
+
+<div class="viewcode-block" id="split_into_paragraphs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.split_into_paragraphs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">split_into_paragraphs</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="c1"># Split on blank lines; keep non-empty</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\n\s*\n+"</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+    <span class="k">return</span> <span class="n">parts</span></div>
+
+
+<div class="viewcode-block" id="chunk_paragraphs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.chunk_paragraphs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">chunk_paragraphs</span><span class="p">(</span><span class="n">paragraphs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">max_chars</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1400</span><span class="p">,</span> <span class="n">overlap_chars</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">200</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Packs paragraphs into chunks up to max_chars. Overlap is applied between consecutive chunks.</span>
+<span class="sd">    Char-based is OK since you're storing raw text and embedding later.</span>
+<span class="sd">    """</span>
+    <span class="n">chunks</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">buf</span> <span class="o">=</span> <span class="s2">""</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paragraphs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">buf</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">p</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">max_chars</span><span class="p">:</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="n">buf</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span> <span class="o">+</span> <span class="n">p</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+            <span class="c1"># overlap tail</span>
+            <span class="n">tail</span> <span class="o">=</span> <span class="n">buf</span><span class="p">[</span><span class="o">-</span><span class="n">overlap_chars</span><span class="p">:]</span> <span class="k">if</span> <span class="n">overlap_chars</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">overlap_chars</span> <span class="k">else</span> <span class="s2">""</span>
+            <span class="n">buf</span> <span class="o">=</span> <span class="p">(</span><span class="n">tail</span> <span class="o">+</span> <span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span> <span class="o">+</span> <span class="n">p</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">buf</span><span class="p">:</span>
+        <span class="n">chunks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buf</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">chunks</span></div>
+
+
+<span class="c1"># ------------------------------</span>
+<span class="c1"># Table textification (for vector indexing)</span>
+<span class="c1"># ------------------------------</span>
+<div class="viewcode-block" id="textify_table">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.textify_table">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">textify_table</span><span class="p">(</span>
+    <span class="n">caption</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">headers</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]],</span>
+    <span class="n">head_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="n">tail_rows</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Compact textual representation for embedding/indexing.</span>
+
+<span class="sd">    Always includes:</span>
+<span class="sd">      - caption</span>
+<span class="sd">      - column headers</span>
+<span class="sd">      - first `head_rows` rows  (typical parameter definitions)</span>
+<span class="sd">      - last  `tail_rows` rows  (often contain limit/summary values)</span>
+<span class="sd">      - a note when rows are omitted</span>
+<span class="sd">    """</span>
+    <span class="n">lines</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">if</span> <span class="n">caption</span><span class="p">:</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Table caption: </span><span class="si">{</span><span class="n">caption</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">headers</span><span class="p">:</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"Columns: "</span> <span class="o">+</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">h</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">headers</span><span class="p">))</span>
+
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">rows</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">total</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="n">total</span> <span class="o">&lt;=</span> <span class="n">head_rows</span> <span class="o">+</span> <span class="n">tail_rows</span><span class="p">:</span>
+        <span class="c1"># Small enough to show everything</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Row </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: "</span> <span class="o">+</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">r</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rows</span><span class="p">[:</span><span class="n">head_rows</span><span class="p">],</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Row </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: "</span> <span class="o">+</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">r</span><span class="p">))</span>
+
+        <span class="n">omitted</span> <span class="o">=</span> <span class="n">total</span> <span class="o">-</span> <span class="n">head_rows</span> <span class="o">-</span> <span class="n">tail_rows</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"... (</span><span class="si">{</span><span class="n">omitted</span><span class="si">}</span><span class="s2"> rows omitted) ..."</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">rows</span><span class="p">[</span><span class="o">-</span><span class="n">tail_rows</span><span class="p">:],</span> <span class="n">start</span><span class="o">=</span><span class="n">total</span> <span class="o">-</span> <span class="n">tail_rows</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Row </span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">: "</span> <span class="o">+</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">r</span><span class="p">))</span>
+
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"(Table: </span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2"> rows total)"</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">"Usage: python mdParser.py &lt;document_index.json&gt; [mbse_entities.json]"</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<div class="viewcode-block" id="doc_index_path">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_parsers/mdParser/index.html#src.dackar.RCA.doc_parsers.mdParser.doc_index_path">[docs]</a>
+    <span class="n">doc_index_path</span> <span class="o">=</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span></div>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">doc_index_path</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"document_index.json not found: </span><span class="si">{</span><span class="n">doc_index_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">doc_index_path</span><span class="p">,</span> <span class="s2">"r"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">document_index</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="n">mbse_entities</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="s2">"r"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">mbse_entities</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="n">md_parser</span><span class="p">(</span><span class="n">document_index</span><span class="o">=</span><span class="n">document_index</span><span class="p">,</span> <span class="n">destination_folder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mbse_entities</span><span class="o">=</span><span class="n">mbse_entities</span><span class="p">)</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,136 @@
+src.dackar.RCA.doc_parsers.pdfParser
+====================================
+
+.. py:module:: src.dackar.RCA.doc_parsers.pdfParser
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.pdfParser.PdfConverter
+   src.dackar.RCA.doc_parsers.pdfParser.LOGGER
+   src.dackar.RCA.doc_parsers.pdfParser.handler
+   src.dackar.RCA.doc_parsers.pdfParser._DOC_TYPE_PATTERNS
+   src.dackar.RCA.doc_parsers.pdfParser._EARLY_TEXT_PATTERNS
+   src.dackar.RCA.doc_parsers.pdfParser.home
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_parsers.pdfParser.infer_doc_type
+   src.dackar.RCA.doc_parsers.pdfParser._now_iso
+   src.dackar.RCA.doc_parsers.pdfParser._clean_table_cell
+   src.dackar.RCA.doc_parsers.pdfParser._clean_table_obj
+   src.dackar.RCA.doc_parsers.pdfParser._estimate_text_extraction_quality
+   src.dackar.RCA.doc_parsers.pdfParser.get_file_name_no_extension
+   src.dackar.RCA.doc_parsers.pdfParser._ensure_dir
+   src.dackar.RCA.doc_parsers.pdfParser._parse_marker_image_key
+   src.dackar.RCA.doc_parsers.pdfParser._normalize_table_markdown_to_json
+   src.dackar.RCA.doc_parsers.pdfParser._tables_from_pdfplumber
+   src.dackar.RCA.doc_parsers.pdfParser.pdfParser
+
+
+Module Contents
+---------------
+
+.. py:data:: PdfConverter
+   :value: None
+
+
+.. py:data:: LOGGER
+
+.. py:data:: handler
+
+.. py:data:: _DOC_TYPE_PATTERNS
+
+.. py:data:: _EARLY_TEXT_PATTERNS
+
+.. py:function:: infer_doc_type(filename, early_text = '')
+
+   Infer doc_type from filename first, then first ~500 chars of text.
+   Returns one of: CR | WO | SOP | ECA | OTHER
+
+
+.. py:function:: _now_iso()
+
+.. py:function:: _clean_table_cell(x)
+
+.. py:function:: _clean_table_obj(t)
+
+.. py:function:: _estimate_text_extraction_quality(markdown_text, page_count)
+
+   Lightweight extraction-quality heuristic for Stage 1 provenance.
+
+
+.. py:function:: get_file_name_no_extension(path)
+
+   Return filename without extension from a path.
+
+
+.. py:function:: _ensure_dir(path)
+
+.. py:function:: _parse_marker_image_key(image_key)
+
+   Marker images are commonly saved with names like '_page_12_Picture_3.jpeg'.
+   Extract page/index if present; otherwise return None values.
+
+
+.. py:function:: _normalize_table_markdown_to_json(md_text)
+
+   Convert Marker-produced Markdown tables into a normalized JSON structure:
+   [
+     { "columns": [...], "rows": [[...], ...], "caption": None, "page": None }
+   ]
+   Assumes tables are separated in MD by blank lines and follow pipe '|' syntax.
+
+
+.. py:function:: _tables_from_pdfplumber(filename)
+
+   Extract tables using pdfplumber and normalize to JSON objects.
+
+
+.. py:function:: pdfParser(home_folder = None, red_filepath = None, destination_folder = None, text2markdown = 'marker', tableParser = 'marker', classification = 'internal', ingest_id = None, source_path = None)
+
+   Parse a PDF file into:
+     - text markdown
+     - figures (images)
+     - tables (normalized JSON)
+   Emit:
+     - document_index.json (paths + metadata)
+     - text.md
+     - tables.json
+     - figures/*.jpeg
+     - metadata.json (Marker-render metadata when available)
+   :returns:
+
+             - index dict mirroring document_index.json
+
+   :param home_folder: Base folder for relative path `red_filepath`.
+   :type home_folder: Optional[str]
+   :param red_filepath: File path relative to `home_folder` (or absolute if `home_folder` is None).
+   :type red_filepath: Optional[str]
+   :param destination_folder: Root destination for parsed outputs.
+   :type destination_folder: Optional[str]
+   :param text2markdown: Only 'marker' supported for now.
+   :type text2markdown: str
+   :param tableParser: 'marker' or 'pdfplumber'.
+   :type tableParser: str
+   :param classification: Data classification tag.
+   :type classification: str
+
+   :returns: Document index with artifact paths and rich metadata.
+   :rtype: Dict[str, Any]
+
+   :raises FileNotFoundError: If input or destination paths are invalid.
+   :raises ValueError: For unsupported options.
+
+
+.. py:data:: home
+   :value: None
+
+
