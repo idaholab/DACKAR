@@ -2316,6 +2316,16 @@ def _route_negated_statements(result: Dict[str, Any]) -> None:
     ro = result.setdefault("ruled_out_mechanisms", [])
     ro.extend(negated)
 
+    # Summary flags are always filled before routing; refresh the two that depend on
+    # the post-routing split so a chunk whose only statement was negated no longer
+    # reports has_explicit_causal_statement=True with an empty statement list, and does
+    # report has_ruled_out_mechanisms once the negated statements land in ruled_out.
+    # (has_negation/has_conjecture stay as computed — the chunk did contain them.)
+    flags = result.get("summary_flags")
+    if flags is not None:
+        flags["has_explicit_causal_statement"] = bool(active)
+        flags["has_ruled_out_mechanisms"] = bool(ro)
+
 
 def _fill_summary_flags(out: Dict[str, Any], chunk_text: str = "") -> None:
     causals = out["extracted_causal_statements"]

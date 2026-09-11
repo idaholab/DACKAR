@@ -68,7 +68,7 @@ class CompatibilityEngine:
         - Pick the best label per group (by score).
         - If multiple groups remain:
             * If same-span multi-label is not whitelisted -> reduce to single best label.
-            * If whitelisted (currently {G1_PHYSICAL, G5_MECHANISMS}) -> require token evidence
+            * If whitelisted (currently {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS}) -> require token evidence
                 for BOTH roles using *exclusive* tokens (role-aware), else try conditional rules / split;
                 if none apply -> reduce to single best label.
         - For other multi-group cases, consult conditional rules; if still not allowed -> reduce to single best label.
@@ -218,7 +218,7 @@ class CompatibilityEngine:
             best = _best_overall(selected)
             return _accept([best], "Reduced to single label (non-whitelisted same-span multi-label)")
 
-        # At this point, group pair is whitelisted (e.g., G1_PHYSICAL + G5_MECHANISMS).
+        # At this point, group pair is whitelisted (G1_PHYSICAL_COMPONENT + G4_MECHANISM_PROCESS).
         # Whitelisted pair: require exclusive token evidence for both roles.
         span_lower = (cand.text or "").lower()
 
@@ -298,7 +298,7 @@ class CompatibilityEngine:
         """
         Return True iff same-span multi-labeling is allowed for these groups.
 
-        Conservative whitelist: only allow the pair {G1_PHYSICAL, G5_MECHANISMS}.
+        Conservative whitelist: only allow the pair {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS}.
         (Change this if you want to allow additional group-pairs.)
         """
         # normalize and filter empty group names

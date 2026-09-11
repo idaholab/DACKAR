@@ -66,7 +66,7 @@ class SchemaLoader:
 
         # --- Format A: label-keyed dict (your current file) ---
         # Example:
-        #   { "deg_mech": {"group":"G5_MECHANISMS", ...}, "comp_mech_spec": {"group":"G1_PHYSICAL", ...}, ... }
+        #   { "deg_mech": {"group":"G4_MECHANISM_PROCESS", ...}, "comp_mech_spec": {"group":"G1_PHYSICAL_COMPONENT", ...}, ... }
         elif isinstance(raw, dict):
             # heuristic: if keys look like labels and values are dicts containing "group"
             for lbl, spec in raw.items():
