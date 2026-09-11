@@ -47,6 +47,52 @@ FIELD_STATUS_MISSING_OPTIONAL = "missing_optional"
 FIELD_STATUS_MISSING_ENRICHMENT = "missing_enrichment"
 
 
+# Canonical keyword → anomaly-pattern map. Single source of truth shared by the
+# parser's ``_resolve_anomaly_pattern`` and this module's local-effect inference,
+# so the two keyword tables can no longer drift apart.
+_ANOMALY_PATTERN_KEYWORDS: Dict[str, str] = {
+    "step": "step_change",
+    "step change": "step_change",
+    "drift": "gradual_drift",
+    "gradual": "gradual_drift",
+    "gradual drift": "gradual_drift",
+    "ramp": "gradual_drift",
+    "spike": "spike",
+    "transient": "spike",
+    "impulse": "spike",
+    "oscillat": "oscillation",
+    "fluctuat": "oscillation",
+    "cycle": "oscillation",
+    "dropout": "dropout",
+    "drop out": "dropout",
+    "loss of signal": "dropout",
+    "signal loss": "dropout",
+    "exceedance": "sustained_exceedance",
+    "sustained": "sustained_exceedance",
+    "high": "sustained_exceedance",
+    "overload": "sustained_exceedance",
+}
+
+
+def classify_anomaly_pattern(text: Any) -> Optional[str]:
+    """Map free text describing an anomaly to a canonical enum value.
+
+    Returns the matched enum string, or ``None`` when no keyword matches so the
+    caller decides the fallback: the parser records ``"unknown"`` for a value
+    that was explicitly provided but is unrecognised, whereas the normalizer
+    leaves the field missing so it is flagged in the ingestion-quality report.
+    """
+    if not text:
+        return None
+    normed = " ".join(str(text).split()).lower().strip()
+    if not normed:
+        return None
+    for keyword, canonical in _ANOMALY_PATTERN_KEYWORDS.items():
+        if keyword in normed:
+            return canonical
+    return None
+
+
 def _split_listish(value: Any) -> List[str]:
     if value is None:
         return []
@@ -195,21 +241,10 @@ def _derive_local_effect_from_mechanism(row: JsonDict) -> Optional[str]:
 
 
 def _infer_pattern_from_local_effect(row: JsonDict) -> Optional[str]:
-    txt = str(row.get("local_effect") or "").strip().lower()
-    if not txt:
-        return None
-    patterns = [
-        (("step", "step change"), "step_change"),
-        (("drift", "gradual", "ramp"), "gradual_drift"),
-        (("spike", "transient", "impulse"), "spike"),
-        (("oscillat", "fluctuat", "cycle"), "oscillation"),
-        (("dropout", "signal loss", "loss of signal"), "dropout"),
-        (("sustained", "exceedance", "high for"), "sustained_exceedance"),
-    ]
-    for kws, val in patterns:
-        if any(k in txt for k in kws):
-            return val
-    return "unknown"
+    # Delegates to the shared classifier; returns None on no-match so the
+    # derivation step leaves the field missing (flagged in the quality report)
+    # rather than fabricating an "unknown" value.
+    return classify_anomaly_pattern(row.get("local_effect"))
 
 
 @dataclass
@@ -369,43 +404,51 @@ def normalize_fmea_records(
         quality: JsonDict = {}
 
         # Required / optional / enrichment status first.
-        for field in profile.required_fields:
-            if out.get(field) not in (None, "", []):
-                quality[field] = FIELD_STATUS_PRESENT
+        # (Loop var is ``field_name`` to avoid shadowing ``field`` from dataclasses.)
+        for field_name in profile.required_fields:
+            if out.get(field_name) not in (None, "", []):
+                quality[field_name] = FIELD_STATUS_PRESENT
             else:
-                quality[field] = FIELD_STATUS_MISSING_CRITICAL
+                quality[field_name] = FIELD_STATUS_MISSING_CRITICAL
                 critical_missing += 1
-        for field in profile.optional_fields:
-            if out.get(field) not in (None, "", []):
-                quality[field] = FIELD_STATUS_PRESENT
-            elif field not in quality:
-                quality[field] = FIELD_STATUS_MISSING_OPTIONAL
-        for field in profile.enrichment_fields:
-            if out.get(field) not in (None, "", []):
-                quality[field] = FIELD_STATUS_PRESENT
+        for field_name in profile.optional_fields:
+            if out.get(field_name) not in (None, "", []):
+                quality[field_name] = FIELD_STATUS_PRESENT
+            elif field_name not in quality:
+                quality[field_name] = FIELD_STATUS_MISSING_OPTIONAL
+        for field_name in profile.enrichment_fields:
+            if out.get(field_name) not in (None, "", []):
+                quality[field_name] = FIELD_STATUS_PRESENT
             else:
-                quality[field] = FIELD_STATUS_MISSING_ENRICHMENT
+                quality[field_name] = FIELD_STATUS_MISSING_ENRICHMENT
                 enrichment_missing += 1
 
         derivation_method: JsonDict = {}
 
         # Derivations overwrite missing only.
-        for field, fn in (profile.derived_fields or {}).items():
-            if out.get(field) not in (None, "", []):
+        for field_name, fn in (profile.derived_fields or {}).items():
+            if out.get(field_name) not in (None, "", []):
                 continue
             derived = fn(out)
             if derived in (None, "", []):
                 continue
-            out[field] = derived
+            # The field was just tagged as missing above; now that derivation
+            # populates it, reverse the missing count so the ingestion-quality
+            # report does not double-count it (e.g. expected_anomaly_pattern).
+            if quality.get(field_name) == FIELD_STATUS_MISSING_CRITICAL:
+                critical_missing -= 1
+            elif quality.get(field_name) == FIELD_STATUS_MISSING_ENRICHMENT:
+                enrichment_missing -= 1
+            out[field_name] = derived
             nlp_fields = out.get("_nlp_inferred_fields") or []
-            if field == "expected_anomaly_pattern" or field in nlp_fields:
-                quality[field] = FIELD_STATUS_NLP
+            if field_name == "expected_anomaly_pattern" or field_name in nlp_fields:
+                quality[field_name] = FIELD_STATUS_NLP
                 nlp_count += 1
-                derivation_method[field] = f"nlp:{fn.__name__}"
+                derivation_method[field_name] = f"nlp:{fn.__name__}"
             else:
-                quality[field] = FIELD_STATUS_DERIVED
+                quality[field_name] = FIELD_STATUS_DERIVED
                 derived_count += 1
-                derivation_method[field] = fn.__name__
+                derivation_method[field_name] = fn.__name__
 
         # Keep the legacy detection alias consistent after derivation.
         if out.get("detection") is None and out.get("detection_rating") is not None:

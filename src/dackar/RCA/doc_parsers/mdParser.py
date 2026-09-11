@@ -4,9 +4,10 @@
 # Markdown -> hierarchical sections/chunks + Table/Figure mapping
 # Enrich with:
 #  - NER for MBSE entities (dictionary-based) & standards references (regex)
-#  - Summarization via Ollama (with healthcheck, /api/chat first, /api/generate fallback)
 #  - Keyword extraction for RAG
 #  - Provenance + confidence scoring
+# NOTE: per-section summarization is intentionally not performed here; it is
+# planned for a dedicated summarizer step in a later MR.
 # Emits:
 #  - structured_output.json
 #  - chunks.jsonl (TextChunk, Table, Figure nodes)
@@ -17,10 +18,8 @@ from __future__ import annotations
 import os
 import re
 import json
-import time
 import logging
 import datetime
-import requests
 import unicodedata
 import string
 from typing import Dict, List, Any, Optional, Tuple
@@ -111,7 +110,7 @@ STOPWORDS = {
 }
 
 def _now_iso() -> str:
-    return datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 def read_text(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
@@ -229,11 +228,6 @@ def _clean_table_cell(x: Any) -> str:
     text = re.sub(r'([A-Za-z])\.([A-Za-z])', r'\1\2', text)
     # strip stray leading punctuation from wrapped cells
     text = re.sub(r'^[\.\,\;\:\-]+\s*', '', text)
-    # repair common owner-field corruption
-    if re.fullmatch(r'.*maintenance', text, flags=re.IGNORECASE):
-        text = "Maintenance"
-    elif re.fullmatch(r'.*engineering', text, flags=re.IGNORECASE):
-        text = "Engineering"
     return text
 
 
@@ -356,111 +350,6 @@ def detect_standard_refs(text: str) -> Tuple[List[str], float]:
     return refs, conf
 
 # ------------------------------
-# Summarization (Ollama) + fallback + healthcheck
-# ------------------------------
-def _extractive_summary(text: str, max_chars: int = 600) -> str:
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    summary = " ".join(sentences[:3])
-    if len(summary) > max_chars:
-        summary = summary[:max_chars].rsplit(" ", 1)[0] + "…"
-    return summary
-
-def _ollama_healthcheck(base: str, timeout: int = 5) -> bool:
-    try:
-        r = requests.get(f"{base}/api/version", timeout=timeout)
-        r.raise_for_status()
-        return True
-    except Exception:
-        return False
-
-
-def summarize_text_ollama(text: str, model: Optional[str] = None, timeout: int = 60) -> str:
-    """
-    Summarize using Ollama REST API, preferring /api/chat with streaming.
-    Falls back to /api/generate streaming. We also truncate input to fit context.
-    """
-
-    base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-    model = model or os.environ.get("OLLAMA_MODEL", "mistral:latest")
-    num_ctx = int(os.environ.get("OLLAMA_NUM_CTX", "8192"))
-
-    # Truncate section text to fit into context safely
-    text_safe = _truncate_for_context(text, num_ctx, safety_ratio=0.7)
-
-    user_prompt = (
-        "You are preparing a concise evidence summary for a nuclear research reactor "
-        "licensing document. Summarize the following content in 3-5 sentences, focusing "
-        "on technical facts, parameters, and compliance-relevant details:\n\n" + text_safe
-    )
-
-    # Try /api/chat with streaming first
-    try:
-        with requests.post(
-            f"{base}/api/chat",
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": user_prompt}],
-                "options": {"num_ctx": num_ctx},
-                "stream": True  # stream chunks
-            },
-            timeout=timeout,
-            stream=True,
-        ) as resp:
-            resp.raise_for_status()
-            # Accumulate streamed chunks
-            chunks = []
-            for line in resp.iter_lines(decode_unicode=True):
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    # On /api/chat stream, each chunk often has {"message":{"content":"..."}}
-                    msg = data.get("message") or {}
-                    piece = (msg.get("content") or "").strip()
-                    if piece:
-                        chunks.append(piece)
-                except Exception:
-                    # Sometimes Ollama emits plain text chunks; accept them
-                    chunks.append(line)
-            final = " ".join(chunks).strip()
-            return final or _extractive_summary(text_safe)
-    except Exception as e_chat:
-        LOGGER.warning("Ollama /api/chat (stream) summarization failed (%s); trying /api/generate.", e_chat)
-
-    # Fallback: /api/generate with streaming
-    try:
-        with requests.post(
-            f"{base}/api/generate",
-            json={
-                "model": model,
-                "prompt": user_prompt,
-                "options": {"num_ctx": num_ctx},
-                "stream": True
-            },
-            timeout=timeout,
-            stream=True,
-        ) as resp:
-            resp.raise_for_status()
-            chunks = []
-            for line in resp.iter_lines(decode_unicode=True):
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    # On /api/generate stream, chunks typically have {"response":"..."}
-                    piece = (data.get("response") or "").strip()
-                    if piece:
-                        chunks.append(piece)
-                except Exception:
-                    chunks.append(line)
-            final = " ".join(chunks).strip()
-            return final or _extractive_summary(text_safe)
-    except Exception as e_gen:
-        LOGGER.warning("Ollama /api/generate (stream) summarization failed (%s); using extractive fallback.", e_gen)
-        return _extractive_summary(text_safe)
-
-
-# ------------------------------
 # Keyword extraction
 # ------------------------------
 def extract_keywords(text: str, top_k: int = 12) -> List[str]:
@@ -474,18 +363,6 @@ def extract_keywords(text: str, top_k: int = 12) -> List[str]:
     combined += [(bg, c) for bg, c in bigrams.items() if all(tok not in STOPWORDS for tok in bg.split())]
     combined.sort(key=lambda x: x[1], reverse=True)
     return [w for w, _ in combined[:top_k]]
-
-MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]+\)")
-MD_LINK_RE  = re.compile(r"\[([^\]]+)\]\([^)]+\)")
-MD_BOLD_ITALIC_RE = re.compile(r"(\*\*|\*|__|_)(.*?)\1")
-
-def strip_markdown_noise(text: str) -> str:
-    if not text:
-        return text
-    text = MD_IMAGE_RE.sub(" ", text)
-    text = MD_LINK_RE.sub(r"\1", text)         # keep link text, drop URL
-    text = MD_BOLD_ITALIC_RE.sub(r"\2", text)  # drop emphasis markers
-    return re.sub(r"\s+", " ", text).strip()
 
 # ------------------------------
 # Table/Figure → Section assignment
@@ -750,7 +627,39 @@ def md_parser(
     mbse_entities: Optional[List[Dict[str, Any]]] = None,
     nureg_section_ids: Optional[List[str]] = None
 ) -> Dict[str, Any]:
-    
+    """
+    Parse a document's extracted Markdown (produced by ``pdfParser``) into
+    hierarchical sections/chunks enriched with MBSE mentions, standards/document
+    references, and keywords, then persist ``structured_output.json`` and
+    ``chunks.jsonl``.
+
+    Parameters
+    ----------
+    document_index : Dict[str, Any]
+        The index dict returned by ``pdfParser`` (must include ``text_md_path``).
+    destination_folder : Optional[str]
+        Root destination for parsed outputs. If None, it is inferred from the
+        parent of the Markdown text file's directory.
+    mbse_entities : Optional[List[Dict[str, Any]]]
+        Optional MBSE entity dictionary used for dictionary-based NER of
+        component mentions.
+    nureg_section_ids : Optional[List[str]]
+        Optional NUREG section identifiers to attach to every section.
+
+    Returns
+    -------
+    Dict[str, Any]
+        The structured output dict (also written to ``structured_output.json``),
+        mirroring the section/table/figure chunks emitted to ``chunks.jsonl``.
+
+    Raises
+    ------
+    ValueError
+        If ``document_index`` is not a dict.
+    FileNotFoundError
+        If ``text_md_path`` is missing or does not exist on disk.
+    """
+
     if not document_index or not isinstance(document_index, dict):
         raise ValueError("document_index must be a dict produced by pdfParser.")
     text_md_path = document_index.get("text_md_path")
@@ -793,12 +702,6 @@ def md_parser(
 
     LOGGER.info("Running NER and standards detection per section.")
 
-    # Step 3 fix: Healthcheck Ollama once, then decide summary strategy
-    #ollama_base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-    #ollama_ok = _ollama_healthcheck(ollama_base)
-    #if not ollama_ok:
-    #    LOGGER.warning("Ollama healthcheck failed or service not reachable at %s; using extractive summaries.", ollama_base)
-
     for s in sections:
         # Preserve raw extracted text for audit/traceability
         s["raw_text"] = s.get("text", "")
@@ -820,29 +723,11 @@ def md_parser(
         # Keep raw copy for provenance/audit
         s["_raw_text"] = s.get("raw_text", "")
 
-        # Normalize text used for NLP / summarization
-        # (strip markdown noise first so links/images don’t pollute summaries/keywords)
-        #s["text"] = normalize_extracted_text(strip_markdown_noise(s["text"]))
-
-        """
-        try:
-            if ollama_ok:
-                # Throttle a bit between requests
-                time.sleep(0.25)
-                s["summary"] = _retry(summarize_text_ollama, max_tries=2, wait_sec=3, text=s["text"])
-            else:
-                s["summary"] = _extractive_summary(s["text"])
-        except Exception as e:
-            LOGGER.warning("Summarization failed for section '%s' (%s); using extractive fallback.", s["title"], e)
-            s["summary"] = _extractive_summary(s["text"])"""
-        
-        #s["summary"] = clean_summary_text(s.get("summary", ""))
-
         s["keywords"] = extract_keywords(s["text"])
 
     doc_id = document_index.get("doc_id")
     source_path = document_index.get("source_path") or (document_index.get("source") or {}).get("relpath")
-    doc_name = document_index.get("doc_name") or os.path.basename(source_path) if source_path else None
+    doc_name = document_index.get("doc_name") or (os.path.basename(source_path) if source_path else None)
     ingest_id = document_index.get("ingest_id")
     
     classification = document_index.get("classification", "internal")
@@ -958,107 +843,6 @@ def md_parser(
     LOGGER.info("mdParser complete: %s", doc_id)
     return structured_output
 
-
-import time
-
-def _retry(fn, max_tries=3, wait_sec=2, *args, **kwargs):
-    for i in range(max_tries):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as e:
-            if i == max_tries - 1:
-                raise
-            time.sleep(wait_sec * (i + 1))  # exponential-ish backoff
-
-def _estimate_tokens_from_text(text: str) -> int:
-    # Heuristic: ~4 chars per token (varies by model)
-    return max(1, int(len(text) / 4))
-
-def _truncate_for_context(text: str, num_ctx: int, safety_ratio: float = 0.7) -> str:
-    """
-    Truncate text so that total prompt stays within ~70% of model context.
-    We reserve the rest for system + instruction tokens.
-    """
-    target_tokens = int(num_ctx * safety_ratio)
-    # Convert back to chars (approx 4 chars/token)
-    char_budget = target_tokens * 4
-    if len(text) <= char_budget:
-        return text
-    return text[:char_budget].rsplit(" ", 1)[0] + "…"
-
-import re
-import unicodedata
-
-TAG_RE = re.compile(r"<[^>]+>")  # simple HTML tag stripper
-# conservative normalization for extracted PDF text
-
-def normalize_extracted_text(text: str) -> str:
-    if not text:
-        return text
-
-    # 1) Unicode normalize, remove invisible chars
-    text = unicodedata.normalize("NFKC", text)
-    text = re.sub(r'[\u200b\u200c\u200d\u00ad\u2060]', '', text)
-
-    # 2) Fix hyphenation across line breaks
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-    text = re.sub(r'-\s*\n\s*', '', text)
-
-    # 3) Collapse line breaks inside paragraphs, preserve blank lines
-    text = text.replace('\n\n', '<PARA>')
-    text = re.sub(r'\s*\n\s*', ' ', text)
-    text = text.replace('<PARA>', '\n\n')
-
-    # 4) Remove obvious layout tags that poison keywords/summaries
-    text = TAG_RE.sub(' ', text)          # removes <sup>, <span id=...>, etc.
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    # 5) Normalize parentheses spacing: "( ER )" -> "(ER)"
-    text = re.sub(r'\(\s*([A-Za-z0-9\s]+?)\s*\)', lambda m: '(' + re.sub(r'\s+', '', m.group(1)) + ')', text)
-
-    # 6) Very conservative split-word repair for lowercase OCR/PDF artifacts only.
-    def _fix_lower_split(m: re.Match) -> str:
-        left, mid, right = m.group(1), m.group(2), m.group(3)
-        token = left + mid + right
-        if len(token) < 6:
-            return m.group(0)
-        return token
-    text = re.sub(
-        r'\b([a-z]{2,})\s+([a-z])\s+([a-z]{2,})\b',
-        _fix_lower_split,
-        text)
-
-    #    b) Mid-word splits before common suffix fragments (prevents "To improve" -> "Toimprove")
-    _SUFFIX_FRAG = (
-        r"(ability|abilities|ational|ation|tions?|ment|ments|ness|nesses|"
-        r"ing|ings|ized|ization|izations|ity|ities|ally|al|ive|ives|able|ables|"
-        r"ence|ences|ance|ances|ous|ously)")
-    
-    text = re.sub(
-        rf"\b([A-Za-z]{{3,}})\s+({_SUFFIX_FRAG})\b",
-        r"\1\2",
-        text,
-        flags=re.IGNORECASE)
-
-    # 7) Acronym plural join when split: "NPP s" -> "NPPs" (after parentheses cleanup this helps outside parens too)
-    text = re.sub(r'\b([A-Z]{2,})\s+(s)\b', r'\1\2', text)
-
-    # 8) Clean spacing around punctuation
-    text = re.sub(r'\s+([,.;:?!%])', r'\1', text)
-    text = re.sub(r'\s{2,}', ' ', text).strip()
-
-    return text
-
-def clean_summary_text(text: str) -> str:
-    """Light cleanup for LLM summaries without reintroducing 'Toimprove' issues."""
-    if not text:
-        return text
-    text = unicodedata.normalize("NFKC", text)
-    text = re.sub(r'[\u200b\u200c\u200d\u00ad\u2060]', '', text)
-    # collapse "Ne o 4 j" -> "Neo4j", "MB SE" -> "MBSE" when it’s clearly an acronym-like pattern
-    text = re.sub(r"\b([A-Z])\s+([A-Z])\b", r"\1\2", text)
-    text = re.sub(r"\b([A-Za-z]{2,})\s+(\d+)\s+([A-Za-z]{1,})\b", r"\1\2\3", text)  # e.g., "Ne o 4 j"
-    return re.sub(r"\s+", " ", text).strip()
 
 # ------------------------------
 # Raw-first text cleaning (safe)

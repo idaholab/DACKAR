@@ -307,8 +307,6 @@ def calibrate_chain_threshold(
         dict with keys "results" (list of per-threshold dicts) and
         "best_threshold" (float).
     """
-    import itertools
-
     if thresholds is None:
         thresholds = [round(t * 0.05, 2) for t in range(2, 19)]  # 0.10 … 0.90
 
@@ -711,7 +709,11 @@ Return ONLY the JSON array."""
         effect = str(item.get("effect_text") or "").strip()
         if not cause and not effect:
             continue
-        conf = float(item.get("confidence", 0.5))
+        try:
+            conf = float(item.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            # malformed confidence from the LLM; skip this item rather than dropping the list
+            continue
         statements.append({
             "statement_id": f"{doc_id}::{chunk_index}::llm_implicit::{i}",
             "sentence_text": chunk_text[:300],
@@ -859,7 +861,11 @@ Return ONLY the JSON array."""
         effect = str(item.get("effect_text") or "").strip()
         if not cause and not effect:
             continue
-        conf = float(item.get("confidence", 0.5))
+        try:
+            conf = float(item.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            # malformed confidence from the LLM; skip this item rather than dropping the list
+            continue
         statements.append({
             "statement_id":  f"{doc_id}::{chunk_index}::llm_all::{i}",
             "sentence_text": chunk_text[:300],
@@ -1719,7 +1725,8 @@ def _dep_causal_fallback(
         # skip if already covered by a dep-tree result for this connector
         already = any(
             s["connector"].lower() in connector.lower()
-            and (s["cause_text"] in before_text or s["effect_text"] in after_text)
+            and ((s["cause_text"] and s["cause_text"] in before_text)
+                 or (s["effect_text"] and s["effect_text"] in after_text))
             for s in statements
         )
         if already:
@@ -1857,14 +1864,6 @@ def _dep_causal_fallback(
         conj_idx += 1
 
     return statements
-
-
-def _find_causal_token(sent: Any) -> Any:
-    """Return the first token in a spaCy Span whose lemma is a causal verb."""
-    for token in sent:
-        if token.lemma_.lower() in _DEP_CAUSAL_VERB_LEMMAS:
-            return token
-    return None
 
 
 def _find_all_causal_tokens(sent: Any) -> List[Any]:
@@ -2162,7 +2161,7 @@ def _derive_condition_state(
     # LLM fallback: both states still unknown and an LLM is configured.
     # A single LLM call classifies the overall condition; the result is applied
     # to whichever state(s) are still None so at most one LLM call is made.
-    if llm_cfg and (as_found is None or as_left is None):
+    if llm_cfg and llm_cfg.get("enabled") and (as_found is None or as_left is None):
         llm_state = _llm_condition_state_fallback(
             chunk_text=chunk_text,
             doc_type=doc_type,
@@ -2316,6 +2315,16 @@ def _route_negated_statements(result: Dict[str, Any]) -> None:
     result["extracted_causal_statements"] = active
     ro = result.setdefault("ruled_out_mechanisms", [])
     ro.extend(negated)
+
+    # Summary flags are always filled before routing; refresh the two that depend on
+    # the post-routing split so a chunk whose only statement was negated no longer
+    # reports has_explicit_causal_statement=True with an empty statement list, and does
+    # report has_ruled_out_mechanisms once the negated statements land in ruled_out.
+    # (has_negation/has_conjecture stay as computed — the chunk did contain them.)
+    flags = result.get("summary_flags")
+    if flags is not None:
+        flags["has_explicit_causal_statement"] = bool(active)
+        flags["has_ruled_out_mechanisms"] = bool(ro)
 
 
 def _fill_summary_flags(out: Dict[str, Any], chunk_text: str = "") -> None:
