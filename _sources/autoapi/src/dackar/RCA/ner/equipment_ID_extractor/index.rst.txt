@@ -1,0 +1,59 @@
+src.dackar.RCA.ner.equipment_ID_extractor
+=========================================
+
+.. py:module:: src.dackar.RCA.ner.equipment_ID_extractor
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.equipment_ID_extractor.extract_equipment_ids
+
+
+Module Contents
+---------------
+
+.. py:function:: extract_equipment_ids(text, *, patterns = None, normalize = True, unique = True, max_ids = 500)
+
+   Extract likely nuclear plant equipment / tag identifiers from free text.
+
+   This helper is intended to populate `NERSeed.equipment_ids` and/or chunk metadata
+   for filtering and retrieval (e.g., in Chroma).
+
+   Inputs
+   ------
+   text:
+       Arbitrary text (string). Can be SOP/CR/WO/ECA chunk text.
+   patterns:
+       Optional list of regex patterns (strings). If omitted, a reasonable default set
+       is used. Patterns should contain a single capturing group for the tag itself
+       OR match the tag as the full match.
+   normalize:
+       If True, normalize extracted tags:
+         - uppercase
+         - collapse whitespace
+         - convert underscores/spaces to hyphens where appropriate
+         - strip trailing punctuation
+   unique:
+       If True, return unique tags in first-seen order.
+   max_ids:
+       Safety limit; stops collecting after this many matches.
+
+   Output
+   ------
+   List[str]:
+       Extracted equipment IDs/tags as strings (e.g., "P-101", "MOV-204A", "PT-1102").
+
+   .. rubric:: Notes
+
+   - Tag naming conventions vary by plant/site. You should tune `patterns` to your
+     org's conventions once you see real data.
+   - This function is conservative by default and tries to avoid grabbing years or
+     generic hyphenated numbers.
+   - Recommended usage:
+       eq_ids = extract_equipment_ids(chunk_text)
+       seed = NERSeed(..., equipment_ids=eq_ids, ...)
+
+

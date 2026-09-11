@@ -1,0 +1,150 @@
+src.dackar.RCA.ner.entity_normalizer
+====================================
+
+.. py:module:: src.dackar.RCA.ner.entity_normalizer
+
+.. autoapi-nested-parse::
+
+   entity_normalizer.py — two-phase entity normalization against a KG subgraph.
+
+   Phase 1 (token overlap): fast Jaccard-based matching against failure mode names.
+   Phase 2 (LLM shortlist): fires only when Phase 1 confidence is below ``llm_threshold``
+   and an LLM config is supplied; asks the model to pick from the top-3 Phase 1 candidates.
+
+   Typical usage
+   -------------
+       normalizer = EntityNormalizer(failure_modes=kg_context["failure_modes"], llm_cfg=llm_cfg)
+       results = normalizer.normalize_batch(mechanisms + outcomes, entity_type="mechanism")
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.entity_normalizer.logger
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.entity_normalizer.NormResult
+   src.dackar.RCA.ner.entity_normalizer.EntityNormalizer
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.entity_normalizer.tokenize
+   src.dackar.RCA.ner.entity_normalizer._jaccard
+   src.dackar.RCA.ner.entity_normalizer._call_llm_json
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:class:: NormResult
+
+   Result of normalizing a single surface form.
+
+
+   .. py:attribute:: surface_form
+      :type:  str
+
+
+   .. py:attribute:: canonical_id
+      :type:  str
+
+
+   .. py:attribute:: canonical_label
+      :type:  str
+
+
+   .. py:attribute:: component_id
+      :type:  str
+
+
+   .. py:attribute:: confidence
+      :type:  float
+
+
+   .. py:attribute:: method
+      :type:  str
+
+
+.. py:function:: tokenize(text)
+
+   Lowercase word tokens from a string.
+
+
+.. py:function:: _jaccard(a, b)
+
+.. py:class:: EntityNormalizer(failure_modes, llm_cfg = None, token_overlap_threshold = 0.6, llm_threshold = 0.3, top_k_shortlist = 3)
+
+   Normalize surface-form entity strings to canonical KG failure-mode IDs.
+
+   :param failure_modes: List of dicts with at least ``{fm_id, name}``.  Optional ``component_id``.
+   :param llm_cfg: Dict passed to ``_call_llm_json`` (same shape as in causal_condition_adapter).
+                   Set to None or omit to disable Phase 2.
+   :param token_overlap_threshold: Minimum Jaccard score to accept a Phase 1 match without consulting the LLM.
+   :param llm_threshold: Minimum Jaccard score for Phase 1 result to be *forwarded to* the LLM shortlist.
+                         Candidates below this score are not worth sending (too noisy).
+   :param top_k_shortlist: Number of Phase 1 candidates to include in the LLM prompt.
+
+
+   .. py:attribute:: llm_cfg
+      :value: None
+
+
+
+   .. py:attribute:: token_overlap_threshold
+      :value: 0.6
+
+
+
+   .. py:attribute:: llm_threshold
+      :value: 0.3
+
+
+
+   .. py:attribute:: top_k_shortlist
+      :value: 3
+
+
+
+   .. py:attribute:: _index
+      :type:  List[Dict[str, Any]]
+      :value: []
+
+
+
+   .. py:method:: normalize(surface_form, entity_type = '')
+
+      Normalize a single surface form.
+
+      Returns a NormResult with method="none" and empty IDs when the index is
+      empty or no candidate clears the minimum threshold.
+
+
+
+   .. py:method:: normalize_batch(surface_forms, entity_type = '')
+
+
+   .. py:method:: _top_k_by_token_overlap(surface_form)
+
+
+   .. py:method:: _llm_pick(surface_form, entity_type, shortlist)
+
+
+.. py:function:: _call_llm_json(prompt, llm_cfg)
+
+   POST to an OpenAI-compatible chat endpoint, return parsed JSON or None.
+
+

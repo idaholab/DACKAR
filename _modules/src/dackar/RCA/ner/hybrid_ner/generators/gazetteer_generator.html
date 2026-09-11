@@ -1,0 +1,471 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">..models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">Document</span><span class="p">,</span> <span class="n">LabelHypothesis</span><span class="p">,</span> <span class="n">SourceHit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateGenerator</span>
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="GazetteerConfig">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GazetteerConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Configuration for gazetteer matching.</span>
+
+<span class="sd">    match_mode:</span>
+<span class="sd">      - "exact_phrase": match whole phrase with word boundaries (case-insensitive)</span>
+<span class="sd">      - "fuzzy_tokens": slide a token window and match by token overlap (Jaccard)</span>
+
+<span class="sd">    fuzzy_jaccard_threshold:</span>
+<span class="sd">      Minimum Jaccard similarity (0..1) to accept a fuzzy match.</span>
+
+<span class="sd">    max_window_tokens:</span>
+<span class="sd">      Maximum tokens for sliding window when fuzzy matching is enabled.</span>
+
+<span class="sd">    emit_overlapping:</span>
+<span class="sd">      If False, stops after the first fuzzy match for each term (reduces duplicates).</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="GazetteerConfig.match_mode">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerConfig.match_mode">[docs]</a>
+    <span class="n">match_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"exact_phrase"</span></div>
+
+<div class="viewcode-block" id="GazetteerConfig.fuzzy_jaccard_threshold">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerConfig.fuzzy_jaccard_threshold">[docs]</a>
+    <span class="n">fuzzy_jaccard_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.8</span></div>
+
+<div class="viewcode-block" id="GazetteerConfig.max_window_tokens">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerConfig.max_window_tokens">[docs]</a>
+    <span class="n">max_window_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span></div>
+
+<div class="viewcode-block" id="GazetteerConfig.emit_overlapping">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerConfig.emit_overlapping">[docs]</a>
+    <span class="n">emit_overlapping</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="GazetteerGenerator">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">GazetteerGenerator</span><span class="p">(</span><span class="n">CandidateGenerator</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Gazetteer-based candidate generator reading an Excel file of labeled term lists.</span>
+
+<span class="sd">    Expected Excel convention:</span>
+<span class="sd">      - Each sheet contains one or more columns of terms.</span>
+<span class="sd">      - Column header should contain the label in square brackets, e.g.:</span>
+<span class="sd">          "Degradation mechanisms [deg_mech]"</span>
+<span class="sd">        If brackets are missing, the entire header is treated as the label.</span>
+
+<span class="sd">    For each term:</span>
+<span class="sd">      - exact_phrase mode: compiled, case-insensitive word-boundary regex</span>
+<span class="sd">      - fuzzy_tokens mode: approximate phrase matching by token overlap</span>
+
+<span class="sd">    Produces CandidateSpan with a LabelHypothesis(label=&lt;label&gt;).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">excel_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">sheet_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">GazetteerConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="GazetteerGenerator.excel_path">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator.excel_path">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">excel_path</span> <span class="o">=</span> <span class="n">excel_path</span></div>
+
+<div class="viewcode-block" id="GazetteerGenerator.config">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">GazetteerConfig</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="GazetteerGenerator.label_terms">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator.label_terms">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_terms</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_gazetteer</span><span class="p">(</span><span class="n">excel_path</span><span class="p">,</span> <span class="n">sheet_names</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator._compiled_exact">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator._compiled_exact">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_compiled_exact</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">match_mode</span> <span class="o">==</span> <span class="s2">"exact_phrase"</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_compiled_exact</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compile_exact</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_terms</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">match_mode</span> <span class="o">==</span> <span class="s2">"fuzzy_tokens"</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_compiled_exact</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Unknown match_mode=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">match_mode</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+
+<div class="viewcode-block" id="GazetteerGenerator._load_gazetteer">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator._load_gazetteer">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_gazetteer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">sheet_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+        <span class="n">xl</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">ExcelFile</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">sheets</span> <span class="o">=</span> <span class="n">sheet_names</span> <span class="k">if</span> <span class="n">sheet_names</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">xl</span><span class="o">.</span><span class="n">sheet_names</span>
+
+        <span class="n">label_terms</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">sheet</span> <span class="ow">in</span> <span class="n">sheets</span><span class="p">:</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">sheet_name</span><span class="o">=</span><span class="n">sheet</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\[(.*?)\]"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">))</span>
+                <span class="n">label</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">if</span> <span class="n">m</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">col</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">terms</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                <span class="n">terms</span> <span class="o">=</span> <span class="n">terms</span><span class="p">[</span><span class="n">terms</span> <span class="o">!=</span> <span class="s2">""</span><span class="p">]</span>
+                <span class="n">label_terms</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">terms</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">label_terms</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator._compile_exact">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator._compile_exact">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compile_exact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">label_terms</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]]:</span>
+        <span class="n">compiled</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">terms</span> <span class="ow">in</span> <span class="n">label_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">terms</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)):</span>
+                <span class="n">pat</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">term</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\ "</span><span class="p">,</span> <span class="sa">r</span><span class="s2">"\s+"</span><span class="p">)</span>
+                <span class="n">rx</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">pat</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span>
+                <span class="n">compiled</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">label</span><span class="p">,</span> <span class="n">term</span><span class="p">,</span> <span class="n">rx</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">compiled</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator._tokenize">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator._tokenize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tokenize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+        <span class="n">punct</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="s1">'''.,;:!?()[]</span><span class="si">{}</span><span class="s1">"'`&lt;&gt;|'''</span><span class="p">)</span>
+        <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">text</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">isspace</span><span class="p">():</span>
+                <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">continue</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">n</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">text</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">isspace</span><span class="p">():</span>
+                <span class="n">i</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">i</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="n">e</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+            <span class="k">while</span> <span class="n">s</span> <span class="o">&lt;</span> <span class="n">e</span> <span class="ow">and</span> <span class="n">raw</span><span class="p">[</span><span class="n">s</span><span class="p">]</span> <span class="ow">in</span> <span class="n">punct</span><span class="p">:</span>
+                <span class="n">s</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="k">while</span> <span class="n">e</span> <span class="o">&gt;</span> <span class="n">s</span> <span class="ow">and</span> <span class="n">raw</span><span class="p">[</span><span class="n">e</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="ow">in</span> <span class="n">punct</span><span class="p">:</span>
+                <span class="n">e</span> <span class="o">-=</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">s</span> <span class="o">==</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">tok</span> <span class="o">=</span> <span class="n">raw</span><span class="p">[</span><span class="n">s</span><span class="p">:</span><span class="n">e</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">tok</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="n">s</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="n">e</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator._term_tokens">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator._term_tokens">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_term_tokens</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">term</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">term</span><span class="o">.</span><span class="n">split</span><span class="p">()</span> <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator.generate">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator.generate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">match_mode</span> <span class="o">==</span> <span class="s2">"exact_phrase"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_exact</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_fuzzy</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator._generate_exact">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator._generate_exact">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_exact</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+        <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">text</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compiled_exact</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">term</span><span class="p">,</span> <span class="n">rx</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compiled_exact</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">rx</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+                <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">m</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">CandidateSpan</span><span class="p">(</span>
+                        <span class="n">span_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+                        <span class="n">doc_id</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                        <span class="n">start</span><span class="o">=</span><span class="n">start</span><span class="p">,</span>
+                        <span class="n">end</span><span class="o">=</span><span class="n">end</span><span class="p">,</span>
+                        <span class="n">text</span><span class="o">=</span><span class="n">text</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">],</span>
+                        <span class="n">sources</span><span class="o">=</span><span class="p">[</span><span class="n">SourceHit</span><span class="p">(</span><span class="n">source_type</span><span class="o">=</span><span class="s2">"gazetteer"</span><span class="p">,</span> <span class="n">source_id</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">details</span><span class="o">=</span><span class="p">{</span><span class="s2">"term"</span><span class="p">:</span> <span class="n">term</span><span class="p">,</span> <span class="s2">"mode"</span><span class="p">:</span> <span class="s2">"exact"</span><span class="p">})],</span>
+                        <span class="n">proposed_labels</span><span class="o">=</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span> <span class="n">rationale</span><span class="o">=</span><span class="s2">"gazetteer_exact"</span><span class="p">)],</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator._generate_fuzzy">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator._generate_fuzzy">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_fuzzy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+        <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">doc</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">out</span>
+
+        <span class="n">text</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span>
+
+        <span class="c1"># small stoplist for overly-generic single-word matches</span>
+        <span class="n">stoplist</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"evidence"</span><span class="p">,</span> <span class="s2">"note"</span><span class="p">,</span> <span class="s2">"notes"</span><span class="p">,</span> <span class="s2">"information"</span><span class="p">,</span> <span class="s2">"item"</span><span class="p">,</span> <span class="s2">"items"</span><span class="p">,</span> <span class="s2">"observation"</span><span class="p">,</span> <span class="s2">"observations"</span><span class="p">}</span>
+
+        <span class="c1"># helper: normalize token for more robust matching (normalize hyphens/slashes -&gt; space)</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_token</span><span class="p">(</span><span class="n">tok</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[-_/]+'</span><span class="p">,</span> <span class="s1">' '</span><span class="p">,</span> <span class="n">tok</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_term_threshold</span><span class="p">(</span><span class="n">term_tokens</span><span class="p">):</span>
+            <span class="c1"># dynamic threshold: shorter terms need looser threshold</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">term_tokens</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mf">0.55</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">term_tokens</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mf">0.65</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fuzzy_jaccard_threshold</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mf">0.8</span>
+
+        <span class="c1"># split into sentence-like spans to avoid matching across sentences</span>
+        <span class="n">sent_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[^.!?]+[.!?]?'</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span><span class="p">):</span>
+            <span class="n">s_text</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">s_start</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">s_end</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">end</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">sent_spans</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">s_text</span><span class="p">,</span> <span class="n">s_start</span><span class="p">,</span> <span class="n">s_end</span><span class="p">))</span>
+
+        <span class="c1"># For each sentence, tokenize and run fuzzy matching inside sentence scope.</span>
+        <span class="k">for</span> <span class="n">sent_text</span><span class="p">,</span> <span class="n">sent_s</span><span class="p">,</span> <span class="n">sent_e</span> <span class="ow">in</span> <span class="n">sent_spans</span><span class="p">:</span>
+            <span class="n">toks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tokenize</span><span class="p">(</span><span class="n">sent_text</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">toks</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># adjust tokens to absolute offsets in the doc</span>
+            <span class="n">toks</span> <span class="o">=</span> <span class="p">[(</span><span class="n">tok</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="n">sent_s</span><span class="p">,</span> <span class="n">end</span> <span class="o">+</span> <span class="n">sent_s</span><span class="p">)</span> <span class="k">for</span> <span class="p">(</span><span class="n">tok</span><span class="p">,</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">)</span> <span class="ow">in</span> <span class="n">toks</span><span class="p">]</span>
+            <span class="n">token_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">toks</span><span class="p">]</span>
+
+            <span class="c1"># iterate terms and attempt fuzzy match within this sentence only</span>
+            <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">terms</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">label_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">:</span>
+                    <span class="n">ttoks_raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_term_tokens</span><span class="p">(</span><span class="n">term</span><span class="p">)</span>
+                    <span class="c1"># Normalize term tokens</span>
+                    <span class="n">ttoks</span> <span class="o">=</span> <span class="p">[</span><span class="n">_normalize_token</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">ttoks_raw</span> <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">ttoks</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">tset</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">ttoks</span><span class="p">)</span>
+                    <span class="c1"># window size ~ term length + slack</span>
+                    <span class="n">win</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_window_tokens</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ttoks</span><span class="p">)</span> <span class="o">+</span> <span class="mi">2</span><span class="p">))</span>
+
+                    <span class="c1"># Slide windows over this sentence's tokens</span>
+                    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">token_texts</span><span class="p">)):</span>
+                        <span class="n">j</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">token_texts</span><span class="p">),</span> <span class="n">i</span> <span class="o">+</span> <span class="n">win</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="n">j</span><span class="p">:</span>
+                            <span class="k">continue</span>
+                        <span class="n">w</span> <span class="o">=</span> <span class="n">token_texts</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">j</span><span class="p">]</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="n">w</span><span class="p">:</span>
+                            <span class="k">continue</span>
+                        <span class="n">wnorm</span> <span class="o">=</span> <span class="p">[</span><span class="n">_normalize_token</span><span class="p">(</span><span class="n">wi</span><span class="p">)</span> <span class="k">for</span> <span class="n">wi</span> <span class="ow">in</span> <span class="n">w</span><span class="p">]</span>
+                        <span class="n">wset</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">wnorm</span><span class="p">)</span>
+                        <span class="n">inter</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tset</span> <span class="o">&amp;</span> <span class="n">wset</span><span class="p">)</span>
+                        <span class="n">union</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tset</span> <span class="o">|</span> <span class="n">wset</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">union</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="k">continue</span>
+                        <span class="n">jacc</span> <span class="o">=</span> <span class="n">inter</span> <span class="o">/</span> <span class="n">union</span>
+                        <span class="n">thresh</span> <span class="o">=</span> <span class="n">_term_threshold</span><span class="p">(</span><span class="n">ttoks</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">jacc</span> <span class="o">&lt;</span> <span class="n">thresh</span><span class="p">:</span>
+                            <span class="k">continue</span>
+
+                        <span class="c1"># Determine matched token indices (tighten to matched tokens)</span>
+                        <span class="n">matched</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span> <span class="k">if</span> <span class="n">_normalize_token</span><span class="p">(</span><span class="n">token_texts</span><span class="p">[</span><span class="n">k</span><span class="p">])</span> <span class="ow">in</span> <span class="n">tset</span><span class="p">]</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="n">matched</span><span class="p">:</span>
+                            <span class="k">continue</span>
+                        <span class="n">s_idx</span><span class="p">,</span> <span class="n">e_idx</span> <span class="o">=</span> <span class="n">matched</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">matched</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+                        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="n">toks</span><span class="p">[</span><span class="n">s_idx</span><span class="p">][</span><span class="mi">1</span><span class="p">],</span> <span class="n">toks</span><span class="p">[</span><span class="n">e_idx</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span>
+                        <span class="c1"># Clip to sentence bounds for safety</span>
+                        <span class="n">start</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">sent_s</span><span class="p">)</span>
+                        <span class="n">end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">end</span><span class="p">,</span> <span class="n">sent_e</span><span class="p">)</span>
+                        <span class="n">span_text</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                        <span class="c1"># Trim trailing punctuation and sentence fragments</span>
+                        <span class="n">span_text</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'^[\s\.\,\;\:]+|[\s\.\,\;\:]+$'</span><span class="p">,</span> <span class="s1">''</span><span class="p">,</span> <span class="n">span_text</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="n">span_text</span><span class="p">:</span>
+                            <span class="k">continue</span>
+                        <span class="c1"># Reject single short generic tokens</span>
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">span_text</span><span class="o">.</span><span class="n">split</span><span class="p">())</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">span_text</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">4</span> <span class="ow">and</span> <span class="n">span_text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">stoplist</span><span class="p">:</span>
+                            <span class="k">continue</span>
+
+                        <span class="c1"># Avoid duplicates: check if we already emitted same exact offset and label</span>
+                        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">label</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_fuzzy_emitted"</span><span class="p">):</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">_fuzzy_emitted</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fuzzy_emitted</span><span class="p">:</span>
+                            <span class="k">continue</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">_fuzzy_emitted</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+                        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="n">CandidateSpan</span><span class="p">(</span>
+                                <span class="n">span_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+                                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                                <span class="n">start</span><span class="o">=</span><span class="n">start</span><span class="p">,</span>
+                                <span class="n">end</span><span class="o">=</span><span class="n">end</span><span class="p">,</span>
+                                <span class="n">text</span><span class="o">=</span><span class="n">span_text</span><span class="p">,</span>
+                                <span class="n">sources</span><span class="o">=</span><span class="p">[</span><span class="n">SourceHit</span><span class="p">(</span><span class="n">source_type</span><span class="o">=</span><span class="s2">"gazetteer"</span><span class="p">,</span> <span class="n">source_id</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">jacc</span><span class="p">),</span> <span class="n">details</span><span class="o">=</span><span class="p">{</span><span class="s2">"term"</span><span class="p">:</span> <span class="n">term</span><span class="p">,</span> <span class="s2">"mode"</span><span class="p">:</span> <span class="s2">"fuzzy"</span><span class="p">,</span> <span class="s2">"jaccard"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">jacc</span><span class="p">)})],</span>
+                                <span class="n">proposed_labels</span><span class="o">=</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">jacc</span><span class="p">),</span> <span class="n">rationale</span><span class="o">=</span><span class="s2">"gazetteer_fuzzy"</span><span class="p">)]</span>
+                            <span class="p">)</span>
+                        <span class="p">)</span>
+                        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">emit_overlapping</span><span class="p">:</span>
+                            <span class="k">break</span>  <span class="c1"># stop sliding windows for this term in this sentence</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_fuzzy_emitted"</span><span class="p">):</span>
+            <span class="nb">delattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_fuzzy_emitted"</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="GazetteerGenerator.get_token_evidence">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/index.html#src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator.get_token_evidence">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_token_evidence</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="s2">"SchemaIndex"</span><span class="p">,</span> <span class="n">min_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return role-aware token evidence derived from the gazetteer.</span>
+
+<span class="sd">        Output schema:</span>
+<span class="sd">          {</span>
+<span class="sd">            "exclusive_by_group": { "G1_PHYSICAL_COMPONENT": {tokens...}, "G4_MECHANISM_PROCESS": {tokens...}, ... },</span>
+<span class="sd">            "token_to_groups": { "token": {"G1_PHYSICAL_COMPONENT","G4_MECHANISM_PROCESS",...}, ... }</span>
+<span class="sd">          }</span>
+
+<span class="sd">        A token is *exclusive* to a group if it only appears in gazetteer terms whose labels map to that group.</span>
+<span class="sd">        This is used downstream to reduce false multi-label acceptance.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_token_evidence_cache"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_token_evidence_cache</span>
+
+        <span class="n">token_to_groups</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">terms</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">label_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">grp</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">grp</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="n">grp</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">grp</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\w+"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">term</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()):</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">min_len</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">token_to_groups</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">tok</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">grp</span><span class="p">)</span>
+
+        <span class="n">exclusive_by_group</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">tok</span><span class="p">,</span> <span class="n">grps</span> <span class="ow">in</span> <span class="n">token_to_groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">grps</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">g</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="n">grps</span><span class="p">))</span>
+                <span class="n">exclusive_by_group</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_token_evidence_cache</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"exclusive_by_group"</span><span class="p">:</span> <span class="n">exclusive_by_group</span><span class="p">,</span>
+            <span class="s2">"token_to_groups"</span><span class="p">:</span> <span class="n">token_to_groups</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_token_evidence_cache</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

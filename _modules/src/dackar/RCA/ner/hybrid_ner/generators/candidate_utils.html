@@ -1,0 +1,357 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.generators.candidate_utils &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.generators.candidate_utils</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.generators.candidate_utils</h1><div class="highlight"><pre>
+<span></span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateSpan</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<div class="viewcode-block" id="split_component_mechanism_spans">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/candidate_utils/index.html#src.dackar.RCA.ner.hybrid_ner.generators.candidate_utils.split_component_mechanism_spans">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">split_component_mechanism_spans</span><span class="p">(</span>
+    <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">],</span>
+    <span class="n">component_tokens</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">mechanism_tokens</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Split spans that contain both a component token and a mechanism token.</span>
+
+<span class="sd">    Notes:</span>
+<span class="sd">    - Uses word-boundary regex finditer (handles repeated tokens with correct offsets).</span>
+<span class="sd">    - Creates unique span_ids per emitted token occurrence.</span>
+<span class="sd">    - Copies sources/proposed_labels to avoid shared mutable lists and label loss.</span>
+<span class="sd">    """</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="c1"># Normalize tokens once for robust membership checks</span>
+    <span class="n">comp_set</span> <span class="o">=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">(</span><span class="n">component_tokens</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">())</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)}</span>
+    <span class="n">mech_set</span> <span class="o">=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">(</span><span class="n">mechanism_tokens</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">())</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)}</span>
+
+    <span class="c1"># Precompile a token regex</span>
+    <span class="n">tok_rx</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b([A-Za-z0-9_\-]+)\b"</span><span class="p">)</span>
+
+    <span class="n">PROTECTED_MECHANISM_PHRASES</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"acid attack"</span><span class="p">,</span>
+        <span class="s2">"adhesive wear"</span><span class="p">,</span>
+        <span class="s2">"seal degradation"</span><span class="p">,</span>
+        <span class="s2">"pitting damage"</span><span class="p">,</span>
+        <span class="s2">"fretting wear"</span><span class="p">,</span>
+        <span class="s2">"bearing fatigue"</span><span class="p">,</span>
+        <span class="s2">"shaft cracking"</span><span class="p">,</span>
+        <span class="s2">"gasket embrittlement"</span><span class="p">,</span>
+        <span class="s2">"valve stem galling"</span><span class="p">,</span>
+        <span class="s2">"seal leakage"</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+        <span class="n">text_low</span> <span class="o">=</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">phrase</span> <span class="ow">in</span> <span class="n">text_low</span> <span class="k">for</span> <span class="n">phrase</span> <span class="ow">in</span> <span class="n">PROTECTED_MECHANISM_PHRASES</span><span class="p">):</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+
+        <span class="n">toks</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">tok_rx</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">text_low</span><span class="p">)]</span>
+        <span class="n">comp_hits</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">toks</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">comp_set</span><span class="p">}</span>
+        <span class="n">mech_hits</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">toks</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">mech_set</span><span class="p">}</span>
+
+        <span class="c1"># Split only when there is credible evidence of a mixed phrase.</span>
+        <span class="c1"># Require at least one component token and one mechanism token,</span>
+        <span class="c1"># and at least one of each to be distinct tokens.</span>
+        <span class="k">if</span> <span class="n">comp_hits</span> <span class="ow">and</span> <span class="n">mech_hits</span><span class="p">:</span>
+            <span class="c1"># If the span is very short, prefer keeping it intact.</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">toks</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">emitted_any</span> <span class="o">=</span> <span class="kc">False</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">_emit</span><span class="p">(</span><span class="n">group_tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">token_set</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">nonlocal</span> <span class="n">emitted_any</span>
+                <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">token_set</span><span class="p">):</span>
+                    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">m</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">text_low</span><span class="p">)):</span>
+                        <span class="n">s_rel</span><span class="p">,</span> <span class="n">e_rel</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">(),</span> <span class="n">m</span><span class="o">.</span><span class="n">end</span><span class="p">()</span>
+                        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="n">CandidateSpan</span><span class="p">(</span>
+                                <span class="n">span_id</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">span_id</span><span class="si">}</span><span class="s2">_split_</span><span class="si">{</span><span class="n">group_tag</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">tok</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                                <span class="n">doc_id</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                                <span class="n">start</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">s_rel</span><span class="p">,</span>
+                                <span class="n">end</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">e_rel</span><span class="p">,</span>
+                                <span class="n">text</span><span class="o">=</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)[</span><span class="n">s_rel</span><span class="p">:</span><span class="n">e_rel</span><span class="p">],</span>
+                                <span class="n">sources</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">sources</span><span class="p">),</span>
+                                <span class="n">proposed_labels</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span><span class="p">),</span>
+                                <span class="n">attributes</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"attributes"</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}),</span>
+                                <span class="n">is_nested_allowed</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"is_nested_allowed"</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+                            <span class="p">)</span>
+                        <span class="p">)</span>
+                        <span class="n">emitted_any</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="c1"># Conservative behavior: emit only the best local component token and</span>
+            <span class="c1"># the best local mechanism token, not every hit.</span>
+            <span class="n">comp_tok</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">comp_hits</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">x</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)[:</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">mech_tok</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">mech_hits</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">x</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)[:</span><span class="mi">1</span><span class="p">]</span>
+
+            <span class="n">_emit</span><span class="p">(</span><span class="s2">"comp"</span><span class="p">,</span> <span class="nb">set</span><span class="p">(</span><span class="n">comp_tok</span><span class="p">))</span>
+            <span class="n">_emit</span><span class="p">(</span><span class="s2">"mech"</span><span class="p">,</span> <span class="nb">set</span><span class="p">(</span><span class="n">mech_tok</span><span class="p">))</span>
+
+            <span class="c1"># Safety: if something went wrong, keep original</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">emitted_any</span><span class="p">:</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="dedupe_candidate_spans">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/candidate_utils/index.html#src.dackar.RCA.ner.hybrid_ner.generators.candidate_utils.dedupe_candidate_spans">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">dedupe_candidate_spans</span><span class="p">(</span><span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Deduplicate and filter candidate spans:</span>
+<span class="sd">    - normalize by (start,end,text_lower)</span>
+<span class="sd">    - prefer spans with proposed_labels</span>
+<span class="sd">    - remove spans that are substrings of longer spans with identical proposed_labels</span>
+<span class="sd">    - if labels differ, prefer shorter labeled spans (to keep minimal atomic tokens)</span>
+<span class="sd">    """</span>
+    <span class="n">seen</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+        <span class="n">existing</span> <span class="o">=</span> <span class="n">seen</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">existing</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">seen</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">c</span>
+            <span class="k">continue</span>
+        <span class="n">ex_props</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">existing</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">c_props</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">ex_props</span><span class="p">)</span> <span class="ow">and</span> <span class="n">c_props</span><span class="p">:</span>
+            <span class="n">seen</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">c</span>
+        <span class="k">elif</span> <span class="n">ex_props</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">c_props</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="c1"># else: identical (start, end, text) key ⇒ identical span length, so there is</span>
+        <span class="c1"># no longer/shorter choice to make; keep the first-seen candidate.</span>
+    <span class="n">chosen</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">seen</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+    <span class="n">final</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chosen</span><span class="p">:</span>
+        <span class="n">is_sub</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">c_props</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">([</span><span class="n">h</span><span class="o">.</span><span class="n">label</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="p">[])])</span>
+        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">chosen</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">c</span> <span class="ow">is</span> <span class="n">d</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">start</span> <span class="o">&lt;=</span> <span class="n">c</span><span class="o">.</span><span class="n">start</span> <span class="ow">and</span> <span class="n">d</span><span class="o">.</span><span class="n">end</span> <span class="o">&gt;=</span> <span class="n">c</span><span class="o">.</span><span class="n">end</span><span class="p">:</span>
+                <span class="n">d_props</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">([</span><span class="n">h</span><span class="o">.</span><span class="n">label</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="p">[])])</span>
+                <span class="k">if</span> <span class="n">c_props</span> <span class="o">==</span> <span class="n">d_props</span><span class="p">:</span>
+                    <span class="n">is_sub</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">break</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># if labels differ, prefer the shorter labeled span (keep minimal spans)</span>
+                    <span class="n">c_has</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="p">[]))</span>
+                    <span class="n">d_has</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="p">[]))</span>
+                    <span class="k">if</span> <span class="n">c_has</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">d_has</span><span class="p">:</span>
+                        <span class="c1"># keep c</span>
+                        <span class="k">continue</span>
+                    <span class="k">if</span> <span class="n">d_has</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">c_has</span><span class="p">:</span>
+                        <span class="n">is_sub</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="k">break</span>
+                    <span class="c1"># both have labels but differ: prefer shorter</span>
+                    <span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="n">c</span><span class="o">.</span><span class="n">start</span><span class="p">)</span> <span class="o">&gt;</span> <span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="n">d</span><span class="o">.</span><span class="n">start</span><span class="p">):</span>
+                        <span class="n">is_sub</span> <span class="o">=</span> <span class="kc">True</span>
+                        <span class="k">break</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="k">continue</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">is_sub</span><span class="p">:</span>
+            <span class="n">final</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+    <span class="n">final</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="o">-</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">end</span> <span class="o">-</span> <span class="n">x</span><span class="o">.</span><span class="n">start</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">final</span></div>
+
+
+<div class="viewcode-block" id="split_multi_label_spans">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/candidate_utils/index.html#src.dackar.RCA.ner.hybrid_ner.generators.candidate_utils.split_multi_label_spans">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">split_multi_label_spans</span><span class="p">(</span><span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">],</span> <span class="n">token_index</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Split candidates that have multiple proposed_labels into minimal single-label spans</span>
+<span class="sd">    using simple keyword heuristics for components vs degradations. If token_index is provided</span>
+<span class="sd">    (dict token-&gt;labels from gazetteer), it will be used to find tokens inside the text.</span>
+<span class="sd">    """</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">deg_kw</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"wear"</span><span class="p">,</span><span class="s2">"damage"</span><span class="p">,</span><span class="s2">"degradation"</span><span class="p">,</span><span class="s2">"corrosion"</span><span class="p">,</span><span class="s2">"pitting"</span><span class="p">,</span><span class="s2">"acid"</span><span class="p">,</span><span class="s2">"attack"</span><span class="p">,</span><span class="s2">"cavitation"</span><span class="p">,</span><span class="s2">"erosion"</span><span class="p">,</span><span class="s2">"leak"</span><span class="p">,</span><span class="s2">"crack"</span><span class="p">,</span><span class="s2">"cracking"</span><span class="p">,</span><span class="s2">"fracture"</span><span class="p">,</span><span class="s2">"adhesive"</span><span class="p">}</span>
+    <span class="n">comp_kw</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"bearing"</span><span class="p">,</span><span class="s2">"shaft"</span><span class="p">,</span><span class="s2">"cam"</span><span class="p">,</span><span class="s2">"gasket"</span><span class="p">,</span><span class="s2">"valve"</span><span class="p">,</span><span class="s2">"pump"</span><span class="p">,</span><span class="s2">"seal"</span><span class="p">,</span><span class="s2">"motor"</span><span class="p">,</span><span class="s2">"assembly"</span><span class="p">}</span>
+    <span class="c1"># if token_index provided, extract candidate token lists</span>
+    <span class="n">comp_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">deg_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">token_index</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">tk</span><span class="p">,</span> <span class="n">vals</span> <span class="ow">in</span> <span class="n">token_index</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="c1"># vals may be set of (label, term)</span>
+            <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">vals</span><span class="p">:</span>
+                <span class="n">lbl</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span><span class="nb">tuple</span><span class="p">))</span> <span class="ow">and</span> <span class="n">v</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+                <span class="k">if</span> <span class="s1">'comp'</span> <span class="ow">in</span> <span class="n">lbl</span><span class="p">:</span>
+                    <span class="n">comp_tokens</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tk</span><span class="p">)</span>
+                <span class="k">if</span> <span class="s1">'deg'</span> <span class="ow">in</span> <span class="n">lbl</span> <span class="ow">or</span> <span class="s1">'mech'</span> <span class="ow">in</span> <span class="n">lbl</span><span class="p">:</span>
+                    <span class="n">deg_tokens</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tk</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+        <span class="n">props</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="c1"># if single or none, keep as is</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">props</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">props</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="c1"># do not split very short spans or protected phrases</span>
+        <span class="n">text_low</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">text_low</span><span class="o">.</span><span class="n">split</span><span class="p">())</span> <span class="o">&lt;=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">p</span> <span class="ow">in</span> <span class="n">text_low</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="s2">"acid attack"</span><span class="p">,</span>
+            <span class="s2">"adhesive wear"</span><span class="p">,</span>
+            <span class="s2">"fretting wear"</span><span class="p">,</span>
+            <span class="s2">"bearing fatigue"</span><span class="p">,</span>
+            <span class="s2">"seal leakage"</span><span class="p">,</span>
+        <span class="p">)):</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">produced</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="c1"># find component keywords first (from props or comp_kw/comp_tokens)</span>
+        <span class="c1"># use union of known comp tokens</span>
+        <span class="n">kws_comp</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">comp_kw</span><span class="p">])</span> <span class="o">|</span> <span class="n">comp_tokens</span>
+        <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">kws_comp</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">text_low</span><span class="p">):</span>
+                <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">text_low</span><span class="p">)</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+                <span class="n">e</span> <span class="o">=</span> <span class="n">s</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">new</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)(</span><span class="n">span_id</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">span_id</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">"_split_</span><span class="si">{</span><span class="n">kw</span><span class="si">}</span><span class="s2">_comp"</span><span class="p">,</span> <span class="n">doc_id</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="n">s</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">e</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">text</span><span class="p">[</span><span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">():</span><span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()</span><span class="o">+</span><span class="nb">len</span><span class="p">(</span><span class="n">kw</span><span class="p">)],</span> <span class="n">sources</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">sources</span><span class="p">,</span> <span class="n">proposed_labels</span><span class="o">=</span><span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">props</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">label</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"comp"</span><span class="p">)])</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="n">new</span> <span class="o">=</span> <span class="n">c</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new</span><span class="p">)</span>
+                <span class="n">produced</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">break</span>
+        <span class="c1"># find degradation keywords</span>
+        <span class="n">kws_deg</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">deg_kw</span><span class="p">])</span> <span class="o">|</span> <span class="n">deg_tokens</span>
+        <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">kws_deg</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">produced</span><span class="p">:</span>
+                <span class="k">break</span>
+            <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">text_low</span><span class="p">):</span>
+                <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">text_low</span><span class="p">)</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+                <span class="n">e</span> <span class="o">=</span> <span class="n">s</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">kw</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">new</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="n">c</span><span class="p">)(</span><span class="n">span_id</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">span_id</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">"_split_</span><span class="si">{</span><span class="n">kw</span><span class="si">}</span><span class="s2">_deg"</span><span class="p">,</span> <span class="n">doc_id</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="n">s</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">e</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">text</span><span class="p">[</span><span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">():</span><span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">()</span><span class="o">+</span><span class="nb">len</span><span class="p">(</span><span class="n">kw</span><span class="p">)],</span> <span class="n">sources</span><span class="o">=</span><span class="n">c</span><span class="o">.</span><span class="n">sources</span><span class="p">,</span> <span class="n">proposed_labels</span><span class="o">=</span><span class="p">[</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">props</span> <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">label</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"deg"</span><span class="p">)])</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                    <span class="n">new</span> <span class="o">=</span> <span class="n">c</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new</span><span class="p">)</span>
+                <span class="n">produced</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">produced</span><span class="p">:</span>
+            <span class="c1"># safer fallback: keep original candidate, do not silently collapse</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="k">continue</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

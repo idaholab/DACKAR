@@ -1,0 +1,262 @@
+src.dackar.RCA.ner.hybrid_ner.generators
+========================================
+
+.. py:module:: src.dackar.RCA.ner.hybrid_ner.generators
+
+.. autoapi-nested-parse::
+
+   Candidate generators produce CandidateSpan objects from a Document.
+
+   Multiple generators are intended: gazetteer, regex/patterns, noun phrases, heuristics, etc.
+
+
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   /autoapi/src/dackar/RCA/ner/hybrid_ner/generators/anchored_np_generator/index
+   /autoapi/src/dackar/RCA/ner/hybrid_ner/generators/base/index
+   /autoapi/src/dackar/RCA/ner/hybrid_ner/generators/candidate_utils/index
+   /autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index
+   /autoapi/src/dackar/RCA/ner/hybrid_ner/generators/gazetteer_generator/index
+   /autoapi/src/dackar/RCA/ner/hybrid_ner/generators/nounphrase_generator/index
+   /autoapi/src/dackar/RCA/ner/hybrid_ner/generators/regex_generator/index
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.generators.CandidateGenerator
+   src.dackar.RCA.ner.hybrid_ner.generators.RegexCandidateGenerator
+   src.dackar.RCA.ner.hybrid_ner.generators.GazetteerGenerator
+   src.dackar.RCA.ner.hybrid_ner.generators.GazetteerConfig
+   src.dackar.RCA.ner.hybrid_ner.generators.NounPhraseGenerator
+
+
+Package Contents
+----------------
+
+.. py:class:: CandidateGenerator
+
+   Bases: :py:obj:`abc.ABC`
+
+
+   Interface for candidate generation.
+
+   Candidate generation is the high-recall stage of Hybrid NER.
+   Each generator proposes spans (with provenance and optional label hypotheses).
+
+
+   .. py:method:: generate(doc)
+      :abstractmethod:
+
+
+      Return a list of CandidateSpan objects for the given document.
+
+
+
+.. py:class:: RegexCandidateGenerator(patterns)
+
+   Bases: :py:obj:`src.dackar.RCA.ner.hybrid_ner.generators.base.CandidateGenerator`
+
+
+   Simple candidate generator using regex patterns.
+
+   Intended as a starter generator for v0.1 (before gazetteer + noun chunks are added).
+   You can use this to propose common reliability phrases like:
+     - "failed to start"
+     - "trip occurred"
+     - "corrosion-induced failure"
+
+   Each regex can optionally attach an initial label hypothesis.
+
+
+   .. py:attribute:: patterns
+
+
+   .. py:method:: generate(doc)
+
+      Return a list of CandidateSpan objects for the given document.
+
+
+
+.. py:class:: GazetteerGenerator(excel_path, sheet_names = None, config = None)
+
+   Bases: :py:obj:`src.dackar.RCA.ner.hybrid_ner.generators.base.CandidateGenerator`
+
+
+   Gazetteer-based candidate generator reading an Excel file of labeled term lists.
+
+   Expected Excel convention:
+     - Each sheet contains one or more columns of terms.
+     - Column header should contain the label in square brackets, e.g.:
+         "Degradation mechanisms [deg_mech]"
+       If brackets are missing, the entire header is treated as the label.
+
+   For each term:
+     - exact_phrase mode: compiled, case-insensitive word-boundary regex
+     - fuzzy_tokens mode: approximate phrase matching by token overlap
+
+   Produces CandidateSpan with a LabelHypothesis(label=<label>).
+
+
+   .. py:attribute:: excel_path
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: label_terms
+
+
+   .. py:attribute:: _compiled_exact
+      :type:  Optional[List[Tuple[str, str, re.Pattern]]]
+      :value: None
+
+
+
+   .. py:method:: _load_gazetteer(path, sheet_names)
+
+
+   .. py:method:: _compile_exact(label_terms)
+
+
+   .. py:method:: _tokenize(text)
+
+
+   .. py:method:: _term_tokens(term)
+
+
+   .. py:method:: generate(doc)
+
+
+   .. py:method:: _generate_exact(doc)
+
+
+   .. py:method:: _generate_fuzzy(doc)
+
+
+   .. py:method:: get_token_evidence(schema, min_len = 3)
+
+      Return role-aware token evidence derived from the gazetteer.
+
+      Output schema:
+        {
+          "exclusive_by_group": { "G1_PHYSICAL_COMPONENT": {tokens...}, "G4_MECHANISM_PROCESS": {tokens...}, ... },
+          "token_to_groups": { "token": {"G1_PHYSICAL_COMPONENT","G4_MECHANISM_PROCESS",...}, ... }
+        }
+
+      A token is *exclusive* to a group if it only appears in gazetteer terms whose labels map to that group.
+      This is used downstream to reduce false multi-label acceptance.
+
+
+
+.. py:class:: GazetteerConfig
+
+   Configuration for gazetteer matching.
+
+   match_mode:
+     - "exact_phrase": match whole phrase with word boundaries (case-insensitive)
+     - "fuzzy_tokens": slide a token window and match by token overlap (Jaccard)
+
+   fuzzy_jaccard_threshold:
+     Minimum Jaccard similarity (0..1) to accept a fuzzy match.
+
+   max_window_tokens:
+     Maximum tokens for sliding window when fuzzy matching is enabled.
+
+   emit_overlapping:
+     If False, stops after the first fuzzy match for each term (reduces duplicates).
+
+
+   .. py:attribute:: match_mode
+      :type:  str
+      :value: 'exact_phrase'
+
+
+
+   .. py:attribute:: fuzzy_jaccard_threshold
+      :type:  float
+      :value: 0.8
+
+
+
+   .. py:attribute:: max_window_tokens
+      :type:  int
+      :value: 8
+
+
+
+   .. py:attribute:: emit_overlapping
+      :type:  bool
+      :value: True
+
+
+
+.. py:class:: NounPhraseGenerator(max_tokens = 6, min_tokens = 1)
+
+   Bases: :py:obj:`src.dackar.RCA.ner.hybrid_ner.generators.base.CandidateGenerator`
+
+
+   Noun phrase candidate generator.
+
+   Primary mode:
+     - Uses spaCy noun chunks if spaCy and an English model are available.
+
+   Fallback mode (regex-free):
+     - Tokenize with a simple whitespace/punctuation tokenizer
+     - (Optionally) POS-tag with NLTK if available
+     - Chunk noun-phrase-like spans using lightweight rules:
+         * sequences of (ADJ|NOUN|PROPN|NUM|HYPHENATED) tokens
+         * length 1..max_tokens tokens
+         * must contain at least one alphabetic token
+
+   Produces CandidateSpan without proposed labels (labeling handled later by gazetteer/rules/ML).
+
+
+   .. py:attribute:: max_tokens
+      :value: 6
+
+
+
+   .. py:attribute:: min_tokens
+      :value: 1
+
+
+
+   .. py:attribute:: _nlp
+      :value: None
+
+
+
+   .. py:attribute:: _nltk_available
+      :value: False
+
+
+
+   .. py:method:: generate(doc)
+
+
+   .. py:method:: _generate_spacy(doc)
+
+
+   .. py:method:: _tokenize_with_offsets(text)
+
+      Return (token, start, end) offsets with simple punctuation stripping.
+
+
+
+   .. py:method:: _pos_tags(tokens)
+
+
+   .. py:method:: _is_np_token(tok, pos)
+
+
+   .. py:method:: _generate_fallback(doc)
+
+

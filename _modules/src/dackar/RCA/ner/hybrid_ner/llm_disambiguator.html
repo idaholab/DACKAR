@@ -1,0 +1,473 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.llm_disambiguator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.llm_disambiguator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.llm_disambiguator</h1><div class="highlight"><pre>
+<span></span><span class="c1"># file: hybrid_ner/llm_disambiguator.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">urllib.parse</span><span class="w"> </span><span class="kn">import</span> <span class="n">urljoin</span>
+
+<span class="c1"># Import your project's LabelHypothesis, CandidateSpan, SchemaIndex</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">LabelHypothesis</span><span class="p">,</span> <span class="n">CandidateSpan</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">SchemaIndex</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="LLMConfig">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LLMConfig</span><span class="p">:</span>
+<div class="viewcode-block" id="LLMConfig.use_cli">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.use_cli">[docs]</a>
+    <span class="n">use_cli</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>                    <span class="c1"># Use Ollama CLI (subprocess) instead of HTTP</span></div>
+
+<div class="viewcode-block" id="LLMConfig.cli_binary">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.cli_binary">[docs]</a>
+    <span class="n">cli_binary</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"ollama"</span>               <span class="c1"># CLI binary name</span></div>
+
+<div class="viewcode-block" id="LLMConfig.http_url">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.http_url">[docs]</a>
+    <span class="n">http_url</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"http://localhost:11434/v1/chat/completions"</span>  <span class="c1"># Example Ollama HTTP endpoint</span></div>
+
+<div class="viewcode-block" id="LLMConfig.model">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.model">[docs]</a>
+    <span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"ollama/gpt-oss:20B"</span>            <span class="c1"># Model name to call</span></div>
+
+<div class="viewcode-block" id="LLMConfig.timeout">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.timeout">[docs]</a>
+    <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span></div>
+
+<div class="viewcode-block" id="LLMConfig.temperature">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.temperature">[docs]</a>
+    <span class="n">temperature</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>                <span class="c1"># deterministic</span></div>
+
+<div class="viewcode-block" id="LLMConfig.max_tokens">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.max_tokens">[docs]</a>
+    <span class="n">max_tokens</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span></div>
+
+<div class="viewcode-block" id="LLMConfig.stop_sequences">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.stop_sequences">[docs]</a>
+    <span class="n">stop_sequences</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+    <span class="c1"># Controls</span>
+<div class="viewcode-block" id="LLMConfig.min_confidence">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.min_confidence">[docs]</a>
+    <span class="n">min_confidence</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.15</span>            <span class="c1"># attach hypotheses with at least this soft score (if LLM emits a score)</span></div>
+
+<div class="viewcode-block" id="LLMConfig.cache_ttl_seconds">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.cache_ttl_seconds">[docs]</a>
+    <span class="n">cache_ttl_seconds</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3600</span></div>
+
+<div class="viewcode-block" id="LLMConfig.dry_run">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.dry_run">[docs]</a>
+    <span class="n">dry_run</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>                   <span class="c1"># if true, do not call the model; return NO_LABEL</span></div>
+
+    <span class="c1"># Confidence-band trigger for disambiguation.</span>
+    <span class="c1"># Spans with a best hypothesis score in [uncertain_score_floor, uncertain_score_ceiling]</span>
+    <span class="c1"># are sent to the LLM; outside this range they are accepted or dropped without LLM involvement.</span>
+<div class="viewcode-block" id="LLMConfig.uncertain_score_floor">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.uncertain_score_floor">[docs]</a>
+    <span class="n">uncertain_score_floor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.40</span>     <span class="c1"># below this the span is too weak even for LLM</span></div>
+
+<div class="viewcode-block" id="LLMConfig.uncertain_score_ceiling">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.uncertain_score_ceiling">[docs]</a>
+    <span class="n">uncertain_score_ceiling</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.65</span>   <span class="c1"># above this the embed result is confident enough</span></div>
+
+<div class="viewcode-block" id="LLMConfig.high_conf_bypass_score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMConfig.high_conf_bypass_score">[docs]</a>
+    <span class="n">high_conf_bypass_score</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.85</span>    <span class="c1"># gazetteer/high-conf hit at or above this bypasses LLM</span></div>
+</div>
+
+
+<div class="viewcode-block" id="LLMDisambiguator">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LLMDisambiguator</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">LLMConfig</span> <span class="o">=</span> <span class="n">LLMConfig</span><span class="p">()):</span>
+<div class="viewcode-block" id="LLMDisambiguator.schema">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator.schema">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">schema</span> <span class="o">=</span> <span class="n">schema</span></div>
+
+<div class="viewcode-block" id="LLMDisambiguator.config">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span></div>
+
+<div class="viewcode-block" id="LLMDisambiguator._cache">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator._cache">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># key -&gt; {"time":ts, "resp":...}</span></div>
+
+<div class="viewcode-block" id="LLMDisambiguator.llm_ok">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator.llm_ok">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">llm_ok</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">health_check</span><span class="p">()</span></div>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_ok</span><span class="p">:</span>
+            <span class="k">return</span>
+
+<div class="viewcode-block" id="LLMDisambiguator.should_call">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator.should_call">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">should_call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">c</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Decide whether to invoke the LLM for this candidate span.</span>
+
+<span class="sd">        Decision logic (in priority order):</span>
+<span class="sd">        1. High-confidence gazetteer hit exists → bypass LLM entirely (trust deterministic match).</span>
+<span class="sd">        2. No proposed labels at all → ask LLM (span has no evidence).</span>
+<span class="sd">        3. All hypotheses lack a known schema group → ask LLM (labels are unrecognised).</span>
+<span class="sd">        4. Multiple competing schema groups → ask LLM (genuine ambiguity).</span>
+<span class="sd">        5. Best score in the uncertain confidence band → ask LLM (embed result is marginal).</span>
+<span class="sd">        6. Best score below the floor → do NOT ask LLM (span is too weak; LLM would speculate).</span>
+<span class="sd">        7. Best score above the ceiling → do NOT ask LLM (embed is confident enough).</span>
+<span class="sd">        """</span>
+        <span class="n">proposed</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="s2">"proposed_labels"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+
+        <span class="c1"># 1. High-confidence bypass: at least one deterministic (gazetteer) hit above threshold.</span>
+        <span class="n">high_conf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">high_conf_bypass_score</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">high_conf</span>
+            <span class="ow">and</span> <span class="s2">"gazetteer"</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"rationale"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">proposed</span>
+        <span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="c1"># 2. No labels at all.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">proposed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+        <span class="c1"># 3. All hypotheses lack a known schema group.</span>
+        <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"group"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">proposed</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+        <span class="c1"># 4. Ambiguity across multiple schema groups.</span>
+        <span class="n">groups</span> <span class="o">=</span> <span class="p">{</span><span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"group"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">proposed</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"group"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)}</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+
+        <span class="c1"># 5 &amp; 6 &amp; 7. Confidence-band gate on the best available score.</span>
+        <span class="n">best_score</span> <span class="o">=</span> <span class="nb">max</span><span class="p">((</span><span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">proposed</span><span class="p">),</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">floor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">uncertain_score_floor</span>
+        <span class="n">ceiling</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">uncertain_score_ceiling</span>
+        <span class="k">return</span> <span class="n">floor</span> <span class="o">&lt;=</span> <span class="n">best_score</span> <span class="o">&lt;=</span> <span class="n">ceiling</span></div>
+
+
+    <span class="c1"># Build a concise prompt. Keep it short and constrained.</span>
+<div class="viewcode-block" id="LLMDisambiguator._build_prompt">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator._build_prompt">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_prompt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">c</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">candidate_labels</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="n">doc_text</span><span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">start</span> <span class="o">-</span> <span class="mi">200</span><span class="p">):</span> <span class="n">c</span><span class="o">.</span><span class="n">end</span> <span class="o">+</span> <span class="mi">200</span><span class="p">]</span>  <span class="c1"># short surrounding context</span>
+        <span class="n">label_info</span> <span class="o">=</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="sa">f</span><span class="s2">"- </span><span class="si">{</span><span class="n">lbl</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_label_short</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span> <span class="k">for</span> <span class="n">lbl</span> <span class="ow">in</span> <span class="n">candidate_labels</span><span class="p">])</span>
+        <span class="n">prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"""</span>
+<span class="s2">        You are a domain expert restricted to choosing one label from a provided list.</span>
+<span class="s2">        Context: "</span><span class="si">{</span><span class="n">ctx</span><span class="si">}</span><span class="s2">"</span>
+<span class="s2">        Span: "</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">text</span><span class="si">}</span><span class="s2">"</span>
+<span class="s2">        Possible labels:</span>
+<span class="s2">        </span><span class="si">{</span><span class="n">label_info</span><span class="si">}</span>
+
+<span class="s2">        Instruction: Choose exactly one label id from the list above that best fits the span in this context, or reply EXACTLY "NO_LABEL" if none apply. Answer with a JSON object only:</span>
+<span class="s2">        </span><span class="se">{{</span><span class="s2">"label":"&lt;label_id_or_NO_LABEL&gt;", "score":&lt;0.0-1.0 optional&gt;, "rationale":"&lt;short explanation&gt;"</span><span class="se">}}</span>
+<span class="s2">        Do NOT invent labels. Do NOT provide additional text.</span>
+<span class="s2">        """</span>
+        <span class="k">return</span> <span class="n">prompt</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="LLMDisambiguator._label_short">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator._label_short">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_label_short</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">lbl</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="c1"># Provide a short description from schema if available (fallback to label)</span>
+        <span class="c1"># The schema in your repo stores descriptions in the original json loaded by DescriptionEmbedGenerator.</span>
+        <span class="c1"># If not present, return label.</span>
+        <span class="n">entry</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">,</span> <span class="s2">"label_descriptions"</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">lbl</span> <span class="ow">in</span> <span class="n">entry</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">entry</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"short_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">entry</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">lbl</span>
+        <span class="k">return</span> <span class="n">lbl</span></div>
+
+
+<div class="viewcode-block" id="LLMDisambiguator._cache_key">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator._cache_key">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_cache_key</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">c</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">start</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">end</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">text</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+<div class="viewcode-block" id="LLMDisambiguator._extract_json_object">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator._extract_json_object">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_extract_json_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">s</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Some models occasionally wrap JSON with extra text.</span>
+<span class="sd">        Try to recover the first {...} object.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">s</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"{"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"}"</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\{.*\}"</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">DOTALL</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span></div>
+
+
+    <span class="c1"># Main entry: disambiguate a list of candidates, augment their proposed_labels with llm hypotheses</span>
+<div class="viewcode-block" id="LLMDisambiguator.disambiguate">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator.disambiguate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disambiguate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_ok</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">should_call</span><span class="p">(</span><span class="n">c</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache_key</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+            <span class="n">now</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span> <span class="ow">and</span> <span class="n">now</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">key</span><span class="p">][</span><span class="s2">"time"</span><span class="p">]</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">cache_ttl_seconds</span><span class="p">:</span>
+                <span class="n">resp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">key</span><span class="p">][</span><span class="s2">"resp"</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">resp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_call_llm_for_candidate</span><span class="p">(</span><span class="n">doc_text</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"time"</span><span class="p">:</span> <span class="n">now</span><span class="p">,</span> <span class="s2">"resp"</span><span class="p">:</span> <span class="n">resp</span><span class="p">}</span>
+            <span class="c1"># parse &amp; attach</span>
+            <span class="n">hypothesis</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_llm_response</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">hypothesis</span><span class="p">:</span>
+                <span class="c1"># Only attach if label is known in schema and clears min_confidence</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">hypothesis</span><span class="o">.</span><span class="n">label</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span>
+                        <span class="ow">and</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">hypothesis</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">min_confidence</span><span class="p">):</span>
+                    <span class="c1"># assign group</span>
+                    <span class="n">hypothesis</span><span class="o">.</span><span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="p">[</span><span class="n">hypothesis</span><span class="o">.</span><span class="n">label</span><span class="p">]</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">hypothesis</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LLMDisambiguator._call_llm_for_candidate">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator._call_llm_for_candidate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_call_llm_for_candidate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">c</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">dry_run</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"NO_LABEL"</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">"rationale"</span><span class="p">:</span> <span class="s2">"dry_run"</span><span class="p">}</span>
+
+        <span class="c1"># Candidate label set: use schema labels that are plausible (all labels in schema)</span>
+        <span class="n">candidate_labels</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>  <span class="c1"># or narrow set if desired</span>
+        <span class="n">prompt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_prompt</span><span class="p">(</span><span class="n">doc_text</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">candidate_labels</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">use_cli</span><span class="p">:</span>
+            <span class="c1"># `ollama run MODEL PROMPT` prints the model output to stdout.</span>
+            <span class="n">cmd</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">cli_binary</span><span class="p">,</span> <span class="s2">"run"</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">model</span><span class="p">,</span> <span class="n">prompt</span><span class="p">]</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">capture_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">parsed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_json_object</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">parsed</span> <span class="k">if</span> <span class="n">parsed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"NO_LABEL"</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">"rationale"</span><span class="p">:</span> <span class="s2">"empty"</span><span class="p">}</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"NO_LABEL"</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">"rationale"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"error:</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">url</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">http_url</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="c1"># OpenAI-compatible chat endpoint</span>
+                <span class="k">if</span> <span class="n">url</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"/chat/completions"</span><span class="p">):</span>
+                    <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span>
+                        <span class="s2">"model"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">model</span><span class="p">,</span>
+                        <span class="s2">"messages"</span><span class="p">:</span> <span class="p">[</span>
+                            <span class="p">{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"system"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"Return ONLY valid JSON. No extra text."</span><span class="p">},</span>
+                            <span class="p">{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="n">prompt</span><span class="p">},</span>
+                        <span class="p">],</span>
+                        <span class="s2">"temperature"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">temperature</span><span class="p">,</span>
+                        <span class="s2">"max_tokens"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_tokens</span><span class="p">,</span>
+                    <span class="p">}</span>
+                    <span class="n">r</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">payload</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+                    <span class="n">r</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+                    <span class="n">raw</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                    <span class="n">content</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"choices"</span><span class="p">,</span> <span class="p">[{}])[</span><span class="mi">0</span><span class="p">]</span>
+                           <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"message"</span><span class="p">,</span> <span class="p">{})</span>
+                           <span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"content"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+                    <span class="p">)</span>
+                    <span class="n">parsed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_json_object</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">parsed</span> <span class="k">if</span> <span class="n">parsed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"NO_LABEL"</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">"rationale"</span><span class="p">:</span> <span class="s2">"unparseable_chat_json"</span><span class="p">}</span>
+
+                <span class="c1"># OpenAI-compatible legacy completions endpoint</span>
+                <span class="k">if</span> <span class="n">url</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">"/completions"</span><span class="p">):</span>
+                    <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span>
+                        <span class="s2">"model"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">model</span><span class="p">,</span>
+                        <span class="s2">"prompt"</span><span class="p">:</span> <span class="n">prompt</span><span class="p">,</span>
+                        <span class="s2">"temperature"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">temperature</span><span class="p">,</span>
+                        <span class="s2">"max_tokens"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_tokens</span><span class="p">,</span>
+                    <span class="p">}</span>
+                    <span class="n">r</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">payload</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+                    <span class="n">r</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+                    <span class="n">raw</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+                    <span class="n">text</span> <span class="o">=</span> <span class="p">(</span><span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"choices"</span><span class="p">,</span> <span class="p">[{}])[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+                    <span class="n">parsed</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_json_object</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+                    <span class="k">return</span> <span class="n">parsed</span> <span class="k">if</span> <span class="n">parsed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"NO_LABEL"</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">"rationale"</span><span class="p">:</span> <span class="s2">"unparseable_completion_json"</span><span class="p">}</span>
+
+                <span class="c1"># Fallback: unknown endpoint; try prompt-style (your old behavior)</span>
+                <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span>
+                    <span class="s2">"model"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">model</span><span class="p">,</span>
+                    <span class="s2">"prompt"</span><span class="p">:</span> <span class="n">prompt</span><span class="p">,</span>
+                    <span class="s2">"temperature"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">temperature</span><span class="p">,</span>
+                    <span class="s2">"max_tokens"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_tokens</span><span class="p">,</span>
+                <span class="p">}</span>
+                <span class="n">r</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">payload</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
+
+                <span class="n">r</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+                <span class="k">return</span> <span class="n">r</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="k">return</span> <span class="p">{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"NO_LABEL"</span><span class="p">,</span> <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span> <span class="s2">"rationale"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"error:</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="LLMDisambiguator._parse_llm_response">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator._parse_llm_response">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_llm_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resp</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">c</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">]:</span>
+        <span class="c1"># Expected resp is a dict containing {"label":..., "score":..., "rationale":...}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">resp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="c1"># attempt hydration if resp is string</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">resp</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">resp</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="n">resp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"label"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">resp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"label_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">label</span> <span class="ow">or</span> <span class="n">label</span> <span class="o">==</span> <span class="s2">"NO_LABEL"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="c1"># malformed score from the LLM (e.g. null, "high"); skip this hypothesis</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">rationale</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">resp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rationale"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="c1"># Build a LabelHypothesis (adapt to your models.py constructor)</span>
+        <span class="n">lh</span> <span class="o">=</span> <span class="n">LabelHypothesis</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="n">score</span><span class="p">,</span> <span class="n">rationale</span><span class="o">=</span><span class="n">rationale</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">lh</span></div>
+
+
+
+<div class="viewcode-block" id="LLMDisambiguator.health_check">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/llm_disambiguator/index.html#src.dackar.RCA.ner.hybrid_ner.llm_disambiguator.LLMDisambiguator.health_check">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">health_check</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># derive base API URL from configured endpoint</span>
+            <span class="n">base</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">http_url</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="mi">2</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>  <span class="c1"># -&gt; http://localhost:11434/v1</span>
+            <span class="n">models_url</span> <span class="o">=</span> <span class="n">urljoin</span><span class="p">(</span><span class="n">base</span> <span class="o">+</span> <span class="s2">"/"</span><span class="p">,</span> <span class="s2">"models"</span><span class="p">)</span>
+
+            <span class="n">r</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">models_url</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+            <span class="n">r</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+
+            <span class="n">models</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span><span class="p">[</span><span class="s2">"id"</span><span class="p">]</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">r</span><span class="o">.</span><span class="n">json</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"data"</span><span class="p">,</span> <span class="p">[])]</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">model</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">models</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Model '</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">model</span><span class="si">}</span><span class="s2">' not found. Available: </span><span class="si">{</span><span class="n">models</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">"LLM health check failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">False</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

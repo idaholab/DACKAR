@@ -1,0 +1,374 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.doc_ref_extractor &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.doc_ref_extractor</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.doc_ref_extractor</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">doc_ref_extractor.py</span>
+<span class="sd">─────────────────────────────────────────────────────────────────────────────</span>
+<span class="sd">Extract document cross-reference IDs from nuclear plant text (CR, WO, ECA,</span>
+<span class="sd">LER, GL, SOP, etc.).</span>
+
+<span class="sd">Plant-specific flexibility</span>
+<span class="sd">──────────────────────────</span>
+<span class="sd">Every plant uses its own naming conventions.  This extractor is driven by a</span>
+<span class="sd">JSON *plant profile* (see ``ner/data/plant_profiles/default_plant_profile.json``)</span>
+<span class="sd">that enumerates document types, their prefix strings, and their regex patterns.</span>
+
+<span class="sd">To adapt to a new plant:</span>
+<span class="sd">  1. Copy ``default_plant_profile.json`` → ``&lt;your-plant-id&gt;_profile.json``</span>
+<span class="sd">  2. Add / remove entries in ``doc_ref_types``, adjusting prefixes and patterns.</span>
+<span class="sd">  3. Pass the file path to ``load_doc_ref_profile()`` or directly to</span>
+<span class="sd">     ``extract_doc_refs(text, profile_path=...)``.</span>
+
+<span class="sd">The default profile covers the most common US nuclear site conventions:</span>
+<span class="sd">  CR / CAP, WO / PM, ECA / EC / DCN, SOP / OP / MP / SP / EOP / AOP,</span>
+<span class="sd">  LER, GL, IN, BUL, OE / SER / IER, NCR / PER / AR.</span>
+
+<span class="sd">Output</span>
+<span class="sd">──────</span>
+<span class="sd">Each extracted reference is a ``DocRef`` namedtuple:</span>
+<span class="sd">  doc_type  - canonical type string (e.g. "CR", "WO", "GL")</span>
+<span class="sd">  label     - NER label string (e.g. "doc_ref_cr") for schema routing</span>
+<span class="sd">  raw       - original matched text (before normalization)</span>
+<span class="sd">  norm      - normalized ID (uppercase, collapsed separators)</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">NamedTuple</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<div class="viewcode-block" id="_DEFAULT_PROFILE_PATH">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor._DEFAULT_PROFILE_PATH">[docs]</a>
+<span class="n">_DEFAULT_PROFILE_PATH</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"data"</span> <span class="o">/</span> <span class="s2">"plant_profiles"</span> <span class="o">/</span> <span class="s2">"default_plant_profile.json"</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Output type</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DocRef">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.DocRef">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DocRef</span><span class="p">(</span><span class="n">NamedTuple</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""A single extracted document cross-reference."""</span>
+<div class="viewcode-block" id="DocRef.doc_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.DocRef.doc_type">[docs]</a>
+    <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span>    <span class="c1"># canonical type: "CR", "WO", "GL", …</span></div>
+
+<div class="viewcode-block" id="DocRef.label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.DocRef.label">[docs]</a>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span>       <span class="c1"># NER label: "doc_ref_cr", "doc_ref_wo", …</span></div>
+
+<div class="viewcode-block" id="DocRef.raw">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.DocRef.raw">[docs]</a>
+    <span class="n">raw</span><span class="p">:</span> <span class="nb">str</span>         <span class="c1"># verbatim matched text</span></div>
+
+<div class="viewcode-block" id="DocRef.norm">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.DocRef.norm">[docs]</a>
+    <span class="n">norm</span><span class="p">:</span> <span class="nb">str</span>        <span class="c1"># normalised ID (uppercase, canonical separator)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Profile loading</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="load_doc_ref_profile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.load_doc_ref_profile">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_doc_ref_profile</span><span class="p">(</span><span class="n">profile_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Load a plant profile JSON file and return the parsed dict.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        profile_path: Path to the plant profile JSON.  When ``None``, the</span>
+<span class="sd">            bundled ``default_plant_profile.json`` is used.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Parsed profile dict.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        FileNotFoundError: If *profile_path* is given but does not exist.</span>
+<span class="sd">        ValueError: If the file is not valid JSON.</span>
+<span class="sd">    """</span>
+    <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">profile_path</span><span class="p">)</span> <span class="k">if</span> <span class="n">profile_path</span> <span class="k">else</span> <span class="n">_DEFAULT_PROFILE_PATH</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Plant profile not found: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">))</span>
+    <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid JSON in plant profile </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span></div>
+
+
+
+<div class="viewcode-block" id="_compile_profile">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor._compile_profile">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_compile_profile</span><span class="p">(</span><span class="n">profile</span><span class="p">:</span> <span class="n">Dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">re</span><span class="o">.</span><span class="n">Pattern</span><span class="p">]]]:</span>
+<span class="w">    </span><span class="sd">"""Return list of (doc_type, label, [compiled_patterns]) from profile.</span>
+
+<span class="sd">    Patterns are compiled case-insensitively.</span>
+<span class="sd">    """</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_ref_types"</span><span class="p">,</span> <span class="p">[]):</span>
+        <span class="n">doc_type</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"type"</span><span class="p">,</span> <span class="s2">"UNKNOWN"</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="n">label</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"label"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"doc_ref_</span><span class="si">{</span><span class="n">doc_type</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="n">raw_patterns</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"patterns"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">compiled</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">raw_patterns</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">compiled</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">))</span>
+            <span class="k">except</span> <span class="n">re</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+                <span class="k">pass</span>  <span class="c1"># silently skip malformed patterns (mirrors _compile_alarm_profile)</span>
+        <span class="k">if</span> <span class="n">compiled</span><span class="p">:</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">doc_type</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">compiled</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Normalization</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_normalize_doc_ref">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor._normalize_doc_ref">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_doc_ref</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a canonical document reference string.</span>
+
+<span class="sd">    - Uppercase</span>
+<span class="sd">    - Collapse any internal whitespace to a single hyphen</span>
+<span class="sd">    - Collapse multiple consecutive hyphens</span>
+<span class="sd">    - Strip leading/trailing punctuation</span>
+<span class="sd">    """</span>
+    <span class="n">norm</span> <span class="o">=</span> <span class="n">raw</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+    <span class="n">norm</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\s+"</span><span class="p">,</span> <span class="s2">"-"</span><span class="p">,</span> <span class="n">norm</span><span class="p">)</span>
+    <span class="n">norm</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"-{2,}"</span><span class="p">,</span> <span class="s2">"-"</span><span class="p">,</span> <span class="n">norm</span><span class="p">)</span>
+    <span class="n">norm</span> <span class="o">=</span> <span class="n">norm</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">"-"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">norm</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># False positive filtering</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_make_fp_checker">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor._make_fp_checker">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_fp_checker</span><span class="p">(</span><span class="n">profile</span><span class="p">:</span> <span class="n">Dict</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Return a callable that returns True when a (doc_type, norm) pair is</span>
+<span class="sd">    a false positive and should be dropped."""</span>
+    <span class="n">fp</span> <span class="o">=</span> <span class="n">profile</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"false_positive_filters"</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="n">min_year</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">fp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"min_year"</span><span class="p">,</span> <span class="mi">1960</span><span class="p">))</span>
+    <span class="n">max_year</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">fp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"max_year"</span><span class="p">,</span> <span class="mi">2035</span><span class="p">))</span>
+    <span class="n">excluded</span> <span class="o">=</span> <span class="p">{</span><span class="n">p</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">fp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"excluded_prefixes_from_doc_ref"</span><span class="p">,</span> <span class="p">[])}</span>
+
+    <span class="n">_year_re</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"(?&lt;!\d)(?:19|20)\d</span><span class="si">{2}</span><span class="s2">(?!\d)"</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_fp</span><span class="p">(</span><span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">norm</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">prefix</span> <span class="o">=</span> <span class="n">norm</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"-"</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="s2">"-"</span> <span class="ow">in</span> <span class="n">norm</span> <span class="k">else</span> <span class="n">norm</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">prefix</span> <span class="ow">in</span> <span class="n">excluded</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="c1"># Year range check: any year fragment outside [min_year, max_year]</span>
+        <span class="k">for</span> <span class="n">yr_str</span> <span class="ow">in</span> <span class="n">_year_re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">norm</span><span class="p">):</span>
+            <span class="n">yr</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">yr_str</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">yr</span> <span class="o">&lt;</span> <span class="n">min_year</span> <span class="ow">or</span> <span class="n">yr</span> <span class="o">&gt;</span> <span class="n">max_year</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+    <span class="k">return</span> <span class="n">is_fp</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Public API</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="extract_doc_refs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.extract_doc_refs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">extract_doc_refs</span><span class="p">(</span>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">profile_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">profile</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">normalize</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">unique</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">max_refs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">200</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">DocRef</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Extract document cross-reference IDs from *text*.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        text: Arbitrary chunk or document text.</span>
+<span class="sd">        profile_path: Path to a plant profile JSON override.  Ignored when</span>
+<span class="sd">            *profile* is supplied directly.</span>
+<span class="sd">        profile: Pre-loaded plant profile dict (takes priority over</span>
+<span class="sd">            *profile_path*).  Pass this when calling the function many times</span>
+<span class="sd">            on the same plant to avoid repeated file I/O.</span>
+<span class="sd">        normalize: Normalize matched IDs (uppercase, canonical hyphens).</span>
+<span class="sd">        unique: Return each normalised ID at most once.</span>
+<span class="sd">        max_refs: Safety cap on the number of refs returned.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        List of :class:`DocRef` namedtuples in match order.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="k">if</span> <span class="n">profile</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">profile</span> <span class="o">=</span> <span class="n">load_doc_ref_profile</span><span class="p">(</span><span class="n">profile_path</span><span class="p">)</span>
+
+    <span class="n">compiled_types</span> <span class="o">=</span> <span class="n">_compile_profile</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
+    <span class="n">is_fp</span> <span class="o">=</span> <span class="n">_make_fp_checker</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
+
+    <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">DocRef</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">seen</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">label</span><span class="p">,</span> <span class="n">patterns</span> <span class="ow">in</span> <span class="n">compiled_types</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">rx</span> <span class="ow">in</span> <span class="n">patterns</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">rx</span><span class="o">.</span><span class="n">finditer</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+                <span class="n">raw</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">norm</span> <span class="o">=</span> <span class="n">_normalize_doc_ref</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span> <span class="k">if</span> <span class="n">normalize</span> <span class="k">else</span> <span class="n">raw</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+                <span class="k">if</span> <span class="n">is_fp</span><span class="p">(</span><span class="n">doc_type</span><span class="p">,</span> <span class="n">norm</span><span class="p">):</span>
+                    <span class="k">continue</span>
+
+                <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">doc_type</span><span class="p">,</span> <span class="n">norm</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">unique</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+                <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">DocRef</span><span class="p">(</span><span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span> <span class="n">raw</span><span class="o">=</span><span class="n">raw</span><span class="p">,</span> <span class="n">norm</span><span class="o">=</span><span class="n">norm</span><span class="p">))</span>
+
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">results</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">max_refs</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">results</span>
+
+    <span class="k">return</span> <span class="n">results</span></div>
+
+
+
+<div class="viewcode-block" id="extract_doc_ref_ids">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/doc_ref_extractor/index.html#src.dackar.RCA.ner.doc_ref_extractor.extract_doc_ref_ids">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">extract_doc_ref_ids</span><span class="p">(</span>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Convenience wrapper — returns only the normalised ID strings.</span>
+
+<span class="sd">    Suitable for direct assignment to ``NERSeed.doc_refs``.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        text: Source text.</span>
+<span class="sd">        **kwargs: Forwarded to :func:`extract_doc_refs`.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        List of normalised document reference strings.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="p">[</span><span class="n">r</span><span class="o">.</span><span class="n">norm</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">extract_doc_refs</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

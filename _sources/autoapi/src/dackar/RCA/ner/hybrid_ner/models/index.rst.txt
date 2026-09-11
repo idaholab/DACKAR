@@ -1,0 +1,329 @@
+src.dackar.RCA.ner.hybrid_ner.models
+====================================
+
+.. py:module:: src.dackar.RCA.ner.hybrid_ner.models
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.models.Document
+   src.dackar.RCA.ner.hybrid_ner.models.SourceHit
+   src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis
+   src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan
+   src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan
+   src.dackar.RCA.ner.hybrid_ner.models.Decision
+   src.dackar.RCA.ner.hybrid_ner.models.RelationProposal
+   src.dackar.RCA.ner.hybrid_ner.models.PipelineResult
+
+
+Module Contents
+---------------
+
+.. py:class:: Document
+
+   Represents a single reliability text document (condition report, work order, etc.).
+
+   Offsets are always defined on `text` (the original authoritative string).
+   Normalization can be added later using `normalized_text` + `offset_map`.
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: text
+      :type:  str
+
+
+   .. py:attribute:: meta
+      :type:  Dict[str, Any]
+
+
+   .. py:attribute:: normalized_text
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: offset_map
+      :type:  Any
+      :value: None
+
+
+
+.. py:class:: SourceHit
+
+   Provenance record for how a candidate span was generated.
+
+   .. rubric:: Examples
+
+   - source_type="regex", source_id="REGEX_FAIL_START"
+   - source_type="gazetteer_exact", source_id="deg_mech_list"
+   - source_type="noun_chunk", source_id="spacy_np"
+
+
+   .. py:attribute:: source_type
+      :type:  str
+
+
+   .. py:attribute:: source_id
+      :type:  str
+
+
+   .. py:attribute:: score
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: details
+      :type:  Dict[str, Any]
+
+
+.. py:class:: LabelHypothesis
+
+   A proposed label for a candidate span before final resolution.
+
+   `group` is typically filled by schema lookup (label->group).
+   `score` can be used as a prior confidence or later overwritten by an ML classifier.
+
+
+   .. py:attribute:: label
+      :type:  str
+
+
+   .. py:attribute:: group
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: score
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: rationale
+      :type:  Optional[str]
+      :value: None
+
+
+
+.. py:class:: CandidateSpan
+
+   A proposed entity mention span before final decision.
+
+   Fields:
+     - start/end: character offsets into Document.text
+     - text: cached substring for convenience
+     - sources: provenance (where did this candidate come from)
+     - proposed_labels: potentially multiple, potentially conflicting
+
+
+   .. py:attribute:: span_id
+      :type:  str
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: start
+      :type:  int
+
+
+   .. py:attribute:: end
+      :type:  int
+
+
+   .. py:attribute:: text
+      :type:  str
+
+
+   .. py:attribute:: sources
+      :type:  List[SourceHit]
+      :value: []
+
+
+
+   .. py:attribute:: proposed_labels
+      :type:  List[LabelHypothesis]
+      :value: []
+
+
+
+   .. py:attribute:: attributes
+      :type:  Dict[str, Any]
+
+
+   .. py:attribute:: is_nested_allowed
+      :type:  bool
+      :value: True
+
+
+
+.. py:class:: ResolvedSpan
+
+   A finalized span after conflict resolution / compatibility enforcement.
+
+   `labels` may contain multiple labels only if allowed by schema/rules (e.g., G5+G6).
+
+
+   .. py:attribute:: span_id
+      :type:  str
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: start
+      :type:  int
+
+
+   .. py:attribute:: end
+      :type:  int
+
+
+   .. py:attribute:: text
+      :type:  str
+
+
+   .. py:attribute:: labels
+      :type:  List[str]
+
+
+   .. py:attribute:: groups
+      :type:  List[str]
+
+
+   .. py:attribute:: provenance
+      :type:  Dict[str, Any]
+
+
+.. py:class:: Decision
+
+   Records how one or more CandidateSpan(s) are resolved into final output spans.
+
+   action:
+     - "accept": accept as-is (possibly with refined label list)
+     - "reject": discard
+     - "split": output_spans contains >1 span
+     - "nest": output contains nested spans
+     - "defer": unresolved; keep for ML or human review
+
+
+   .. py:attribute:: decision_id
+      :type:  str
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: input_span_ids
+      :type:  List[str]
+
+
+   .. py:attribute:: output_spans
+      :type:  List[ResolvedSpan]
+
+
+   .. py:attribute:: action
+      :type:  str
+
+
+   .. py:attribute:: triggered_rule_ids
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: notes
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: confidence
+      :type:  Optional[float]
+      :value: None
+
+
+
+.. py:class:: RelationProposal
+
+   Optional suggested relation between resolved spans. This is not required for v0.1,
+   but the compatibility schema can recommend link types like:
+     - "causes", "affects", "made_of", "has_outcome"
+
+
+   .. py:attribute:: rel_id
+      :type:  str
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: relation_type
+      :type:  str
+
+
+   .. py:attribute:: head_span_id
+      :type:  str
+
+
+   .. py:attribute:: tail_span_id
+      :type:  str
+
+
+   .. py:attribute:: confidence
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: evidence
+      :type:  Dict[str, Any]
+
+
+   .. py:attribute:: triggered_rule_ids
+      :type:  List[str]
+      :value: []
+
+
+
+.. py:class:: PipelineResult
+
+   Final result for a document.
+     - decisions: full traceability of how spans were resolved
+     - entities: flattened accepted spans (for typical downstream use)
+     - relations: optional relation proposals
+     - diagnostics: counters/timings/debug info
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: decisions
+      :type:  List[Decision]
+
+
+   .. py:attribute:: entities
+      :type:  List[ResolvedSpan]
+
+
+   .. py:attribute:: relations
+      :type:  List[RelationProposal]
+
+
+   .. py:attribute:: diagnostics
+      :type:  Dict[str, Any]
+
+

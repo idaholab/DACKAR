@@ -1,0 +1,131 @@
+src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator
+============================================================
+
+.. py:module:: src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerConfig
+   src.dackar.RCA.ner.hybrid_ner.generators.gazetteer_generator.GazetteerGenerator
+
+
+Module Contents
+---------------
+
+.. py:class:: GazetteerConfig
+
+   Configuration for gazetteer matching.
+
+   match_mode:
+     - "exact_phrase": match whole phrase with word boundaries (case-insensitive)
+     - "fuzzy_tokens": slide a token window and match by token overlap (Jaccard)
+
+   fuzzy_jaccard_threshold:
+     Minimum Jaccard similarity (0..1) to accept a fuzzy match.
+
+   max_window_tokens:
+     Maximum tokens for sliding window when fuzzy matching is enabled.
+
+   emit_overlapping:
+     If False, stops after the first fuzzy match for each term (reduces duplicates).
+
+
+   .. py:attribute:: match_mode
+      :type:  str
+      :value: 'exact_phrase'
+
+
+
+   .. py:attribute:: fuzzy_jaccard_threshold
+      :type:  float
+      :value: 0.8
+
+
+
+   .. py:attribute:: max_window_tokens
+      :type:  int
+      :value: 8
+
+
+
+   .. py:attribute:: emit_overlapping
+      :type:  bool
+      :value: True
+
+
+
+.. py:class:: GazetteerGenerator(excel_path, sheet_names = None, config = None)
+
+   Bases: :py:obj:`src.dackar.RCA.ner.hybrid_ner.generators.base.CandidateGenerator`
+
+
+   Gazetteer-based candidate generator reading an Excel file of labeled term lists.
+
+   Expected Excel convention:
+     - Each sheet contains one or more columns of terms.
+     - Column header should contain the label in square brackets, e.g.:
+         "Degradation mechanisms [deg_mech]"
+       If brackets are missing, the entire header is treated as the label.
+
+   For each term:
+     - exact_phrase mode: compiled, case-insensitive word-boundary regex
+     - fuzzy_tokens mode: approximate phrase matching by token overlap
+
+   Produces CandidateSpan with a LabelHypothesis(label=<label>).
+
+
+   .. py:attribute:: excel_path
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: label_terms
+
+
+   .. py:attribute:: _compiled_exact
+      :type:  Optional[List[Tuple[str, str, re.Pattern]]]
+      :value: None
+
+
+
+   .. py:method:: _load_gazetteer(path, sheet_names)
+
+
+   .. py:method:: _compile_exact(label_terms)
+
+
+   .. py:method:: _tokenize(text)
+
+
+   .. py:method:: _term_tokens(term)
+
+
+   .. py:method:: generate(doc)
+
+
+   .. py:method:: _generate_exact(doc)
+
+
+   .. py:method:: _generate_fuzzy(doc)
+
+
+   .. py:method:: get_token_evidence(schema, min_len = 3)
+
+      Return role-aware token evidence derived from the gazetteer.
+
+      Output schema:
+        {
+          "exclusive_by_group": { "G1_PHYSICAL_COMPONENT": {tokens...}, "G4_MECHANISM_PROCESS": {tokens...}, ... },
+          "token_to_groups": { "token": {"G1_PHYSICAL_COMPONENT","G4_MECHANISM_PROCESS",...}, ... }
+        }
+
+      A token is *exclusive* to a group if it only appears in gazetteer terms whose labels map to that group.
+      This is used downstream to reduce false multi-label acceptance.
+
+
+

@@ -1,0 +1,271 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.classifier &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.classifier</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.classifier</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">Document</span><span class="p">,</span> <span class="n">LabelHypothesis</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">SchemaIndex</span>
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="TrainingExample">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.TrainingExample">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TrainingExample</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Minimal supervised example for the span classifier.</span>
+
+<span class="sd">    - doc_text: full document text</span>
+<span class="sd">    - start/end: span offsets in doc_text</span>
+<span class="sd">    - label: gold label (must exist in schema.label_to_group)</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="TrainingExample.doc_text">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.TrainingExample.doc_text">[docs]</a>
+    <span class="n">doc_text</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="TrainingExample.start">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.TrainingExample.start">[docs]</a>
+    <span class="n">start</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="TrainingExample.end">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.TrainingExample.end">[docs]</a>
+    <span class="n">end</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="TrainingExample.label">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.TrainingExample.label">[docs]</a>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="SpanClassifier">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SpanClassifier</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Lightweight ML span classifier placeholder using scikit-learn.</span>
+
+<span class="sd">    Purpose:</span>
+<span class="sd">      - Propose label hypotheses for candidates that are currently unlabeled ("defer").</span>
+
+<span class="sd">    Usage:</span>
+<span class="sd">      - clf = SpanClassifier()</span>
+<span class="sd">      - clf.fit(examples, schema)</span>
+<span class="sd">      - pipeline = HybridNERPipeline(..., classifier=clf)</span>
+
+<span class="sd">    If scikit-learn is not available, this becomes a no-op (safe).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context_window_chars</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="n">min_prob</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.25</span><span class="p">):</span>
+<div class="viewcode-block" id="SpanClassifier.context_window_chars">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier.context_window_chars">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_window_chars</span> <span class="o">=</span> <span class="n">context_window_chars</span></div>
+
+<div class="viewcode-block" id="SpanClassifier.top_k">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier.top_k">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">top_k</span> <span class="o">=</span> <span class="n">top_k</span></div>
+
+<div class="viewcode-block" id="SpanClassifier.min_prob">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier.min_prob">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">min_prob</span> <span class="o">=</span> <span class="n">min_prob</span></div>
+
+
+<div class="viewcode-block" id="SpanClassifier._is_trained">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier._is_trained">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_is_trained</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+<div class="viewcode-block" id="SpanClassifier._vectorizer">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier._vectorizer">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_vectorizer</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SpanClassifier._model">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier._model">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SpanClassifier._sklearn_ok">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier._sklearn_ok">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sklearn_ok</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">sklearn</span>  <span class="c1"># noqa: F401</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sklearn_ok</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sklearn_ok</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="SpanClassifier.fit">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier.fit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">examples</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">TrainingExample</span><span class="p">],</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sklearn_ok</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_is_trained</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">return</span>
+
+        <span class="n">filtered</span> <span class="o">=</span> <span class="p">[</span><span class="n">ex</span> <span class="k">for</span> <span class="n">ex</span> <span class="ow">in</span> <span class="n">examples</span> <span class="k">if</span> <span class="n">ex</span><span class="o">.</span><span class="n">label</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">filtered</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_is_trained</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">return</span>
+
+        <span class="n">X_text</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_featurize</span><span class="p">(</span><span class="n">ex</span><span class="o">.</span><span class="n">doc_text</span><span class="p">,</span> <span class="n">ex</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">ex</span><span class="o">.</span><span class="n">end</span><span class="p">)</span> <span class="k">for</span> <span class="n">ex</span> <span class="ow">in</span> <span class="n">filtered</span><span class="p">]</span>
+        <span class="n">y</span> <span class="o">=</span> <span class="p">[</span><span class="n">ex</span><span class="o">.</span><span class="n">label</span> <span class="k">for</span> <span class="n">ex</span> <span class="ow">in</span> <span class="n">filtered</span><span class="p">]</span>
+
+        <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.feature_extraction.text</span><span class="w"> </span><span class="kn">import</span> <span class="n">TfidfVectorizer</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LogisticRegression</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_vectorizer</span> <span class="o">=</span> <span class="n">TfidfVectorizer</span><span class="p">(</span><span class="n">analyzer</span><span class="o">=</span><span class="s2">"char_wb"</span><span class="p">,</span> <span class="n">ngram_range</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">min_df</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vectorizer</span><span class="o">.</span><span class="n">fit_transform</span><span class="p">(</span><span class="n">X_text</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model</span> <span class="o">=</span> <span class="n">LogisticRegression</span><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">class_weight</span><span class="o">=</span><span class="s2">"balanced"</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_is_trained</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="SpanClassifier.predict">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier.predict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">predict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">],</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_sklearn_ok</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_trained</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vectorizer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">candidates</span>
+
+        <span class="n">unlabeled</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">unlabeled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">candidates</span>
+
+        <span class="n">X_text</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_featurize</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">end</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">unlabeled</span><span class="p">]</span>
+        <span class="n">X</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_vectorizer</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">X_text</span><span class="p">)</span>
+
+        <span class="n">probs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">predict_proba</span><span class="p">(</span><span class="n">X</span><span class="p">)</span>
+        <span class="n">classes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_model</span><span class="o">.</span><span class="n">classes_</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">c</span><span class="p">,</span> <span class="n">pvec</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">unlabeled</span><span class="p">,</span> <span class="n">probs</span><span class="p">):</span>
+            <span class="n">ranked</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">classes</span><span class="p">,</span> <span class="n">pvec</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">t</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">top_k</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">pr</span> <span class="ow">in</span> <span class="n">ranked</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">float</span><span class="p">(</span><span class="n">pr</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">min_prob</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">lbl</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">LabelHypothesis</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">lbl</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">pr</span><span class="p">),</span> <span class="n">rationale</span><span class="o">=</span><span class="s2">"ml_logreg"</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">candidates</span></div>
+
+
+<div class="viewcode-block" id="SpanClassifier._featurize">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/classifier/index.html#src.dackar.RCA.ner.hybrid_ner.classifier.SpanClassifier._featurize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_featurize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">start</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">left</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">start</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">context_window_chars</span><span class="p">)</span>
+        <span class="n">right</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="n">end</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">context_window_chars</span><span class="p">)</span>
+        <span class="n">span</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+        <span class="n">ctx_left</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">left</span><span class="p">:</span><span class="n">start</span><span class="p">]</span>
+        <span class="n">ctx_right</span> <span class="o">=</span> <span class="n">text</span><span class="p">[</span><span class="n">end</span><span class="p">:</span><span class="n">right</span><span class="p">]</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"&lt;L&gt;</span><span class="si">{</span><span class="n">ctx_left</span><span class="si">}</span><span class="s2">&lt;S&gt;</span><span class="si">{</span><span class="n">span</span><span class="si">}</span><span class="s2">&lt;R&gt;</span><span class="si">{</span><span class="n">ctx_right</span><span class="si">}</span><span class="s2">"</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

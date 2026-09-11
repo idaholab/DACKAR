@@ -1,0 +1,662 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator</h1><div class="highlight"><pre>
+<span></span><span class="c1"># hybrid_ner/generators/description_embed_generator.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+
+<span class="c1"># Optional dependencies</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sentence_transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">SentenceTransformer</span><span class="p">,</span> <span class="n">util</span> <span class="k">as</span> <span class="n">st_util</span>
+<div class="viewcode-block" id="_HAS_SBERT">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._HAS_SBERT">[docs]</a>
+    <span class="n">_HAS_SBERT</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+    <span class="n">_HAS_SBERT</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.feature_extraction.text</span><span class="w"> </span><span class="kn">import</span> <span class="n">TfidfVectorizer</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.metrics.pairwise</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosine_similarity</span> <span class="k">as</span> <span class="n">sk_cos_sim</span>
+<div class="viewcode-block" id="_HAS_SKLEARN">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._HAS_SKLEARN">[docs]</a>
+    <span class="n">_HAS_SKLEARN</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+    <span class="n">_HAS_SKLEARN</span> <span class="o">=</span> <span class="kc">False</span>
+
+ <span class="c1"># Very small stoplist for cue building / gating</span>
+<div class="viewcode-block" id="_STOP">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._STOP">[docs]</a>
+<span class="n">_STOP</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"the"</span><span class="p">,</span><span class="s2">"and"</span><span class="p">,</span><span class="s2">"or"</span><span class="p">,</span><span class="s2">"a"</span><span class="p">,</span><span class="s2">"an"</span><span class="p">,</span><span class="s2">"of"</span><span class="p">,</span><span class="s2">"to"</span><span class="p">,</span><span class="s2">"in"</span><span class="p">,</span><span class="s2">"on"</span><span class="p">,</span><span class="s2">"for"</span><span class="p">,</span><span class="s2">"with"</span><span class="p">,</span><span class="s2">"without"</span><span class="p">,</span>
+    <span class="s2">"found"</span><span class="p">,</span><span class="s2">"evidence"</span><span class="p">,</span><span class="s2">"additional"</span><span class="p">,</span><span class="s2">"notes"</span><span class="p">,</span><span class="s2">"order"</span><span class="p">,</span><span class="s2">"inspection"</span><span class="p">,</span><span class="s2">"observed"</span><span class="p">,</span>
+    <span class="s2">"region"</span><span class="p">,</span><span class="s2">"area"</span><span class="p">,</span><span class="s2">"near"</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Mechanism cues (Rule 1 gate for deg_mech)</span>
+<div class="viewcode-block" id="MECH_KEYWORDS">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.MECH_KEYWORDS">[docs]</a>
+<span class="n">MECH_KEYWORDS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"wear"</span><span class="p">,</span><span class="s2">"worn"</span><span class="p">,</span><span class="s2">"corrosion"</span><span class="p">,</span><span class="s2">"corroded"</span><span class="p">,</span><span class="s2">"erosion"</span><span class="p">,</span><span class="s2">"pitting"</span><span class="p">,</span><span class="s2">"pit"</span><span class="p">,</span><span class="s2">"crack"</span><span class="p">,</span><span class="s2">"cracked"</span><span class="p">,</span>
+    <span class="s2">"fatigue"</span><span class="p">,</span><span class="s2">"degradation"</span><span class="p">,</span><span class="s2">"degraded"</span><span class="p">,</span><span class="s2">"attack"</span><span class="p">,</span><span class="s2">"cavitation"</span><span class="p">,</span><span class="s2">"fouling"</span><span class="p">,</span><span class="s2">"fretting"</span><span class="p">,</span>
+    <span class="s2">"leak"</span><span class="p">,</span><span class="s2">"leakage"</span><span class="p">,</span><span class="s2">"fracture"</span><span class="p">,</span><span class="s2">"spall"</span><span class="p">,</span><span class="s2">"spalling"</span><span class="p">,</span><span class="s2">"oxidation"</span><span class="p">,</span><span class="s2">"rust"</span><span class="p">,</span><span class="s2">"rusting"</span><span class="p">,</span>
+    <span class="s2">"delamination"</span><span class="p">,</span><span class="s2">"creep"</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_normalize_label_key">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._normalize_label_key">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_label_key</span><span class="p">(</span><span class="n">raw</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Normalize keys like:</span>
+<span class="sd">      'Structural [comp_mech_struct]' -&gt; ('comp_mech_struct', 'Structural')</span>
+<span class="sd">      'comp_mech_struct' -&gt; ('comp_mech_struct', None)</span>
+<span class="sd">    Returns (label_id, display_name)</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">raw</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">s</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+
+    <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^(.*?)\s*\[([A-Za-z0-9_\-]+)\]\s*$"</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">m</span><span class="p">:</span>
+        <span class="n">display</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span>
+        <span class="n">label_id</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">label_id</span><span class="p">,</span> <span class="n">display</span>
+
+    <span class="k">return</span> <span class="n">s</span><span class="p">,</span> <span class="kc">None</span></div>
+
+
+<span class="c1"># Use your models' LabelHypothesis / Document types</span>
+<span class="c1"># from hybrid_ner.models import LabelHypothesis (import lazily inside functions to avoid cycles)</span>
+
+<div class="viewcode-block" id="load_label_descriptions">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.load_label_descriptions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_label_descriptions</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">"r"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">j</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">j</span></div>
+
+
+<div class="viewcode-block" id="extract_examples_from_excel">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.extract_examples_from_excel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">extract_examples_from_excel</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Read spreadsheet using pandas and return dict[label_id] -&gt; list[str].</span>
+<span class="sd">    Supports:</span>
+<span class="sd">      - 2-column format: label, term</span>
+<span class="sd">      - wide format: each column is a label header and cells are terms</span>
+<span class="sd">    Normalizes headers like 'Structural [comp_mech_struct]' -&gt; 'comp_mech_struct'</span>
+<span class="sd">    """</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_excel</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">sheet_name</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    <span class="n">examples</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c1"># Two-column format</span>
+    <span class="n">lower_cols</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">}</span>
+    <span class="k">if</span> <span class="s2">"label"</span> <span class="ow">in</span> <span class="n">lower_cols</span> <span class="ow">and</span> <span class="s2">"term"</span> <span class="ow">in</span> <span class="n">lower_cols</span><span class="p">:</span>
+        <span class="n">label_col</span> <span class="o">=</span> <span class="n">lower_cols</span><span class="p">[</span><span class="s2">"label"</span><span class="p">]</span>
+        <span class="n">term_col</span> <span class="o">=</span> <span class="n">lower_cols</span><span class="p">[</span><span class="s2">"term"</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+            <span class="n">lbl_raw</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">label_col</span><span class="p">]</span>
+            <span class="n">term</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">term_col</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">lbl_raw</span><span class="p">)</span> <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">isna</span><span class="p">(</span><span class="n">term</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">lbl</span><span class="p">,</span> <span class="n">_disp</span> <span class="o">=</span> <span class="n">_normalize_label_key</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">lbl_raw</span><span class="p">))</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">lbl</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">examples</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">term</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">examples</span>
+
+    <span class="c1"># Wide format: each header is a label</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">terms</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">c</span><span class="p">]</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">terms</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">lbl</span><span class="p">,</span> <span class="n">_disp</span> <span class="o">=</span> <span class="n">_normalize_label_key</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">lbl</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">examples</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">terms</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">examples</span></div>
+
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DescriptionEmbedGenerator</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Generator that uses embedding similarity between:</span>
+<span class="sd">      - candidate span + local context</span>
+<span class="sd">      - label descriptions + canonical examples (from JSON + excel)</span>
+<span class="sd">    Produces LabelHypothesis objects with .label, .score, .group, .source</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+                 <span class="n">label_json_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+                 <span class="n">gazetteer_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">embedder</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Callable</span><span class="p">[[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+                 <span class="n">use_tfidf_fallback</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+                 <span class="n">sim_metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"cosine"</span><span class="p">,</span>
+                 <span class="n">score_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.55</span><span class="p">,</span>
+                 <span class="n">sim_floor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.20</span><span class="p">,</span>
+                 <span class="n">context_window</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+                 <span class="n">device</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"cpu"</span><span class="p">):</span>
+<div class="viewcode-block" id="DescriptionEmbedGenerator.label_json_path">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.label_json_path">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_json_path</span> <span class="o">=</span> <span class="n">label_json_path</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.gazetteer_path">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.gazetteer_path">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">gazetteer_path</span> <span class="o">=</span> <span class="n">gazetteer_path</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.embedder">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.embedder">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embedder</span> <span class="o">=</span> <span class="n">embedder</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.use_tfidf_fallback">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.use_tfidf_fallback">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">use_tfidf_fallback</span> <span class="o">=</span> <span class="n">use_tfidf_fallback</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.sim_metric">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.sim_metric">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sim_metric</span> <span class="o">=</span> <span class="n">sim_metric</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.score_threshold">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.score_threshold">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">score_threshold</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">score_threshold</span><span class="p">)</span></div>
+
+        <span class="c1"># similarities below this are treated as "uninformative", not 0.5-prob.</span>
+<div class="viewcode-block" id="DescriptionEmbedGenerator.sim_floor">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.sim_floor">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sim_floor</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sim_floor</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.context_window">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.context_window">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_window</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">context_window</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.device">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.device">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="n">device</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.label_desc">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.label_desc">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.label_examples">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.label_examples">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._emb_matrix">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._emb_matrix">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_emb_matrix</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._label_index">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._label_index">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_index</span> <span class="o">=</span> <span class="p">[]</span>  <span class="c1"># parallel list to rows in _emb_matrix</span></div>
+
+
+        <span class="c1"># internal TF-IDF vectors if needed</span>
+<div class="viewcode-block" id="DescriptionEmbedGenerator._tfidf_vectorizer">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._tfidf_vectorizer">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tfidf_vectorizer</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._tfidf_matrix">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._tfidf_matrix">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_tfidf_matrix</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+        <span class="c1"># lazy sbert model</span>
+<div class="viewcode-block" id="DescriptionEmbedGenerator._sbert">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._sbert">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sbert</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._label_pos_embs">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._label_pos_embs">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_pos_embs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._label_neg_embs">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._label_neg_embs">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_neg_embs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._schema">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._schema">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_schema</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._label_display">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._label_display">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_display</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._label_lexical_cues">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._label_lexical_cues">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_lexical_cues</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._make_sbert">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._make_sbert">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_make_sbert</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sbert</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_HAS_SBERT</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"sentence-transformers not installed; install or provide embedder."</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sbert</span> <span class="o">=</span> <span class="n">SentenceTransformer</span><span class="p">(</span><span class="s2">"all-MiniLM-L6-v2"</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>  <span class="c1"># small, fast</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sbert</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.fit">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.fit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">schema</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Load label descriptions + example terms and build embeddings (per-label banks).</span>
+
+<span class="sd">        Builds:</span>
+<span class="sd">          - self._label_pos_embs[label] : (K,D) embeddings for description + examples + keywords</span>
+<span class="sd">          - self._label_neg_embs[label] : (M,D) embeddings for negative_examples (optional)</span>
+<span class="sd">          - self._label_index           : list of labels considered</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_schema</span> <span class="o">=</span> <span class="n">schema</span>
+
+        <span class="n">raw_desc</span> <span class="o">=</span> <span class="n">load_label_descriptions</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_json_path</span><span class="p">)</span>
+        <span class="c1"># Normalize label keys so we never treat "Display [id]" as the label id.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">raw_key</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="p">(</span><span class="n">raw_desc</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">lbl</span><span class="p">,</span> <span class="n">disp</span> <span class="o">=</span> <span class="n">_normalize_label_key</span><span class="p">(</span><span class="n">raw_key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">lbl</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># merge if duplicates</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">meta</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="c1"># shallow merge (JSON is your source of truth)</span>
+                <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">meta</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span><span class="p">[</span><span class="n">lbl</span><span class="p">][</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+            <span class="k">if</span> <span class="n">disp</span> <span class="ow">and</span> <span class="n">lbl</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_display</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_label_display</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span> <span class="o">=</span> <span class="n">disp</span>
+
+        <span class="c1"># collect canonical examples + keywords from JSON</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_keywords</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">label_neg_examples</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># If no external embedder and SBERT is unavailable, build a TF-IDF vectorizer</span>
+        <span class="c1"># before calling _embed_texts(). This prevents _embed_texts() from raising.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedder</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_HAS_SBERT</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_tfidf_fallback</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_HAS_SKLEARN</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="s2">"No embedder available. Install sentence-transformers or scikit-learn, "</span>
+                    <span class="s2">"or pass a custom embedder= callable."</span>
+                <span class="p">)</span>
+            <span class="c1"># We'll fit TF-IDF after we assemble the per-label text banks (pos/neg).</span>
+            <span class="c1"># For now just ensure vectorizer placeholder exists.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tfidf_vectorizer</span> <span class="o">=</span> <span class="n">TfidfVectorizer</span><span class="p">(</span>
+                <span class="n">lowercase</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">token_pattern</span><span class="o">=</span><span class="sa">r</span><span class="s2">"(?u)\b[a-zA-Z][a-zA-Z0-9_\-]{2,}\b"</span><span class="p">,</span>
+                <span class="n">ngram_range</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span>
+                <span class="n">min_df</span><span class="o">=</span><span class="mi">1</span>
+            <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">ex</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"canonical_examples"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">kw</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"keywords"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">neg</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"negative_examples"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">ex</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">label_keywords</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">kw</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">label_neg_examples</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">extend</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">neg</span><span class="p">])</span>
+
+        <span class="c1"># extend with gazetteer examples if provided (Excel)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">gazetteer_path</span><span class="p">:</span>
+            <span class="n">ex_from_xl</span> <span class="o">=</span> <span class="n">extract_examples_from_excel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gazetteer_path</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">terms</span> <span class="ow">in</span> <span class="n">ex_from_xl</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])</span>
+                <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">:</span>
+                    <span class="n">ts</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">ts</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span><span class="p">[</span><span class="n">lbl</span><span class="p">]:</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+
+                <span class="c1"># If label exists in Excel but not in JSON, still include it</span>
+                <span class="k">if</span> <span class="n">lbl</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># If using TF-IDF fallback, fit the vectorizer on all label texts once</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedder</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_HAS_SBERT</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">use_tfidf_fallback</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tfidf_vectorizer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">corpus</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">shortdesc</span> <span class="o">=</span> <span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"short_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">longdesc</span> <span class="o">=</span> <span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"long_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">longdesc</span><span class="p">:</span>
+                    <span class="n">corpus</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">longdesc</span><span class="p">)</span>
+                <span class="k">elif</span> <span class="n">shortdesc</span><span class="p">:</span>
+                    <span class="n">corpus</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">shortdesc</span><span class="p">)</span>
+                <span class="n">corpus</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])[:</span><span class="mi">50</span><span class="p">])</span>
+                <span class="n">corpus</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_keywords</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])[:</span><span class="mi">50</span><span class="p">])</span>
+                <span class="n">corpus</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_neg_examples</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])[:</span><span class="mi">50</span><span class="p">])</span>
+
+            <span class="n">corpus</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">corpus</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">and</span> <span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">corpus</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"TF-IDF fallback: empty corpus from JSON/Excel."</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_tfidf_vectorizer</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">corpus</span><span class="p">)</span>
+
+        <span class="c1"># Build per-label text banks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_pos_embs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_neg_embs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_index</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_label_lexical_cues</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">label_desc</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>           
+            <span class="n">shortdesc</span> <span class="o">=</span> <span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"short_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">longdesc</span> <span class="o">=</span> <span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"long_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+            <span class="n">pos_texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">longdesc</span><span class="p">:</span>
+                <span class="n">pos_texts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">longdesc</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">shortdesc</span><span class="p">:</span>
+                <span class="n">pos_texts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">shortdesc</span><span class="p">)</span>
+
+            <span class="c1"># Add examples / keywords as *separate* texts (important: avoids averaging)</span>
+            <span class="n">pos_texts</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])[:</span><span class="mi">50</span><span class="p">])</span>
+            <span class="n">pos_texts</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_keywords</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])[:</span><span class="mi">50</span><span class="p">])</span>
+
+            <span class="c1"># If still empty, skip label (nothing to embed)</span>
+            <span class="n">pos_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">pos_texts</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">and</span> <span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">pos_texts</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">pos_embs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">(</span><span class="n">pos_texts</span><span class="p">)</span>  <span class="c1"># (K,D)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_label_pos_embs</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span> <span class="o">=</span> <span class="n">pos_embs</span>
+
+            <span class="n">neg_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_neg_examples</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">and</span> <span class="n">t</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+            <span class="k">if</span> <span class="n">neg_texts</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_label_neg_embs</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">(</span><span class="n">neg_texts</span><span class="p">)</span>
+
+            <span class="c1"># Dedup labels</span>
+            <span class="k">if</span> <span class="n">lbl</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_index</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_label_index</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
+
+            <span class="c1"># Build simple lexical cues per label for Rule 2 gating</span>
+            <span class="n">cue_src</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">cue_src</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_examples</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])[:</span><span class="mi">50</span><span class="p">])</span>
+            <span class="n">cue_src</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">label_keywords</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="p">[])[:</span><span class="mi">50</span><span class="p">])</span>
+            <span class="n">cues</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">cue_src</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"[A-Za-z0-9_\-]+"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">t</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()):</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">:</span>
+                        <span class="n">cues</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_label_lexical_cues</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span> <span class="o">=</span> <span class="n">cues</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_index</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"DescriptionEmbedGenerator.fit(): no labels produced embeddings. Check JSON/Excel content."</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator._embed_texts">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator._embed_texts">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_embed_texts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedder</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">embedder</span><span class="p">(</span><span class="n">texts</span><span class="p">))</span>
+            <span class="c1"># normalize</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">out</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span>
+        <span class="k">if</span> <span class="n">_HAS_SBERT</span><span class="p">:</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_make_sbert</span><span class="p">()</span>
+            <span class="n">emb</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">texts</span><span class="p">,</span> <span class="n">convert_to_numpy</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">show_progress_bar</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="n">emb</span> <span class="o">=</span> <span class="n">emb</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">emb</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">emb</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tfidf_vectorizer</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">vect</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tfidf_vectorizer</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
+            <span class="n">mat</span> <span class="o">=</span> <span class="n">vect</span>
+            <span class="c1"># normalize rows</span>
+            <span class="n">arr</span> <span class="o">=</span> <span class="n">mat</span><span class="o">.</span><span class="n">toarray</span><span class="p">()</span>
+            <span class="n">norms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">arr</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="nb">min</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">)</span>
+            <span class="n">arr</span> <span class="o">=</span> <span class="n">arr</span> <span class="o">/</span> <span class="n">norms</span>
+            <span class="k">return</span> <span class="n">arr</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">"No embedder built; call fit() first."</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.score_span_against_labels">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.score_span_against_labels">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">score_span_against_labels</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">span_text</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+        <span class="c1"># IMPORTANT:</span>
+        <span class="c1"># Do NOT blend context into the query embedding. It causes "wear"/"degradation"</span>
+        <span class="c1"># in nearby text to leak into every candidate.</span>
+        <span class="n">q</span> <span class="o">=</span> <span class="p">(</span><span class="n">span_text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">q_emb</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">([</span><span class="n">q</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">lbl</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_index</span><span class="p">:</span>
+            <span class="n">pos_embs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_pos_embs</span><span class="p">[</span><span class="n">lbl</span><span class="p">]</span>      <span class="c1"># description + canonical examples</span>
+            <span class="n">neg_embs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_neg_embs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>  <span class="c1"># optional</span>
+
+            <span class="n">pos_sim</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">pos_embs</span> <span class="o">@</span> <span class="n">q_emb</span><span class="p">))</span>
+            <span class="n">neg_sim</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">neg_embs</span> <span class="o">@</span> <span class="n">q_emb</span><span class="p">))</span> <span class="k">if</span> <span class="n">neg_embs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+            <span class="n">score</span> <span class="o">=</span> <span class="n">pos_sim</span> <span class="o">-</span> <span class="mf">0.7</span> <span class="o">*</span> <span class="n">neg_sim</span>   <span class="c1"># 0.7 is a good starting weight</span>
+
+            <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">lbl</span><span class="p">,</span> <span class="n">score</span><span class="p">,</span> <span class="s2">"desc_embed"</span><span class="p">))</span>
+
+        <span class="n">results</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span></div>
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.generate_for_candidate">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate_for_candidate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate_for_candidate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">,</span> <span class="n">cand_span</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">"LabelHypothesis"</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Uses embedding similarity between candidate span text and label description/examples.</span>
+<span class="sd">        Applies:</span>
+<span class="sd">        Rule 1: deg_mech requires mechanism cue in span OR near-span context</span>
+<span class="sd">        Rule 2: G1_PHYSICAL requires label-specific cue token overlap IN SPAN (not context)</span>
+<span class="sd">        """</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">..models</span><span class="w"> </span><span class="kn">import</span> <span class="n">LabelHypothesis</span>
+
+        <span class="n">doc_text</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span>
+
+        <span class="c1"># context only for gating (NOT for embedding query)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">cand_span</span><span class="o">.</span><span class="n">start</span> <span class="o">-</span> <span class="mi">120</span><span class="p">)</span>
+        <span class="n">e</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">doc_text</span><span class="p">),</span> <span class="n">cand_span</span><span class="o">.</span><span class="n">end</span> <span class="o">+</span> <span class="mi">120</span><span class="p">)</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="n">doc_text</span><span class="p">[</span><span class="n">s</span><span class="p">:</span><span class="n">e</span><span class="p">]</span>
+
+        <span class="n">span_text</span> <span class="o">=</span> <span class="p">(</span><span class="n">cand_span</span><span class="o">.</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">span_text</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># Embedding query MUST be span-only </span>
+        <span class="c1"># Embedding query MUST be span-only.</span>
+        <span class="n">scored</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_span_against_labels</span><span class="p">(</span><span class="n">span_text</span><span class="p">,</span> <span class="n">context</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>  <span class="c1"># list[(lbl, sim, trigger)]</span>
+
+
+        <span class="n">span_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\w+"</span><span class="p">,</span> <span class="n">span_text</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
+        <span class="n">span_tokens</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">span_tokens</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">t</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_STOP</span><span class="p">}</span>
+
+        <span class="n">ctx_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\w+"</span><span class="p">,</span> <span class="p">(</span><span class="n">context</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()))</span>
+        <span class="n">ctx_tokens</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">ctx_tokens</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">t</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_STOP</span><span class="p">}</span>
+
+        <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Helper: convert similarity score into a probability-like number WITHOUT</span>
+        <span class="c1"># mapping irrelevant (near-zero) similarities to ~0.5.</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">_score_to_prob</span><span class="p">(</span><span class="n">sim</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+            <span class="c1"># below floor =&gt; 0.0</span>
+            <span class="k">if</span> <span class="n">sim</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sim_floor</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mf">0.0</span>
+            <span class="c1"># rescale floor..1 -&gt; 0..1</span>
+            <span class="n">denom</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">1e-9</span><span class="p">,</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sim_floor</span><span class="p">))</span>
+            <span class="n">p</span> <span class="o">=</span> <span class="p">(</span><span class="n">sim</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">sim_floor</span><span class="p">)</span> <span class="o">/</span> <span class="n">denom</span>
+            <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">p</span><span class="p">)))</span>
+
+        <span class="c1"># Detect "mechanism-only" spans (single cue word like wear/pitting/degradation/etc.)</span>
+        <span class="c1"># If the span is basically mechanism language, don't allow G1 physical labels.</span>
+        <span class="n">span_has_mech</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">span_tokens</span> <span class="o">&amp;</span> <span class="n">MECH_KEYWORDS</span><span class="p">)</span>
+        <span class="n">span_is_mech_only</span> <span class="o">=</span> <span class="n">span_has_mech</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">span_tokens</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">2</span>
+
+        <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">sim</span><span class="p">,</span> <span class="n">_trigger</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">:</span>
+            <span class="n">group</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"_schema"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_schema</span><span class="p">,</span> <span class="s2">"label_to_group"</span><span class="p">):</span>
+                <span class="n">group</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
+
+            <span class="n">prob</span> <span class="o">=</span> <span class="n">_score_to_prob</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">sim</span><span class="p">))</span>
+            <span class="n">rationale</span> <span class="o">=</span> <span class="s2">"desc_embed"</span>
+            
+            <span class="k">if</span> <span class="n">prob</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">score_threshold</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># Rule 1: deg_mech must have mechanism cue in span or nearby context</span>
+            <span class="k">if</span> <span class="n">lbl</span> <span class="o">==</span> <span class="s2">"deg_mech"</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">span_tokens</span> <span class="o">&amp;</span> <span class="n">MECH_KEYWORDS</span> <span class="ow">or</span> <span class="n">ctx_tokens</span> <span class="o">&amp;</span> <span class="n">MECH_KEYWORDS</span><span class="p">):</span>
+                    <span class="k">continue</span>
+
+            <span class="c1"># Rule 2: physical labels require cue overlap IN SPAN (not context)</span>
+            <span class="k">if</span> <span class="n">group</span> <span class="ow">and</span> <span class="n">group</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G1"</span><span class="p">):</span>
+                <span class="c1"># If span is basically a mechanism-only word/phrase, reject G1 labels.</span>
+                <span class="k">if</span> <span class="n">span_is_mech_only</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">cues</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_label_lexical_cues</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
+                <span class="n">cues</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cues</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">c</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_STOP</span><span class="p">}</span>
+                <span class="k">if</span> <span class="n">cues</span> <span class="ow">and</span> <span class="ow">not</span> <span class="p">(</span><span class="n">span_tokens</span> <span class="o">&amp;</span> <span class="n">cues</span><span class="p">):</span>
+                    <span class="c1"># Rejects component labels for spans lacking a component cue, which</span>
+                    <span class="c1"># already covers the "wear"-as-component case (mechanism-only spans</span>
+                    <span class="c1"># carry no component cue), so no separate span_has_mech check is needed.</span>
+                    <span class="k">continue</span>
+
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">LabelHypothesis</span><span class="p">(</span><span class="n">label</span><span class="o">=</span><span class="n">lbl</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="n">prob</span><span class="p">,</span> <span class="n">group</span><span class="o">=</span><span class="n">group</span><span class="p">,</span> <span class="n">rationale</span><span class="o">=</span><span class="s2">"desc_embed"</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+
+<div class="viewcode-block" id="DescriptionEmbedGenerator.generate">
+<a class="viewcode-back" href="../../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/generators/description_embed_generator/index.html#src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator.generate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">,</span> <span class="n">candidate_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Given document and candidate spans (from other generators), augment with description-based hypotheses.</span>
+<span class="sd">        Returns: list of CandidateSpan with updated .proposed_labels or plain LabelHypothesis depending on integration style.</span>
+<span class="sd">        """</span>
+        <span class="n">outputs</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">cand</span> <span class="ow">in</span> <span class="n">candidate_spans</span><span class="p">:</span>
+            <span class="n">lhyps</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">generate_for_candidate</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">)</span>
+            <span class="n">outputs</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">cand</span><span class="p">,</span> <span class="n">lhyps</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">outputs</span></div>
+</div>
+
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

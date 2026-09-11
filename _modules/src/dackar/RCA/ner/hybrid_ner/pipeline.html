@@ -1,0 +1,332 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.pipeline &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.pipeline</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.pipeline</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span><span class="p">,</span> <span class="n">PipelineResult</span><span class="p">,</span> <span class="n">CandidateSpan</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">SchemaIndex</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.consolidator</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpanConsolidator</span><span class="p">,</span> <span class="n">SpanConsolidatorPolicy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.compatibility</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompatibilityEngine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.disambiguation</span><span class="w"> </span><span class="kn">import</span> <span class="n">RuleDisambiguator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.classifier</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpanClassifier</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.postprocess</span><span class="w"> </span><span class="kn">import</span> <span class="n">Postprocessor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.generators.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateGenerator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.generators.candidate_utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">split_component_mechanism_spans</span>
+
+<div class="viewcode-block" id="MECH_KEYWORDS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.MECH_KEYWORDS">[docs]</a>
+<span class="n">MECH_KEYWORDS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"wear"</span><span class="p">,</span> <span class="s2">"corrosion"</span><span class="p">,</span> <span class="s2">"pitting"</span><span class="p">,</span> <span class="s2">"erosion"</span><span class="p">,</span> <span class="s2">"degradation"</span><span class="p">,</span>
+    <span class="s2">"attack"</span><span class="p">,</span> <span class="s2">"crack"</span><span class="p">,</span> <span class="s2">"fracture"</span><span class="p">,</span> <span class="s2">"fatigue"</span><span class="p">,</span> <span class="s2">"leak"</span><span class="p">,</span>
+    <span class="s2">"leakage"</span><span class="p">,</span> <span class="s2">"oxidation"</span><span class="p">,</span> <span class="s2">"embrittlement"</span><span class="p">,</span> <span class="s2">"cavitation"</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="HybridNERPipeline">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HybridNERPipeline</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Orchestrates the Hybrid NER steps:</span>
+
+<span class="sd">      1) Candidate generation (high recall): multiple generators</span>
+<span class="sd">      2) Consolidation: dedupe/merge candidates</span>
+<span class="sd">      3) Rule disambiguation: cheap context guards (optional)</span>
+<span class="sd">      4) ML classifier: span classification (optional)</span>
+<span class="sd">      5) Compatibility engine: enforce group schema rules and multi-label policy</span>
+<span class="sd">      6) Postprocess: flatten entities and provide audit trail</span>
+
+<span class="sd">    This pipeline is designed so each stage can be swapped or extended without</span>
+<span class="sd">    breaking downstream code.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">,</span>
+        <span class="n">generators</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateGenerator</span><span class="p">],</span>
+        <span class="n">consolidator</span><span class="p">:</span> <span class="n">SpanConsolidator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">disambiguator</span><span class="p">:</span> <span class="n">RuleDisambiguator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">classifier</span><span class="p">:</span> <span class="n">SpanClassifier</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">compatibility</span><span class="p">:</span> <span class="n">CompatibilityEngine</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">postprocessor</span><span class="p">:</span> <span class="n">Postprocessor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">desc_gen</span><span class="p">:</span> <span class="nb">object</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">llm_disambiguator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">enable_split_component_mechanism</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+<div class="viewcode-block" id="HybridNERPipeline.schema">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.schema">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">schema</span> <span class="o">=</span> <span class="n">schema</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.generators">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.generators">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">generators</span> <span class="o">=</span> <span class="n">generators</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.consolidator">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.consolidator">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">consolidator</span> <span class="o">=</span> <span class="n">consolidator</span> <span class="ow">or</span> <span class="n">SpanConsolidator</span><span class="p">(</span><span class="n">SpanConsolidatorPolicy</span><span class="p">())</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.disambiguator">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.disambiguator">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disambiguator</span> <span class="o">=</span> <span class="n">disambiguator</span> <span class="ow">or</span> <span class="n">RuleDisambiguator</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.classifier">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.classifier">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">classifier</span> <span class="o">=</span> <span class="n">classifier</span> <span class="ow">or</span> <span class="n">SpanClassifier</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.compatibility">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.compatibility">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">compatibility</span> <span class="o">=</span> <span class="n">compatibility</span> <span class="ow">or</span> <span class="n">CompatibilityEngine</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.postprocessor">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.postprocessor">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">postprocessor</span> <span class="o">=</span> <span class="n">postprocessor</span> <span class="ow">or</span> <span class="n">Postprocessor</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.desc_gen">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.desc_gen">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">desc_gen</span> <span class="o">=</span> <span class="n">desc_gen</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.llm_disambiguator">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.llm_disambiguator">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">llm_disambiguator</span> <span class="o">=</span> <span class="n">llm_disambiguator</span></div>
+
+<div class="viewcode-block" id="HybridNERPipeline.enable_split_component_mechanism">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.enable_split_component_mechanism">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enable_split_component_mechanism</span> <span class="o">=</span> <span class="n">enable_split_component_mechanism</span></div>
+
+
+<div class="viewcode-block" id="HybridNERPipeline.run">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/pipeline/index.html#src.dackar.RCA.ner.hybrid_ner.pipeline.HybridNERPipeline.run">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PipelineResult</span><span class="p">:</span>
+        <span class="c1"># 1) Generate candidates</span>
+        <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">generators</span><span class="p">:</span>
+            <span class="n">candidates</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">doc</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">desc_gen</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># desc_gen.generate expects (doc, candidate_spans) and returns list of (CandidateSpan, [LabelHypothesis])</span>
+            <span class="n">desc_out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">desc_gen</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">candidates</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="c1"># Merge hypotheses into CandidateSpan.proposed_labels (this is what downstream stages consume).</span>
+            <span class="c1"># Dedupe by (label, group) to avoid ballooning.</span>
+            <span class="n">by_id</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">span_id</span><span class="p">:</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">cand</span><span class="p">,</span> <span class="n">lhyps</span> <span class="ow">in</span> <span class="n">desc_out</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">cand</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">target</span> <span class="o">=</span> <span class="n">by_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">cand</span><span class="p">,</span> <span class="s2">"span_id"</span><span class="p">,</span> <span class="kc">None</span><span class="p">))</span>
+                <span class="k">if</span> <span class="n">target</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">lhyps</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">existing</span> <span class="o">=</span> <span class="p">{(</span><span class="n">h</span><span class="o">.</span><span class="n">label</span><span class="p">,</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">target</span><span class="o">.</span><span class="n">proposed_labels</span><span class="p">}</span>
+                <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">lhyps</span><span class="p">:</span>
+                    <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">label</span><span class="p">,</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">existing</span><span class="p">:</span>
+                        <span class="n">target</span><span class="o">.</span><span class="n">proposed_labels</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+                        <span class="n">existing</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+
+            <span class="c1"># Hard filter: do not allow description-embed labeling of admin/meta spans</span>
+            <span class="c1"># (prevents "work order", "inspection", "evidence", "additional notes" from becoming entities).</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="kn">from</span><span class="w"> </span><span class="nn">.generators.anchored_np_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">STOP_TOKENS</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+                <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+                    <span class="n">toks</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\w+"</span><span class="p">,</span> <span class="n">c</span><span class="o">.</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)}</span>
+                    <span class="k">if</span> <span class="n">toks</span> <span class="ow">and</span> <span class="p">(</span><span class="n">toks</span> <span class="o">&amp;</span> <span class="n">STOP_TOKENS</span><span class="p">):</span>
+                        <span class="c1"># keep gazetteer/classifier labels, but drop desc_gen hypotheses</span>
+                        <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="s2">"source"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"desc_embed"</span><span class="p">]</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">"STOP_TOKENS admin/meta filter skipped: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+
+        <span class="c1"># Build role-aware token sets (component vs mechanism) from generator gazetteers.</span>
+        <span class="c1"># IMPORTANT: Previously this collected tokens from *all* labels, causing words like</span>
+        <span class="c1"># "acid", "attack", "wear" to be mis-treated as "component tokens".</span>
+        <span class="n">comp_tokens</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">mech_tokens</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">gen</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">generators</span><span class="p">:</span>
+            <span class="n">lt</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">gen</span><span class="p">,</span> <span class="s2">"label_terms"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lt</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+
+            <span class="k">for</span> <span class="n">lbl</span><span class="p">,</span> <span class="n">terms</span> <span class="ow">in</span> <span class="n">lt</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">grp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">grp</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">,</span> <span class="s2">"G4_MECHANISM_PROCESS"</span><span class="p">}:</span>
+                    <span class="k">continue</span>
+                <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">:</span>
+                    <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\w+"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">term</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()):</span>
+                        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                            <span class="k">continue</span>
+                        <span class="k">if</span> <span class="n">grp</span> <span class="o">==</span> <span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">:</span>
+                            <span class="n">comp_tokens</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
+                        <span class="k">elif</span> <span class="n">grp</span> <span class="o">==</span> <span class="s2">"G4_MECHANISM_PROCESS"</span><span class="p">:</span>
+                            <span class="n">mech_tokens</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span>
+
+        <span class="c1"># Add the global mechanism keywords (optional boost)</span>
+        <span class="n">mech_tokens</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">MECH_KEYWORDS</span><span class="p">))</span>
+
+        <span class="c1"># 2) Consolidate</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">consolidator</span><span class="o">.</span><span class="n">consolidate</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">candidates</span><span class="p">)</span>
+
+        <span class="c1"># 2.5) Optional split after consolidation, not before.</span>
+        <span class="c1"># This reduces token-fragment proliferation.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">enable_split_component_mechanism</span><span class="p">:</span>
+            <span class="n">candidates</span> <span class="o">=</span> <span class="n">split_component_mechanism_spans</span><span class="p">(</span>
+                <span class="n">candidates</span><span class="p">,</span>
+                <span class="n">component_tokens</span><span class="o">=</span><span class="n">comp_tokens</span><span class="p">,</span>
+                <span class="n">mechanism_tokens</span><span class="o">=</span><span class="n">mech_tokens</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="c1"># 2.6) Optional LLM augmentation only after consolidation.</span>
+        <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"llm_disambiguator"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">llm_disambiguator</span><span class="o">.</span><span class="n">disambiguate</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">candidates</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">"LLM disambiguator failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="c1"># 3) Rule disambiguation</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disambiguator</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">candidates</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span>
+
+        <span class="c1"># 4) ML classifier (no-op in v0.1)</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">classifier</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">candidates</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span>
+
+        <span class="c1"># 4.5) Optional: wire token evidence (from generators) into CompatibilityEngine</span>
+        <span class="c1"># This reduces notebook-side plumbing: generators can expose role-aware token evidence.</span>
+        <span class="n">merged_evidence</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"exclusive_by_group"</span><span class="p">:</span> <span class="p">{},</span> <span class="s2">"token_to_groups"</span><span class="p">:</span> <span class="p">{}}</span>
+        <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">generators</span><span class="p">:</span>
+            <span class="n">get_ev</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="s2">"get_token_evidence"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">callable</span><span class="p">(</span><span class="n">get_ev</span><span class="p">):</span>
+                <span class="n">ev</span> <span class="o">=</span> <span class="n">get_ev</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">ev</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">g</span><span class="p">,</span> <span class="s2">"token_evidence"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">ex</span> <span class="o">=</span> <span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"exclusive_by_group"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">grp</span><span class="p">,</span> <span class="n">toks</span> <span class="ow">in</span> <span class="n">ex</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">merged_evidence</span><span class="p">[</span><span class="s2">"exclusive_by_group"</span><span class="p">]</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">grp</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">toks</span><span class="p">))</span>
+            <span class="n">t2g</span> <span class="o">=</span> <span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"token_to_groups"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">for</span> <span class="n">tok</span><span class="p">,</span> <span class="n">grps</span> <span class="ow">in</span> <span class="n">t2g</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">merged_evidence</span><span class="p">[</span><span class="s2">"token_to_groups"</span><span class="p">]</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">tok</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">grps</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">merged_evidence</span><span class="p">[</span><span class="s2">"exclusive_by_group"</span><span class="p">]</span> <span class="ow">or</span> <span class="n">merged_evidence</span><span class="p">[</span><span class="s2">"token_to_groups"</span><span class="p">]:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">compatibility</span><span class="o">.</span><span class="n">token_evidence</span> <span class="o">=</span> <span class="n">merged_evidence</span>
+        <span class="c1"># 5) Compatibility / schema rules -&gt; decisions (+ optional relations)</span>
+        <span class="n">comp_res</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">compatibility</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">candidates</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span>
+
+        <span class="c1"># 6) Postprocess -&gt; flatten entities</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">postprocessor</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+            <span class="n">comp_res</span><span class="o">.</span><span class="n">decisions</span><span class="p">,</span>
+            <span class="n">comp_res</span><span class="o">.</span><span class="n">relation_proposals</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">schema</span>
+        <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

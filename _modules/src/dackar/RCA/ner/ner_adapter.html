@@ -1,0 +1,469 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.ner_adapter &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.ner_adapter</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.ner_adapter</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="n">HybridNERPipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">SchemaLoader</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.generators.gazetteer_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">GazetteerGenerator</span><span class="p">,</span> <span class="n">GazetteerConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.generators.description_embed_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">DescriptionEmbedGenerator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.generators.nounphrase_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">NounPhraseGenerator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.generators.anchored_np_generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnchoredNPGenerator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.compatibility</span><span class="w"> </span><span class="kn">import</span> <span class="n">CompatibilityEngine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.consolidator</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpanConsolidator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.llm_disambiguator</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLMDisambiguator</span><span class="p">,</span> <span class="n">LLMConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.hybrid_ner.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">PipelineResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.equipment_ID_extractor</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract_equipment_ids</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.doc_ref_extractor</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract_doc_ref_ids</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.alarm_id_extractor</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract_alarm_ref_ids</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.spacy_annotator</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpacyAnnotator</span><span class="p">,</span> <span class="n">build_spacy_annotator</span>  <span class="c1"># noqa: F401 re-exported</span>
+
+<div class="viewcode-block" id="_SUPPORTED_MODES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/ner_adapter/index.html#src.dackar.RCA.ner.ner_adapter._SUPPORTED_MODES">[docs]</a>
+<span class="n">_SUPPORTED_MODES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"gazetteer_only"</span><span class="p">,</span> <span class="s2">"default"</span><span class="p">,</span> <span class="s2">"anchored_np"</span><span class="p">,</span> <span class="s2">"full_np"</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_build_token_index">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/ner_adapter/index.html#src.dackar.RCA.ner.ner_adapter._build_token_index">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_token_index</span><span class="p">(</span><span class="n">gaz</span><span class="p">:</span> <span class="n">GazetteerGenerator</span><span class="p">,</span> <span class="n">min_tok_len</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Invert gazetteer label_terms into token -&gt; {(label, term)} for AnchoredNPGenerator."""</span>
+    <span class="n">token_index</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">terms</span> <span class="ow">in</span> <span class="n">gaz</span><span class="o">.</span><span class="n">label_terms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\w+"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">term</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()):</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">min_tok_len</span><span class="p">:</span>
+                    <span class="n">token_index</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">tok</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">((</span><span class="n">label</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">term</span><span class="p">)))</span>
+    <span class="k">return</span> <span class="n">token_index</span></div>
+
+
+
+<span class="c1"># 1) build a single (global) pipeline instance at process startup</span>
+<div class="viewcode-block" id="build_ner_pipeline">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/ner_adapter/index.html#src.dackar.RCA.ner.ner_adapter.build_ner_pipeline">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_ner_pipeline</span><span class="p">(</span>
+    <span class="n">schema_json_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">gazetteer_xl</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">label_json</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">llm_cfg</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">generator_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"gazetteer_only"</span><span class="p">,</span>
+    <span class="n">np_score_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.65</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HybridNERPipeline</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Build and return a HybridNERPipeline.</span>
+
+<span class="sd">    generator_mode options</span>
+<span class="sd">    ----------------------</span>
+<span class="sd">    ``"gazetteer_only"`` (default)</span>
+<span class="sd">        Only exact-phrase gazetteer matching.  Highest precision, lowest recall.</span>
+<span class="sd">        DescriptionEmbedGenerator classifies gazetteer hits; OOV spans are invisible.</span>
+
+<span class="sd">    ``"anchored_np"`` (recommended upgrade)</span>
+<span class="sd">        Gazetteer + AnchoredNPGenerator.  Noun-phrase spans are proposed only when</span>
+<span class="sd">        they contain at least one gazetteer token, so OOV compound phrases like</span>
+<span class="sd">        "fretting corrosion" or "oxide layer buildup" become candidates while purely</span>
+<span class="sd">        generic NPs ("work order", "inspection notes") are suppressed.</span>
+<span class="sd">        DescriptionEmbedGenerator then classifies all candidates with its Rule 1/2</span>
+<span class="sd">        gates; ``np_score_threshold`` (default 0.65) is applied instead of the</span>
+<span class="sd">        default 0.55 to keep precision acceptable.</span>
+
+<span class="sd">    ``"full_np"``</span>
+<span class="sd">        Gazetteer + plain NounPhraseGenerator.  Every spaCy noun chunk becomes a</span>
+<span class="sd">        candidate regardless of gazetteer overlap.  Highest recall, more noise.</span>
+<span class="sd">        Use for exploratory indexing or when vocabulary coverage is thin.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    np_score_threshold:</span>
+<span class="sd">        Minimum cosine similarity accepted by DescriptionEmbedGenerator when NP</span>
+<span class="sd">        generation is active (``"anchored_np"`` or ``"full_np"``).  Ignored for</span>
+<span class="sd">        ``"gazetteer_only"`` / ``"default"``.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">generator_mode</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SUPPORTED_MODES</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Unsupported generator_mode: </span><span class="si">{</span><span class="n">generator_mode</span><span class="si">!r}</span><span class="s2">. "</span>
+            <span class="sa">f</span><span class="s2">"Choose from </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_SUPPORTED_MODES</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
+        <span class="p">)</span>
+
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">SchemaLoader</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">schema_json_path</span><span class="p">)</span>
+
+    <span class="n">gaz_conf</span> <span class="o">=</span> <span class="n">GazetteerConfig</span><span class="p">(</span><span class="n">match_mode</span><span class="o">=</span><span class="s2">"exact_phrase"</span><span class="p">)</span>
+    <span class="n">gaz</span> <span class="o">=</span> <span class="n">GazetteerGenerator</span><span class="p">(</span><span class="n">excel_path</span><span class="o">=</span><span class="n">gazetteer_xl</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">gaz_conf</span><span class="p">)</span>
+
+    <span class="n">desc</span> <span class="o">=</span> <span class="n">DescriptionEmbedGenerator</span><span class="p">(</span><span class="n">label_json_path</span><span class="o">=</span><span class="n">label_json</span><span class="p">,</span> <span class="n">gazetteer_path</span><span class="o">=</span><span class="n">gazetteer_xl</span><span class="p">)</span>
+    <span class="n">desc</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+
+    <span class="n">compat</span> <span class="o">=</span> <span class="n">CompatibilityEngine</span><span class="p">()</span>
+    <span class="n">consolidator</span> <span class="o">=</span> <span class="n">SpanConsolidator</span><span class="p">()</span>
+
+    <span class="n">generators</span> <span class="o">=</span> <span class="p">[</span><span class="n">gaz</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">generator_mode</span> <span class="o">==</span> <span class="s2">"anchored_np"</span><span class="p">:</span>
+        <span class="n">token_index</span> <span class="o">=</span> <span class="n">_build_token_index</span><span class="p">(</span><span class="n">gaz</span><span class="p">)</span>
+        <span class="n">np_base</span> <span class="o">=</span> <span class="n">NounPhraseGenerator</span><span class="p">(</span><span class="n">max_tokens</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
+        <span class="n">generators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AnchoredNPGenerator</span><span class="p">(</span>
+            <span class="n">base_np</span><span class="o">=</span><span class="n">np_base</span><span class="p">,</span> <span class="n">token_index</span><span class="o">=</span><span class="n">token_index</span><span class="p">,</span> <span class="n">max_tokens</span><span class="o">=</span><span class="mi">6</span><span class="p">,</span>
+            <span class="n">emit_min_tokens</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>  <span class="c1"># suppress sub-token _min_ spans that cause labeling noise</span>
+        <span class="p">))</span>
+        <span class="n">desc</span><span class="o">.</span><span class="n">score_threshold</span> <span class="o">=</span> <span class="n">np_score_threshold</span>
+
+    <span class="k">elif</span> <span class="n">generator_mode</span> <span class="o">==</span> <span class="s2">"full_np"</span><span class="p">:</span>
+        <span class="n">generators</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">NounPhraseGenerator</span><span class="p">(</span><span class="n">max_tokens</span><span class="o">=</span><span class="mi">6</span><span class="p">))</span>
+        <span class="n">desc</span><span class="o">.</span><span class="n">score_threshold</span> <span class="o">=</span> <span class="n">np_score_threshold</span>
+
+    <span class="c1"># optional LLM disambiguator</span>
+    <span class="n">llm_dis</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">llm_cfg</span> <span class="ow">and</span> <span class="n">llm_cfg</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enabled"</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="n">llm_conf</span> <span class="o">=</span> <span class="n">LLMConfig</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">llm_cfg</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">k</span> <span class="o">!=</span> <span class="s2">"enabled"</span><span class="p">:</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="n">llm_conf</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
+        <span class="n">llm_dis</span> <span class="o">=</span> <span class="n">LLMDisambiguator</span><span class="p">(</span><span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="n">llm_conf</span><span class="p">)</span>
+
+    <span class="n">pipeline</span> <span class="o">=</span> <span class="n">HybridNERPipeline</span><span class="p">(</span>
+        <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">,</span>
+        <span class="n">generators</span><span class="o">=</span><span class="n">generators</span><span class="p">,</span>
+        <span class="n">consolidator</span><span class="o">=</span><span class="n">consolidator</span><span class="p">,</span>
+        <span class="n">disambiguator</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">classifier</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">compatibility</span><span class="o">=</span><span class="n">compat</span><span class="p">,</span>
+        <span class="n">postprocessor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">desc_gen</span><span class="o">=</span><span class="n">desc</span><span class="p">,</span>
+        <span class="n">llm_disambiguator</span><span class="o">=</span><span class="n">llm_dis</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">pipeline</span></div>
+
+
+<div class="viewcode-block" id="_uniq">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/ner_adapter/index.html#src.dackar.RCA.ner.ner_adapter._uniq">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_uniq</span><span class="p">(</span><span class="n">seq</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">seen</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">seq</span><span class="p">:</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">s</span> <span class="ow">or</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="_route_entity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/ner_adapter/index.html#src.dackar.RCA.ner.ner_adapter._route_entity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_route_entity</span><span class="p">(</span><span class="n">schema</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">labels</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">groups</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Return one canonical NERSeed bucket:</span>
+<span class="sd">      systems, components, mechanisms, outcomes,</span>
+<span class="sd">      maintenance_actions, surveillance_actions, tools, properties</span>
+<span class="sd">    """</span>
+    <span class="n">label_to_group</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span> <span class="s2">"label_to_group"</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">all_groups</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">groups</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="k">for</span> <span class="n">lbl</span> <span class="ow">in</span> <span class="n">labels</span> <span class="ow">or</span> <span class="p">[]:</span>
+        <span class="n">grp</span> <span class="o">=</span> <span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">grp</span> <span class="ow">and</span> <span class="n">grp</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">all_groups</span><span class="p">:</span>
+            <span class="n">all_groups</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">grp</span><span class="p">)</span>
+
+    <span class="n">label_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">labels</span> <span class="ow">or</span> <span class="p">[])</span>
+    <span class="n">group_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">all_groups</span><span class="p">)</span>
+
+    <span class="c1"># explicit label-level routing first</span>
+    <span class="k">if</span> <span class="n">label_set</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">"syst"</span><span class="p">,</span> <span class="s2">"plant"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"systems"</span>
+    <span class="k">if</span> <span class="n">label_set</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">"deg_mech"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"mechanisms"</span>
+    <span class="k">if</span> <span class="n">label_set</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">"event"</span><span class="p">,</span> <span class="s2">"fail_type_n"</span><span class="p">,</span> <span class="s2">"fail_type_v"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"outcomes"</span>
+    <span class="k">if</span> <span class="n">label_set</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">"mnt_ops"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"maintenance_actions"</span>
+    <span class="k">if</span> <span class="n">label_set</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">"surv_ops_n"</span><span class="p">,</span> <span class="s2">"surv_ops_v"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"surveillance_actions"</span>
+    <span class="k">if</span> <span class="n">label_set</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">"mnt_tool"</span><span class="p">,</span> <span class="s2">"surv_tool"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"tools"</span>
+    <span class="k">if</span> <span class="n">label_set</span> <span class="o">&amp;</span> <span class="p">{</span><span class="s2">"prop"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"properties"</span>
+
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">lbl</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"comp_"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">lbl</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"opd_"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">lbl</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"ast_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">lbl</span> <span class="ow">in</span> <span class="n">label_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"components"</span>
+
+    <span class="c1"># group-level fallback</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G2_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">group_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"components"</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G1_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">group_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"components"</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G4_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">group_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"mechanisms"</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G5_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">group_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"outcomes"</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G6_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">group_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"maintenance_actions"</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G7_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">group_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"tools"</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">g</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"G8_"</span><span class="p">)</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">group_set</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"properties"</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<span class="c1"># 2) default seed provider to pass into augment_chunks</span>
+<div class="viewcode-block" id="ner_seed_provider_from_pipeline">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/ner_adapter/index.html#src.dackar.RCA.ner.ner_adapter.ner_seed_provider_from_pipeline">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">ner_seed_provider_from_pipeline</span><span class="p">(</span> 
+    <span class="n">pipeline</span><span class="p">:</span> <span class="n">HybridNERPipeline</span><span class="p">,</span>
+    <span class="n">NERSeed</span><span class="p">,</span>
+    <span class="n">annotator</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SpacyAnnotator</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">provider</span><span class="p">(</span><span class="n">chunk</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="n">txt</span> <span class="o">=</span> <span class="p">(</span><span class="n">chunk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">txt</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">NERSeed</span><span class="p">(</span>
+                <span class="n">systems</span><span class="o">=</span><span class="p">[],</span> <span class="n">equipment_ids</span><span class="o">=</span><span class="p">[],</span> <span class="n">components</span><span class="o">=</span><span class="p">[],</span> <span class="n">mechanisms</span><span class="o">=</span><span class="p">[],</span>
+                <span class="n">outcomes</span><span class="o">=</span><span class="p">[],</span> <span class="n">surveillance_actions</span><span class="o">=</span><span class="p">[],</span> <span class="n">maintenance_actions</span><span class="o">=</span><span class="p">[],</span>
+                <span class="n">properties</span><span class="o">=</span><span class="p">[],</span> <span class="n">tools</span><span class="o">=</span><span class="p">[],</span> <span class="n">doc_refs</span><span class="o">=</span><span class="p">[],</span> <span class="n">alarm_ids</span><span class="o">=</span><span class="p">[],</span>
+                <span class="n">measurements</span><span class="o">=</span><span class="p">[],</span> <span class="n">temporal_refs</span><span class="o">=</span><span class="p">[],</span> <span class="n">temporal_relations</span><span class="o">=</span><span class="p">[],</span>
+                <span class="n">temporal_qualifiers</span><span class="o">=</span><span class="p">[],</span> <span class="n">locations</span><span class="o">=</span><span class="p">[],</span> <span class="n">conjectures</span><span class="o">=</span><span class="p">[],</span>
+            <span class="p">)</span>
+
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">Document</span><span class="p">(</span><span class="n">doc_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">chunk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">)),</span> <span class="n">text</span><span class="o">=</span><span class="n">txt</span><span class="p">,</span> <span class="n">meta</span><span class="o">=</span><span class="p">{</span><span class="s2">"chunk_id"</span><span class="p">:</span> <span class="n">chunk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chunk_id"</span><span class="p">)})</span>
+        <span class="n">result</span><span class="p">:</span> <span class="n">PipelineResult</span> <span class="o">=</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+
+        <span class="c1"># Map PipelineResult.entities (ResolvedSpan) to NERSeed fields heuristically</span>
+        <span class="n">systems</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">equipment_ids</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">components</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">mechanisms</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">outcomes</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">surveillance_actions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">maintenance_actions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">properties</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">tools</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">ent</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">entities</span><span class="p">:</span>
+            <span class="n">lbls</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">labels</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">groups</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">groups</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">txt_span</span> <span class="o">=</span> <span class="n">ent</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">bucket</span> <span class="o">=</span> <span class="n">_route_entity</span><span class="p">(</span><span class="n">pipeline</span><span class="o">.</span><span class="n">schema</span><span class="p">,</span> <span class="n">lbls</span><span class="p">,</span> <span class="n">groups</span><span class="p">)</span>
+
+            <span class="c1"># Drop article-prefixed NPs from physical buckets — duplicate noise from AnchoredNP</span>
+            <span class="n">_is_article_np</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^(the|a|an)\s+"</span><span class="p">,</span> <span class="n">txt_span</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"systems"</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_article_np</span><span class="p">:</span>
+                    <span class="n">systems</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"components"</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_article_np</span><span class="p">:</span>
+                    <span class="n">components</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"mechanisms"</span><span class="p">:</span>
+                <span class="n">mechanisms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"outcomes"</span><span class="p">:</span>
+                <span class="n">outcomes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"maintenance_actions"</span><span class="p">:</span>
+                <span class="n">maintenance_actions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"surveillance_actions"</span><span class="p">:</span>
+                <span class="n">surveillance_actions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"tools"</span><span class="p">:</span>
+                <span class="n">tools</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">bucket</span> <span class="o">==</span> <span class="s2">"properties"</span><span class="p">:</span>
+                <span class="n">properties</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">txt_span</span><span class="p">)</span>
+
+            <span class="n">equipment_ids</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">extract_equipment_ids</span><span class="p">(</span><span class="n">txt_span</span><span class="p">))</span>
+
+        <span class="c1"># fallback quick regex extraction for tags (keeps previous behavior)</span>
+        <span class="n">eq_fallback</span> <span class="o">=</span> <span class="n">extract_equipment_ids</span><span class="p">(</span><span class="n">txt</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">eq_fallback</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">e</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">equipment_ids</span><span class="p">:</span>
+                <span class="n">equipment_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+
+        <span class="c1"># Extract document cross-references and alarm IDs from full chunk text</span>
+        <span class="n">doc_refs</span> <span class="o">=</span> <span class="n">extract_doc_ref_ids</span><span class="p">(</span><span class="n">txt</span><span class="p">)</span>
+        <span class="n">alarm_ids</span> <span class="o">=</span> <span class="n">extract_alarm_ref_ids</span><span class="p">(</span><span class="n">txt</span><span class="p">)</span>
+
+        <span class="c1"># Tier 1 spaCy annotation: measurements, temporal, location, conjecture</span>
+        <span class="n">spacy_result</span> <span class="o">=</span> <span class="n">annotator</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">txt</span><span class="p">)</span> <span class="k">if</span> <span class="n">annotator</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="c1"># Post-filter temporal_refs: remove tokens that were already captured as doc_refs</span>
+        <span class="n">_doc_ref_norms</span> <span class="o">=</span> <span class="p">{</span><span class="n">r</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">doc_refs</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">spacy_result</span> <span class="ow">and</span> <span class="n">spacy_result</span><span class="o">.</span><span class="n">temporal_refs</span><span class="p">:</span>
+            <span class="n">spacy_result</span><span class="o">.</span><span class="n">temporal_refs</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">spacy_result</span><span class="o">.</span><span class="n">temporal_refs</span>
+                <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_doc_ref_norms</span>
+            <span class="p">]</span>
+
+        <span class="c1"># Optional: attach lightweight diagnostics for audit/debug use</span>
+        <span class="c1"># without changing the NERSeed constructor contract.</span>
+        <span class="n">_</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"n_decisions"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"decisions"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="s2">"n_entities"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"entities"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="s2">"n_relations"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"relations"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="s2">"n_deferred"</span><span class="p">:</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"decisions"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="s2">"action"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"defer"</span><span class="p">),</span>
+        <span class="p">}</span>
+
+        <span class="k">return</span> <span class="n">NERSeed</span><span class="p">(</span>
+            <span class="n">systems</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">systems</span><span class="p">),</span>
+            <span class="n">equipment_ids</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">equipment_ids</span><span class="p">),</span>
+            <span class="n">components</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">components</span><span class="p">),</span>
+            <span class="n">mechanisms</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">mechanisms</span><span class="p">),</span>
+            <span class="n">outcomes</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">outcomes</span><span class="p">),</span>
+            <span class="n">surveillance_actions</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">surveillance_actions</span><span class="p">),</span>
+            <span class="n">maintenance_actions</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">maintenance_actions</span><span class="p">),</span>
+            <span class="n">properties</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">properties</span><span class="p">),</span>
+            <span class="n">tools</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">tools</span><span class="p">),</span>
+            <span class="n">doc_refs</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">doc_refs</span><span class="p">),</span>
+            <span class="n">alarm_ids</span><span class="o">=</span><span class="n">_uniq</span><span class="p">(</span><span class="n">alarm_ids</span><span class="p">),</span>
+            <span class="n">measurements</span><span class="o">=</span><span class="n">spacy_result</span><span class="o">.</span><span class="n">measurements</span> <span class="k">if</span> <span class="n">spacy_result</span> <span class="k">else</span> <span class="p">[],</span>
+            <span class="n">temporal_refs</span><span class="o">=</span><span class="n">spacy_result</span><span class="o">.</span><span class="n">temporal_refs</span> <span class="k">if</span> <span class="n">spacy_result</span> <span class="k">else</span> <span class="p">[],</span>
+            <span class="n">temporal_relations</span><span class="o">=</span><span class="n">spacy_result</span><span class="o">.</span><span class="n">temporal_relations</span> <span class="k">if</span> <span class="n">spacy_result</span> <span class="k">else</span> <span class="p">[],</span>
+            <span class="n">temporal_qualifiers</span><span class="o">=</span><span class="n">spacy_result</span><span class="o">.</span><span class="n">temporal_qualifiers</span> <span class="k">if</span> <span class="n">spacy_result</span> <span class="k">else</span> <span class="p">[],</span>
+            <span class="n">locations</span><span class="o">=</span><span class="n">spacy_result</span><span class="o">.</span><span class="n">locations</span> <span class="k">if</span> <span class="n">spacy_result</span> <span class="k">else</span> <span class="p">[],</span>
+            <span class="n">conjectures</span><span class="o">=</span><span class="n">spacy_result</span><span class="o">.</span><span class="n">conjectures</span> <span class="k">if</span> <span class="n">spacy_result</span> <span class="k">else</span> <span class="p">[],</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">provider</span></div>
+
+
+
+<div class="viewcode-block" id="build_ner_provider">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/ner/ner_adapter/index.html#src.dackar.RCA.ner.ner_adapter.build_ner_provider">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_ner_provider</span><span class="p">(</span>
+    <span class="n">schema_json_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">gazetteer_xl</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">label_json</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">NERSeed</span><span class="p">,</span>
+    <span class="n">llm_cfg</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">generator_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"anchored_np"</span><span class="p">,</span>
+    <span class="n">np_score_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.65</span><span class="p">,</span>
+    <span class="n">spacy_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"en_core_web_sm"</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Convenience factory: build pipeline + SpacyAnnotator and return a ready-to-use</span>
+<span class="sd">    NER seed provider callable.</span>
+
+<span class="sd">    Intended for use with ``augment_chunks_with_structured_summaries()``::</span>
+
+<span class="sd">        provider = build_ner_provider(schema, gaz, label, NERSeed)</span>
+<span class="sd">        augment_chunks_with_structured_summaries(chunks_path, ner_seed_provider=provider, ...)</span>
+
+<span class="sd">    Parameters mirror ``build_ner_pipeline()``.  ``spacy_model`` selects the base</span>
+<span class="sd">    spaCy model for the ``SpacyAnnotator`` (Tier 1 measurement/temporal/location).</span>
+<span class="sd">    """</span>
+    <span class="n">pipeline</span> <span class="o">=</span> <span class="n">build_ner_pipeline</span><span class="p">(</span>
+        <span class="n">schema_json_path</span><span class="o">=</span><span class="n">schema_json_path</span><span class="p">,</span>
+        <span class="n">gazetteer_xl</span><span class="o">=</span><span class="n">gazetteer_xl</span><span class="p">,</span>
+        <span class="n">label_json</span><span class="o">=</span><span class="n">label_json</span><span class="p">,</span>
+        <span class="n">llm_cfg</span><span class="o">=</span><span class="n">llm_cfg</span><span class="p">,</span>
+        <span class="n">generator_mode</span><span class="o">=</span><span class="n">generator_mode</span><span class="p">,</span>
+        <span class="n">np_score_threshold</span><span class="o">=</span><span class="n">np_score_threshold</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">annotator</span> <span class="o">=</span> <span class="n">build_spacy_annotator</span><span class="p">(</span><span class="n">nlp_model</span><span class="o">=</span><span class="n">spacy_model</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">ner_seed_provider_from_pipeline</span><span class="p">(</span><span class="n">pipeline</span><span class="p">,</span> <span class="n">NERSeed</span><span class="p">,</span> <span class="n">annotator</span><span class="o">=</span><span class="n">annotator</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

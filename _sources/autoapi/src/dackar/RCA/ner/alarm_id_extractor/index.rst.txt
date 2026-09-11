@@ -1,0 +1,134 @@
+src.dackar.RCA.ner.alarm_id_extractor
+=====================================
+
+.. py:module:: src.dackar.RCA.ner.alarm_id_extractor
+
+.. autoapi-nested-parse::
+
+   alarm_id_extractor.py
+   ─────────────────────────────────────────────────────────────────────────────
+   Extract alarm and annunciator IDs from nuclear plant text (ALM, ANN, process
+   tags, SCRAM/SI/AFAS setpoint conditions, etc.).
+
+   Plant-specific flexibility
+   ──────────────────────────
+   Like ``doc_ref_extractor.py``, this module is driven by the same JSON *plant
+   profile* (see ``ner/data/plant_profiles/default_plant_profile.json``).  Alarm
+   patterns live in the ``alarm_patterns`` array; each entry has a ``name``,
+   ``pattern`` (regex string), and ``score`` (0–1 confidence).
+
+   False-positive filtering uses the ``false_positive_filters.excluded_prefixes_from_alarm``
+   list from the same profile, so document-reference prefixes (CR, WO, …) are
+   never returned as alarm IDs.
+
+   Output
+   ──────
+   Each extracted alarm reference is an ``AlarmRef`` namedtuple:
+     pattern_name  - stable pattern identifier (e.g. "short_alarm_id")
+     raw           - original matched text (before normalization)
+     norm          - normalized ID (uppercase, collapsed separators)
+     score         - pattern confidence score (0–1) from the plant profile
+
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.alarm_id_extractor.AlarmRef
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.alarm_id_extractor._compile_alarm_profile
+   src.dackar.RCA.ner.alarm_id_extractor._make_alarm_fp_checker
+   src.dackar.RCA.ner.alarm_id_extractor._normalize_alarm_ref
+   src.dackar.RCA.ner.alarm_id_extractor.extract_alarm_refs
+   src.dackar.RCA.ner.alarm_id_extractor.extract_alarm_ref_ids
+
+
+Module Contents
+---------------
+
+.. py:class:: AlarmRef
+
+   Bases: :py:obj:`NamedTuple`
+
+
+   A single extracted alarm or annunciator reference.
+
+
+   .. py:attribute:: pattern_name
+      :type:  str
+
+
+   .. py:attribute:: raw
+      :type:  str
+
+
+   .. py:attribute:: norm
+      :type:  str
+
+
+   .. py:attribute:: score
+      :type:  float
+
+
+.. py:function:: _compile_alarm_profile(profile)
+
+   Return list of (pattern_name, score, compiled_pattern) from profile.
+
+   Patterns are compiled case-insensitively.
+
+
+.. py:function:: _make_alarm_fp_checker(profile)
+
+   Return a callable that returns True when a norm is a false positive
+   alarm ID and should be dropped.
+
+
+.. py:function:: _normalize_alarm_ref(raw)
+
+   Return a canonical alarm reference string.
+
+   - Uppercase
+   - Collapse any internal whitespace to a single hyphen
+   - Collapse multiple consecutive hyphens
+   - Strip leading/trailing punctuation
+
+
+.. py:function:: extract_alarm_refs(text, *, profile_path = None, profile = None, normalize = True, unique = True, max_ids = 200, min_score = 0.0)
+
+   Extract alarm and annunciator IDs from *text*.
+
+   :param text: Arbitrary chunk or document text.
+   :param profile_path: Path to a plant profile JSON override.  Ignored when
+                        *profile* is supplied directly.
+   :param profile: Pre-loaded plant profile dict (takes priority over
+                   *profile_path*).  Pass this when calling the function many times
+                   on the same plant to avoid repeated file I/O.
+   :param normalize: Normalize matched IDs (uppercase, canonical hyphens).
+   :param unique: Return each normalised ID at most once (keeps highest-score
+                  pattern hit when the same norm is matched by multiple patterns).
+   :param max_ids: Safety cap on the number of refs returned.
+   :param min_score: Drop any match whose pattern score is below this threshold.
+
+   :returns: List of :class:`AlarmRef` namedtuples in match order.
+
+
+.. py:function:: extract_alarm_ref_ids(text, **kwargs)
+
+   Convenience wrapper — returns only the normalised alarm ID strings.
+
+   Suitable for direct assignment to ``NERSeed.alarm_ids``.
+
+   :param text: Source text.
+   :param \*\*kwargs: Forwarded to :func:`extract_alarm_refs`.
+
+   :returns: List of normalised alarm reference strings.
+
+

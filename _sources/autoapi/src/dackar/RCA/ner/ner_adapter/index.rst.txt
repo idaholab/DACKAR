@@ -1,0 +1,91 @@
+src.dackar.RCA.ner.ner_adapter
+==============================
+
+.. py:module:: src.dackar.RCA.ner.ner_adapter
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.ner_adapter._SUPPORTED_MODES
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.ner_adapter._build_token_index
+   src.dackar.RCA.ner.ner_adapter.build_ner_pipeline
+   src.dackar.RCA.ner.ner_adapter._uniq
+   src.dackar.RCA.ner.ner_adapter._route_entity
+   src.dackar.RCA.ner.ner_adapter.ner_seed_provider_from_pipeline
+   src.dackar.RCA.ner.ner_adapter.build_ner_provider
+
+
+Module Contents
+---------------
+
+.. py:data:: _SUPPORTED_MODES
+
+.. py:function:: _build_token_index(gaz, min_tok_len = 3)
+
+   Invert gazetteer label_terms into token -> {(label, term)} for AnchoredNPGenerator.
+
+
+.. py:function:: build_ner_pipeline(schema_json_path, gazetteer_xl, label_json, llm_cfg = None, generator_mode = 'gazetteer_only', np_score_threshold = 0.65)
+
+   Build and return a HybridNERPipeline.
+
+   generator_mode options
+   ----------------------
+   ``"gazetteer_only"`` (default)
+       Only exact-phrase gazetteer matching.  Highest precision, lowest recall.
+       DescriptionEmbedGenerator classifies gazetteer hits; OOV spans are invisible.
+
+   ``"anchored_np"`` (recommended upgrade)
+       Gazetteer + AnchoredNPGenerator.  Noun-phrase spans are proposed only when
+       they contain at least one gazetteer token, so OOV compound phrases like
+       "fretting corrosion" or "oxide layer buildup" become candidates while purely
+       generic NPs ("work order", "inspection notes") are suppressed.
+       DescriptionEmbedGenerator then classifies all candidates with its Rule 1/2
+       gates; ``np_score_threshold`` (default 0.65) is applied instead of the
+       default 0.55 to keep precision acceptable.
+
+   ``"full_np"``
+       Gazetteer + plain NounPhraseGenerator.  Every spaCy noun chunk becomes a
+       candidate regardless of gazetteer overlap.  Highest recall, more noise.
+       Use for exploratory indexing or when vocabulary coverage is thin.
+
+   :param np_score_threshold: Minimum cosine similarity accepted by DescriptionEmbedGenerator when NP
+                              generation is active (``"anchored_np"`` or ``"full_np"``).  Ignored for
+                              ``"gazetteer_only"`` / ``"default"``.
+
+
+.. py:function:: _uniq(seq)
+
+.. py:function:: _route_entity(schema, labels, groups)
+
+   Return one canonical NERSeed bucket:
+     systems, components, mechanisms, outcomes,
+     maintenance_actions, surveillance_actions, tools, properties
+
+
+.. py:function:: ner_seed_provider_from_pipeline(pipeline, NERSeed, annotator = None)
+
+.. py:function:: build_ner_provider(schema_json_path, gazetteer_xl, label_json, NERSeed, llm_cfg = None, generator_mode = 'anchored_np', np_score_threshold = 0.65, spacy_model = 'en_core_web_sm')
+
+   Convenience factory: build pipeline + SpacyAnnotator and return a ready-to-use
+   NER seed provider callable.
+
+   Intended for use with ``augment_chunks_with_structured_summaries()``::
+
+       provider = build_ner_provider(schema, gaz, label, NERSeed)
+       augment_chunks_with_structured_summaries(chunks_path, ner_seed_provider=provider, ...)
+
+   Parameters mirror ``build_ner_pipeline()``.  ``spacy_model`` selects the base
+   spaCy model for the ``SpacyAnnotator`` (Tier 1 measurement/temporal/location).
+
+

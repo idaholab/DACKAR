@@ -1,0 +1,227 @@
+src.dackar.RCA.ner.spacy_annotator
+==================================
+
+.. py:module:: src.dackar.RCA.ner.spacy_annotator
+
+.. autoapi-nested-parse::
+
+   spacy_annotator.py
+   ──────────────────────────────────────────────────────────────────────────────
+   Thin wrapper that runs the six plant-specific spaCy pipeline components
+   (Temporal, TemporalRelation, TemporalAttribute, Location, Conjecture, Unit)
+   on arbitrary text and returns a structured SpacyAnnotationResult.
+
+   Used in two tiers of the RCA workflow:
+     Tier 1 (indexing) — called from ner_adapter to enrich NERSeed
+     Tier 2 (scoring)  — injected into ChromaEvidenceRetriever to annotate
+                          each retrieved snippet inside _assess_hit_against_candidate
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.spacy_annotator._TO_HOURS
+   src.dackar.RCA.ner.spacy_annotator._DURATION_RE
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.spacy_annotator.SpacyAnnotationResult
+   src.dackar.RCA.ner.spacy_annotator.SpacyAnnotator
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.spacy_annotator._parse_lag_hours
+   src.dackar.RCA.ner.spacy_annotator.build_spacy_annotator
+
+
+Module Contents
+---------------
+
+.. py:data:: _TO_HOURS
+   :type:  Dict[str, float]
+
+.. py:data:: _DURATION_RE
+
+.. py:function:: _parse_lag_hours(texts)
+
+   Return the first parseable duration in hours from a list of temporal ref texts.
+
+   Returns None if no duration pattern is found.
+
+
+.. py:class:: SpacyAnnotationResult
+
+   Structured output from SpacyAnnotator.annotate().
+
+
+   .. py:attribute:: measurements
+      :type:  List[Dict[str, Any]]
+      :value: []
+
+
+      {value, unit, entity_type, text}.
+
+      :type: Physical measurements
+
+
+   .. py:attribute:: temporal_refs
+      :type:  List[str]
+      :value: []
+
+
+      'March 14 2025', '48 hours'.
+
+      :type: Absolute dates and durations
+
+
+   .. py:attribute:: temporal_relations
+      :type:  List[Dict[str, str]]
+      :value: []
+
+
+      {text, sub_label} where sub_label is one of
+      temporal_relation_order | temporal_relation_reverse_order |
+      temporal_relation_concurrency.
+
+      :type: Ordering words
+
+
+   .. py:attribute:: temporal_qualifiers
+      :type:  List[str]
+      :value: []
+
+
+      'approximately', 'roughly'.
+
+      :type: Fuzzy temporal qualifiers
+
+
+   .. py:attribute:: locations
+      :type:  List[Dict[str, str]]
+      :value: []
+
+
+      {text, sub_label} where sub_label is one of
+      location_proximity | location_up | location_down.
+
+      :type: Spatial terms
+
+
+   .. py:attribute:: conjectures
+      :type:  List[str]
+      :value: []
+
+
+      'possibly', 'likely', 'suspected'.
+
+      :type: Epistemic hedge markers
+
+
+   .. py:attribute:: lag_hours
+      :type:  Optional[float]
+      :value: None
+
+
+      First parseable duration from temporal_refs, converted to hours.
+
+
+   .. py:attribute:: lag_is_approximate
+      :type:  bool
+      :value: False
+
+
+      True when temporal_qualifiers are present alongside a lag_hours value.
+
+
+   .. py:method:: conjecture_fraction()
+
+      Ratio of conjecture markers to total semantic signals.
+
+      Used as a hedge-density proxy: high values indicate the source text
+      is speculative rather than confirmatory.
+
+
+
+   .. py:method:: dominant_temporal_relation()
+
+      Most common temporal ordering label mapped to the schema enum.
+
+      Returns 'precedes', 'follows', 'simultaneous', or None.
+
+
+
+.. py:class:: SpacyAnnotator(nlp_model = 'en_core_web_sm')
+
+   One-time-initialised wrapper for the six plant-specific spaCy components.
+
+   Instantiate once per process (model load + pipe setup are expensive) and
+   share the same instance across Tier 1 (ner_adapter) and Tier 2
+   (evidence_retriever).
+
+   :param nlp_model: spaCy model name.  Must include an NER component so that
+                     TemporalEntity's Matcher patterns that rely on ENT_TYPE DATE/TIME
+                     fire correctly.  Defaults to 'en_core_web_sm'.
+
+
+   .. py:attribute:: _UNIT_LABEL
+      :value: 'unit'
+
+
+
+   .. py:attribute:: _TEMPORAL_LABEL
+      :value: 'Temporal'
+
+
+
+   .. py:attribute:: _TEMPORAL_RELATION_LABELS
+
+
+   .. py:attribute:: _TEMPORAL_ATTRIBUTE_LABEL
+      :value: 'temporal_attribute'
+
+
+
+   .. py:attribute:: _LOCATION_LABELS
+
+
+   .. py:attribute:: _CONJECTURE_LABEL
+      :value: 'conjecture'
+
+
+
+   .. py:attribute:: nlp
+
+
+   .. py:method:: annotate(text)
+
+      Run all six components on *text* and return a structured result.
+
+      :param text: Arbitrary chunk or snippet text.
+
+      :returns: :class:`SpacyAnnotationResult` with all signal buckets populated.
+
+
+
+.. py:function:: build_spacy_annotator(nlp_model = 'en_core_web_sm')
+
+   Factory function — initialise a :class:`SpacyAnnotator` and return it.
+
+   Centralises model selection so callers don't need to import SpacyAnnotator
+   directly.
+
+   :param nlp_model: spaCy model name (default: 'en_core_web_sm').
+
+   :returns: Configured and ready :class:`SpacyAnnotator` instance.
+
+

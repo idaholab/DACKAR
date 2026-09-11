@@ -1,0 +1,587 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.compatibility &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.compatibility</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.compatibility</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">Decision</span><span class="p">,</span> <span class="n">Document</span><span class="p">,</span> <span class="n">LabelHypothesis</span><span class="p">,</span> <span class="n">RelationProposal</span><span class="p">,</span> <span class="n">ResolvedSpan</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">SchemaIndex</span>
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="CompatibilityResult">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityResult">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CompatibilityResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Output of compatibility application:</span>
+<span class="sd">      - updated_candidates: candidates with group annotations on hypotheses</span>
+<span class="sd">      - decisions: decisions per candidate (accept/reject/defer/split)</span>
+<span class="sd">      - relation_proposals: optional (v0.3 mostly empty)</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="CompatibilityResult.updated_candidates">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityResult.updated_candidates">[docs]</a>
+    <span class="n">updated_candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="CompatibilityResult.decisions">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityResult.decisions">[docs]</a>
+    <span class="n">decisions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Decision</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="CompatibilityResult.relation_proposals">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityResult.relation_proposals">[docs]</a>
+    <span class="n">relation_proposals</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RelationProposal</span><span class="p">]</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="CompatibilityEngine">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CompatibilityEngine</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Applies label-group compatibility and conditional rules from group-schema.json.</span>
+
+<span class="sd">    Upgrades:</span>
+<span class="sd">      - Conditional triggers:</span>
+<span class="sd">          * cue_phrases_any / event_cues_any searched in context and sentence window</span>
+<span class="sd">          * pattern_templates supported with placeholder expansion (&lt;MECH&gt;, &lt;OUTCOME&gt;, &lt;PHYS&gt;, &lt;MAT&gt;)</span>
+<span class="sd">      - Split heuristic for G1_PHYSICAL + G6_OUTCOMES_OCCURRENCES compounds (R2 policy)</span>
+
+<span class="sd">    Still enforced:</span>
+<span class="sd">      - one label per group per span (best score retained)</span>
+<span class="sd">      - multi-label allowed only if matrix says 'A' OR conditional rule allows it</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">context_left</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">80</span><span class="p">,</span> <span class="n">context_right</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">80</span><span class="p">):</span>
+<div class="viewcode-block" id="CompatibilityEngine.context_left">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine.context_left">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_left</span> <span class="o">=</span> <span class="n">context_left</span></div>
+
+<div class="viewcode-block" id="CompatibilityEngine.context_right">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine.context_right">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context_right</span> <span class="o">=</span> <span class="n">context_right</span></div>
+
+
+<div class="viewcode-block" id="CompatibilityEngine.assign_groups">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine.assign_groups">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign_groups</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">],</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">]:</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">proposed_labels</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">candidates</span></div>
+
+
+<div class="viewcode-block" id="CompatibilityEngine.apply">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine.apply">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateSpan</span><span class="p">],</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CompatibilityResult</span><span class="p">:</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">assign_groups</span><span class="p">(</span><span class="n">candidates</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+
+        <span class="n">decisions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Decision</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">relations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RelationProposal</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">cand</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="n">dec</span><span class="p">,</span> <span class="n">rels</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolve_span</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+            <span class="n">decisions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dec</span><span class="p">)</span>
+            <span class="n">relations</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">rels</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">CompatibilityResult</span><span class="p">(</span><span class="n">updated_candidates</span><span class="o">=</span><span class="n">candidates</span><span class="p">,</span> <span class="n">decisions</span><span class="o">=</span><span class="n">decisions</span><span class="p">,</span> <span class="n">relation_proposals</span><span class="o">=</span><span class="n">relations</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CompatibilityEngine.resolve_span">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine.resolve_span">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve_span</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">cand</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Decision</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">RelationProposal</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Resolve one candidate span into an accept/defer decision.</span>
+
+<span class="sd">        Policy (current):</span>
+<span class="sd">        - Pick the best label per group (by score).</span>
+<span class="sd">        - If multiple groups remain:</span>
+<span class="sd">            * If same-span multi-label is not whitelisted -&gt; reduce to single best label.</span>
+<span class="sd">            * If whitelisted (currently {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS}) -&gt; require token evidence</span>
+<span class="sd">                for BOTH roles using *exclusive* tokens (role-aware), else try conditional rules / split;</span>
+<span class="sd">                if none apply -&gt; reduce to single best label.</span>
+<span class="sd">        - For other multi-group cases, consult conditional rules; if still not allowed -&gt; reduce to single best label.</span>
+
+<span class="sd">        This intentionally prefers trustworthy output over forced collapse.</span>
+<span class="sd">        When ambiguity remains material, defer instead of inventing certainty.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cand</span><span class="o">.</span><span class="n">proposed_labels</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Decision</span><span class="p">(</span>
+                <span class="n">decision_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="n">input_span_ids</span><span class="o">=</span><span class="p">[</span><span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">],</span>
+                <span class="n">output_spans</span><span class="o">=</span><span class="p">[],</span>
+                <span class="n">action</span><span class="o">=</span><span class="s2">"defer"</span><span class="p">,</span>
+                <span class="n">notes</span><span class="o">=</span><span class="p">[</span><span class="s2">"No proposed labels; deferred for disambiguation/classifier."</span><span class="p">]</span>
+            <span class="p">),</span> <span class="p">[]</span>
+
+        <span class="c1"># Best hypothesis per group</span>
+        <span class="n">best_per_group</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">LabelHypothesis</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">cand</span><span class="o">.</span><span class="n">proposed_labels</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">s</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">best_per_group</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">best_per_group</span><span class="p">[</span><span class="n">h</span><span class="o">.</span><span class="n">group</span><span class="p">]</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">s</span><span class="p">):</span>
+                <span class="n">best_per_group</span><span class="p">[</span><span class="n">h</span><span class="o">.</span><span class="n">group</span><span class="p">]</span> <span class="o">=</span> <span class="n">h</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">best_per_group</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Decision</span><span class="p">(</span>
+                <span class="n">decision_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="n">input_span_ids</span><span class="o">=</span><span class="p">[</span><span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">],</span>
+                <span class="n">output_spans</span><span class="o">=</span><span class="p">[],</span>
+                <span class="n">action</span><span class="o">=</span><span class="s2">"defer"</span><span class="p">,</span>
+                <span class="n">notes</span><span class="o">=</span><span class="p">[</span><span class="s2">"No hypotheses mapped to known groups; deferred."</span><span class="p">]</span>
+            <span class="p">),</span> <span class="p">[]</span>
+
+        <span class="n">selected</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">best_per_group</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_best_overall</span><span class="p">(</span><span class="n">hyps</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">LabelHypothesis</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">hyps</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">hh</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">hh</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">))</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_prefer_component_if_exclusive_single_token</span><span class="p">(</span><span class="n">hyps</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">LabelHypothesis</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">            </span><span class="sd">"""</span>
+<span class="sd">            Tie-break for single-token spans:</span>
+<span class="sd">              If the token is exclusive to the component group, prefer a component hypothesis.</span>
+<span class="sd">            This prevents component nouns like 'shaft' from being reduced to mechanism labels.</span>
+<span class="sd">            """</span>
+            <span class="n">span_token</span> <span class="o">=</span> <span class="p">(</span><span class="n">cand</span><span class="o">.</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">span_token</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">span_token</span><span class="o">.</span><span class="n">split</span><span class="p">())</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+            
+            <span class="c1"># Guard: don't force component for common adjectives / mechanism-context words</span>
+            <span class="c1"># that can appear inside component terms (e.g., "adhesive sealant").</span>
+            <span class="c1"># Keep this list short and expand only when needed.</span>
+            <span class="n">NON_COMPONENT_SINGLE_TOKENS</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"adhesive"</span><span class="p">,</span> <span class="s2">"acid"</span><span class="p">,</span> <span class="s2">"attack"</span><span class="p">,</span> <span class="s2">"wear"</span><span class="p">,</span> <span class="s2">"degradation"</span><span class="p">,</span> <span class="s2">"pitting"</span><span class="p">,</span> <span class="s2">"corrosion"</span><span class="p">,</span> <span class="s2">"erosion"</span><span class="p">,</span>
+                <span class="s2">"damage"</span><span class="p">,</span> <span class="s2">"failed"</span><span class="p">,</span> <span class="s2">"failure"</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="n">span_token</span> <span class="ow">in</span> <span class="n">NON_COMPONENT_SINGLE_TOKENS</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">None</span>
+
+            <span class="c1"># Get exclusive tokens for component group, if available</span>
+            <span class="n">ev</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"token_evidence"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">exclusive</span> <span class="o">=</span> <span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"exclusive_by_group"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">exclusive</span> <span class="ow">and</span> <span class="p">(</span><span class="n">span_token</span> <span class="ow">in</span> <span class="n">exclusive</span><span class="p">):</span>
+                <span class="n">comp_hyps</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hyps</span> <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="o">==</span> <span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">comp_hyps</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">comp_hyps</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">hh</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">hh</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">))</span>
+
+            <span class="c1"># Fallback: derive exclusivity from token_index if available</span>
+            <span class="n">token_index</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"token_index"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">vals</span> <span class="o">=</span> <span class="n">token_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">span_token</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">vals</span><span class="p">:</span>
+                <span class="n">gset</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+                <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">vals</span><span class="p">:</span>
+                    <span class="n">lbl</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">))</span> <span class="ow">and</span> <span class="n">v</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+                    <span class="n">g</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">g</span><span class="p">:</span>
+                        <span class="n">gset</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">gset</span> <span class="o">==</span> <span class="p">{</span><span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">}:</span>
+                    <span class="n">comp_hyps</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hyps</span> <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="o">==</span> <span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">comp_hyps</span><span class="p">:</span>
+                        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">comp_hyps</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">hh</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">hh</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">))</span>
+
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_accept</span><span class="p">(</span><span class="n">hyps</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">],</span> <span class="n">note</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">triggered_rule_ids</span><span class="p">:</span> <span class="nb">list</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Decision</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">RelationProposal</span><span class="p">]]:</span>
+            <span class="n">out_span</span> <span class="o">=</span> <span class="n">ResolvedSpan</span><span class="p">(</span>
+                <span class="n">span_id</span><span class="o">=</span><span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">,</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">cand</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="n">start</span><span class="o">=</span><span class="n">cand</span><span class="o">.</span><span class="n">start</span><span class="p">,</span>
+                <span class="n">end</span><span class="o">=</span><span class="n">cand</span><span class="o">.</span><span class="n">end</span><span class="p">,</span>
+                <span class="n">text</span><span class="o">=</span><span class="n">cand</span><span class="o">.</span><span class="n">text</span><span class="p">,</span>
+                <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="n">h</span><span class="o">.</span><span class="n">label</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hyps</span><span class="p">],</span>
+                <span class="n">groups</span><span class="o">=</span><span class="p">[</span><span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">hyps</span> <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">],</span>
+                <span class="n">provenance</span><span class="o">=</span><span class="p">{</span><span class="s2">"sources"</span><span class="p">:</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="vm">__dict__</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">cand</span><span class="o">.</span><span class="n">sources</span><span class="p">],</span> <span class="s2">"selected_by"</span><span class="p">:</span> <span class="s2">"compatibility"</span><span class="p">}</span>
+            <span class="p">)</span>
+            <span class="n">notes</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">note</span><span class="p">:</span>
+                <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">note</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">Decision</span><span class="p">(</span>
+                <span class="n">decision_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="n">input_span_ids</span><span class="o">=</span><span class="p">[</span><span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">],</span>
+                <span class="n">output_spans</span><span class="o">=</span><span class="p">[</span><span class="n">out_span</span><span class="p">],</span>
+                <span class="n">action</span><span class="o">=</span><span class="s2">"accept"</span><span class="p">,</span>
+                <span class="n">notes</span><span class="o">=</span><span class="n">notes</span><span class="p">,</span>
+                <span class="n">triggered_rule_ids</span><span class="o">=</span><span class="p">(</span><span class="n">triggered_rule_ids</span> <span class="ow">or</span> <span class="p">[])</span>
+            <span class="p">),</span> <span class="p">[]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_defer</span><span class="p">(</span><span class="n">note</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Decision</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">RelationProposal</span><span class="p">]]:</span>
+            <span class="k">return</span> <span class="n">Decision</span><span class="p">(</span>
+                <span class="n">decision_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="n">input_span_ids</span><span class="o">=</span><span class="p">[</span><span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">],</span>
+                <span class="n">output_spans</span><span class="o">=</span><span class="p">[],</span>
+                <span class="n">action</span><span class="o">=</span><span class="s2">"defer"</span><span class="p">,</span>
+                <span class="n">notes</span><span class="o">=</span><span class="p">[</span><span class="n">note</span><span class="p">],</span>
+            <span class="p">),</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_accept</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span>
+
+        <span class="n">groups</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">selected</span> <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+        <span class="n">pair_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">groups</span><span class="p">)</span>
+
+        <span class="c1"># If not whitelisted for same-span multi-label, reduce to single best.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_allowed_same_span</span><span class="p">(</span><span class="n">groups</span><span class="p">):</span>
+            <span class="c1"># Before reducing, try conditional rules / splits for other multi-group patterns</span>
+            <span class="n">allow</span><span class="p">,</span> <span class="n">triggered</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_multilabel_allowed_with_rules</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">allow</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">_accept</span><span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="s2">"Accepted with multi-label (schema/rule-allowed)."</span><span class="p">,</span> <span class="n">triggered_rule_ids</span><span class="o">=</span><span class="n">triggered</span><span class="p">)</span>
+            <span class="c1"># Try splitting physical+outcome compounds if applicable</span>
+            <span class="k">if</span> <span class="s2">"G1_PHYSICAL_COMPONENT"</span> <span class="ow">in</span> <span class="n">pair_set</span> <span class="ow">and</span> <span class="s2">"G5_FAILURE_OUTCOME"</span> <span class="ow">in</span> <span class="n">pair_set</span><span class="p">:</span>
+                <span class="n">split_decision</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_try_split_physical_outcome</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">,</span> <span class="n">selected</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">split_decision</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">split_decision</span><span class="p">,</span> <span class="p">[]</span>
+            <span class="c1"># otherwise defer if scores are close, reduce only when clearly dominant</span>
+            <span class="n">tb</span> <span class="o">=</span> <span class="n">_prefer_component_if_exclusive_single_token</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">_accept</span><span class="p">([</span><span class="n">tb</span><span class="p">],</span> <span class="s2">"Reduced to single label (component-exclusive token tie-break)"</span><span class="p">)</span>
+            <span class="n">sorted_sel</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">hh</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">hh</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_sel</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="n">gap</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sorted_sel</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">sorted_sel</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">gap</span> <span class="o">&lt;</span> <span class="mf">0.15</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">_defer</span><span class="p">(</span><span class="s2">"Ambiguous non-whitelisted same-span multi-label; deferred."</span><span class="p">)</span>
+            <span class="n">best</span> <span class="o">=</span> <span class="n">_best_overall</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">_accept</span><span class="p">([</span><span class="n">best</span><span class="p">],</span> <span class="s2">"Reduced to single label (non-whitelisted same-span multi-label)"</span><span class="p">)</span>
+
+        <span class="c1"># At this point, group pair is whitelisted (G1_PHYSICAL_COMPONENT + G4_MECHANISM_PROCESS).</span>
+        <span class="c1"># Whitelisted pair: require exclusive token evidence for both roles.</span>
+        <span class="n">span_lower</span> <span class="o">=</span> <span class="p">(</span><span class="n">cand</span><span class="o">.</span><span class="n">text</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">_has_exclusive_token</span><span class="p">(</span><span class="n">group_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="c1"># Preferred: role-aware evidence provided by pipeline/gazetteer</span>
+            <span class="n">ev</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"token_evidence"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">exclusive</span> <span class="o">=</span> <span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"exclusive_by_group"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">group_name</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">exclusive</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">exclusive</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">span_lower</span><span class="p">):</span>
+                        <span class="k">return</span> <span class="kc">True</span>
+
+            <span class="c1"># Fallback: derive exclusivity from token_index if available</span>
+            <span class="n">token_index</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">"token_index"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">token_index</span><span class="p">:</span>
+                <span class="c1"># build token -&gt; group set map</span>
+                <span class="n">tok_to_groups</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="k">for</span> <span class="n">tok</span><span class="p">,</span> <span class="n">vals</span> <span class="ow">in</span> <span class="n">token_index</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="n">tok_l</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">tok</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tok_l</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">gset</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+                    <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">vals</span><span class="p">:</span>
+                        <span class="n">lbl</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">))</span> <span class="ow">and</span> <span class="n">v</span> <span class="k">else</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+                        <span class="n">g</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">label_to_group</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lbl</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">g</span><span class="p">:</span>
+                            <span class="n">gset</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">gset</span><span class="p">:</span>
+                        <span class="n">tok_to_groups</span><span class="p">[</span><span class="n">tok_l</span><span class="p">]</span> <span class="o">=</span> <span class="n">gset</span>
+
+                <span class="k">for</span> <span class="n">tok_l</span><span class="p">,</span> <span class="n">gset</span> <span class="ow">in</span> <span class="n">tok_to_groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">gset</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">group_name</span> <span class="ow">in</span> <span class="n">gset</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">tok_l</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s2">"\b"</span><span class="p">,</span> <span class="n">span_lower</span><span class="p">):</span>
+                            <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">return</span> <span class="kc">False</span>
+
+        <span class="n">has_g1</span> <span class="o">=</span> <span class="n">_has_exclusive_token</span><span class="p">(</span><span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">)</span>
+        <span class="n">has_g5</span> <span class="o">=</span> <span class="n">_has_exclusive_token</span><span class="p">(</span><span class="s2">"G4_MECHANISM_PROCESS"</span><span class="p">)</span>
+
+        <span class="c1"># If we have exclusive evidence for both roles, accept multi-label.</span>
+        <span class="k">if</span> <span class="n">has_g1</span> <span class="ow">and</span> <span class="n">has_g5</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_accept</span><span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="s2">"Accepted multi-label with exclusive token evidence (component+mechanism)"</span><span class="p">)</span>
+
+        <span class="c1"># Otherwise: before immediately reducing, try:</span>
+        <span class="c1">#  - conditional rules allowing multi-label for this pair</span>
+        <span class="c1">#  - split heuristic for physical + outcome compounds (R2)</span>
+        <span class="n">allow</span><span class="p">,</span> <span class="n">triggered</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_multilabel_allowed_with_rules</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">allow</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_accept</span><span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="s2">"Accepted with multi-label (schema/rule-allowed)."</span><span class="p">,</span> <span class="n">triggered_rule_ids</span><span class="o">=</span><span class="n">triggered</span><span class="p">)</span>
+
+        <span class="c1"># (No R2 physical+outcome split here: this branch is reached only for the</span>
+        <span class="c1"># whitelisted {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS} pair, so</span>
+        <span class="c1"># G5_FAILURE_OUTCOME is never present. The split runs in the non-whitelisted</span>
+        <span class="c1"># branch above.)</span>
+
+        <span class="c1"># No rule/split allowed and exclusive evidence missing -&gt; prefer defer over forced collapse</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_g1</span><span class="p">:</span>
+            <span class="n">missing</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"component"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">has_g5</span><span class="p">:</span>
+            <span class="n">missing</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"mechanism"</span><span class="p">)</span>
+        <span class="n">tb</span> <span class="o">=</span> <span class="n">_prefer_component_if_exclusive_single_token</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">tb</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_accept</span><span class="p">([</span><span class="n">tb</span><span class="p">],</span> <span class="s2">"Reduced to single label (component-exclusive token tie-break)"</span><span class="p">)</span>
+        <span class="n">sorted_sel</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">selected</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">hh</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">hh</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_sel</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+            <span class="n">gap</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">sorted_sel</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">sorted_sel</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">gap</span> <span class="o">&lt;</span> <span class="mf">0.15</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">_defer</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Ambiguous component+mechanism multi-label; missing exclusive </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing</span><span class="p">)</span><span class="si">}</span><span class="s2"> evidence."</span><span class="p">)</span>
+        <span class="n">best</span> <span class="o">=</span> <span class="n">_best_overall</span><span class="p">(</span><span class="n">selected</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_accept</span><span class="p">([</span><span class="n">best</span><span class="p">],</span> <span class="sa">f</span><span class="s2">"Reduced to single label (missing exclusive </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">missing</span><span class="p">)</span><span class="si">}</span><span class="s2"> evidence)"</span><span class="p">)</span></div>
+
+
+    
+<div class="viewcode-block" id="CompatibilityEngine._allowed_same_span">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine._allowed_same_span">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_allowed_same_span</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">groups</span><span class="p">:</span> <span class="nb">list</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Return True iff same-span multi-labeling is allowed for these groups.</span>
+
+<span class="sd">        Conservative whitelist: only allow the pair {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS}.</span>
+<span class="sd">        (Change this if you want to allow additional group-pairs.)</span>
+<span class="sd">        """</span>
+        <span class="c1"># normalize and filter empty group names</span>
+        <span class="n">gset</span> <span class="o">=</span> <span class="p">{</span><span class="n">g</span> <span class="k">for</span> <span class="n">g</span> <span class="ow">in</span> <span class="n">groups</span> <span class="k">if</span> <span class="n">g</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">gset</span> <span class="o">==</span> <span class="p">{</span><span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">,</span> <span class="s2">"G4_MECHANISM_PROCESS"</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="CompatibilityEngine._try_split_physical_outcome">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine._try_split_physical_outcome">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_try_split_physical_outcome</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">cand</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">selected</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Decision</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">txt</span> <span class="o">=</span> <span class="n">cand</span><span class="o">.</span><span class="n">text</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+            <span class="sa">r</span><span class="s2">"(?P&lt;phys&gt;\b[\w\-/]+\b)\s+(?P&lt;outcome&gt;failed to start|failure|failed|trip|leak|stuck|seized)\b"</span><span class="p">,</span>
+            <span class="n">txt</span><span class="p">,</span>
+            <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">phys_start</span> <span class="o">=</span> <span class="n">cand</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="s2">"phys"</span><span class="p">)</span>
+        <span class="n">phys_end</span> <span class="o">=</span> <span class="n">cand</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">m</span><span class="o">.</span><span class="n">end</span><span class="p">(</span><span class="s2">"phys"</span><span class="p">)</span>
+        <span class="n">out_start</span> <span class="o">=</span> <span class="n">cand</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">m</span><span class="o">.</span><span class="n">start</span><span class="p">(</span><span class="s2">"outcome"</span><span class="p">)</span>
+        <span class="n">out_end</span> <span class="o">=</span> <span class="n">cand</span><span class="o">.</span><span class="n">start</span> <span class="o">+</span> <span class="n">m</span><span class="o">.</span><span class="n">end</span><span class="p">(</span><span class="s2">"outcome"</span><span class="p">)</span>
+
+        <span class="n">g1_labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span><span class="o">.</span><span class="n">label</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">selected</span> <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="o">==</span> <span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">]</span>
+        <span class="n">g6_labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span><span class="o">.</span><span class="n">label</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">selected</span> <span class="k">if</span> <span class="n">h</span><span class="o">.</span><span class="n">group</span> <span class="o">==</span> <span class="s2">"G5_FAILURE_OUTCOME"</span><span class="p">]</span>
+
+        <span class="n">phys_span</span> <span class="o">=</span> <span class="n">ResolvedSpan</span><span class="p">(</span>
+            <span class="n">span_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+            <span class="n">doc_id</span><span class="o">=</span><span class="n">cand</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+            <span class="n">start</span><span class="o">=</span><span class="n">phys_start</span><span class="p">,</span>
+            <span class="n">end</span><span class="o">=</span><span class="n">phys_end</span><span class="p">,</span>
+            <span class="n">text</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">[</span><span class="n">phys_start</span><span class="p">:</span><span class="n">phys_end</span><span class="p">],</span>
+            <span class="n">labels</span><span class="o">=</span><span class="n">g1_labels</span><span class="p">,</span>
+            <span class="n">groups</span><span class="o">=</span><span class="p">[</span><span class="s2">"G1_PHYSICAL_COMPONENT"</span><span class="p">],</span>
+            <span class="n">provenance</span><span class="o">=</span><span class="p">{</span><span class="s2">"split_from"</span><span class="p">:</span> <span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">out_span</span> <span class="o">=</span> <span class="n">ResolvedSpan</span><span class="p">(</span>
+            <span class="n">span_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+            <span class="n">doc_id</span><span class="o">=</span><span class="n">cand</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+            <span class="n">start</span><span class="o">=</span><span class="n">out_start</span><span class="p">,</span>
+            <span class="n">end</span><span class="o">=</span><span class="n">out_end</span><span class="p">,</span>
+            <span class="n">text</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">[</span><span class="n">out_start</span><span class="p">:</span><span class="n">out_end</span><span class="p">],</span>
+            <span class="n">labels</span><span class="o">=</span><span class="n">g6_labels</span><span class="p">,</span>
+            <span class="n">groups</span><span class="o">=</span><span class="p">[</span><span class="s2">"G5_FAILURE_OUTCOME"</span><span class="p">],</span>
+            <span class="n">provenance</span><span class="o">=</span><span class="p">{</span><span class="s2">"split_from"</span><span class="p">:</span> <span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">}</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">Decision</span><span class="p">(</span>
+            <span class="n">decision_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+            <span class="n">doc_id</span><span class="o">=</span><span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+            <span class="n">input_span_ids</span><span class="o">=</span><span class="p">[</span><span class="n">cand</span><span class="o">.</span><span class="n">span_id</span><span class="p">],</span>
+            <span class="n">output_spans</span><span class="o">=</span><span class="p">[</span><span class="n">phys_span</span><span class="p">,</span> <span class="n">out_span</span><span class="p">],</span>
+            <span class="n">action</span><span class="o">=</span><span class="s2">"split"</span><span class="p">,</span>
+            <span class="n">triggered_rule_ids</span><span class="o">=</span><span class="p">[</span><span class="s2">"R2_PHYSICAL_PLUS_OUTCOME_PREFER_SPLIT"</span><span class="p">],</span>
+            <span class="n">notes</span><span class="o">=</span><span class="p">[</span><span class="s2">"Split physical+outcome compound span per R2 policy."</span><span class="p">]</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CompatibilityEngine._multilabel_allowed_with_rules">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine._multilabel_allowed_with_rules">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_multilabel_allowed_with_rules</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">cand</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">groups</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+        <span class="n">triggered</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">groups</span><span class="p">)):</span>
+                <span class="n">g1</span><span class="p">,</span> <span class="n">g2</span> <span class="o">=</span> <span class="n">groups</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">groups</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+                <span class="n">d</span> <span class="o">=</span> <span class="n">schema</span><span class="o">.</span><span class="n">pair_decision</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">g1</span><span class="p">,</span> <span class="n">g2</span><span class="p">),</span> <span class="s2">"C"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">d</span> <span class="o">==</span> <span class="s2">"A"</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">ok</span><span class="p">,</span> <span class="n">rid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_conditional_allows</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">cand</span><span class="p">,</span> <span class="n">g1</span><span class="p">,</span> <span class="n">g2</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">ok</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="n">triggered</span>
+                <span class="k">if</span> <span class="n">rid</span><span class="p">:</span>
+                    <span class="n">triggered</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rid</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">triggered</span></div>
+
+
+<div class="viewcode-block" id="CompatibilityEngine._conditional_allows">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine._conditional_allows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_conditional_allows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">cand</span><span class="p">:</span> <span class="n">CandidateSpan</span><span class="p">,</span> <span class="n">g1</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">g2</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="n">SchemaIndex</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">bool</span><span class="p">,</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]:</span>
+        <span class="n">ctx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context_window</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">cand</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">cand</span><span class="o">.</span><span class="n">end</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">context_left</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">context_right</span><span class="p">)</span>
+        <span class="n">ctx_l</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="n">sent</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sentence_window</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">cand</span><span class="o">.</span><span class="n">start</span><span class="p">,</span> <span class="n">cand</span><span class="o">.</span><span class="n">end</span><span class="p">)</span>
+        <span class="n">sent_l</span> <span class="o">=</span> <span class="n">sent</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">rule</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">conditional_rules</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">g1</span><span class="p">,</span> <span class="n">g2</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">rule</span><span class="o">.</span><span class="n">applies_to_pairs</span> <span class="ow">and</span> <span class="p">(</span><span class="n">g2</span><span class="p">,</span> <span class="n">g1</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">rule</span><span class="o">.</span><span class="n">applies_to_pairs</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">rule</span><span class="o">.</span><span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"allow_same_span_multi_label"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)):</span>
+                <span class="k">continue</span>
+
+            <span class="n">triggers</span> <span class="o">=</span> <span class="n">rule</span><span class="o">.</span><span class="n">triggers</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">cues</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">triggers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cue_phrases_any"</span><span class="p">,</span> <span class="p">[])]</span>
+            <span class="n">evs</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">triggers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_cues_any"</span><span class="p">,</span> <span class="p">[])]</span>
+            <span class="n">pats</span> <span class="o">=</span> <span class="n">triggers</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_templates"</span><span class="p">,</span> <span class="p">[])</span>
+
+            <span class="n">cue_ok</span> <span class="o">=</span> <span class="kc">True</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">cues</span> <span class="k">else</span> <span class="p">(</span><span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">ctx_l</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cues</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">sent_l</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cues</span><span class="p">))</span>
+            <span class="n">ev_ok</span> <span class="o">=</span> <span class="kc">True</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">evs</span> <span class="k">else</span> <span class="p">(</span><span class="nb">any</span><span class="p">(</span><span class="n">e</span> <span class="ow">in</span> <span class="n">ctx_l</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">evs</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">any</span><span class="p">(</span><span class="n">e</span> <span class="ow">in</span> <span class="n">sent_l</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">evs</span><span class="p">))</span>
+            <span class="n">pat_ok</span> <span class="o">=</span> <span class="kc">True</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">pats</span> <span class="k">else</span> <span class="nb">any</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_match_template</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">sent</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pats</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">cue_ok</span> <span class="ow">and</span> <span class="n">ev_ok</span> <span class="ow">and</span> <span class="n">pat_ok</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span><span class="p">,</span> <span class="n">rule</span><span class="o">.</span><span class="n">rule_id</span>
+
+        <span class="k">return</span> <span class="kc">False</span><span class="p">,</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="CompatibilityEngine._match_template">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine._match_template">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_match_template</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">template</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">placeholders</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"&lt;MECH&gt;"</span><span class="p">,</span> <span class="s2">"&lt;OUTCOME&gt;"</span><span class="p">,</span> <span class="s2">"&lt;PHYS&gt;"</span><span class="p">,</span> <span class="s2">"&lt;MAT&gt;"</span><span class="p">]</span>
+        <span class="n">rx</span> <span class="o">=</span> <span class="n">template</span>
+        <span class="k">for</span> <span class="n">ph</span> <span class="ow">in</span> <span class="n">placeholders</span><span class="p">:</span>
+            <span class="n">rx</span> <span class="o">=</span> <span class="n">rx</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">ph</span><span class="p">,</span> <span class="s2">"__PH__"</span><span class="p">)</span>
+        <span class="n">rx</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">rx</span><span class="p">)</span>
+        <span class="n">rx</span> <span class="o">=</span> <span class="n">rx</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"__PH__"</span><span class="p">,</span> <span class="sa">r</span><span class="s2">".{1,80}?"</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">rx</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">except</span> <span class="n">re</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CompatibilityEngine._context_window">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine._context_window">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_context_window</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">start</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">left</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">right</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">lo</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">start</span> <span class="o">-</span> <span class="n">left</span><span class="p">)</span>
+        <span class="n">hi</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">),</span> <span class="n">end</span> <span class="o">+</span> <span class="n">right</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">text</span><span class="p">[</span><span class="n">lo</span><span class="p">:</span><span class="n">hi</span><span class="p">]</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CompatibilityEngine._sentence_window">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/compatibility/index.html#src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine._sentence_window">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_sentence_window</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">start</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">end</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="c1"># crude sentence boundary search</span>
+        <span class="n">prev</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">rfind</span><span class="p">(</span><span class="s2">"."</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">start</span><span class="p">),</span> <span class="n">text</span><span class="o">.</span><span class="n">rfind</span><span class="p">(</span><span class="s2">"!"</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">start</span><span class="p">),</span> <span class="n">text</span><span class="o">.</span><span class="n">rfind</span><span class="p">(</span><span class="s2">"?"</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">start</span><span class="p">))</span>
+        <span class="n">lo</span> <span class="o">=</span> <span class="mi">0</span> <span class="k">if</span> <span class="n">prev</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="k">else</span> <span class="n">prev</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">nxts</span> <span class="o">=</span> <span class="p">[</span><span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"."</span><span class="p">,</span> <span class="n">end</span><span class="p">),</span> <span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"!"</span><span class="p">,</span> <span class="n">end</span><span class="p">),</span> <span class="n">text</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="s2">"?"</span><span class="p">,</span> <span class="n">end</span><span class="p">)]</span>
+        <span class="n">nxts</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">nxts</span> <span class="k">if</span> <span class="n">x</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">hi</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">nxts</span><span class="p">)</span> <span class="k">if</span> <span class="n">nxts</span> <span class="k">else</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">text</span><span class="p">[</span><span class="n">lo</span><span class="p">:</span><span class="n">hi</span><span class="p">]</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

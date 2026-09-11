@@ -1,0 +1,438 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.ner.hybrid_ner.models &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.ner.hybrid_ner.models</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.ner.hybrid_ner.models</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="Document">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Document">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Document</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Represents a single reliability text document (condition report, work order, etc.).</span>
+
+<span class="sd">    Offsets are always defined on `text` (the original authoritative string).</span>
+<span class="sd">    Normalization can be added later using `normalized_text` + `offset_map`.</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="Document.doc_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Document.doc_id">[docs]</a>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="Document.text">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Document.text">[docs]</a>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="Document.meta">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Document.meta">[docs]</a>
+    <span class="n">meta</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Document.normalized_text">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Document.normalized_text">[docs]</a>
+    <span class="n">normalized_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="Document.offset_map">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Document.offset_map">[docs]</a>
+    <span class="n">offset_map</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="SourceHit">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.SourceHit">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SourceHit</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Provenance record for how a candidate span was generated.</span>
+
+<span class="sd">    Examples:</span>
+<span class="sd">      - source_type="regex", source_id="REGEX_FAIL_START"</span>
+<span class="sd">      - source_type="gazetteer_exact", source_id="deg_mech_list"</span>
+<span class="sd">      - source_type="noun_chunk", source_id="spacy_np"</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="SourceHit.source_type">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.SourceHit.source_type">[docs]</a>
+    <span class="n">source_type</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="SourceHit.source_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.SourceHit.source_id">[docs]</a>
+    <span class="n">source_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="SourceHit.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.SourceHit.score">[docs]</a>
+    <span class="n">score</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SourceHit.details">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.SourceHit.details">[docs]</a>
+    <span class="n">details</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="LabelHypothesis">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LabelHypothesis</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    A proposed label for a candidate span before final resolution.</span>
+
+<span class="sd">    `group` is typically filled by schema lookup (label-&gt;group).</span>
+<span class="sd">    `score` can be used as a prior confidence or later overwritten by an ML classifier.</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="LabelHypothesis.label">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis.label">[docs]</a>
+    <span class="n">label</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="LabelHypothesis.group">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis.group">[docs]</a>
+    <span class="n">group</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="LabelHypothesis.score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis.score">[docs]</a>
+    <span class="n">score</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="LabelHypothesis.rationale">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.LabelHypothesis.rationale">[docs]</a>
+    <span class="n">rationale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="CandidateSpan">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CandidateSpan</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    A proposed entity mention span before final decision.</span>
+
+<span class="sd">    Fields:</span>
+<span class="sd">      - start/end: character offsets into Document.text</span>
+<span class="sd">      - text: cached substring for convenience</span>
+<span class="sd">      - sources: provenance (where did this candidate come from)</span>
+<span class="sd">      - proposed_labels: potentially multiple, potentially conflicting</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="CandidateSpan.span_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.span_id">[docs]</a>
+    <span class="n">span_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CandidateSpan.doc_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.doc_id">[docs]</a>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CandidateSpan.start">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.start">[docs]</a>
+    <span class="n">start</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="CandidateSpan.end">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.end">[docs]</a>
+    <span class="n">end</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="CandidateSpan.text">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.text">[docs]</a>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span></div>
+
+
+<div class="viewcode-block" id="CandidateSpan.sources">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.sources">[docs]</a>
+    <span class="n">sources</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SourceHit</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CandidateSpan.proposed_labels">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.proposed_labels">[docs]</a>
+    <span class="n">proposed_labels</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">LabelHypothesis</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CandidateSpan.attributes">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.attributes">[docs]</a>
+    <span class="n">attributes</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CandidateSpan.is_nested_allowed">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan.is_nested_allowed">[docs]</a>
+    <span class="n">is_nested_allowed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="ResolvedSpan">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ResolvedSpan</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    A finalized span after conflict resolution / compatibility enforcement.</span>
+
+<span class="sd">    `labels` may contain multiple labels only if allowed by schema/rules (e.g., G5+G6).</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="ResolvedSpan.span_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.span_id">[docs]</a>
+    <span class="n">span_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="ResolvedSpan.doc_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.doc_id">[docs]</a>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="ResolvedSpan.start">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.start">[docs]</a>
+    <span class="n">start</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="ResolvedSpan.end">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.end">[docs]</a>
+    <span class="n">end</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="ResolvedSpan.text">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.text">[docs]</a>
+    <span class="n">text</span><span class="p">:</span> <span class="nb">str</span></div>
+
+
+<div class="viewcode-block" id="ResolvedSpan.labels">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.labels">[docs]</a>
+    <span class="n">labels</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ResolvedSpan.groups">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.groups">[docs]</a>
+    <span class="n">groups</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ResolvedSpan.provenance">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.ResolvedSpan.provenance">[docs]</a>
+    <span class="n">provenance</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="Decision">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Decision</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Records how one or more CandidateSpan(s) are resolved into final output spans.</span>
+
+<span class="sd">    action:</span>
+<span class="sd">      - "accept": accept as-is (possibly with refined label list)</span>
+<span class="sd">      - "reject": discard</span>
+<span class="sd">      - "split": output_spans contains &gt;1 span</span>
+<span class="sd">      - "nest": output contains nested spans</span>
+<span class="sd">      - "defer": unresolved; keep for ML or human review</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="Decision.decision_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.decision_id">[docs]</a>
+    <span class="n">decision_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="Decision.doc_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.doc_id">[docs]</a>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+
+<div class="viewcode-block" id="Decision.input_span_ids">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.input_span_ids">[docs]</a>
+    <span class="n">input_span_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Decision.output_spans">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.output_spans">[docs]</a>
+    <span class="n">output_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="Decision.action">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.action">[docs]</a>
+    <span class="n">action</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="Decision.triggered_rule_ids">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.triggered_rule_ids">[docs]</a>
+    <span class="n">triggered_rule_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Decision.notes">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.notes">[docs]</a>
+    <span class="n">notes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Decision.confidence">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.Decision.confidence">[docs]</a>
+    <span class="n">confidence</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="RelationProposal">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RelationProposal</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Optional suggested relation between resolved spans. This is not required for v0.1,</span>
+<span class="sd">    but the compatibility schema can recommend link types like:</span>
+<span class="sd">      - "causes", "affects", "made_of", "has_outcome"</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="RelationProposal.rel_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.rel_id">[docs]</a>
+    <span class="n">rel_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="RelationProposal.doc_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.doc_id">[docs]</a>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+
+<div class="viewcode-block" id="RelationProposal.relation_type">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.relation_type">[docs]</a>
+    <span class="n">relation_type</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="RelationProposal.head_span_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.head_span_id">[docs]</a>
+    <span class="n">head_span_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="RelationProposal.tail_span_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.tail_span_id">[docs]</a>
+    <span class="n">tail_span_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+
+<div class="viewcode-block" id="RelationProposal.confidence">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.confidence">[docs]</a>
+    <span class="n">confidence</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="RelationProposal.evidence">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.evidence">[docs]</a>
+    <span class="n">evidence</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="RelationProposal.triggered_rule_ids">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.RelationProposal.triggered_rule_ids">[docs]</a>
+    <span class="n">triggered_rule_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="PipelineResult">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.PipelineResult">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PipelineResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Final result for a document.</span>
+<span class="sd">      - decisions: full traceability of how spans were resolved</span>
+<span class="sd">      - entities: flattened accepted spans (for typical downstream use)</span>
+<span class="sd">      - relations: optional relation proposals</span>
+<span class="sd">      - diagnostics: counters/timings/debug info</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="PipelineResult.doc_id">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.PipelineResult.doc_id">[docs]</a>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="PipelineResult.decisions">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.PipelineResult.decisions">[docs]</a>
+    <span class="n">decisions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Decision</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="PipelineResult.entities">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.PipelineResult.entities">[docs]</a>
+    <span class="n">entities</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="PipelineResult.relations">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.PipelineResult.relations">[docs]</a>
+    <span class="n">relations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RelationProposal</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="PipelineResult.diagnostics">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/ner/hybrid_ner/models/index.html#src.dackar.RCA.ner.hybrid_ner.models.PipelineResult.diagnostics">[docs]</a>
+    <span class="n">diagnostics</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,118 @@
+src.dackar.RCA.ner.hybrid_ner.compatibility
+===========================================
+
+.. py:module:: src.dackar.RCA.ner.hybrid_ner.compatibility
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityResult
+   src.dackar.RCA.ner.hybrid_ner.compatibility.CompatibilityEngine
+
+
+Module Contents
+---------------
+
+.. py:class:: CompatibilityResult
+
+   Output of compatibility application:
+     - updated_candidates: candidates with group annotations on hypotheses
+     - decisions: decisions per candidate (accept/reject/defer/split)
+     - relation_proposals: optional (v0.3 mostly empty)
+
+
+   .. py:attribute:: updated_candidates
+      :type:  List[src.dackar.RCA.ner.hybrid_ner.models.CandidateSpan]
+
+
+   .. py:attribute:: decisions
+      :type:  List[src.dackar.RCA.ner.hybrid_ner.models.Decision]
+
+
+   .. py:attribute:: relation_proposals
+      :type:  List[src.dackar.RCA.ner.hybrid_ner.models.RelationProposal]
+
+
+.. py:class:: CompatibilityEngine(context_left = 80, context_right = 80)
+
+   Applies label-group compatibility and conditional rules from group-schema.json.
+
+   Upgrades:
+     - Conditional triggers:
+         * cue_phrases_any / event_cues_any searched in context and sentence window
+         * pattern_templates supported with placeholder expansion (<MECH>, <OUTCOME>, <PHYS>, <MAT>)
+     - Split heuristic for G1_PHYSICAL + G6_OUTCOMES_OCCURRENCES compounds (R2 policy)
+
+   Still enforced:
+     - one label per group per span (best score retained)
+     - multi-label allowed only if matrix says 'A' OR conditional rule allows it
+
+
+   .. py:attribute:: context_left
+      :value: 80
+
+
+
+   .. py:attribute:: context_right
+      :value: 80
+
+
+
+   .. py:method:: assign_groups(candidates, schema)
+
+
+   .. py:method:: apply(doc, candidates, schema)
+
+
+   .. py:method:: resolve_span(doc, cand, schema)
+
+      Resolve one candidate span into an accept/defer decision.
+
+      Policy (current):
+      - Pick the best label per group (by score).
+      - If multiple groups remain:
+          * If same-span multi-label is not whitelisted -> reduce to single best label.
+          * If whitelisted (currently {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS}) -> require token evidence
+              for BOTH roles using *exclusive* tokens (role-aware), else try conditional rules / split;
+              if none apply -> reduce to single best label.
+      - For other multi-group cases, consult conditional rules; if still not allowed -> reduce to single best label.
+
+      This intentionally prefers trustworthy output over forced collapse.
+      When ambiguity remains material, defer instead of inventing certainty.
+
+
+
+   .. py:method:: _allowed_same_span(groups)
+
+      Return True iff same-span multi-labeling is allowed for these groups.
+
+      Conservative whitelist: only allow the pair {G1_PHYSICAL_COMPONENT, G4_MECHANISM_PROCESS}.
+      (Change this if you want to allow additional group-pairs.)
+
+
+
+   .. py:method:: _try_split_physical_outcome(doc, cand, selected)
+
+
+   .. py:method:: _multilabel_allowed_with_rules(doc, cand, groups, schema)
+
+
+   .. py:method:: _conditional_allows(doc, cand, g1, g2, schema)
+
+
+   .. py:method:: _match_template(template, text)
+
+
+   .. py:method:: _context_window(text, start, end, left, right)
+      :staticmethod:
+
+
+
+   .. py:method:: _sentence_window(text, start, end)
+      :staticmethod:
+
+
+

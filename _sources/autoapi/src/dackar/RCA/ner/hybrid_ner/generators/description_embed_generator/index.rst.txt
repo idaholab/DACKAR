@@ -1,0 +1,204 @@
+src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator
+====================================================================
+
+.. py:module:: src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._HAS_SBERT
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._HAS_SKLEARN
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._STOP
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.MECH_KEYWORDS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.DescriptionEmbedGenerator
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator._normalize_label_key
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.load_label_descriptions
+   src.dackar.RCA.ner.hybrid_ner.generators.description_embed_generator.extract_examples_from_excel
+
+
+Module Contents
+---------------
+
+.. py:data:: _HAS_SBERT
+   :value: True
+
+
+.. py:data:: _HAS_SKLEARN
+   :value: True
+
+
+.. py:data:: _STOP
+
+.. py:data:: MECH_KEYWORDS
+
+.. py:function:: _normalize_label_key(raw)
+
+   Normalize keys like:
+     'Structural [comp_mech_struct]' -> ('comp_mech_struct', 'Structural')
+     'comp_mech_struct' -> ('comp_mech_struct', None)
+   Returns (label_id, display_name)
+
+
+.. py:function:: load_label_descriptions(path)
+
+.. py:function:: extract_examples_from_excel(path)
+
+   Read spreadsheet using pandas and return dict[label_id] -> list[str].
+   Supports:
+     - 2-column format: label, term
+     - wide format: each column is a label header and cells are terms
+   Normalizes headers like 'Structural [comp_mech_struct]' -> 'comp_mech_struct'
+
+
+.. py:class:: DescriptionEmbedGenerator(label_json_path, gazetteer_path = None, embedder = None, use_tfidf_fallback = True, sim_metric = 'cosine', score_threshold = 0.55, sim_floor = 0.2, context_window = 10, device = 'cpu')
+
+   Generator that uses embedding similarity between:
+     - candidate span + local context
+     - label descriptions + canonical examples (from JSON + excel)
+   Produces LabelHypothesis objects with .label, .score, .group, .source
+
+
+   .. py:attribute:: label_json_path
+
+
+   .. py:attribute:: gazetteer_path
+      :value: None
+
+
+
+   .. py:attribute:: embedder
+      :value: None
+
+
+
+   .. py:attribute:: use_tfidf_fallback
+      :value: True
+
+
+
+   .. py:attribute:: sim_metric
+      :value: 'cosine'
+
+
+
+   .. py:attribute:: score_threshold
+
+
+   .. py:attribute:: sim_floor
+
+
+   .. py:attribute:: context_window
+      :value: 10
+
+
+
+   .. py:attribute:: device
+      :value: 'cpu'
+
+
+
+   .. py:attribute:: label_desc
+
+
+   .. py:attribute:: label_examples
+
+
+   .. py:attribute:: _emb_matrix
+      :value: None
+
+
+
+   .. py:attribute:: _label_index
+      :value: []
+
+
+
+   .. py:attribute:: _tfidf_vectorizer
+      :value: None
+
+
+
+   .. py:attribute:: _tfidf_matrix
+      :value: None
+
+
+
+   .. py:attribute:: _sbert
+      :value: None
+
+
+
+   .. py:attribute:: _label_pos_embs
+      :type:  Dict[str, numpy.ndarray]
+
+
+   .. py:attribute:: _label_neg_embs
+      :type:  Dict[str, numpy.ndarray]
+
+
+   .. py:attribute:: _schema
+      :value: None
+
+
+
+   .. py:attribute:: _label_display
+      :type:  Dict[str, str]
+
+
+   .. py:attribute:: _label_lexical_cues
+      :type:  Dict[str, set[str]]
+
+
+   .. py:method:: _make_sbert()
+
+
+   .. py:method:: fit(schema)
+
+      Load label descriptions + example terms and build embeddings (per-label banks).
+
+      Builds:
+        - self._label_pos_embs[label] : (K,D) embeddings for description + examples + keywords
+        - self._label_neg_embs[label] : (M,D) embeddings for negative_examples (optional)
+        - self._label_index           : list of labels considered
+
+
+
+   .. py:method:: _embed_texts(texts)
+
+
+   .. py:method:: score_span_against_labels(span_text, context=None)
+
+
+   .. py:method:: generate_for_candidate(doc, cand_span)
+
+      Uses embedding similarity between candidate span text and label description/examples.
+      Applies:
+      Rule 1: deg_mech requires mechanism cue in span OR near-span context
+      Rule 2: G1_PHYSICAL requires label-specific cue token overlap IN SPAN (not context)
+
+
+
+   .. py:method:: generate(doc, candidate_spans)
+
+      Given document and candidate spans (from other generators), augment with description-based hypotheses.
+      Returns: list of CandidateSpan with updated .proposed_labels or plain LabelHypothesis depending on integration style.
+
+
+

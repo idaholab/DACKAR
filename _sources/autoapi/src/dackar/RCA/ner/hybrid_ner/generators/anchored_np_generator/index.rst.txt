@@ -1,0 +1,98 @@
+src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator
+==============================================================
+
+.. py:module:: src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator
+
+.. autoapi-nested-parse::
+
+   Anchored noun-phrase candidate generator.
+
+   This generator is a *fallback* candidate generator used in the Hybrid NER pipeline.
+   It takes noun-phrase spans produced by a base NP generator (spaCy if available, or
+   a simple fallback chunker), then *anchors* those spans to a gazetteer-derived
+   token index to reduce noise.
+
+   Key behavior (robust defaults):
+   - Trim NP spans at strong punctuation (., ;, :) to avoid cross-sentence spans.
+   - Suppress administrative / non-entity tokens (STOP_TOKENS).
+   - Emit an anchored NP candidate only if the span contains at least one token
+     that exists in the gazetteer token_index.
+   - Optionally emit minimal token candidates ("min_") only for tokens that
+     exist in the token_index and are not stoplisted.
+
+   NOTE: This module is intentionally conservative. It is designed to increase
+   precision and prevent the anchored fallback from flooding the pipeline with
+   spurious candidates (e.g., "work order", "inspection", "additional notes").
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.STOP_TOKENS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.ner.hybrid_ner.generators.anchored_np_generator.AnchoredNPGenerator
+
+
+Module Contents
+---------------
+
+.. py:data:: STOP_TOKENS
+   :type:  Set[str]
+
+.. py:class:: AnchoredNPGenerator(base_np = None, token_index = None, max_tokens = 4, emit_min_tokens = True)
+
+   Anchor noun phrases to a gazetteer-derived token index.
+
+   :param base_np: Base noun phrase generator (spaCy-based if available; otherwise fallback).
+   :type base_np: NounPhraseGenerator
+   :param token_index: Mapping token -> set of (label, original_term) tuples derived from the gazetteer.
+   :type token_index: dict
+   :param max_tokens: Maximum number of whitespace tokens in an anchored span to consider.
+   :type max_tokens: int
+   :param emit_min_tokens: If True, emit "min_" token candidates for in-span tokens present in token_index.
+   :type emit_min_tokens: bool
+
+
+   .. py:attribute:: base_np
+
+
+   .. py:attribute:: token_index
+
+
+   .. py:attribute:: max_tokens
+      :value: 4
+
+
+
+   .. py:attribute:: emit_min_tokens
+      :value: True
+
+
+
+   .. py:method:: _trim_at_punct(text)
+
+      Return left segment before strong punctuation (., ;, :).
+
+
+
+   .. py:method:: _has_any_token_evidence(span_text_lower)
+
+      True if any gazetteer token occurs as a whole word in the span.
+
+
+
+   .. py:method:: generate(doc)
+
+      Generate CandidateSpan objects for a Document.
+
+
+
