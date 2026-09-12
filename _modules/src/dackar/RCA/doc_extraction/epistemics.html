@@ -1,0 +1,489 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.doc_extraction.epistemics &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.doc_extraction.epistemics</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.doc_extraction.epistemics</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="sd">"""Epistemic classification of document extraction records (Phase A).</span>
+
+<span class="sd">The EpistemicClassifier applies the four-way classification (§2 of</span>
+<span class="sd">epistemics_notes_4.md) to every DocExtractionRecord and SemanticMatch that</span>
+<span class="sd">enters the pipeline.  It implements the priority chain from §3.3:</span>
+
+<span class="sd">    finding_status → authority_level → doc_type → default</span>
+
+<span class="sd">Classification is deterministic: the same metadata always produces the same</span>
+<span class="sd">annotation.  EpistemicsRoutingConfig is a versioned artifact stamped on every</span>
+<span class="sd">run manifest so that routing decisions are reproducible across pipeline versions.</span>
+
+<span class="sd">No scoring changes are made in Phase A.  The annotation fields are carried</span>
+<span class="sd">through the pipeline for audit and for Phase C consumption.</span>
+<span class="sd">"""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AuthorityLevel</span><span class="p">,</span>
+    <span class="n">ClassificationResolutionLevel</span><span class="p">,</span>
+    <span class="n">EpistemicClass</span><span class="p">,</span>
+    <span class="n">FindingStatus</span><span class="p">,</span>
+<span class="p">)</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Routing tables — the authoritative source for doc_type → epistemic_class</span>
+<span class="c1"># mapping.  These are the "doc_type" level of the priority chain; they are</span>
+<span class="c1"># only consulted when finding_status and authority_level are both absent.</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="c1"># Primary doc_type routing (§3.2)</span>
+<div class="viewcode-block" id="_DOC_TYPE_TO_CLASS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics._DOC_TYPE_TO_CLASS">[docs]</a>
+<span class="n">_DOC_TYPE_TO_CLASS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Analyzes past degradation</span>
+    <span class="s2">"ECA"</span><span class="p">:</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="s2">"RCA"</span><span class="p">:</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="s2">"OE"</span><span class="p">:</span>   <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="s2">"LER"</span><span class="p">:</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="c1"># Monitors performance (primary class; secondary causal text → contextual only)</span>
+    <span class="s2">"CR"</span><span class="p">:</span>   <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+    <span class="c1"># Affects performance (activity; as-found observation is secondary)</span>
+    <span class="s2">"WO"</span><span class="p">:</span>   <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">AFFECTS_PERFORMANCE</span><span class="p">,</span>
+    <span class="c1"># Characterizes the system — discriminating</span>
+    <span class="s2">"FMEA"</span><span class="p">:</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">CHARACTERIZES_THE_SYSTEM</span><span class="p">,</span>
+    <span class="s2">"SOP"</span><span class="p">:</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">CHARACTERIZES_THE_SYSTEM</span><span class="p">,</span>
+    <span class="c1"># Characterizes the system — plausibility / reference</span>
+    <span class="s2">"MAN"</span><span class="p">:</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">CHARACTERIZES_THE_SYSTEM</span><span class="p">,</span>   <span class="c1"># manuals</span>
+    <span class="s2">"BULL"</span><span class="p">:</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">CHARACTERIZES_THE_SYSTEM</span><span class="p">,</span>   <span class="c1"># bulletins</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># finding_status routing (§3.3, Level 1)</span>
+<span class="c1"># Maps (finding_status, doc_type) → epistemic_class.</span>
+<span class="c1"># When doc_type is absent the first-matched entry applies.</span>
+<div class="viewcode-block" id="_FINDING_STATUS_TO_CLASS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics._FINDING_STATUS_TO_CLASS">[docs]</a>
+<span class="n">_FINDING_STATUS_TO_CLASS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Formal conclusions always → analyzes</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">FORMAL_CONCLUSION</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">):</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">FORMAL_CONCLUSION</span><span class="p">,</span> <span class="s2">"RCA"</span><span class="p">):</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">FORMAL_CONCLUSION</span><span class="p">,</span> <span class="s2">"CR"</span><span class="p">):</span>   <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">FORMAL_CONCLUSION</span><span class="p">,</span> <span class="s2">"OE"</span><span class="p">):</span>   <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">FORMAL_CONCLUSION</span><span class="p">,</span> <span class="s2">"LER"</span><span class="p">):</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">FORMAL_CONCLUSION</span><span class="p">,</span> <span class="s2">""</span><span class="p">):</span>     <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="c1"># Preliminary assessment: CR → monitors; ECA/RCA → analyzes; others → monitors</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">PRELIMINARY_ASSESSMENT</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">):</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">PRELIMINARY_ASSESSMENT</span><span class="p">,</span> <span class="s2">"RCA"</span><span class="p">):</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">PRELIMINARY_ASSESSMENT</span><span class="p">,</span> <span class="s2">"CR"</span><span class="p">):</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">PRELIMINARY_ASSESSMENT</span><span class="p">,</span> <span class="s2">"WO"</span><span class="p">):</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">PRELIMINARY_ASSESSMENT</span><span class="p">,</span> <span class="s2">""</span><span class="p">):</span>    <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+    <span class="c1"># Observation only always → monitors</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">OBSERVATION_ONLY</span><span class="p">,</span> <span class="s2">""</span><span class="p">):</span>  <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">OBSERVATION_ONLY</span><span class="p">,</span> <span class="s2">"CR"</span><span class="p">):</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">FindingStatus</span><span class="o">.</span><span class="n">OBSERVATION_ONLY</span><span class="p">,</span> <span class="s2">"WO"</span><span class="p">):</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># authority_level routing (§3.3, Level 2)</span>
+<div class="viewcode-block" id="_AUTHORITY_LEVEL_TO_CLASS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics._AUTHORITY_LEVEL_TO_CLASS">[docs]</a>
+<span class="n">_AUTHORITY_LEVEL_TO_CLASS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">AuthorityLevel</span><span class="o">.</span><span class="n">MANDATORY</span><span class="p">:</span>     <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="n">AuthorityLevel</span><span class="o">.</span><span class="n">GUIDANCE</span><span class="p">:</span>      <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">ANALYZES_PAST_DEGRADATION</span><span class="p">,</span>
+    <span class="n">AuthorityLevel</span><span class="o">.</span><span class="n">INFORMATIONAL</span><span class="p">:</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<span class="c1"># Default class when no other level resolves</span>
+<div class="viewcode-block" id="_DEFAULT_CLASS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics._DEFAULT_CLASS">[docs]</a>
+<span class="n">_DEFAULT_CLASS</span> <span class="o">=</span> <span class="n">EpistemicClass</span><span class="o">.</span><span class="n">MONITORS_PERFORMANCE</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="EpistemicAnnotation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicAnnotation">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EpistemicAnnotation</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Result of one EpistemicClassifier.classify() call."""</span>
+<div class="viewcode-block" id="EpistemicAnnotation.epistemic_class">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicAnnotation.epistemic_class">[docs]</a>
+    <span class="n">epistemic_class</span><span class="p">:</span> <span class="nb">str</span>                    <span class="c1"># EpistemicClass value</span></div>
+
+<div class="viewcode-block" id="EpistemicAnnotation.classification_resolution_level">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicAnnotation.classification_resolution_level">[docs]</a>
+    <span class="n">classification_resolution_level</span><span class="p">:</span> <span class="nb">str</span>    <span class="c1"># ClassificationResolutionLevel value</span></div>
+
+<div class="viewcode-block" id="EpistemicAnnotation.degraded_classification">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicAnnotation.degraded_classification">[docs]</a>
+    <span class="n">degraded_classification</span><span class="p">:</span> <span class="nb">bool</span>           <span class="c1"># True when doc_type or default was used</span></div>
+
+<div class="viewcode-block" id="EpistemicAnnotation.policy_version">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicAnnotation.policy_version">[docs]</a>
+    <span class="n">policy_version</span><span class="p">:</span> <span class="nb">str</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="EpistemicsRoutingConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicsRoutingConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EpistemicsRoutingConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Versioned configuration artifact for the epistemic routing table.</span>
+
+<span class="sd">    policy_version is stamped on run_manifest.pipeline_config and on every</span>
+<span class="sd">    EpistemicAnnotation so that routing decisions are reproducible.</span>
+
+<span class="sd">    The routing tables are embedded in epistemics.py and versioned via</span>
+<span class="sd">    policy_version; changing any table entry requires a version bump.</span>
+<span class="sd">    """</span>
+<div class="viewcode-block" id="EpistemicsRoutingConfig.policy_version">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicsRoutingConfig.policy_version">[docs]</a>
+    <span class="n">policy_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"epistemics-v1.0"</span></div>
+
+
+    <span class="c1"># doc_type → epistemic_class overrides (allows plant-specific additions)</span>
+<div class="viewcode-block" id="EpistemicsRoutingConfig.doc_type_overrides">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicsRoutingConfig.doc_type_overrides">[docs]</a>
+    <span class="n">doc_type_overrides</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="EpistemicClassifier">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicClassifier">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EpistemicClassifier</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Applies the four-way epistemic classification to a document record.</span>
+
+<span class="sd">    Usage</span>
+<span class="sd">    -----</span>
+<span class="sd">    config = EpistemicsRoutingConfig(policy_version="epistemics-v1.0")</span>
+<span class="sd">    classifier = EpistemicClassifier(config)</span>
+<span class="sd">    annotation = classifier.classify(meta)</span>
+
+<span class="sd">    ``meta`` may be a dict (Chroma metadata), a DocExtractionRecord, or a</span>
+<span class="sd">    SemanticMatch — any object that exposes the relevant fields via attribute</span>
+<span class="sd">    or dict access.</span>
+
+<span class="sd">    Priority chain (§3.3)</span>
+<span class="sd">    ----------------------</span>
+<span class="sd">    1. finding_status — semantic; not degraded</span>
+<span class="sd">    2. authority_level — semantic; not degraded</span>
+<span class="sd">    3. doc_type — syntactic proxy; degraded_classification = True</span>
+<span class="sd">    4. default — no metadata; degraded_classification = True</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EpistemicsRoutingConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="EpistemicClassifier.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicClassifier.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">EpistemicsRoutingConfig</span><span class="p">()</span></div>
+
+        <span class="c1"># Merge built-in table with any plant-specific overrides</span>
+<div class="viewcode-block" id="EpistemicClassifier._doc_type_table">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicClassifier._doc_type_table">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_doc_type_table</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">_DOC_TYPE_TO_CLASS</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">doc_type_overrides</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="EpistemicClassifier.classify">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicClassifier.classify">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">classify</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">EpistemicAnnotation</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Classify one record and return an EpistemicAnnotation.</span>
+
+<span class="sd">        ``record`` may be:</span>
+<span class="sd">        - a dict (Chroma metadata dict)</span>
+<span class="sd">        - a DocExtractionRecord</span>
+<span class="sd">        - a SemanticMatch</span>
+<span class="sd">        - any object with attribute access for the relevant fields</span>
+<span class="sd">        """</span>
+        <span class="n">finding_status</span> <span class="o">=</span> <span class="n">_get</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"finding_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">authority_level</span> <span class="o">=</span> <span class="n">_get</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"authority_level"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">doc_type</span> <span class="o">=</span> <span class="p">(</span><span class="n">_get</span><span class="p">(</span><span class="n">record</span><span class="p">,</span> <span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="c1"># Level 1 — finding_status</span>
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="k">if</span> <span class="n">finding_status</span><span class="p">:</span>
+            <span class="n">resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_finding_status</span><span class="p">(</span><span class="n">finding_status</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">EpistemicAnnotation</span><span class="p">(</span>
+                    <span class="n">epistemic_class</span><span class="o">=</span><span class="n">resolved</span><span class="p">,</span>
+                    <span class="n">classification_resolution_level</span><span class="o">=</span><span class="n">ClassificationResolutionLevel</span><span class="o">.</span><span class="n">FINDING_STATUS</span><span class="p">,</span>
+                    <span class="n">degraded_classification</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">policy_version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">policy_version</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="c1"># Level 2 — authority_level</span>
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="k">if</span> <span class="n">authority_level</span><span class="p">:</span>
+            <span class="n">resolved</span> <span class="o">=</span> <span class="n">_AUTHORITY_LEVEL_TO_CLASS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">authority_level</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">EpistemicAnnotation</span><span class="p">(</span>
+                    <span class="n">epistemic_class</span><span class="o">=</span><span class="n">resolved</span><span class="p">,</span>
+                    <span class="n">classification_resolution_level</span><span class="o">=</span><span class="n">ClassificationResolutionLevel</span><span class="o">.</span><span class="n">AUTHORITY_LEVEL</span><span class="p">,</span>
+                    <span class="n">degraded_classification</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">policy_version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">policy_version</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="c1"># Level 3 — doc_type (syntactic; degraded)</span>
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="k">if</span> <span class="n">doc_type</span><span class="p">:</span>
+            <span class="n">resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_doc_type_table</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">doc_type</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">resolved</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">EpistemicAnnotation</span><span class="p">(</span>
+                    <span class="n">epistemic_class</span><span class="o">=</span><span class="n">resolved</span><span class="p">,</span>
+                    <span class="n">classification_resolution_level</span><span class="o">=</span><span class="n">ClassificationResolutionLevel</span><span class="o">.</span><span class="n">DOC_TYPE</span><span class="p">,</span>
+                    <span class="n">degraded_classification</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">policy_version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">policy_version</span><span class="p">,</span>
+                <span class="p">)</span>
+
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="c1"># Level 4 — default (degraded)</span>
+        <span class="c1"># ------------------------------------------------------------------</span>
+        <span class="k">return</span> <span class="n">EpistemicAnnotation</span><span class="p">(</span>
+            <span class="n">epistemic_class</span><span class="o">=</span><span class="n">_DEFAULT_CLASS</span><span class="p">,</span>
+            <span class="n">classification_resolution_level</span><span class="o">=</span><span class="n">ClassificationResolutionLevel</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">,</span>
+            <span class="n">degraded_classification</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">policy_version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">policy_version</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="EpistemicClassifier.annotate_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicClassifier.annotate_record">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">annotate_record</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Classify ``record`` in-place, writing annotation fields back to it.</span>
+
+<span class="sd">        Supports DocExtractionRecord and SemanticMatch (both have the three</span>
+<span class="sd">        annotation fields as attributes).  No-ops silently on other types.</span>
+<span class="sd">        """</span>
+        <span class="n">annotation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">classify</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">record</span><span class="o">.</span><span class="n">epistemic_class</span> <span class="o">=</span> <span class="n">annotation</span><span class="o">.</span><span class="n">epistemic_class</span>
+            <span class="n">record</span><span class="o">.</span><span class="n">classification_resolution_level</span> <span class="o">=</span> <span class="n">annotation</span><span class="o">.</span><span class="n">classification_resolution_level</span>
+            <span class="n">record</span><span class="o">.</span><span class="n">degraded_classification</span> <span class="o">=</span> <span class="n">annotation</span><span class="o">.</span><span class="n">degraded_classification</span>
+        <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+            <span class="k">pass</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EpistemicClassifier._resolve_finding_status">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.epistemics.EpistemicClassifier._resolve_finding_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_finding_status</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">finding_status</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Look up (finding_status, doc_type) in the routing table.</span>
+
+<span class="sd">        Tries exact (finding_status, doc_type) first, then (finding_status, "")</span>
+<span class="sd">        as the doc_type-agnostic fallback.  Returns None if not found.</span>
+<span class="sd">        """</span>
+        <span class="n">key_specific</span> <span class="o">=</span> <span class="p">(</span><span class="n">finding_status</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key_specific</span> <span class="ow">in</span> <span class="n">_FINDING_STATUS_TO_CLASS</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_FINDING_STATUS_TO_CLASS</span><span class="p">[</span><span class="n">key_specific</span><span class="p">]</span>
+        <span class="n">key_generic</span> <span class="o">=</span> <span class="p">(</span><span class="n">finding_status</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_FINDING_STATUS_TO_CLASS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key_generic</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Field accessor</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_get">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/epistemics/index.html#src.dackar.RCA.doc_extraction.epistemics._get">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Get a field value from a dict or an object with attribute access."""</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Manifest summary builder</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="build_epistemics_manifest_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.epistemics.build_epistemics_manifest_summary">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_epistemics_manifest_summary</span><span class="p">(</span>
+    <span class="n">cross_pattern_evidence</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="n">policy_version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build the epistemics section of run_manifest.artifacts (Phase A).</span>
+
+<span class="sd">    Counts epistemic_class distribution, degraded_classification counts by</span>
+<span class="sd">    doc_type, and classification_resolution_level distribution across all</span>
+<span class="sd">    doc extractions visible to the pipeline.  Sourced from cross_pattern_evidence</span>
+<span class="sd">    all_links provenance when available; otherwise returns a minimal stub.</span>
+
+<span class="sd">    This function is called by the orchestrator's _stage_g_finalize_manifest().</span>
+<span class="sd">    It is defined here (not in the orchestrator) so that it can be unit-tested</span>
+<span class="sd">    independently without the orchestrator's heavy kg dependencies.</span>
+<span class="sd">    """</span>
+    <span class="n">summary</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"present"</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">"policy_version"</span><span class="p">:</span> <span class="n">policy_version</span> <span class="ow">or</span> <span class="s2">"not_configured"</span><span class="p">,</span>
+        <span class="s2">"epistemic_class_distribution"</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">"classification_resolution_level_distribution"</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">"degraded_classification_by_doc_type"</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">"degraded_classification_total"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">cross_pattern_evidence</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">summary</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">all_links</span> <span class="o">=</span> <span class="n">cross_pattern_evidence</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"all_links"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">class_dist</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">level_dist</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">degraded_by_type</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">degraded_total</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">all_links</span><span class="p">:</span>
+            <span class="n">prov</span> <span class="o">=</span> <span class="p">(</span><span class="n">lnk</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lnk</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+            <span class="n">ep_class</span> <span class="o">=</span> <span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"epistemic_class"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">ep_level</span> <span class="o">=</span> <span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"classification_resolution_level"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">ep_doc_type</span> <span class="o">=</span> <span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">ep_degraded</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">prov</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"degraded_classification"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+
+            <span class="k">if</span> <span class="n">ep_class</span><span class="p">:</span>
+                <span class="n">class_dist</span><span class="p">[</span><span class="n">ep_class</span><span class="p">]</span> <span class="o">=</span> <span class="n">class_dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ep_class</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">ep_level</span><span class="p">:</span>
+                <span class="n">level_dist</span><span class="p">[</span><span class="n">ep_level</span><span class="p">]</span> <span class="o">=</span> <span class="n">level_dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ep_level</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">ep_degraded</span><span class="p">:</span>
+                <span class="n">degraded_total</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">key</span> <span class="o">=</span> <span class="n">ep_doc_type</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+                <span class="n">degraded_by_type</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">degraded_by_type</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+
+        <span class="n">summary</span><span class="p">[</span><span class="s2">"present"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">summary</span><span class="p">[</span><span class="s2">"epistemic_class_distribution"</span><span class="p">]</span> <span class="o">=</span> <span class="n">class_dist</span>
+        <span class="n">summary</span><span class="p">[</span><span class="s2">"classification_resolution_level_distribution"</span><span class="p">]</span> <span class="o">=</span> <span class="n">level_dist</span>
+        <span class="n">summary</span><span class="p">[</span><span class="s2">"degraded_classification_by_doc_type"</span><span class="p">]</span> <span class="o">=</span> <span class="n">degraded_by_type</span>
+        <span class="n">summary</span><span class="p">[</span><span class="s2">"degraded_classification_total"</span><span class="p">]</span> <span class="o">=</span> <span class="n">degraded_total</span>
+
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"build_epistemics_manifest_summary: failed to aggregate cross_pattern_evidence "</span>
+            <span class="s2">"links (</span><span class="si">%s</span><span class="s2">); returning partial summary."</span><span class="p">,</span> <span class="n">exc</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">summary</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

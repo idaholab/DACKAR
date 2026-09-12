@@ -1,0 +1,172 @@
+src.dackar.RCA.doc_extraction.epistemics
+========================================
+
+.. py:module:: src.dackar.RCA.doc_extraction.epistemics
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_extraction.epistemics.logger
+   src.dackar.RCA.doc_extraction.epistemics._DOC_TYPE_TO_CLASS
+   src.dackar.RCA.doc_extraction.epistemics._FINDING_STATUS_TO_CLASS
+   src.dackar.RCA.doc_extraction.epistemics._AUTHORITY_LEVEL_TO_CLASS
+   src.dackar.RCA.doc_extraction.epistemics._DEFAULT_CLASS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_extraction.epistemics.EpistemicAnnotation
+   src.dackar.RCA.doc_extraction.epistemics.EpistemicsRoutingConfig
+   src.dackar.RCA.doc_extraction.epistemics.EpistemicClassifier
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_extraction.epistemics._get
+   src.dackar.RCA.doc_extraction.epistemics.build_epistemics_manifest_summary
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _DOC_TYPE_TO_CLASS
+   :type:  Dict[str, str]
+
+.. py:data:: _FINDING_STATUS_TO_CLASS
+   :type:  Dict[Tuple[str, str], str]
+
+.. py:data:: _AUTHORITY_LEVEL_TO_CLASS
+   :type:  Dict[str, str]
+
+.. py:data:: _DEFAULT_CLASS
+
+.. py:class:: EpistemicAnnotation
+
+   Result of one EpistemicClassifier.classify() call.
+
+
+   .. py:attribute:: epistemic_class
+      :type:  str
+
+
+   .. py:attribute:: classification_resolution_level
+      :type:  str
+
+
+   .. py:attribute:: degraded_classification
+      :type:  bool
+
+
+   .. py:attribute:: policy_version
+      :type:  str
+
+
+.. py:class:: EpistemicsRoutingConfig
+
+   Versioned configuration artifact for the epistemic routing table.
+
+   policy_version is stamped on run_manifest.pipeline_config and on every
+   EpistemicAnnotation so that routing decisions are reproducible.
+
+   The routing tables are embedded in epistemics.py and versioned via
+   policy_version; changing any table entry requires a version bump.
+
+
+   .. py:attribute:: policy_version
+      :type:  str
+      :value: 'epistemics-v1.0'
+
+
+
+   .. py:attribute:: doc_type_overrides
+      :type:  Dict[str, str]
+
+
+.. py:class:: EpistemicClassifier(config = None)
+
+   Applies the four-way epistemic classification to a document record.
+
+   Usage
+   -----
+   config = EpistemicsRoutingConfig(policy_version="epistemics-v1.0")
+   classifier = EpistemicClassifier(config)
+   annotation = classifier.classify(meta)
+
+   ``meta`` may be a dict (Chroma metadata), a DocExtractionRecord, or a
+   SemanticMatch — any object that exposes the relevant fields via attribute
+   or dict access.
+
+   Priority chain (§3.3)
+   ----------------------
+   1. finding_status — semantic; not degraded
+   2. authority_level — semantic; not degraded
+   3. doc_type — syntactic proxy; degraded_classification = True
+   4. default — no metadata; degraded_classification = True
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: _doc_type_table
+
+
+   .. py:method:: classify(record)
+
+      Classify one record and return an EpistemicAnnotation.
+
+      ``record`` may be:
+      - a dict (Chroma metadata dict)
+      - a DocExtractionRecord
+      - a SemanticMatch
+      - any object with attribute access for the relevant fields
+
+
+
+   .. py:method:: annotate_record(record)
+
+      Classify ``record`` in-place, writing annotation fields back to it.
+
+      Supports DocExtractionRecord and SemanticMatch (both have the three
+      annotation fields as attributes).  No-ops silently on other types.
+
+
+
+   .. py:method:: _resolve_finding_status(finding_status, doc_type)
+
+      Look up (finding_status, doc_type) in the routing table.
+
+      Tries exact (finding_status, doc_type) first, then (finding_status, "")
+      as the doc_type-agnostic fallback.  Returns None if not found.
+
+
+
+.. py:function:: _get(obj, key)
+
+   Get a field value from a dict or an object with attribute access.
+
+
+.. py:function:: build_epistemics_manifest_summary(cross_pattern_evidence, policy_version)
+
+   Build the epistemics section of run_manifest.artifacts (Phase A).
+
+   Counts epistemic_class distribution, degraded_classification counts by
+   doc_type, and classification_resolution_level distribution across all
+   doc extractions visible to the pipeline.  Sourced from cross_pattern_evidence
+   all_links provenance when available; otherwise returns a minimal stub.
+
+   This function is called by the orchestrator's _stage_g_finalize_manifest().
+   It is defined here (not in the orchestrator) so that it can be unit-tested
+   independently without the orchestrator's heavy kg dependencies.
+
+

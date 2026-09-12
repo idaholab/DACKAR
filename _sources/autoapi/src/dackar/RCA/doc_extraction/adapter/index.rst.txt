@@ -1,0 +1,197 @@
+src.dackar.RCA.doc_extraction.adapter
+=====================================
+
+.. py:module:: src.dackar.RCA.doc_extraction.adapter
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_extraction.adapter.logger
+   src.dackar.RCA.doc_extraction.adapter._GROUP_MECHANISM
+   src.dackar.RCA.doc_extraction.adapter._GROUP_OUTCOME
+   src.dackar.RCA.doc_extraction.adapter._GROUP_COMPONENT
+   src.dackar.RCA.doc_extraction.adapter._ENTITY_LINK_JACCARD_THRESHOLD
+   src.dackar.RCA.doc_extraction.adapter.EXTRACTABLE_DOC_TYPES
+   src.dackar.RCA.doc_extraction.adapter._CAUSAL_KEYWORD_PATTERNS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_extraction.adapter._make_ner_cs_factory
+   src.dackar.RCA.doc_extraction.adapter._best_entity_text
+   src.dackar.RCA.doc_extraction.adapter._best_overlapping_entity
+   src.dackar.RCA.doc_extraction.adapter._text_overlaps_any
+   src.dackar.RCA.doc_extraction.adapter._has_gazetteer_source
+   src.dackar.RCA.doc_extraction.adapter._assign_confidence
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: _GROUP_MECHANISM
+   :value: 'G4_MECHANISM_PROCESS'
+
+
+.. py:data:: _GROUP_OUTCOME
+   :value: 'G5_FAILURE_OUTCOME'
+
+
+.. py:data:: _GROUP_COMPONENT
+   :value: 'G1_PHYSICAL_COMPONENT'
+
+
+.. py:data:: _ENTITY_LINK_JACCARD_THRESHOLD
+   :value: 0.4
+
+
+.. py:data:: EXTRACTABLE_DOC_TYPES
+
+.. py:class:: DocExtractionAdapter(ner_pipeline, nlp = None, llm_cfg = None, extraction_version = 'ner-v1.0_gaz-v1_llm-none', _causal_extractor = None)
+
+   Wraps HybridNERPipeline + causal_condition_adapter to produce DocExtractionRecords.
+
+   Produces one record per identified causal chain in the document.
+   A document with no extractable causal language produces one null record (confidence=low,
+   needs_human_review=True).
+
+   fm_id_candidate is always None at extraction time; resolved via batch KG lookup
+   at RCA run time (see DocExtractionStore.resolve_fm_candidates).
+
+
+   .. py:attribute:: _ner
+
+
+   .. py:attribute:: _nlp
+      :value: None
+
+
+
+   .. py:attribute:: _llm_cfg
+      :value: None
+
+
+
+   .. py:attribute:: extraction_version
+      :value: 'ner-v1.0_gaz-v1_llm-none'
+
+
+
+   .. py:attribute:: __causal_extractor
+      :value: None
+
+
+
+   .. py:method:: _get_causal_extractor()
+
+
+   .. py:method:: extract(doc_id, text, doc_type, section_role = 'body')
+
+      Extract all causal chains from a single document text.
+
+      :param doc_id: Source document identifier (e.g. "CR-2026-00123").
+      :param text: Full document text (single chunk; multi-chunk handling is a future extension).
+      :param doc_type: Must be one of EXTRACTABLE_DOC_TYPES.
+      :param section_role: Hint for condition-state extraction ("body", "as_found", "as_left", etc.).
+
+      :returns: List of DocExtractionRecord, one per causal chain. Never empty — a document
+                with no causal language returns a single null record.
+
+      :raises ValueError: if doc_type is not in EXTRACTABLE_DOC_TYPES.
+
+
+
+   .. py:method:: _null_record(doc_id, as_found, as_left, proc_score)
+
+
+.. py:data:: _CAUSAL_KEYWORD_PATTERNS
+   :type:  List[Dict[str, Any]]
+
+.. py:function:: _make_ner_cs_factory(mechanism_spans, outcome_spans, component_spans)
+
+   Build a causal_sentence_factory that injects NER entities as SSC patterns.
+
+   CausalSentence requires two types of EntityRuler patterns to fire:
+     1. SSC entity patterns — G4 mechanism, G5 outcome, G1 component spans from NER
+     2. Causal keyword patterns — lemma-based verb patterns for sentence selection
+
+   Without both, _matchedSents is empty and the extractor silently falls back to
+   dep_fallback on every document. This factory bridges the NER pipeline output
+   into the CausalSentence input contract.
+
+   Reproducibility note: the factory closes over *this* document's ``ssc_patterns``,
+   and each per-document ``CausalSentence(nlp)`` construction calls ``resetPipeline``
+   (CausalBase.__init__), which removes the ``entity_ruler`` pipe from the shared
+   ``nlp`` before ``addEntityPattern`` rebuilds it. The ruler is therefore reset and
+   repopulated with *only* the current document's SSC + causal-keyword patterns on
+   every call — patterns do NOT accumulate across documents, so extraction is
+   order-independent. (The 26 keyword patterns are re-added per document as a
+   consequence of that reset; the cost is negligible relative to NER/parse.)
+
+   Returns None when no entity spans are available (CausalSentence would return
+   empty anyway; dep_fallback remains the active extractor).
+
+
+.. py:function:: _best_entity_text(spans)
+
+   Return the text of the highest-scoring span, or None if list is empty.
+
+
+.. py:function:: _best_overlapping_entity(target_text, spans, nlp = None)
+
+   Return the text of the best-matching span for target_text.
+
+   Priority chain (stops at first hit):
+     1. Exact substring match — O(n), no dependencies
+     2. Token-set Jaccard ≥ _ENTITY_LINK_JACCARD_THRESHOLD
+     3. Lemma match via spaCy: lemmatize both sides, re-apply (1) then (2)
+        Only attempted when nlp is provided.
+
+
+.. py:function:: _text_overlaps_any(target_text, spans)
+
+   Return True if target_text overlaps (substring) with any span in the list.
+
+
+.. py:function:: _has_gazetteer_source(spans, min_score = 0.85)
+
+   Return True if any span has a gazetteer source with score >= min_score.
+
+
+.. py:function:: _assign_confidence(extractor_used, stmt_confidence, has_mechanism, mechanism_spans, outcome_spans, stmt_source = '')
+
+   Assign confidence level per §3.4 of the design plan.
+
+   Rules (in priority order):
+     LOW    — LLM fallback used
+     LOW    — no G4 mechanism entity found (cause is symptom-only or null)
+     MEDIUM — dep_fallback source with mechanism present (Improvement E)
+              dep_fallback spans have lower linguistic quality than CausalSentence;
+              they are never promoted to HIGH regardless of gazetteer hits.
+     HIGH   — CausalSentence + gazetteer hit (score ≥ 0.85) + stmt_confidence ≥ 0.60
+     MEDIUM — CausalSentence or CausalSimple with mechanism present, no strong gazetteer hit
+     LOW    — fallback
+
+   :param stmt_source: per-statement ``source`` field (e.g. ``"dep_fallback"``,
+                       ``"CausalSentence"``).  When provided, takes precedence over
+                       ``extractor_used`` for the dep_fallback rule so that dep-tree
+                       statements embedded inside a CausalSentence result dict are not
+                       incorrectly promoted to MEDIUM/HIGH via the CausalSentence path
+                       (Improvement E).
+
+

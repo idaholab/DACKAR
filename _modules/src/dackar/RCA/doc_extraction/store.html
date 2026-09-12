@@ -1,0 +1,890 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.doc_extraction.store &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.doc_extraction.store</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.doc_extraction.store</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfidenceLevel</span><span class="p">,</span> <span class="n">DocExtractionRecord</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Stable Chroma record ID format: "{doc_id}::chain::{chain_index}"</span>
+<div class="viewcode-block" id="_ID_SEP">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction._ID_SEP">[docs]</a>
+<span class="n">_ID_SEP</span> <span class="o">=</span> <span class="s2">"::chain::"</span></div>
+
+
+
+<div class="viewcode-block" id="_make_record_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction._make_record_id">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_record_id</span><span class="p">(</span><span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">chain_index</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}{</span><span class="n">_ID_SEP</span><span class="si">}{</span><span class="n">chain_index</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<div class="viewcode-block" id="_cosine_similarity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction._cosine_similarity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_cosine_similarity</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span> <span class="n">b</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="n">va</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="n">vb</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+    <span class="n">denom</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">va</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">vb</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">denom</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">dot</span><span class="p">(</span><span class="n">va</span><span class="p">,</span> <span class="n">vb</span><span class="p">)</span> <span class="o">/</span> <span class="n">denom</span><span class="p">)</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="SemanticMatch">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SemanticMatch</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""One deduplicated result from a DocExtractionStore.query() call."""</span>
+<div class="viewcode-block" id="SemanticMatch.record_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.record_id">[docs]</a>
+    <span class="n">record_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.doc_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.doc_id">[docs]</a>
+    <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.chain_index">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.chain_index">[docs]</a>
+    <span class="n">chain_index</span><span class="p">:</span> <span class="nb">int</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.identified_effect">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.identified_effect">[docs]</a>
+    <span class="n">identified_effect</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.assessed_cause">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.assessed_cause">[docs]</a>
+    <span class="n">assessed_cause</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.inferred_fm_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.inferred_fm_label">[docs]</a>
+    <span class="n">inferred_fm_label</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.fm_id_candidate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.fm_id_candidate">[docs]</a>
+    <span class="n">fm_id_candidate</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.confidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.confidence">[docs]</a>
+    <span class="n">confidence</span><span class="p">:</span> <span class="n">ConfidenceLevel</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.cause_is_symptom">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.cause_is_symptom">[docs]</a>
+    <span class="n">cause_is_symptom</span><span class="p">:</span> <span class="nb">bool</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.similarity_score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.similarity_score">[docs]</a>
+    <span class="n">similarity_score</span><span class="p">:</span> <span class="nb">float</span>  <span class="c1"># cosine similarity [0, 1]; higher = more similar</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.fm_resolution_status">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.fm_resolution_status">[docs]</a>
+    <span class="n">fm_resolution_status</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># FMResolutionStatus value; None = not yet resolved</span></div>
+
+    <span class="c1"># Epistemic annotation fields — populated by EpistemicClassifier when a</span>
+    <span class="c1"># classifier is attached to DocExtractionStore (Phase A).</span>
+<div class="viewcode-block" id="SemanticMatch.doc_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.doc_type">[docs]</a>
+    <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.finding_status">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.finding_status">[docs]</a>
+    <span class="n">finding_status</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.authority_level">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.authority_level">[docs]</a>
+    <span class="n">authority_level</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.epistemic_class">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.epistemic_class">[docs]</a>
+    <span class="n">epistemic_class</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.classification_resolution_level">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.classification_resolution_level">[docs]</a>
+    <span class="n">classification_resolution_level</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SemanticMatch.degraded_classification">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.degraded_classification">[docs]</a>
+    <span class="n">degraded_classification</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="SemanticMatch.confidence_weight">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.confidence_weight">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">confidence_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Numeric weight for this match's confidence level (HIGH=1.0, MEDIUM=0.7, LOW=0.3).</span>
+
+<span class="sd">        Used as a multiplier in semantic_contribution (§4.3) so lower-confidence</span>
+<span class="sd">        extractions contribute proportionally less to effective_recurrence_count.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">HIGH</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">MEDIUM</span><span class="p">:</span> <span class="mf">0.7</span><span class="p">,</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span><span class="p">:</span> <span class="mf">0.3</span><span class="p">}[</span><span class="bp">self</span><span class="o">.</span><span class="n">confidence</span><span class="p">]</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="SemanticMatch.cause_is_symptom_factor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.cause_is_symptom_factor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">cause_is_symptom_factor</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Down-weight factor when the assessed cause is itself a symptom (0.5) vs. a mechanism (1.0).</span>
+
+<span class="sd">        A symptom-as-cause is a weaker recurrence signal than a true failure mechanism,</span>
+<span class="sd">        so it halves this match's semantic_contribution.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="mf">0.5</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause_is_symptom</span> <span class="k">else</span> <span class="mf">1.0</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="SemanticMatch.semantic_contribution">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.SemanticMatch.semantic_contribution">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">semantic_contribution</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Fractional recurrence contribution for effective_recurrence_count (§4.3)."""</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">similarity_score</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">confidence_weight</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause_is_symptom_factor</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DocExtractionStoreError">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStoreError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DocExtractionStoreError</span><span class="p">(</span><span class="ne">RuntimeError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Base error for DocExtractionStore backend failures (Chroma / embedding backend).</span>
+
+<span class="sd">    query() and resolve_fm_candidates() deliberately degrade to empty/zero results on</span>
+<span class="sd">    backend failure rather than raising, recording each event via _record_degradation()</span>
+<span class="sd">    so it surfaces in the run manifest (see store_health_summary()).  Callers that prefer</span>
+<span class="sd">    fail-loud semantics can inspect store_health_summary()["degraded"] and escalate.</span>
+<span class="sd">    """</span></div>
+
+
+
+<div class="viewcode-block" id="EmbeddingModelVersionError">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.EmbeddingModelVersionError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EmbeddingModelVersionError</span><span class="p">(</span><span class="n">DocExtractionStoreError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Raised when the query-time embedding model does not match the collection's stored model."""</span></div>
+
+
+
+<div class="viewcode-block" id="DocExtractionStore">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DocExtractionStore</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Chroma-backed store for DocExtractionRecord objects.</span>
+
+<span class="sd">    One collection (``"doc_extractions"``) stores all extraction records across</span>
+<span class="sd">    all document types.  Each record's embed_text (§4.1) is computed and stored</span>
+<span class="sd">    at upsert time; similarity queries run against these pre-computed vectors.</span>
+
+<span class="sd">    Key guarantees:</span>
+<span class="sd">    - Embedding model version is written into every record's metadata.</span>
+<span class="sd">      A mismatch between query-time model and stored model raises EmbeddingModelVersionError.</span>
+<span class="sd">    - fm_id_candidate is always null at ingestion; resolve_fm_candidates() writes it</span>
+<span class="sd">      back in batch at the start of an RCA run (§3.3 Step C).</span>
+<span class="sd">    - query() deduplicates by doc_id, returning only the best-scoring chain per document.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="DocExtractionStore.COLLECTION_NAME">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.COLLECTION_NAME">[docs]</a>
+    <span class="n">COLLECTION_NAME</span> <span class="o">=</span> <span class="s2">"doc_extractions"</span></div>
+
+    <span class="c1"># Cosine distance is used for the collection (hnsw:space = cosine).</span>
+    <span class="c1"># Chroma returns cosine *distance* = 1 - cosine_similarity, so scores are inverted below.</span>
+<div class="viewcode-block" id="DocExtractionStore._HNSW_SPACE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._HNSW_SPACE">[docs]</a>
+    <span class="n">_HNSW_SPACE</span> <span class="o">=</span> <span class="s2">"cosine"</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">persist_directory</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">embed_model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"nomic-embed-text-v1.5"</span><span class="p">,</span>
+        <span class="n">ollama_base_url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">fm_resolution_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.88</span><span class="p">,</span>
+        <span class="n">epistemics_classifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="DocExtractionStore.persist_directory">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.persist_directory">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">persist_directory</span> <span class="o">=</span> <span class="n">persist_directory</span></div>
+
+<div class="viewcode-block" id="DocExtractionStore.embed_model">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.embed_model">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span> <span class="o">=</span> <span class="n">embed_model</span></div>
+
+<div class="viewcode-block" id="DocExtractionStore.ollama_base_url">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.ollama_base_url">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ollama_base_url</span> <span class="o">=</span> <span class="n">ollama_base_url</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"OLLAMA_BASE_URL"</span><span class="p">,</span> <span class="s2">"http://localhost:11434"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="DocExtractionStore.fm_resolution_threshold">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.fm_resolution_threshold">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fm_resolution_threshold</span> <span class="o">=</span> <span class="n">fm_resolution_threshold</span>  <span class="c1"># 0.88 = auto_resolved boundary</span></div>
+
+<div class="viewcode-block" id="DocExtractionStore.epistemics_classifier">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.epistemics_classifier">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">epistemics_classifier</span> <span class="o">=</span> <span class="n">epistemics_classifier</span>  <span class="c1"># EpistemicClassifier | None</span></div>
+
+<div class="viewcode-block" id="DocExtractionStore._collection">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._collection">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collection</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># lazy-initialized on first use</span></div>
+
+<div class="viewcode-block" id="DocExtractionStore._embedder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._embedder">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span> <span class="o">=</span> <span class="kc">None</span>    <span class="c1"># lazy-initialized embedder, cached on first use</span></div>
+
+        <span class="c1"># Degraded (error-swallowed) operations, surfaced to the run manifest via</span>
+        <span class="c1"># store_health_summary() so a backend failure is not read downstream as a</span>
+        <span class="c1"># legitimate "no semantic recurrence" (silent under-count).</span>
+<div class="viewcode-block" id="DocExtractionStore._degraded_operations">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._degraded_operations">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_degraded_operations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="DocExtractionStore.embedding_model_version">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.embedding_model_version">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">embedding_model_version</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DocExtractionStore._get_embedder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._get_embedder">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_embedder</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span>
+        <span class="c1"># langchain_community.embeddings.OllamaEmbeddings is deprecated in favour of the</span>
+        <span class="c1"># dedicated langchain_ollama package; prefer it when installed, fall back otherwise.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_ollama</span><span class="w"> </span><span class="kn">import</span> <span class="n">OllamaEmbeddings</span>  <span class="c1"># noqa: PLC0415</span>
+        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_community.embeddings</span><span class="w"> </span><span class="kn">import</span> <span class="n">OllamaEmbeddings</span>  <span class="c1"># noqa: PLC0415</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span> <span class="o">=</span> <span class="n">OllamaEmbeddings</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ollama_base_url</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embedder</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore._get_collection">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._get_collection">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collection</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_chroma</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chroma</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">persist_directory</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">vs</span> <span class="o">=</span> <span class="n">Chroma</span><span class="p">(</span>
+            <span class="n">collection_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">COLLECTION_NAME</span><span class="p">,</span>
+            <span class="n">embedding_function</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_embedder</span><span class="p">(),</span>
+            <span class="n">persist_directory</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">persist_directory</span><span class="p">,</span>
+            <span class="n">collection_metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"hnsw:space"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_HNSW_SPACE</span><span class="p">},</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_collection</span> <span class="o">=</span> <span class="n">vs</span>
+        <span class="k">return</span> <span class="n">vs</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore._embed_texts">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._embed_texts">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_embed_texts</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_embedder</span><span class="p">()</span><span class="o">.</span><span class="n">embed_documents</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore._embed_query">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._embed_query">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_embed_query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_embedder</span><span class="p">()</span><span class="o">.</span><span class="n">embed_query</span><span class="p">(</span><span class="n">text</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore._chroma_collection">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._chroma_collection">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_chroma_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># NOTE: reaches into langchain_chroma's private ``._collection`` (the raw chromadb</span>
+        <span class="c1"># Collection) to call upsert()/get()/query()/update() with precomputed embeddings —</span>
+        <span class="c1"># the public langchain_chroma API does not expose those. Assumes langchain_chroma&gt;=0.1;</span>
+        <span class="c1"># guarded with getattr so an upstream rename fails loudly here instead of raising an</span>
+        <span class="c1"># opaque AttributeError deep inside a query.</span>
+        <span class="n">vs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_collection</span><span class="p">()</span>
+        <span class="n">collection</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">vs</span><span class="p">,</span> <span class="s2">"_collection"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">collection</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">DocExtractionStoreError</span><span class="p">(</span>
+                <span class="s2">"langchain_chroma Chroma object exposes no '_collection' attribute; the "</span>
+                <span class="s2">"installed langchain_chroma version is incompatible with DocExtractionStore."</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">collection</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Upsert</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DocExtractionStore.upsert">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.upsert">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span class="n">DocExtractionRecord</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Embed and store one extraction record. Returns the Chroma record_id.</span>
+
+<span class="sd">        Records with no embed_text are stored with a single-space document to avoid</span>
+<span class="sd">        Chroma rejecting empty strings; they are retrievable by metadata but will not</span>
+<span class="sd">        surface in similarity queries.</span>
+<span class="sd">        """</span>
+        <span class="n">record_id</span> <span class="o">=</span> <span class="n">_make_record_id</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">record</span><span class="o">.</span><span class="n">chain_index</span><span class="p">)</span>
+        <span class="n">embed_text</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">embed_text</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">" "</span>
+
+        <span class="n">meta</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">as_chroma_metadata</span><span class="p">()</span>
+        <span class="c1"># Overwrite embedding_model_version with the store's current model</span>
+        <span class="n">meta</span><span class="p">[</span><span class="s2">"embedding_model_version"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span>
+
+        <span class="n">embedding</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">([</span><span class="n">embed_text</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_collection</span><span class="p">()</span><span class="o">.</span><span class="n">upsert</span><span class="p">(</span>
+            <span class="n">ids</span><span class="o">=</span><span class="p">[</span><span class="n">record_id</span><span class="p">],</span>
+            <span class="n">documents</span><span class="o">=</span><span class="p">[</span><span class="n">embed_text</span><span class="p">],</span>
+            <span class="n">metadatas</span><span class="o">=</span><span class="p">[</span><span class="n">meta</span><span class="p">],</span>
+            <span class="n">embeddings</span><span class="o">=</span><span class="p">[</span><span class="n">embedding</span><span class="p">],</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Write embedding_model_version back to the record for caller's reference</span>
+        <span class="n">record</span><span class="o">.</span><span class="n">embedding_model_version</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"DocExtractionStore: upserted </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">record_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">record_id</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore.upsert_batch">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.upsert_batch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">DocExtractionRecord</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Embed and store multiple extraction records in one batch call."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">records</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="n">record_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">_make_record_id</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">chain_index</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">]</span>
+        <span class="n">embed_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="o">.</span><span class="n">embed_text</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">" "</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">]</span>
+        <span class="n">metadatas</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">meta</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">as_chroma_metadata</span><span class="p">()</span>
+            <span class="n">meta</span><span class="p">[</span><span class="s2">"embedding_model_version"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span>
+            <span class="n">metadatas</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span>
+
+        <span class="n">embeddings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">(</span><span class="n">embed_texts</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_collection</span><span class="p">()</span><span class="o">.</span><span class="n">upsert</span><span class="p">(</span>
+            <span class="n">ids</span><span class="o">=</span><span class="n">record_ids</span><span class="p">,</span>
+            <span class="n">documents</span><span class="o">=</span><span class="n">embed_texts</span><span class="p">,</span>
+            <span class="n">metadatas</span><span class="o">=</span><span class="n">metadatas</span><span class="p">,</span>
+            <span class="n">embeddings</span><span class="o">=</span><span class="n">embeddings</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">r</span><span class="o">.</span><span class="n">embedding_model_version</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"DocExtractionStore: upserted batch of </span><span class="si">%d</span><span class="s2"> records."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Query</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DocExtractionStore.query">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.query">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">,</span>
+        <span class="n">similarity_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.75</span><span class="p">,</span>
+        <span class="n">near_match_window</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.10</span><span class="p">,</span>
+        <span class="n">filter_meta</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">exact_doc_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">set</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">SemanticMatch</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">SemanticMatch</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Query for semantically similar extraction records.</span>
+
+<span class="sd">        The embedding model used at query time must match the collection's stored</span>
+<span class="sd">        ``embedding_model_version``.  A mismatch raises EmbeddingModelVersionError.</span>
+
+<span class="sd">        Deduplication: only the highest-scoring chain per doc_id is returned.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query_text: The query string (e.g. ``fm.name | fm.expected_symptoms | event.symptom_description``).</span>
+<span class="sd">            top_k: Maximum number of doc_id-deduplicated results to return.</span>
+<span class="sd">            similarity_threshold: Minimum cosine similarity for inclusion in the main result set.</span>
+<span class="sd">            near_match_window: Width of the soft zone below threshold that populates near_matches.</span>
+<span class="sd">            filter_meta: Optional Chroma metadata pre-filter (e.g. ``{"doc_type": "CR"}``).</span>
+<span class="sd">            exact_doc_ids: Set of doc_ids already counted via exact-match recurrence (kg_context.past_events).</span>
+<span class="sd">                           Matching records are excluded from both matches and near_matches to prevent</span>
+<span class="sd">                           double-counting.  None or empty set disables the guard.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            (matches, near_matches) where:</span>
+<span class="sd">              - matches: similarity &gt;= similarity_threshold, deduplicated, top_k max, exact_doc_ids excluded</span>
+<span class="sd">              - near_matches: similarity in [similarity_threshold - near_match_window, similarity_threshold)</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_assert_model_version</span><span class="p">()</span>
+
+        <span class="n">collection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_collection</span><span class="p">()</span>
+        <span class="n">fetch_n</span> <span class="o">=</span> <span class="n">top_k</span> <span class="o">*</span> <span class="mi">4</span>  <span class="c1"># over-fetch to account for deduplication</span>
+
+        <span class="n">chroma_where</span> <span class="o">=</span> <span class="n">_build_where_clause</span><span class="p">(</span><span class="n">filter_meta</span><span class="p">)</span> <span class="k">if</span> <span class="n">filter_meta</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="n">query_embedding</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_query</span><span class="p">(</span><span class="n">query_text</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"query_embeddings"</span><span class="p">:</span> <span class="p">[</span><span class="n">query_embedding</span><span class="p">],</span> <span class="s2">"n_results"</span><span class="p">:</span> <span class="n">fetch_n</span><span class="p">}</span>
+            <span class="k">if</span> <span class="n">chroma_where</span><span class="p">:</span>
+                <span class="n">kwargs</span><span class="p">[</span><span class="s2">"where"</span><span class="p">]</span> <span class="o">=</span> <span class="n">chroma_where</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">collection</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"DocExtractionStore.query failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_degradation</span><span class="p">(</span><span class="s2">"query"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[],</span> <span class="p">[]</span>
+
+        <span class="n">ids</span> <span class="o">=</span> <span class="p">(</span><span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[[]])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">distances</span> <span class="o">=</span> <span class="p">(</span><span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"distances"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[[]])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">metadatas</span> <span class="o">=</span> <span class="p">(</span><span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadatas"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[[]])[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="c1"># Chroma cosine distance = 1 - cosine_similarity → convert</span>
+        <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">SemanticMatch</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">record_id</span><span class="p">,</span> <span class="n">distance</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">distances</span><span class="p">,</span> <span class="n">metadatas</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">meta</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">sim</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">distance</span><span class="p">)))</span>
+            <span class="n">match</span> <span class="o">=</span> <span class="n">_meta_to_semantic_match</span><span class="p">(</span><span class="n">record_id</span><span class="p">,</span> <span class="n">sim</span><span class="p">,</span> <span class="n">meta</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">match</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">candidates</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">sim</span><span class="p">,</span> <span class="n">match</span><span class="p">))</span>
+
+        <span class="c1"># Deduplicate by doc_id: keep best similarity per document;</span>
+        <span class="c1"># exclude doc_ids already counted via exact-match recurrence (double-counting guard).</span>
+        <span class="n">_exact</span> <span class="o">=</span> <span class="n">exact_doc_ids</span> <span class="ow">or</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">best_per_doc</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">SemanticMatch</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">sim</span><span class="p">,</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">match</span><span class="o">.</span><span class="n">doc_id</span> <span class="ow">in</span> <span class="n">_exact</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">existing</span> <span class="o">=</span> <span class="n">best_per_doc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">doc_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">existing</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">sim</span> <span class="o">&gt;</span> <span class="n">existing</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+                <span class="n">best_per_doc</span><span class="p">[</span><span class="n">match</span><span class="o">.</span><span class="n">doc_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">sim</span><span class="p">,</span> <span class="n">match</span><span class="p">)</span>
+
+        <span class="n">sorted_unique</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">best_per_doc</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="n">matches</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SemanticMatch</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">near_matches</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SemanticMatch</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">near_lower</span> <span class="o">=</span> <span class="n">similarity_threshold</span> <span class="o">-</span> <span class="n">near_match_window</span>
+
+        <span class="k">for</span> <span class="n">sim</span><span class="p">,</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">sorted_unique</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">sim</span> <span class="o">&gt;=</span> <span class="n">similarity_threshold</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">top_k</span><span class="p">:</span>
+                    <span class="n">matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">sim</span> <span class="o">&gt;=</span> <span class="n">near_lower</span><span class="p">:</span>
+                <span class="n">near_matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">match</span><span class="p">)</span>
+
+        <span class="c1"># Apply epistemic classifier when present</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">epistemics_classifier</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">epistemics_classifier</span><span class="o">.</span><span class="n">annotate_record</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">near_matches</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">epistemics_classifier</span><span class="o">.</span><span class="n">annotate_record</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">matches</span><span class="p">,</span> <span class="n">near_matches</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore._assert_model_version">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._assert_model_version">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assert_model_version</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Raise EmbeddingModelVersionError if stored records use a different model."""</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">collection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_collection</span><span class="p">()</span>
+            <span class="n">sample</span> <span class="o">=</span> <span class="n">collection</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">include</span><span class="o">=</span><span class="p">[</span><span class="s2">"metadatas"</span><span class="p">])</span>
+            <span class="n">metas</span> <span class="o">=</span> <span class="n">sample</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadatas"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="n">metas</span><span class="p">:</span>
+                <span class="n">stored_model</span> <span class="o">=</span> <span class="p">(</span><span class="n">metas</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"embedding_model_version"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">stored_model</span> <span class="ow">and</span> <span class="n">stored_model</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span><span class="p">:</span>
+                    <span class="k">raise</span> <span class="n">EmbeddingModelVersionError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"Embedding model mismatch: query uses '</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span><span class="si">}</span><span class="s2">' "</span>
+                        <span class="sa">f</span><span class="s2">"but collection was embedded with '</span><span class="si">{</span><span class="n">stored_model</span><span class="si">}</span><span class="s2">'. "</span>
+                        <span class="sa">f</span><span class="s2">"Re-embed the collection before querying."</span>
+                    <span class="p">)</span>
+        <span class="k">except</span> <span class="n">EmbeddingModelVersionError</span><span class="p">:</span>
+            <span class="k">raise</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>  <span class="c1"># empty collection or Chroma unavailable — let the query attempt proceed</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># fm_id_candidate batch resolution (§3.3 Step C)</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DocExtractionStore.resolve_fm_candidates">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.resolve_fm_candidates">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve_fm_candidates</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">fm_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]],</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">resolution_threshold</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Resolve fm_id_candidate for unresolved extraction records.</span>
+
+<span class="sd">        Called once per RCA run before Step 3 / Step 2d.  For each record with</span>
+<span class="sd">        fm_id_candidate == "" (unresolved), embeds the stored inferred_fm_label</span>
+<span class="sd">        and compares against the KG FM list for the current asset neighborhood.</span>
+<span class="sd">        Writes fm_id_candidate (and fm_id_candidate_alt) back to the collection</span>
+<span class="sd">        if cosine similarity &gt;= resolution_threshold.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            fm_list: List of (fm_id, fm_label) tuples from the KG.</span>
+<span class="sd">            resolution_threshold: Override default; defaults to self.fm_resolution_threshold.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Number of records updated.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">fm_list</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="n">threshold</span> <span class="o">=</span> <span class="n">resolution_threshold</span> <span class="k">if</span> <span class="n">resolution_threshold</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">fm_resolution_threshold</span>
+
+        <span class="n">collection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_collection</span><span class="p">()</span>
+
+        <span class="c1"># Fetch all unresolved records (fm_id_candidate stored as "")</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">collection</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="n">where</span><span class="o">=</span><span class="p">{</span><span class="s2">"fm_id_candidate"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"$eq"</span><span class="p">:</span> <span class="s2">""</span><span class="p">}},</span>
+                <span class="n">include</span><span class="o">=</span><span class="p">[</span><span class="s2">"metadatas"</span><span class="p">],</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"resolve_fm_candidates: failed to fetch unresolved records: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_record_degradation</span><span class="p">(</span><span class="s2">"resolve_fm_candidates"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="n">ids</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">metas</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadatas"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ids</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"resolve_fm_candidates: no unresolved records found."</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="c1"># Group record IDs by inferred_fm_label to avoid redundant embedding calls</span>
+        <span class="n">label_to_ids</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">record_id</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">metas</span><span class="p">):</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="p">(</span><span class="n">meta</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"inferred_fm_label"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">label</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">label_to_ids</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">record_id</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">label_to_ids</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="c1"># Embed all unique labels and all KG FM labels</span>
+        <span class="n">unique_labels</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">label_to_ids</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="n">fm_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">fm</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">fm_list</span><span class="p">]</span>
+        <span class="n">fm_labels</span> <span class="o">=</span> <span class="p">[</span><span class="n">fm</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">fm_list</span><span class="p">]</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"resolve_fm_candidates: resolving </span><span class="si">%d</span><span class="s2"> unique labels against </span><span class="si">%d</span><span class="s2"> KG FMs."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">unique_labels</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">fm_labels</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="n">label_embeddings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">(</span><span class="n">unique_labels</span><span class="p">)</span>
+        <span class="n">fm_embeddings</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_embed_texts</span><span class="p">(</span><span class="n">fm_labels</span><span class="p">)</span>
+
+        <span class="n">updated_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">updated_metas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">resolved_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># only auto_resolved + ambiguous (non-empty fm_id_candidate)</span>
+
+        <span class="c1"># Ambiguity boundary: [ambiguity_floor, threshold) → "ambiguous"; &lt; ambiguity_floor → "unresolved".</span>
+        <span class="c1"># A caller-supplied resolution_threshold below the floor would make the "ambiguous"</span>
+        <span class="c1"># band empty/inverted; clamp the floor to the threshold so the tiers stay consistent</span>
+        <span class="c1"># (auto_resolved / unresolved only) and warn rather than silently disabling a band.</span>
+        <span class="n">_AMBIGUITY_FLOOR</span> <span class="o">=</span> <span class="mf">0.80</span>
+        <span class="n">ambiguity_floor</span> <span class="o">=</span> <span class="n">_AMBIGUITY_FLOOR</span>
+        <span class="k">if</span> <span class="n">threshold</span> <span class="o">&lt;</span> <span class="n">ambiguity_floor</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"resolve_fm_candidates: resolution_threshold </span><span class="si">%.3f</span><span class="s2"> is below the ambiguity floor "</span>
+                <span class="s2">"</span><span class="si">%.3f</span><span class="s2">; clamping floor to threshold ('ambiguous' band disabled)."</span><span class="p">,</span>
+                <span class="n">threshold</span><span class="p">,</span> <span class="n">ambiguity_floor</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">ambiguity_floor</span> <span class="o">=</span> <span class="n">threshold</span>
+
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">label_emb</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">unique_labels</span><span class="p">,</span> <span class="n">label_embeddings</span><span class="p">):</span>
+            <span class="n">sims</span> <span class="o">=</span> <span class="p">[</span><span class="n">_cosine_similarity</span><span class="p">(</span><span class="n">label_emb</span><span class="p">,</span> <span class="n">fm_emb</span><span class="p">)</span> <span class="k">for</span> <span class="n">fm_emb</span> <span class="ow">in</span> <span class="n">fm_embeddings</span><span class="p">]</span>
+            <span class="n">sorted_indices</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">sims</span><span class="p">)),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">i</span><span class="p">:</span> <span class="n">sims</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+            <span class="n">best_idx</span> <span class="o">=</span> <span class="n">sorted_indices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">best_sim</span> <span class="o">=</span> <span class="n">sims</span><span class="p">[</span><span class="n">best_idx</span><span class="p">]</span>
+
+            <span class="c1"># Determine resolution status per three-tier rule (§4.10)</span>
+            <span class="k">if</span> <span class="n">best_sim</span> <span class="o">&gt;=</span> <span class="n">threshold</span><span class="p">:</span>
+                <span class="n">resolution_status</span> <span class="o">=</span> <span class="s2">"auto_resolved"</span>
+                <span class="n">best_fm_id</span> <span class="o">=</span> <span class="n">fm_ids</span><span class="p">[</span><span class="n">best_idx</span><span class="p">]</span>
+                <span class="n">alt_fm_id</span> <span class="o">=</span> <span class="s2">""</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_indices</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">alt_idx</span> <span class="o">=</span> <span class="n">sorted_indices</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">sims</span><span class="p">[</span><span class="n">alt_idx</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">ambiguity_floor</span><span class="p">:</span>
+                        <span class="n">alt_fm_id</span> <span class="o">=</span> <span class="n">fm_ids</span><span class="p">[</span><span class="n">alt_idx</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="n">best_sim</span> <span class="o">&gt;=</span> <span class="n">ambiguity_floor</span><span class="p">:</span>
+                <span class="n">resolution_status</span> <span class="o">=</span> <span class="s2">"ambiguous"</span>
+                <span class="n">best_fm_id</span> <span class="o">=</span> <span class="n">fm_ids</span><span class="p">[</span><span class="n">best_idx</span><span class="p">]</span>
+                <span class="n">alt_fm_id</span> <span class="o">=</span> <span class="s2">""</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sorted_indices</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">alt_idx</span> <span class="o">=</span> <span class="n">sorted_indices</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="n">sims</span><span class="p">[</span><span class="n">alt_idx</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">ambiguity_floor</span><span class="p">:</span>
+                        <span class="n">alt_fm_id</span> <span class="o">=</span> <span class="n">fm_ids</span><span class="p">[</span><span class="n">alt_idx</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">resolution_status</span> <span class="o">=</span> <span class="s2">"unresolved"</span>
+                <span class="n">best_fm_id</span> <span class="o">=</span> <span class="s2">""</span>  <span class="c1"># fm_id_candidate remains None/empty per spec</span>
+                <span class="n">alt_fm_id</span> <span class="o">=</span> <span class="s2">""</span>
+
+            <span class="k">for</span> <span class="n">record_id</span> <span class="ow">in</span> <span class="n">label_to_ids</span><span class="p">[</span><span class="n">label</span><span class="p">]:</span>
+                <span class="n">updated_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">record_id</span><span class="p">)</span>
+                <span class="n">updated_metas</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s2">"fm_id_candidate"</span><span class="p">:</span> <span class="n">best_fm_id</span><span class="p">,</span>
+                    <span class="s2">"fm_id_candidate_alt"</span><span class="p">:</span> <span class="n">alt_fm_id</span><span class="p">,</span>
+                    <span class="s2">"fm_resolution_status"</span><span class="p">:</span> <span class="n">resolution_status</span><span class="p">,</span>
+                    <span class="s2">"fm_resolution_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">best_sim</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                <span class="p">})</span>
+                <span class="k">if</span> <span class="n">best_fm_id</span><span class="p">:</span>  <span class="c1"># non-empty: auto_resolved or ambiguous</span>
+                    <span class="n">resolved_count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">updated_ids</span><span class="p">:</span>
+            <span class="n">collection</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ids</span><span class="o">=</span><span class="n">updated_ids</span><span class="p">,</span> <span class="n">metadatas</span><span class="o">=</span><span class="n">updated_metas</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"resolve_fm_candidates: resolved </span><span class="si">%d</span><span class="s2"> records."</span><span class="p">,</span> <span class="n">resolved_count</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">resolved_count</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Utility</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DocExtractionStore.count">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.count">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return total number of extraction records in the collection."""</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_collection</span><span class="p">()</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore.delete_by_doc_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.delete_by_doc_id">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delete_by_doc_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Delete all extraction records for a given source document (re-ingestion path)."""</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_collection</span><span class="p">()</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">where</span><span class="o">=</span><span class="p">{</span><span class="s2">"doc_id"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"$eq"</span><span class="p">:</span> <span class="n">doc_id</span><span class="p">}})</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"DocExtractionStore: deleted records for doc_id '</span><span class="si">%s</span><span class="s2">'."</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"DocExtractionStore.delete_by_doc_id failed for '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Degradation signalling (surfaced to the run manifest)</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="DocExtractionStore._record_degradation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore._record_degradation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_record_degradation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operation</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">exc</span><span class="p">:</span> <span class="ne">Exception</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Record a degraded (error-swallowed) operation for run-manifest surfacing.</span>
+
+<span class="sd">        query() and resolve_fm_candidates() degrade to empty/zero results on backend</span>
+<span class="sd">        failure rather than crashing a batch run; each such event is captured here so</span>
+<span class="sd">        store_health_summary() can report it and the failure is not misread downstream</span>
+<span class="sd">        as a legitimate "no semantic recurrence".</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_degraded_operations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">"operation"</span><span class="p">:</span> <span class="n">operation</span><span class="p">,</span> <span class="s2">"error_type"</span><span class="p">:</span> <span class="nb">type</span><span class="p">(</span><span class="n">exc</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span> <span class="s2">"error"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc</span><span class="p">)}</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@property</span>
+<div class="viewcode-block" id="DocExtractionStore.degraded">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.degraded">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">degraded</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""True when any query/resolve operation swallowed a backend error this run."""</span>
+        <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_degraded_operations</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionStore.store_health_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction.DocExtractionStore.store_health_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">store_health_summary</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Degradation summary for run_manifest (store_health section).</span>
+
+<span class="sd">        Returns ``{"degraded": bool, "degraded_operation_count": int, "events": [...]}``.</span>
+<span class="sd">        The orchestrator stamps this onto the run manifest so a swallowed Chroma/embedding</span>
+<span class="sd">        error surfaces as an explicit degraded-run signal instead of a silent under-count.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"degraded"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">degraded</span><span class="p">,</span>
+            <span class="s2">"degraded_operation_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_degraded_operations</span><span class="p">),</span>
+            <span class="s2">"events"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_degraded_operations</span><span class="p">),</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_build_where_clause">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction._build_where_clause">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_where_clause</span><span class="p">(</span><span class="n">filter_meta</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="n">clauses</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">filter_meta</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">set</span><span class="p">)):</span>
+            <span class="n">vals</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">v</span> <span class="k">if</span> <span class="n">x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">vals</span><span class="p">:</span>
+                <span class="n">clauses</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"$in"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">vals</span><span class="p">)}})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">clauses</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"$eq"</span><span class="p">:</span> <span class="n">v</span><span class="p">}})</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">clauses</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">clauses</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">clauses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">"$and"</span><span class="p">:</span> <span class="n">clauses</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_meta_to_semantic_match">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/store/index.html#src.dackar.RCA.doc_extraction._meta_to_semantic_match">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_meta_to_semantic_match</span><span class="p">(</span>
+    <span class="n">record_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">similarity</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">meta</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">SemanticMatch</span><span class="p">]:</span>
+    <span class="n">doc_id</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="n">chain_index</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chain_index"</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+    <span class="n">confidence_raw</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">,</span> <span class="s2">"low"</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">confidence</span> <span class="o">=</span> <span class="n">ConfidenceLevel</span><span class="p">(</span><span class="n">confidence_raw</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="n">confidence</span> <span class="o">=</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span>
+    <span class="n">fm_resolution_status</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_resolution_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="n">SemanticMatch</span><span class="p">(</span>
+        <span class="n">record_id</span><span class="o">=</span><span class="n">record_id</span><span class="p">,</span>
+        <span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span>
+        <span class="n">chain_index</span><span class="o">=</span><span class="n">chain_index</span><span class="p">,</span>
+        <span class="n">identified_effect</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"identified_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">assessed_cause</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"assessed_cause"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">inferred_fm_label</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"inferred_fm_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">fm_id_candidate</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id_candidate"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">confidence</span><span class="o">=</span><span class="n">confidence</span><span class="p">,</span>
+        <span class="n">cause_is_symptom</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_is_symptom"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)),</span>
+        <span class="n">similarity_score</span><span class="o">=</span><span class="n">similarity</span><span class="p">,</span>
+        <span class="n">fm_resolution_status</span><span class="o">=</span><span class="n">fm_resolution_status</span><span class="p">,</span>
+        <span class="c1"># Epistemic fields — pass through from stored Chroma metadata when present</span>
+        <span class="n">doc_type</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="n">finding_status</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">authority_level</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"authority_level"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">epistemic_class</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"epistemic_class"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">classification_resolution_level</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"classification_resolution_level"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">degraded_classification</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"degraded_classification"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)),</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,447 @@
+src.dackar.RCA.doc_extraction.schema
+====================================
+
+.. py:module:: src.dackar.RCA.doc_extraction.schema
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.doc_extraction.schema.ConfidenceLevel
+   src.dackar.RCA.doc_extraction.schema.EventTimeConfidence
+   src.dackar.RCA.doc_extraction.schema.FMResolutionStatus
+   src.dackar.RCA.doc_extraction.schema.EpistemicClass
+   src.dackar.RCA.doc_extraction.schema.ClassificationResolutionLevel
+   src.dackar.RCA.doc_extraction.schema.FindingStatus
+   src.dackar.RCA.doc_extraction.schema.AuthorityLevel
+   src.dackar.RCA.doc_extraction.schema.DocExtractionRecord
+
+
+Module Contents
+---------------
+
+.. py:class:: ConfidenceLevel
+
+   Bases: :py:obj:`str`, :py:obj:`enum.Enum`
+
+
+   str(object='') -> str
+   str(bytes_or_buffer[, encoding[, errors]]) -> str
+
+   Create a new string object from the given object. If encoding or
+   errors is specified, then the object must expose a data buffer
+   that will be decoded using the given encoding and error handler.
+   Otherwise, returns the result of object.__str__() (if defined)
+   or repr(object).
+   encoding defaults to 'utf-8'.
+   errors defaults to 'strict'.
+
+
+   .. py:attribute:: HIGH
+      :value: 'high'
+
+
+
+   .. py:attribute:: MEDIUM
+      :value: 'medium'
+
+
+
+   .. py:attribute:: LOW
+      :value: 'low'
+
+
+
+.. py:class:: EventTimeConfidence
+
+   Bases: :py:obj:`str`, :py:obj:`enum.Enum`
+
+
+   Confidence level for the event_time_start / event_time_end fields on a DocExtractionRecord.
+
+   Used by the cross-pattern linkage layer (§4.1) to decide whether temporal
+   matching can be attempted.  "absent" causes temporal_link_skipped = True.
+
+
+   .. py:attribute:: EXPLICIT
+      :value: 'explicit'
+
+
+
+   .. py:attribute:: INFERRED
+      :value: 'inferred'
+
+
+
+   .. py:attribute:: ABSENT
+      :value: 'absent'
+
+
+
+.. py:class:: FMResolutionStatus
+
+   Bases: :py:obj:`str`, :py:obj:`enum.Enum`
+
+
+   Resolution status of fm_id_candidate after batch KG embedding lookup.
+
+   Thresholds (cosine similarity vs. KG FM embeddings):
+     >= 0.88  → AUTO_RESOLVED  (eligible for recurrence counting)
+     [0.80, 0.88) → AMBIGUOUS  (candidate stored; requires analyst promotion)
+     < 0.80   → UNRESOLVED    (fm_id_candidate remains None)
+
+
+   .. py:attribute:: AUTO_RESOLVED
+      :value: 'auto_resolved'
+
+
+
+   .. py:attribute:: AMBIGUOUS
+      :value: 'ambiguous'
+
+
+
+   .. py:attribute:: UNRESOLVED
+      :value: 'unresolved'
+
+
+
+.. py:class:: EpistemicClass
+
+   Bases: :py:obj:`str`, :py:obj:`enum.Enum`
+
+
+   Four-way epistemic classification for data elements (§2 of epistemics_notes_4.md).
+
+   Answers: what relationship does this data element have to equipment performance?
+
+   AFFECTS_PERFORMANCE     — things that act on the equipment; candidate causes
+                             (WOs, config changes, PM compliance, operational context)
+   MONITORS_PERFORMANCE    — things that observe the equipment's state; evidence of
+                             condition, not cause (CRs, telemetry, alarms, SOE)
+   ANALYZES_PAST_DEGRADATION — things whose primary purpose is causal interpretation
+                             of a specific past event (ECAs, RCAs, OE/LER documents)
+   CHARACTERIZES_THE_SYSTEM  — things that define the reference frame: KG, FMEA,
+                             protection logic, SOPs
+
+
+   .. py:attribute:: AFFECTS_PERFORMANCE
+      :value: 'affects_performance'
+
+
+
+   .. py:attribute:: MONITORS_PERFORMANCE
+      :value: 'monitors_performance'
+
+
+
+   .. py:attribute:: ANALYZES_PAST_DEGRADATION
+      :value: 'analyzes_past_degradation'
+
+
+
+   .. py:attribute:: CHARACTERIZES_THE_SYSTEM
+      :value: 'characterizes_the_system'
+
+
+
+.. py:class:: ClassificationResolutionLevel
+
+   Bases: :py:obj:`str`, :py:obj:`enum.Enum`
+
+
+   Which level of the priority chain resolved the epistemic classification (§3.3).
+
+   Priority order: FINDING_STATUS → AUTHORITY_LEVEL → DOC_TYPE → DEFAULT
+
+   FINDING_STATUS  — resolved via semantic finding_status field; not degraded
+   AUTHORITY_LEVEL — resolved via semantic authority_level field; not degraded
+   DOC_TYPE        — resolved via syntactic doc_type proxy; degraded_classification=True
+   DEFAULT         — no metadata available; degraded_classification=True
+
+
+   .. py:attribute:: FINDING_STATUS
+      :value: 'finding_status'
+
+
+
+   .. py:attribute:: AUTHORITY_LEVEL
+      :value: 'authority_level'
+
+
+
+   .. py:attribute:: DOC_TYPE
+      :value: 'doc_type'
+
+
+
+   .. py:attribute:: DEFAULT
+      :value: 'default'
+
+
+
+.. py:class:: FindingStatus
+
+   Bases: :py:obj:`str`, :py:obj:`enum.Enum`
+
+
+   Semantic status of a document's finding — primary input to the classifier (Level 1).
+
+   Populated at document ingestion when the source document carries a structured
+   finding_status field (e.g., CR closure code, ECA conclusion type).
+
+   FORMAL_CONCLUSION      — document is a finalized causal interpretation
+                            → routes to analyzes_past_degradation
+   PRELIMINARY_ASSESSMENT — document contains a preliminary cause observation
+                            → routes to monitors_performance (CR) or
+                              analyzes_past_degradation (ECA/RCA) per doc_type
+   OBSERVATION_ONLY       — document records a condition with no causal assessment
+                            → routes to monitors_performance
+
+
+   .. py:attribute:: FORMAL_CONCLUSION
+      :value: 'formal_conclusion'
+
+
+
+   .. py:attribute:: PRELIMINARY_ASSESSMENT
+      :value: 'preliminary_assessment'
+
+
+
+   .. py:attribute:: OBSERVATION_ONLY
+      :value: 'observation_only'
+
+
+
+.. py:class:: AuthorityLevel
+
+   Bases: :py:obj:`str`, :py:obj:`enum.Enum`
+
+
+   Epistemic authority of a document — secondary input to the classifier (Level 2).
+
+   Populated at ingestion for OE/industry documents and formal plant documents.
+   Captures the tier-distance discount described in §2.3 (plant 1.0 / fleet 0.80 /
+   industry 0.60).
+
+   MANDATORY     — plant-level formal conclusion; highest authority
+   GUIDANCE      — fleet or industry analogy; discounted authority
+   INFORMATIONAL — background or preliminary; no causal authority
+
+
+   .. py:attribute:: MANDATORY
+      :value: 'mandatory'
+
+
+
+   .. py:attribute:: GUIDANCE
+      :value: 'guidance'
+
+
+
+   .. py:attribute:: INFORMATIONAL
+      :value: 'informational'
+
+
+
+.. py:class:: DocExtractionRecord
+
+   One extraction record per identified causal chain within a source document.
+
+   A single CR/WO may produce multiple records (one per causal chain).
+   Records with all semantic fields null are stored but flagged for human review.
+   `fm_id_candidate` is null at ingestion time; resolved via batch KG lookup at RCA run time (§3.3 Step C).
+   `embedding_model_version` is null until the record is embedded in Stage 2.
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: chain_index
+      :type:  int
+
+
+   .. py:attribute:: identified_effect
+      :type:  Optional[str]
+
+
+   .. py:attribute:: assessed_cause
+      :type:  Optional[str]
+
+
+   .. py:attribute:: inferred_fm_label
+      :type:  Optional[str]
+
+
+   .. py:attribute:: fm_id_candidate
+      :type:  Optional[str]
+
+
+   .. py:attribute:: fm_id_candidate_alt
+      :type:  Optional[str]
+
+
+   .. py:attribute:: confidence
+      :type:  ConfidenceLevel
+
+
+   .. py:attribute:: cause_is_symptom
+      :type:  bool
+
+
+   .. py:attribute:: as_found
+      :type:  Optional[str]
+
+
+   .. py:attribute:: as_left
+      :type:  Optional[str]
+
+
+   .. py:attribute:: procedural_deviation_score
+      :type:  float
+
+
+   .. py:attribute:: extraction_version
+      :type:  str
+
+
+   .. py:attribute:: embedding_model_version
+      :type:  Optional[str]
+
+
+   .. py:attribute:: needs_human_review
+      :type:  bool
+      :value: False
+
+
+
+   .. py:attribute:: ruled_out_mechanisms
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: event_time_start
+      :type:  Optional[datetime.datetime]
+      :value: None
+
+
+
+   .. py:attribute:: event_time_end
+      :type:  Optional[datetime.datetime]
+      :value: None
+
+
+
+   .. py:attribute:: event_time_confidence
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: source_cr_id
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: source_wo_id
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: source_event_id
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: fm_resolution_status
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: fm_resolution_score
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: doc_type
+      :type:  str
+      :value: ''
+
+
+
+   .. py:attribute:: finding_status
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: authority_level
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: epistemic_class
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: classification_resolution_level
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: degraded_classification
+      :type:  bool
+      :value: False
+
+
+
+   .. py:method:: embed_text()
+
+      Concatenation of semantic fields used for embedding (null-safe).
+
+
+
+   .. py:method:: is_null_record()
+
+      Return True when no semantic content was extracted (all three core fields empty).
+
+      Null records are the sentinel produced for a document with no extractable causal
+      language; they are stored and retrievable by metadata but never surface in
+      similarity queries (their embed_text is a single space).
+
+
+
+   .. py:method:: is_recurrence_eligible()
+
+      Return True when this record may contribute to recurrence counting.
+
+      Records with fm_resolution_status == "ambiguous" require analyst promotion
+      before being eligible; all others (auto_resolved, unresolved, or not yet
+      resolved) are treated as eligible by default.
+
+      Phase C will add an additional gate: records whose epistemic_class is not
+      "analyzes_past_degradation" will be ineligible regardless of fm_resolution_status.
+      That gate is intentionally off here to avoid a scoring change before calibration.
+
+
+
+   .. py:method:: as_chroma_metadata()
+
+      Flat metadata dict for Chroma upsert (all values must be str/int/float/bool).
+
+
+

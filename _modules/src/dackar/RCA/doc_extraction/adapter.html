@@ -1,0 +1,711 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.doc_extraction.adapter &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.doc_extraction.adapter</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.doc_extraction.adapter</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA.ner.hybrid_ner.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span><span class="p">,</span> <span class="n">ResolvedSpan</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfidenceLevel</span><span class="p">,</span> <span class="n">DocExtractionRecord</span>
+
+<span class="c1"># causal_condition_adapter is NOT imported at module level — it pulls in spacy transitively.</span>
+<span class="c1"># The adapter receives the extractor as an injected callable (see _causal_extractor param)</span>
+<span class="c1"># or loads it lazily on first use via _get_causal_extractor().</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Entity group IDs as defined in the hybrid NER schema</span>
+<div class="viewcode-block" id="_GROUP_MECHANISM">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._GROUP_MECHANISM">[docs]</a>
+<span class="n">_GROUP_MECHANISM</span> <span class="o">=</span> <span class="s2">"G4_MECHANISM_PROCESS"</span></div>
+
+<div class="viewcode-block" id="_GROUP_OUTCOME">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._GROUP_OUTCOME">[docs]</a>
+<span class="n">_GROUP_OUTCOME</span> <span class="o">=</span> <span class="s2">"G5_FAILURE_OUTCOME"</span></div>
+
+<div class="viewcode-block" id="_GROUP_COMPONENT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._GROUP_COMPONENT">[docs]</a>
+<span class="n">_GROUP_COMPONENT</span> <span class="o">=</span> <span class="s2">"G1_PHYSICAL_COMPONENT"</span></div>
+
+
+<span class="c1"># Jaccard threshold for token-set and lemma-set entity linking (Stage 3).</span>
+<span class="c1"># Calibrate against the annotated test dataset; 0.4 is a conservative starting point.</span>
+<div class="viewcode-block" id="_ENTITY_LINK_JACCARD_THRESHOLD">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._ENTITY_LINK_JACCARD_THRESHOLD">[docs]</a>
+<span class="n">_ENTITY_LINK_JACCARD_THRESHOLD</span> <span class="o">=</span> <span class="mf">0.4</span></div>
+
+
+<span class="c1"># Document types in scope for extraction (§2.3)</span>
+<div class="viewcode-block" id="EXTRACTABLE_DOC_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.adapter.EXTRACTABLE_DOC_TYPES">[docs]</a>
+<span class="n">EXTRACTABLE_DOC_TYPES</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"CR"</span><span class="p">,</span> <span class="s2">"WO"</span><span class="p">,</span> <span class="s2">"RCA"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="DocExtractionAdapter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DocExtractionAdapter</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Wraps HybridNERPipeline + causal_condition_adapter to produce DocExtractionRecords.</span>
+
+<span class="sd">    Produces one record per identified causal chain in the document.</span>
+<span class="sd">    A document with no extractable causal language produces one null record (confidence=low,</span>
+<span class="sd">    needs_human_review=True).</span>
+
+<span class="sd">    fm_id_candidate is always None at extraction time; resolved via batch KG lookup</span>
+<span class="sd">    at RCA run time (see DocExtractionStore.resolve_fm_candidates).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">ner_pipeline</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+        <span class="n">nlp</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">llm_cfg</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">extraction_version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"ner-v1.0_gaz-v1_llm-none"</span><span class="p">,</span>
+        <span class="n">_causal_extractor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="DocExtractionAdapter._ner">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter._ner">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ner</span> <span class="o">=</span> <span class="n">ner_pipeline</span></div>
+
+<div class="viewcode-block" id="DocExtractionAdapter._nlp">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter._nlp">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span> <span class="o">=</span> <span class="n">nlp</span></div>
+
+<div class="viewcode-block" id="DocExtractionAdapter._llm_cfg">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter._llm_cfg">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_llm_cfg</span> <span class="o">=</span> <span class="n">llm_cfg</span></div>
+
+<div class="viewcode-block" id="DocExtractionAdapter.extraction_version">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter.extraction_version">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">extraction_version</span> <span class="o">=</span> <span class="n">extraction_version</span></div>
+
+<div class="viewcode-block" id="DocExtractionAdapter.__causal_extractor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter.__causal_extractor">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">__causal_extractor</span> <span class="o">=</span> <span class="n">_causal_extractor</span>  <span class="c1"># injectable; None → lazy-loaded on first use</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionAdapter._get_causal_extractor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter._get_causal_extractor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_causal_extractor</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">__causal_extractor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__causal_extractor</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA.ner.causal_condition_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">extract_stage5_causal_condition</span>  <span class="c1"># noqa: PLC0415</span>
+        <span class="k">return</span> <span class="n">extract_stage5_causal_condition</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionAdapter.extract">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter.extract">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extract</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">section_role</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"body"</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">DocExtractionRecord</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Extract all causal chains from a single document text.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            doc_id: Source document identifier (e.g. "CR-2026-00123").</span>
+<span class="sd">            text: Full document text (single chunk; multi-chunk handling is a future extension).</span>
+<span class="sd">            doc_type: Must be one of EXTRACTABLE_DOC_TYPES.</span>
+<span class="sd">            section_role: Hint for condition-state extraction ("body", "as_found", "as_left", etc.).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            List of DocExtractionRecord, one per causal chain. Never empty — a document</span>
+<span class="sd">            with no causal language returns a single null record.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: if doc_type is not in EXTRACTABLE_DOC_TYPES.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">doc_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">EXTRACTABLE_DOC_TYPES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"doc_type '</span><span class="si">{</span><span class="n">doc_type</span><span class="si">}</span><span class="s2">' is outside extraction scope. "</span>
+                <span class="sa">f</span><span class="s2">"Allowed: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">EXTRACTABLE_DOC_TYPES</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Step A: NER entity extraction</span>
+        <span class="n">doc</span> <span class="o">=</span> <span class="n">Document</span><span class="p">(</span><span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">text</span><span class="o">=</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">pipeline_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ner</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+            <span class="n">mechanism_spans</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">pipeline_result</span><span class="o">.</span><span class="n">entities</span> <span class="k">if</span> <span class="n">_GROUP_MECHANISM</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">groups</span><span class="p">]</span>
+            <span class="n">outcome_spans</span>   <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">pipeline_result</span><span class="o">.</span><span class="n">entities</span> <span class="k">if</span> <span class="n">_GROUP_OUTCOME</span>   <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">groups</span><span class="p">]</span>
+            <span class="n">component_spans</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">pipeline_result</span><span class="o">.</span><span class="n">entities</span> <span class="k">if</span> <span class="n">_GROUP_COMPONENT</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">groups</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"NER pipeline failed for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2"> — falling back to empty entities"</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="n">mechanism_spans</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">outcome_spans</span>   <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">component_spans</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Build a causal_sentence_factory that injects NER-extracted entities as SSC</span>
+        <span class="c1"># patterns so CausalSentence fires on the same entities the NER pipeline found.</span>
+        <span class="c1"># Without this bridge, CausalSentence._matchedSents is always empty (no SSC</span>
+        <span class="c1"># annotations) and every document falls through to dep_fallback.</span>
+        <span class="n">cs_factory</span> <span class="o">=</span> <span class="n">_make_ner_cs_factory</span><span class="p">(</span><span class="n">mechanism_spans</span><span class="p">,</span> <span class="n">outcome_spans</span><span class="p">,</span> <span class="n">component_spans</span><span class="p">)</span>
+
+        <span class="c1"># Step B: causal relation + condition state extraction</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">stage5</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_causal_extractor</span><span class="p">()(</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="n">chunk_index</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">chunk_text</span><span class="o">=</span><span class="n">text</span><span class="p">,</span>
+                <span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">,</span>
+                <span class="n">section_role</span><span class="o">=</span><span class="n">section_role</span><span class="p">,</span>
+                <span class="n">nlp</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">,</span>
+                <span class="n">llm_cfg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_llm_cfg</span><span class="p">,</span>
+                <span class="n">causal_sentence_factory</span><span class="o">=</span><span class="n">cs_factory</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"causal_condition_adapter failed for </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2"> — null record produced"</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_null_record</span><span class="p">(</span><span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">as_found</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">as_left</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">proc_score</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)]</span>
+
+        <span class="n">as_found</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">stage5</span><span class="p">[</span><span class="s2">"condition_state"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_found"</span><span class="p">)</span>
+        <span class="n">as_left</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">stage5</span><span class="p">[</span><span class="s2">"condition_state"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_left"</span><span class="p">)</span>
+        <span class="n">proc_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">stage5</span><span class="p">[</span><span class="s2">"procedural_deviation"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+        <span class="n">extractor_used</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">stage5</span><span class="p">[</span><span class="s2">"extractor"</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"used"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">causal_statements</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">stage5</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"extracted_causal_statements"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">causal_chains</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">stage5</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_chain"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="c1"># Ruled-out mechanisms: cause_text strings from negated statements (14.4).</span>
+        <span class="c1"># Stored on every record from this document for Step 2d FM penalisation.</span>
+        <span class="n">ruled_out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_text"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">stage5</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ruled_out_mechanisms"</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_text"</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">causal_statements</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_null_record</span><span class="p">(</span><span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">as_found</span><span class="o">=</span><span class="n">as_found</span><span class="p">,</span> <span class="n">as_left</span><span class="o">=</span><span class="n">as_left</span><span class="p">,</span> <span class="n">proc_score</span><span class="o">=</span><span class="n">proc_score</span><span class="p">)]</span>
+
+        <span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">DocExtractionRecord</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">covered_stmt_ids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+        <span class="c1"># Build a lookup from statement_id → source for Improvement E chain confidence.</span>
+        <span class="n">stmt_source_by_id</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"statement_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">):</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">causal_statements</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Step C-chain: one record per multi-hop chain (nodes ≥ 2).</span>
+        <span class="c1"># Chain fields: root node → inferred_fm_label (root cause);</span>
+        <span class="c1"># proximate node ([-2]) → assessed_cause; terminal node ([-1]) → identified_effect.</span>
+        <span class="c1"># cause_is_symptom = True when intermediate nodes exist (chain length &gt; 2).</span>
+        <span class="k">for</span> <span class="n">chain_dict</span> <span class="ow">in</span> <span class="n">causal_chains</span><span class="p">:</span>
+            <span class="n">nodes</span> <span class="o">=</span> <span class="n">chain_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nodes"</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">nodes</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">source_ids</span> <span class="o">=</span> <span class="n">chain_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_statement_ids"</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="n">covered_stmt_ids</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">source_ids</span><span class="p">)</span>
+
+            <span class="n">root_text</span> <span class="o">=</span> <span class="n">nodes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">terminal_text</span> <span class="o">=</span> <span class="n">nodes</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">proximate_text</span> <span class="o">=</span> <span class="n">nodes</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">]</span>
+
+            <span class="n">inferred_fm</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_best_overlapping_entity</span><span class="p">(</span><span class="n">root_text</span><span class="p">,</span> <span class="n">mechanism_spans</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">root_text</span>
+            <span class="p">)</span>
+            <span class="n">has_mech</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">_best_overlapping_entity</span><span class="p">(</span><span class="n">root_text</span><span class="p">,</span> <span class="n">mechanism_spans</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">))</span>
+            <span class="n">min_conf</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">chain_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"min_confidence"</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
+
+            <span class="c1"># Improvement E: if all contributing statements came from dep_fallback,</span>
+            <span class="c1"># pass that source so _assign_confidence caps them at MEDIUM.</span>
+            <span class="n">chain_sources</span> <span class="o">=</span> <span class="p">{</span><span class="n">stmt_source_by_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">sid</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span> <span class="k">for</span> <span class="n">sid</span> <span class="ow">in</span> <span class="n">source_ids</span><span class="p">}</span>
+            <span class="n">chain_stmt_source</span> <span class="o">=</span> <span class="s2">"dep_fallback"</span> <span class="k">if</span> <span class="n">chain_sources</span> <span class="o">&lt;=</span> <span class="p">{</span><span class="s2">"dep_fallback"</span><span class="p">,</span> <span class="s2">""</span><span class="p">}</span> <span class="k">else</span> <span class="s2">""</span>
+
+            <span class="n">confidence</span> <span class="o">=</span> <span class="n">_assign_confidence</span><span class="p">(</span>
+                <span class="n">extractor_used</span><span class="o">=</span><span class="n">extractor_used</span><span class="p">,</span>
+                <span class="n">stmt_confidence</span><span class="o">=</span><span class="n">min_conf</span><span class="p">,</span>
+                <span class="n">has_mechanism</span><span class="o">=</span><span class="n">has_mech</span><span class="p">,</span>
+                <span class="n">mechanism_spans</span><span class="o">=</span><span class="n">mechanism_spans</span><span class="p">,</span>
+                <span class="n">outcome_spans</span><span class="o">=</span><span class="n">outcome_spans</span><span class="p">,</span>
+                <span class="n">stmt_source</span><span class="o">=</span><span class="n">chain_stmt_source</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">DocExtractionRecord</span><span class="p">(</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="c1"># Assign the id from the running record count (§ chain_index must be</span>
+                <span class="c1"># collision-free across chain records AND statement records for the</span>
+                <span class="c1"># same doc — {doc_id}::chain::{index} is the Chroma primary key).</span>
+                <span class="n">chain_index</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">),</span>
+                <span class="n">identified_effect</span><span class="o">=</span><span class="n">terminal_text</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">assessed_cause</span><span class="o">=</span><span class="n">proximate_text</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">inferred_fm_label</span><span class="o">=</span><span class="n">inferred_fm</span><span class="p">,</span>
+                <span class="n">fm_id_candidate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">fm_id_candidate_alt</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">confidence</span><span class="o">=</span><span class="n">confidence</span><span class="p">,</span>
+                <span class="n">cause_is_symptom</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">nodes</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">,</span>
+                <span class="n">as_found</span><span class="o">=</span><span class="n">as_found</span><span class="p">,</span>
+                <span class="n">as_left</span><span class="o">=</span><span class="n">as_left</span><span class="p">,</span>
+                <span class="n">procedural_deviation_score</span><span class="o">=</span><span class="n">proc_score</span><span class="p">,</span>
+                <span class="n">extraction_version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">extraction_version</span><span class="p">,</span>
+                <span class="n">embedding_model_version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">needs_human_review</span><span class="o">=</span><span class="p">(</span><span class="n">confidence</span> <span class="o">==</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span><span class="p">),</span>
+                <span class="n">ruled_out_mechanisms</span><span class="o">=</span><span class="n">ruled_out</span><span class="p">,</span>
+            <span class="p">))</span>
+
+        <span class="c1"># Step C-stmt: one record per statement not covered by any chain above.</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">stmt</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">causal_statements</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"statement_id"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">covered_stmt_ids</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">cause_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span>
+            <span class="n">effect_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"effect_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span>
+            <span class="n">stmt_confidence</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
+            <span class="n">negated</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"negated"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+            <span class="n">conjectural</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"conjectural"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+
+            <span class="c1"># Skip negated/conjectural statements — they indicate absence, not occurrence</span>
+            <span class="k">if</span> <span class="n">negated</span> <span class="ow">or</span> <span class="n">conjectural</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Skipping negated/conjectural causal statement </span><span class="si">%d</span><span class="s2"> in </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">identified_effect</span> <span class="o">=</span> <span class="n">effect_text</span> <span class="ow">or</span> <span class="n">_best_entity_text</span><span class="p">(</span><span class="n">outcome_spans</span><span class="p">)</span>
+            <span class="n">assessed_cause</span> <span class="o">=</span> <span class="n">cause_text</span>
+            <span class="n">inferred_fm_label</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_best_overlapping_entity</span><span class="p">(</span><span class="n">cause_text</span><span class="p">,</span> <span class="n">mechanism_spans</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">cause_text</span>  <span class="c1"># free-text fallback when no G4 entity overlaps</span>
+            <span class="p">)</span>
+
+            <span class="n">cause_is_symptom</span> <span class="o">=</span> <span class="n">_text_overlaps_any</span><span class="p">(</span><span class="n">cause_text</span><span class="p">,</span> <span class="n">outcome_spans</span><span class="p">)</span> <span class="k">if</span> <span class="n">cause_text</span> <span class="k">else</span> <span class="kc">False</span>
+
+            <span class="c1"># fm_id_candidate deferred — always None at ingestion time</span>
+            <span class="c1"># Improvement E: pass per-statement source so dep_fallback statements</span>
+            <span class="c1"># are not promoted to HIGH via the CausalSentence rules.</span>
+            <span class="n">confidence</span> <span class="o">=</span> <span class="n">_assign_confidence</span><span class="p">(</span>
+                <span class="n">extractor_used</span><span class="o">=</span><span class="n">extractor_used</span><span class="p">,</span>
+                <span class="n">stmt_confidence</span><span class="o">=</span><span class="n">stmt_confidence</span><span class="p">,</span>
+                <span class="n">has_mechanism</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">_best_overlapping_entity</span><span class="p">(</span><span class="n">cause_text</span><span class="p">,</span> <span class="n">mechanism_spans</span><span class="p">,</span> <span class="n">nlp</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_nlp</span><span class="p">)),</span>
+                <span class="n">mechanism_spans</span><span class="o">=</span><span class="n">mechanism_spans</span><span class="p">,</span>
+                <span class="n">outcome_spans</span><span class="o">=</span><span class="n">outcome_spans</span><span class="p">,</span>
+                <span class="n">stmt_source</span><span class="o">=</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="p">)</span>
+
+            <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">DocExtractionRecord</span><span class="p">(</span>
+                <span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span>
+                <span class="c1"># Running record count → contiguous, collision-free with the chain</span>
+                <span class="c1"># records appended above (see chain-record note).</span>
+                <span class="n">chain_index</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">),</span>
+                <span class="n">identified_effect</span><span class="o">=</span><span class="n">identified_effect</span><span class="p">,</span>
+                <span class="n">assessed_cause</span><span class="o">=</span><span class="n">assessed_cause</span><span class="p">,</span>
+                <span class="n">inferred_fm_label</span><span class="o">=</span><span class="n">inferred_fm_label</span><span class="p">,</span>
+                <span class="n">fm_id_candidate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">fm_id_candidate_alt</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">confidence</span><span class="o">=</span><span class="n">confidence</span><span class="p">,</span>
+                <span class="n">cause_is_symptom</span><span class="o">=</span><span class="n">cause_is_symptom</span><span class="p">,</span>
+                <span class="n">as_found</span><span class="o">=</span><span class="n">as_found</span><span class="p">,</span>
+                <span class="n">as_left</span><span class="o">=</span><span class="n">as_left</span><span class="p">,</span>
+                <span class="n">procedural_deviation_score</span><span class="o">=</span><span class="n">proc_score</span><span class="p">,</span>
+                <span class="n">extraction_version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">extraction_version</span><span class="p">,</span>
+                <span class="n">embedding_model_version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                <span class="n">needs_human_review</span><span class="o">=</span><span class="p">(</span><span class="n">confidence</span> <span class="o">==</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span><span class="p">),</span>
+                <span class="n">ruled_out_mechanisms</span><span class="o">=</span><span class="n">ruled_out</span><span class="p">,</span>
+            <span class="p">))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">records</span><span class="p">:</span>
+            <span class="c1"># All statements were negated/conjectural and no chains produced records</span>
+            <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_null_record</span><span class="p">(</span><span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">as_found</span><span class="o">=</span><span class="n">as_found</span><span class="p">,</span> <span class="n">as_left</span><span class="o">=</span><span class="n">as_left</span><span class="p">,</span> <span class="n">proc_score</span><span class="o">=</span><span class="n">proc_score</span><span class="p">)]</span>
+
+        <span class="k">return</span> <span class="n">records</span></div>
+
+
+<div class="viewcode-block" id="DocExtractionAdapter._null_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/index.html#src.dackar.RCA.doc_extraction.adapter.DocExtractionAdapter._null_record">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_null_record</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">as_found</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">as_left</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">proc_score</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DocExtractionRecord</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">DocExtractionRecord</span><span class="p">(</span>
+            <span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span>
+            <span class="n">chain_index</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="n">identified_effect</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">assessed_cause</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">inferred_fm_label</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">fm_id_candidate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">fm_id_candidate_alt</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">confidence</span><span class="o">=</span><span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span><span class="p">,</span>
+            <span class="n">cause_is_symptom</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">as_found</span><span class="o">=</span><span class="n">as_found</span><span class="p">,</span>
+            <span class="n">as_left</span><span class="o">=</span><span class="n">as_left</span><span class="p">,</span>
+            <span class="n">procedural_deviation_score</span><span class="o">=</span><span class="n">proc_score</span><span class="p">,</span>
+            <span class="n">extraction_version</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">extraction_version</span><span class="p">,</span>
+            <span class="n">embedding_model_version</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="n">needs_human_review</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># NER → CausalSentence bridge</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="c1"># Lemma-based causal keyword patterns injected into CausalSentence via EntityRuler.</span>
+<span class="c1"># CausalSentence selects sentences that contain BOTH an SSC entity AND a causal</span>
+<span class="c1"># keyword; without the keyword patterns the matched-sentence buffer is always empty.</span>
+<span class="c1"># These lemmas cover the core causal vocabulary; the dep_fallback path handles the</span>
+<span class="c1"># full extended set from cause_effect_keywords_full.csv.</span>
+<div class="viewcode-block" id="_CAUSAL_KEYWORD_PATTERNS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._CAUSAL_KEYWORD_PATTERNS">[docs]</a>
+<span class="n">_CAUSAL_KEYWORD_PATTERNS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"causal"</span><span class="p">,</span> <span class="s2">"pattern"</span><span class="p">:</span> <span class="p">[{</span><span class="s2">"LEMMA"</span><span class="p">:</span> <span class="n">lemma</span><span class="p">}],</span> <span class="s2">"id"</span><span class="p">:</span> <span class="s2">"causal"</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">lemma</span> <span class="ow">in</span> <span class="p">[</span>
+        <span class="s2">"cause"</span><span class="p">,</span> <span class="s2">"result"</span><span class="p">,</span> <span class="s2">"lead"</span><span class="p">,</span> <span class="s2">"trigger"</span><span class="p">,</span> <span class="s2">"induce"</span><span class="p">,</span> <span class="s2">"produce"</span><span class="p">,</span> <span class="s2">"create"</span><span class="p">,</span>
+        <span class="s2">"force"</span><span class="p">,</span> <span class="s2">"drive"</span><span class="p">,</span> <span class="s2">"contribute"</span><span class="p">,</span> <span class="s2">"attribute"</span><span class="p">,</span> <span class="s2">"accelerate"</span><span class="p">,</span> <span class="s2">"activate"</span><span class="p">,</span>
+        <span class="s2">"affect"</span><span class="p">,</span> <span class="s2">"damage"</span><span class="p">,</span> <span class="s2">"facilitate"</span><span class="p">,</span> <span class="s2">"generate"</span><span class="p">,</span> <span class="s2">"initiate"</span><span class="p">,</span> <span class="s2">"originate"</span><span class="p">,</span>
+        <span class="s2">"precipitate"</span><span class="p">,</span> <span class="s2">"prevent"</span><span class="p">,</span> <span class="s2">"promote"</span><span class="p">,</span> <span class="s2">"prompt"</span><span class="p">,</span> <span class="s2">"propagate"</span><span class="p">,</span> <span class="s2">"spark"</span><span class="p">,</span>
+        <span class="s2">"stimulate"</span><span class="p">,</span>
+    <span class="p">]</span>
+<span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_make_ner_cs_factory">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._make_ner_cs_factory">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_ner_cs_factory</span><span class="p">(</span>
+    <span class="n">mechanism_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">],</span>
+    <span class="n">outcome_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">],</span>
+    <span class="n">component_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build a causal_sentence_factory that injects NER entities as SSC patterns.</span>
+
+<span class="sd">    CausalSentence requires two types of EntityRuler patterns to fire:</span>
+<span class="sd">      1. SSC entity patterns — G4 mechanism, G5 outcome, G1 component spans from NER</span>
+<span class="sd">      2. Causal keyword patterns — lemma-based verb patterns for sentence selection</span>
+
+<span class="sd">    Without both, _matchedSents is empty and the extractor silently falls back to</span>
+<span class="sd">    dep_fallback on every document. This factory bridges the NER pipeline output</span>
+<span class="sd">    into the CausalSentence input contract.</span>
+
+<span class="sd">    Reproducibility note: the factory closes over *this* document's ``ssc_patterns``,</span>
+<span class="sd">    and each per-document ``CausalSentence(nlp)`` construction calls ``resetPipeline``</span>
+<span class="sd">    (CausalBase.__init__), which removes the ``entity_ruler`` pipe from the shared</span>
+<span class="sd">    ``nlp`` before ``addEntityPattern`` rebuilds it. The ruler is therefore reset and</span>
+<span class="sd">    repopulated with *only* the current document's SSC + causal-keyword patterns on</span>
+<span class="sd">    every call — patterns do NOT accumulate across documents, so extraction is</span>
+<span class="sd">    order-independent. (The 26 keyword patterns are re-added per document as a</span>
+<span class="sd">    consequence of that reset; the cost is negligible relative to NER/parse.)</span>
+
+<span class="sd">    Returns None when no entity spans are available (CausalSentence would return</span>
+<span class="sd">    empty anyway; dep_fallback remains the active extractor).</span>
+<span class="sd">    """</span>
+    <span class="n">all_spans</span> <span class="o">=</span> <span class="n">mechanism_spans</span> <span class="o">+</span> <span class="n">outcome_spans</span> <span class="o">+</span> <span class="n">component_spans</span>
+    <span class="n">ssc_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">all_spans</span> <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ssc_texts</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">ssc_patterns</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">"label"</span><span class="p">:</span> <span class="s2">"SSC"</span><span class="p">,</span> <span class="s2">"pattern"</span><span class="p">:</span> <span class="n">t</span><span class="p">,</span> <span class="s2">"id"</span><span class="p">:</span> <span class="s2">"SSC"</span><span class="p">}</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">ssc_texts</span><span class="p">)]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">factory</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">nlp</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.causal.CausalSentence</span><span class="w"> </span><span class="kn">import</span> <span class="n">CausalSentence</span>  <span class="c1"># noqa: PLC0415</span>
+        <span class="n">cs</span> <span class="o">=</span> <span class="n">CausalSentence</span><span class="p">(</span><span class="n">nlp</span><span class="p">)</span>
+        <span class="n">cs</span><span class="o">.</span><span class="n">addEntityPattern</span><span class="p">(</span><span class="s2">"ner_ssc_entities"</span><span class="p">,</span> <span class="n">ssc_patterns</span><span class="p">)</span>
+        <span class="n">cs</span><span class="o">.</span><span class="n">addEntityPattern</span><span class="p">(</span><span class="s2">"ner_causal_keywords"</span><span class="p">,</span> <span class="n">_CAUSAL_KEYWORD_PATTERNS</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">cs</span>
+
+    <span class="k">return</span> <span class="n">factory</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Entity span helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_best_entity_text">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._best_entity_text">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_best_entity_text</span><span class="p">(</span><span class="n">spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return the text of the highest-scoring span, or None if list is empty."""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">spans</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">best</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+        <span class="n">spans</span><span class="p">,</span>
+        <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="nb">max</span><span class="p">(</span>
+            <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">src</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">src</span> <span class="ow">in</span> <span class="n">s</span><span class="o">.</span><span class="n">provenance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sources"</span><span class="p">,</span> <span class="p">[])),</span>
+            <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">best</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_best_overlapping_entity">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._best_overlapping_entity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_best_overlapping_entity</span><span class="p">(</span>
+    <span class="n">target_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">],</span>
+    <span class="n">nlp</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return the text of the best-matching span for target_text.</span>
+
+<span class="sd">    Priority chain (stops at first hit):</span>
+<span class="sd">      1. Exact substring match — O(n), no dependencies</span>
+<span class="sd">      2. Token-set Jaccard ≥ _ENTITY_LINK_JACCARD_THRESHOLD</span>
+<span class="sd">      3. Lemma match via spaCy: lemmatize both sides, re-apply (1) then (2)</span>
+<span class="sd">         Only attempted when nlp is provided.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">target_text</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">spans</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">target_lower</span> <span class="o">=</span> <span class="n">target_text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="c1"># Pass 1: exact substring</span>
+    <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">spans</span><span class="p">:</span>
+        <span class="n">span_lower</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">span_lower</span> <span class="ow">and</span> <span class="p">(</span><span class="n">span_lower</span> <span class="ow">in</span> <span class="n">target_lower</span> <span class="ow">or</span> <span class="n">target_lower</span> <span class="ow">in</span> <span class="n">span_lower</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+
+    <span class="c1"># Shared token helpers for passes 2 and 3</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_tok_set</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">frozenset</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">()</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_jaccard</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">a</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">b</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span> <span class="o">&amp;</span> <span class="n">b</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span> <span class="o">|</span> <span class="n">b</span><span class="p">)</span>
+
+    <span class="c1"># Pass 2: token-set Jaccard</span>
+    <span class="n">target_tokens</span> <span class="o">=</span> <span class="n">_tok_set</span><span class="p">(</span><span class="n">target_text</span><span class="p">)</span>
+    <span class="n">best_span</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">best_score</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">spans</span><span class="p">:</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="n">_jaccard</span><span class="p">(</span><span class="n">target_tokens</span><span class="p">,</span> <span class="n">_tok_set</span><span class="p">(</span><span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;=</span> <span class="n">_ENTITY_LINK_JACCARD_THRESHOLD</span> <span class="ow">and</span> <span class="n">score</span> <span class="o">&gt;</span> <span class="n">best_score</span><span class="p">:</span>
+            <span class="n">best_score</span> <span class="o">=</span> <span class="n">score</span>
+            <span class="n">best_span</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">best_span</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">best_span</span>
+
+    <span class="c1"># Pass 3: lemma match — lemmatize both sides, re-apply substring then Jaccard</span>
+    <span class="k">if</span> <span class="n">nlp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">_lemma_tokens</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">frozenset</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span>
+                    <span class="n">tok</span><span class="o">.</span><span class="n">lemma_</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                    <span class="k">for</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">nlp</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">tok</span><span class="o">.</span><span class="n">is_punct</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">tok</span><span class="o">.</span><span class="n">is_space</span>
+                <span class="p">)</span>
+
+            <span class="n">target_lemmas</span> <span class="o">=</span> <span class="n">_lemma_tokens</span><span class="p">(</span><span class="n">target_text</span><span class="p">)</span>
+            <span class="n">target_lemma_str</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">target_lemmas</span><span class="p">))</span>
+            <span class="n">best_score</span> <span class="o">=</span> <span class="mf">0.0</span>  <span class="c1"># reset for lemma-Jaccard ranking</span>
+            <span class="n">best_span</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">spans</span><span class="p">:</span>
+                <span class="n">span_lemmas</span> <span class="o">=</span> <span class="n">_lemma_tokens</span><span class="p">(</span><span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="p">)</span>
+                <span class="n">span_lemma_str</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">span_lemmas</span><span class="p">))</span>
+                <span class="c1"># Re-apply pass 1 on lemmatized strings</span>
+                <span class="k">if</span> <span class="n">span_lemma_str</span> <span class="ow">and</span> <span class="p">(</span>
+                    <span class="n">span_lemma_str</span> <span class="ow">in</span> <span class="n">target_lemma_str</span> <span class="ow">or</span> <span class="n">target_lemma_str</span> <span class="ow">in</span> <span class="n">span_lemma_str</span>
+                <span class="p">):</span>
+                    <span class="k">return</span> <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="c1"># Re-apply pass 2 on lemma token sets</span>
+                <span class="n">score</span> <span class="o">=</span> <span class="n">_jaccard</span><span class="p">(</span><span class="n">target_lemmas</span><span class="p">,</span> <span class="n">span_lemmas</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;=</span> <span class="n">_ENTITY_LINK_JACCARD_THRESHOLD</span> <span class="ow">and</span> <span class="n">score</span> <span class="o">&gt;</span> <span class="n">best_score</span><span class="p">:</span>
+                    <span class="n">best_score</span> <span class="o">=</span> <span class="n">score</span>
+                    <span class="n">best_span</span> <span class="o">=</span> <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">best_span</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">best_span</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_text_overlaps_any">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._text_overlaps_any">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_text_overlaps_any</span><span class="p">(</span><span class="n">target_text</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return True if target_text overlaps (substring) with any span in the list."""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">target_text</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">spans</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="n">target_lower</span> <span class="o">=</span> <span class="n">target_text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">return</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="n">target_lower</span> <span class="ow">or</span> <span class="n">target_lower</span> <span class="ow">in</span> <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">spans</span>
+        <span class="k">if</span> <span class="n">span</span><span class="o">.</span><span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_has_gazetteer_source">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._has_gazetteer_source">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_has_gazetteer_source</span><span class="p">(</span><span class="n">spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">],</span> <span class="n">min_score</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.85</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return True if any span has a gazetteer source with score &gt;= min_score."""</span>
+    <span class="k">for</span> <span class="n">span</span> <span class="ow">in</span> <span class="n">spans</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">src</span> <span class="ow">in</span> <span class="n">span</span><span class="o">.</span><span class="n">provenance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sources"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="n">src_type</span> <span class="o">=</span> <span class="n">src</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="n">src_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">src</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">src_type</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">"gazetteer"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">src_score</span> <span class="o">&gt;=</span> <span class="n">min_score</span><span class="p">:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="_assign_confidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/doc_extraction/adapter/index.html#src.dackar.RCA.doc_extraction.adapter._assign_confidence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_assign_confidence</span><span class="p">(</span>
+    <span class="n">extractor_used</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">stmt_confidence</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">has_mechanism</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">mechanism_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">],</span>
+    <span class="n">outcome_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ResolvedSpan</span><span class="p">],</span>
+    <span class="n">stmt_source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ConfidenceLevel</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Assign confidence level per §3.4 of the design plan.</span>
+
+<span class="sd">    Rules (in priority order):</span>
+<span class="sd">      LOW    — LLM fallback used</span>
+<span class="sd">      LOW    — no G4 mechanism entity found (cause is symptom-only or null)</span>
+<span class="sd">      MEDIUM — dep_fallback source with mechanism present (Improvement E)</span>
+<span class="sd">               dep_fallback spans have lower linguistic quality than CausalSentence;</span>
+<span class="sd">               they are never promoted to HIGH regardless of gazetteer hits.</span>
+<span class="sd">      HIGH   — CausalSentence + gazetteer hit (score ≥ 0.85) + stmt_confidence ≥ 0.60</span>
+<span class="sd">      MEDIUM — CausalSentence or CausalSimple with mechanism present, no strong gazetteer hit</span>
+<span class="sd">      LOW    — fallback</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        stmt_source: per-statement ``source`` field (e.g. ``"dep_fallback"``,</span>
+<span class="sd">            ``"CausalSentence"``).  When provided, takes precedence over</span>
+<span class="sd">            ``extractor_used`` for the dep_fallback rule so that dep-tree</span>
+<span class="sd">            statements embedded inside a CausalSentence result dict are not</span>
+<span class="sd">            incorrectly promoted to MEDIUM/HIGH via the CausalSentence path</span>
+<span class="sd">            (Improvement E).</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">extractor_used</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"LLM_implicit"</span><span class="p">,</span> <span class="s2">"LLM_extract_all"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">has_mechanism</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span>
+
+    <span class="c1"># Improvement E: dep_fallback statements are capped at MEDIUM.</span>
+    <span class="c1"># stmt_source is set per-statement; extractor_used is the top-level label</span>
+    <span class="c1"># which is "CausalSentence" even when dep_fallback provided the statements.</span>
+    <span class="n">effective_source</span> <span class="o">=</span> <span class="n">stmt_source</span> <span class="ow">or</span> <span class="n">extractor_used</span>
+    <span class="k">if</span> <span class="s2">"dep_fallback"</span> <span class="ow">in</span> <span class="n">effective_source</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">MEDIUM</span>
+
+    <span class="n">all_relevant_spans</span> <span class="o">=</span> <span class="n">mechanism_spans</span> <span class="o">+</span> <span class="n">outcome_spans</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">extractor_used</span> <span class="o">==</span> <span class="s2">"CausalSentence"</span>
+        <span class="ow">and</span> <span class="n">_has_gazetteer_source</span><span class="p">(</span><span class="n">all_relevant_spans</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="n">stmt_confidence</span> <span class="o">&gt;=</span> <span class="mf">0.60</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">HIGH</span>
+
+    <span class="k">if</span> <span class="n">extractor_used</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"CausalSentence"</span><span class="p">,</span> <span class="s2">"CausalSimple"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">MEDIUM</span>
+
+    <span class="k">return</span> <span class="n">ConfidenceLevel</span><span class="o">.</span><span class="n">LOW</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
