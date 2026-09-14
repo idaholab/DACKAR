@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from kg.py2neo_workflow import Py2Neo
+from dackar.knowledge_graph.py2neo import Py2Neo
 
 LOGGER = logging.getLogger(__name__)
 

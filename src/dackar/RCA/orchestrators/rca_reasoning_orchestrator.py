@@ -13,7 +13,7 @@ import uuid
 
 LOGGER = logging.getLogger(__name__)
 
-from kg.py2neo_workflow import Py2Neo
+from dackar.knowledge_graph.py2neo import Py2Neo
 
 from orchestrators.causality_engine_v31 import (
     CausalityEngineConfig,
