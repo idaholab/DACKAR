@@ -27,7 +27,6 @@ if str(_RCA_ROOT) not in sys.path:
     sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in (
-    "kg", "kg.py2neo_workflow",
     "neo4j", "py2neo",
     "chromadb",
     "langchain_chroma", "langchain_community",

@@ -16,7 +16,7 @@ Responsibilities:
 Output schema: outage/schemas/component_event_timeline.json
 
 Reuse targets:
-    RCA.kg.py2neo_workflow.Py2Neo              → all KG queries (read-only import)
+    dackar.knowledge_graph.py2neo.Py2Neo              → all KG queries (read-only import)
     RCA.storage.processed_record_store         → CR / WO text retrieval (injected)
 
 KG node labels (defaults match RCA kg_schema_builder_workflow labels):
@@ -192,7 +192,7 @@ class KGTimelineBuilder:
 
     Args:
         config: Stage configuration.
-        kg_driver: Py2Neo instance (from RCA.kg.py2neo_workflow).
+        kg_driver: Py2Neo instance (from dackar.knowledge_graph.py2neo).
                    Provides all KG query methods.  When None, all KG queries
                    are skipped and the returned timeline contains zero events.
         record_store: ProcessedRecordStore instance (from RCA.storage).
@@ -363,7 +363,7 @@ class KGTimelineBuilder:
               AND ($before_ts IS NULL OR cr.initiated_date < $before_ts)
             RETURN cr
 
-        Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow (read-only import).
+        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo (read-only import).
         """
         window_start = _window_start_iso(before_ts, self.config.timeline_window_days)
         cypher = (
@@ -403,7 +403,7 @@ class KGTimelineBuilder:
               AND NOT wo.work_type IN ['PM', 'CM']
             RETURN wo
 
-        Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow.
+        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
         """
         window_start = _window_start_iso(before_ts, self.config.timeline_window_days)
         cypher = (
@@ -443,7 +443,7 @@ class KGTimelineBuilder:
         Filters work_order nodes where work_type == config.pm_work_type_code.
         The completion_date (or initiated_date) is stored as the event timestamp.
 
-        Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow.
+        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
         """
         window_start = _window_start_iso(before_ts, self.config.timeline_window_days)
         cypher = (
@@ -483,7 +483,7 @@ class KGTimelineBuilder:
 
         Filters work_order nodes where work_type == config.cm_work_type_code.
 
-        Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow.
+        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
         """
         window_start = _window_start_iso(before_ts, self.config.timeline_window_days)
         cypher = (
@@ -528,7 +528,7 @@ class KGTimelineBuilder:
             WHERE e.timestamp_start >= $window_start
             RETURN e
 
-        Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow.
+        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
         """
         window_start = _window_start_iso(before_ts, self.config.timeline_window_days)
         cypher = (
@@ -562,7 +562,7 @@ class KGTimelineBuilder:
     ) -> List[JsonDict]:
         """Fetch standalone inspection records for this component.
 
-        Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow.
+        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
         """
         window_start = _window_start_iso(before_ts, self.config.timeline_window_days)
         cypher = (
@@ -769,7 +769,7 @@ class KGTimelineBuilder:
         Returns an empty list on any exception so that a KG connectivity
         problem in one query does not abort the entire pipeline.
 
-        Reuse: Py2Neo.query() from RCA.kg.py2neo_workflow.
+        Reuse: Py2Neo.query() from dackar.knowledge_graph.py2neo.
         """
         try:
             return self.kg_driver.query(

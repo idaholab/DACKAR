@@ -40,12 +40,12 @@ sys.path.append(rca_root)
 dackar_root = os.path.abspath(os.path.join(os.getcwd(), '..', '..'))
 sys.path.append(dackar_root)
 
-from kg.kg_schema_builder_workflow import (
+from dackar.knowledge_graph.kg_schema_builder_workflow import (
     apply_schema_constraints,
     build_graph_from_workflow_artifacts,
     load_and_merge_schemas,
 )
-from kg.py2neo_workflow import Py2Neo
+from dackar.knowledge_graph.py2neo import Py2Neo
 from kg_population_helpers import load_processed_records_from_output
 
 
