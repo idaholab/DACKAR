@@ -78,6 +78,11 @@ def extract_equipment_ids(
         r"\b(RLY-\d{1,6}[A-Z]{0,2})\b",
     ]
 
+    # Case-sensitive by design (no re.IGNORECASE, unlike the alarm/doc extractors):
+    # equipment tags follow uppercase site conventions (P-101, MOV-204A) and _norm()
+    # uppercases matches anyway. Lowercase prose mentions (e.g. "mov-204a") are treated
+    # as out of scope, since matching case-insensitively would pick up lowercase common
+    # words as spurious tags.
     compiled: List[Pattern[str]] = [re.compile(p) for p in default_patterns]
 
     results: List[str] = []
@@ -144,6 +149,8 @@ def extract_equipment_ids(
             count += 1
             if count >= max_ids:
                 break
+        if count >= max_ids:
+            break
 
     # Containment filter: drop shorter tags that are trailing segments of a longer tag.
     # E.g. if "AFW-P-101" is found, drop "P-101" since it's a suffix component of it.
