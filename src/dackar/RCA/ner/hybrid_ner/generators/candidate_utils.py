@@ -118,9 +118,8 @@ def dedupe_candidate_spans(candidates: List[CandidateSpan]) -> List[CandidateSpa
             seen[key] = c
         elif ex_props and not c_props:
             continue
-        else:
-            if (existing.end - existing.start) < (c.end - c.start):
-                seen[key] = c
+        # else: identical (start, end, text) key ⇒ identical span length, so there is
+        # no longer/shorter choice to make; keep the first-seen candidate.
     chosen = list(seen.values())
     final = []
     for c in chosen:
