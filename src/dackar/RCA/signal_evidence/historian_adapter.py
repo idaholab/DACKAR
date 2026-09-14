@@ -2,30 +2,34 @@ from __future__ import annotations
 
 import csv
 import json
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Protocol, Tuple
+from typing import List, Optional, Protocol
 
+from ._util import clamp01, parse_dt as _parse_dt
 from .models import AnomalyRecord
 
 
-def _parse_dt(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
 class HistorianAdapter(Protocol):
+    """Fetches pre-flagged anomaly records for a set of sensors in a window."""
+
     def get_anomalies(
         self,
         sensor_ids: list[str],
         window_start: datetime,
         window_end: datetime,
     ) -> tuple[list[AnomalyRecord], list[dict]]:
+        """Return ``(anomaly_records, gaps)`` for *sensor_ids* within the window.
+
+        Args:
+            sensor_ids: Sensor/tag identifiers to fetch anomalies for.
+            window_start: Inclusive UTC-aware start of the query window.
+            window_end: Inclusive UTC-aware end of the query window.
+
+        Returns:
+            A tuple of the matched :class:`~.models.AnomalyRecord` list and a
+            list of gap dicts (one per sensor with no data / a fetch failure).
+        """
         ...
 
 
@@ -84,7 +88,10 @@ class InfileHistorianAdapter:
                     timestamp_start=ts_start,
                     timestamp_end=ts_end,
                     pattern=str(row.get("pattern") or "unknown"),
-                    severity=float(row.get("severity") or 0.0),
+                    # Clamp at ingest to [0,1] so historian severities match
+                    # the baseline anomalies (clamped in builder._baseline_anomalies)
+                    # rather than leaving an unclamped latent surprise (MR#49 review).
+                    severity=clamp01(float(row.get("severity") or 0.0)),
                     source="historian",
                     raw_value_start=_to_float(row.get("raw_value_start")),
                     raw_value_peak=_to_float(row.get("raw_value_peak")),
@@ -120,7 +127,13 @@ class InfileHistorianAdapter:
 
 
 class OSIsoftPIHistorianAdapter:
-    """Production placeholder: contract-compatible PI adapter shim."""
+    """NOT IMPLEMENTED — placeholder shim for a future OSIsoft PI integration.
+
+    This adapter is contract-compatible but **not** wired to the PI Web API.
+    Every call reports each sensor as ``historian_unavailable`` and returns no
+    anomalies, so it must not be mistaken for a functional PI integration. Use
+    :class:`InfileHistorianAdapter` for real data until PI is implemented.
+    """
 
     def __init__(self) -> None:
         pass
@@ -131,7 +144,8 @@ class OSIsoftPIHistorianAdapter:
         window_start: datetime,
         window_end: datetime,
     ) -> tuple[list[AnomalyRecord], list[dict]]:
-        # Not wired to PI Web API in this phase.
+        # TODO(signal-evidence): wire to the PI Web API. Until then this shim
+        # deliberately reports every sensor as unavailable (see class docstring).
         return [], [
             {"sensor_id": sid, "component_id": None, "reason": "historian_unavailable"}
             for sid in sensor_ids
