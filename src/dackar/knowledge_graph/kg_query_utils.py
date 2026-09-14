@@ -9,6 +9,24 @@ def is_upstream(
     neo4j_client: Optional[Any],
     database: Optional[str] = None,
 ) -> bool:
+    """Return True if *component_a* is upstream of *component_b* in the graph.
+
+    Walks up to six containment/connectivity hops (``has_part_usage``,
+    ``owns_port_usage``, ``connects_port``) from ``component_a`` toward
+    ``component_b`` over ``element_usage`` nodes.
+
+    Args:
+        component_a: Source component id (``element_usage.id``). A falsy value,
+            or ``component_a == component_b``, yields ``False``.
+        component_b: Target component id (``element_usage.id``).
+        neo4j_client: Object exposing ``query(cypher, params, db=...)``; when
+            ``None`` the function returns ``False`` without querying.
+        database: Optional Neo4j database name; ``None`` uses the client default.
+
+    Returns:
+        ``True`` if a directed path ``a -> ... -> b`` exists, otherwise
+        ``False``.  Any query error is swallowed and reported as ``False``.
+    """
     if not component_a or not component_b or component_a == component_b or neo4j_client is None:
         return False
     query = """
@@ -38,6 +56,25 @@ def resolve_edge_type(
     neo4j_client: Optional[Any],
     database: Optional[str] = None,
 ) -> str:
+    """Classify the relationship path between two components.
+
+    Inspects the relationship types along the (up to six-hop) path from
+    ``component_a`` to ``component_b`` and buckets them into a single category.
+
+    Args:
+        component_a: Source component id (``element_usage.id``). A falsy value
+            yields ``"mixed"``.
+        component_b: Target component id (``element_usage.id``).
+        neo4j_client: Object exposing ``query(cypher, params, db=...)``; when
+            ``None`` the function returns ``"mixed"`` without querying.
+        database: Optional Neo4j database name; ``None`` uses the client default.
+
+    Returns:
+        ``"containment"`` if the path uses only ``has_part_usage`` edges,
+        ``"connectivity"`` if it uses only ``owns_port_usage`` /
+        ``connects_port`` edges, otherwise ``"mixed"`` (also returned when no
+        path is found or a query error occurs).
+    """
     if not component_a or not component_b or neo4j_client is None:
         return "mixed"
     query = """
