@@ -6,12 +6,23 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from py2neo_workflow import Py2Neo
-from kg_schema_builder_workflow import (
-    apply_schema_constraints,
-    build_graph_from_workflow_artifacts,
-    ingest_graph_toml,
-)
+# Intended invocation: ``python -m dackar.knowledge_graph.kg_ingest_neo4j_workflow``.
+# The sibling-import fallback supports running this file directly as a script
+# from within the ``knowledge_graph/`` directory.
+try:
+    from dackar.knowledge_graph.py2neo import Py2Neo
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        apply_schema_constraints,
+        build_graph_from_workflow_artifacts,
+        ingest_graph_toml,
+    )
+except ModuleNotFoundError:  # pragma: no cover - bare-script fallback
+    from py2neo import Py2Neo  # type: ignore
+    from kg_schema_builder_workflow import (  # type: ignore
+        apply_schema_constraints,
+        build_graph_from_workflow_artifacts,
+        ingest_graph_toml,
+    )
 
 LOGGER = logging.getLogger(__name__)
 if not LOGGER.handlers:
