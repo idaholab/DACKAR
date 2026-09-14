@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Tuple
 
 from .models import CandidateSpan, Document
@@ -17,8 +17,10 @@ class SpanConsolidatorPolicy:
       - Do not do aggressive partial-overlap pruning yet
     """
     dedupe_identical_spans: bool = True
+    # Documented v0.1 API knobs, not yet enforced by consolidate(): nested spans are
+    # always kept and partial-overlap pruning is never performed regardless of these.
     keep_nested_spans: bool = True
-    prefer_longest_on_overlap: bool = False  # can enable later
+    prefer_longest_on_overlap: bool = False  # reserved; overlap pruning not implemented yet
 
 
 class SpanConsolidator:
@@ -43,7 +45,13 @@ class SpanConsolidator:
         for c in candidates:
             key = (c.start, c.end)
             if key not in by_span:
-                by_span[key] = c
+                # Store a copy with fresh list fields so later merges never mutate the
+                # caller's (possibly generator-cached) CandidateSpan in place.
+                by_span[key] = replace(
+                    c,
+                    sources=list(c.sources),
+                    proposed_labels=list(c.proposed_labels),
+                )
                 continue
 
             # merge into existing
