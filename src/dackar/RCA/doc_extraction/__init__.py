@@ -1,6 +1,16 @@
 from .schema import ConfidenceLevel, DocExtractionRecord
 from .adapter import DocExtractionAdapter, EXTRACTABLE_DOC_TYPES
-from .store import DocExtractionStore, SemanticMatch, EmbeddingModelVersionError
+from .store import (
+    DocExtractionStore,
+    SemanticMatch,
+    DocExtractionStoreError,
+    EmbeddingModelVersionError,
+)
+from .epistemics import (
+    EpistemicClassifier,
+    EpistemicsRoutingConfig,
+    build_epistemics_manifest_summary,
+)
 
 __all__ = [
     "ConfidenceLevel",
@@ -9,5 +19,9 @@ __all__ = [
     "EXTRACTABLE_DOC_TYPES",
     "DocExtractionStore",
     "SemanticMatch",
+    "DocExtractionStoreError",
     "EmbeddingModelVersionError",
+    "EpistemicClassifier",
+    "EpistemicsRoutingConfig",
+    "build_epistemics_manifest_summary",
 ]
