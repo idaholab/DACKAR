@@ -60,11 +60,8 @@ class Postprocessor:
             prev = dedup.get(key)
             if prev is None:
                 dedup[key] = e
-            else:
-                prev_score = max([float(h.score or 0.0) for h in getattr(prev, "accepted_hypotheses", [])] or [0.0])
-                curr_score = max([float(h.score or 0.0) for h in getattr(e, "accepted_hypotheses", [])] or [0.0])
-                if curr_score > prev_score:
-                    dedup[key] = e
+            # else: an identical span+labels+groups was already recorded; keep the
+            # first-seen ResolvedSpan (it carries no post-resolution score to rank on).
 
         ordered = sorted(dedup.values(), key=lambda e: (-(e.end - e.start), e.start, e.end))
 
@@ -99,9 +96,7 @@ class Postprocessor:
         if inner_text == outer_text:
             return True
 
-        # very short token fragments inside a longer same-group phrase are often redundant
-        if len(inner_text.split()) == 1 and len(outer_text.split()) >= 2:
-            return True
-
-        # otherwise preserve the nested entity
+        # otherwise preserve the nested entity: atomic single-word RCA entities (a
+        # component or mechanism token) are kept even inside a longer same-group
+        # phrase; only exact-text duplicates are dropped above.
         return False

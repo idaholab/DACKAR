@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from kg.py2neo_workflow import Py2Neo
+from dackar.knowledge_graph.py2neo import Py2Neo
 
 JsonDict = Dict[str, Any]
 

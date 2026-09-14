@@ -87,7 +87,12 @@ def _compile_profile(profile: Dict) -> List[Tuple[str, str, List[re.Pattern]]]:
         doc_type = entry.get("type", "UNKNOWN").upper()
         label = entry.get("label", f"doc_ref_{doc_type.lower()}")
         raw_patterns = entry.get("patterns", [])
-        compiled = [re.compile(p, re.IGNORECASE) for p in raw_patterns]
+        compiled = []
+        for p in raw_patterns:
+            try:
+                compiled.append(re.compile(p, re.IGNORECASE))
+            except re.error:
+                pass  # silently skip malformed patterns (mirrors _compile_alarm_profile)
         if compiled:
             result.append((doc_type, label, compiled))
     return result
@@ -124,7 +129,7 @@ def _make_fp_checker(profile: Dict):
     max_year = int(fp.get("max_year", 2035))
     excluded = {p.upper() for p in fp.get("excluded_prefixes_from_doc_ref", [])}
 
-    _year_re = re.compile(r"(?:19|20)\d{2}")
+    _year_re = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 
     def is_fp(doc_type: str, norm: str) -> bool:
         prefix = norm.split("-")[0] if "-" in norm else norm[:3]
