@@ -36,9 +36,9 @@ addressed when MBSE entities are loaded.
 
 CLI usage
 ─────────
-  python kg_ingest_fmea_workflow.py \\
-      --schema ../../knowledge_graph/schemas/fmeaSchema.toml \\
-      --schema ../../knowledge_graph/schemas/mbseSchema.toml \\
+  python -m dackar.knowledge_graph.kg_ingest_fmea_workflow \\
+      --schema src/dackar/knowledge_graph/schemas/fmeaSchema.toml \\
+      --schema src/dackar/knowledge_graph/schemas/mbseSchema.toml \\
       --neo4j-uri bolt://localhost:7687 \\
       --neo4j-user neo4j --neo4j-pass secret \\
       fmea_pump.xlsx fmea_valve.xlsx
@@ -54,30 +54,32 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 # ---------------------------------------------------------------------------
-# Resolve imports whether run as a script or imported as a module.
+# Resolve imports whether run as a module or directly as a script.
+# Intended invocation: ``python -m dackar.knowledge_graph.kg_ingest_fmea_workflow``.
+# The sibling-import fallback supports running this file directly from within
+# the ``knowledge_graph/`` directory.
 # ---------------------------------------------------------------------------
 try:
-    from kg_schema_builder_workflow import (
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
         GraphBatch,
         apply_schema_constraints,
         ingest_graph_toml,
         load_and_merge_schemas,
     )
-    from py2neo_workflow import Py2Neo
-except ModuleNotFoundError:
-    # Installed / pytest path
-    from dackar.RCA.kg.kg_schema_builder_workflow import (  # type: ignore
+    from dackar.knowledge_graph.py2neo import Py2Neo
+except ModuleNotFoundError:  # pragma: no cover - bare-script fallback
+    from kg_schema_builder_workflow import (  # type: ignore
         GraphBatch,
         apply_schema_constraints,
         ingest_graph_toml,
         load_and_merge_schemas,
     )
-    from dackar.RCA.kg.py2neo_workflow import Py2Neo  # type: ignore
+    from py2neo import Py2Neo  # type: ignore
 
 try:
-    from doc_parsers.fmeaParser import parse_fmea_files
-except ModuleNotFoundError:
-    from dackar.RCA.doc_parsers.fmeaParser import parse_fmea_files  # type: ignore
+    from dackar.RCA.doc_parsers.fmeaParser import parse_fmea_files
+except ModuleNotFoundError:  # pragma: no cover - bare-script fallback
+    from doc_parsers.fmeaParser import parse_fmea_files  # type: ignore
 
 LOGGER = logging.getLogger(__name__)
 if not LOGGER.handlers:
