@@ -62,6 +62,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Un
 try:
     from dackar.knowledge_graph.kg_schema_builder_workflow import (
         GraphBatch,
+        _prefix,
         apply_schema_constraints,
         ingest_graph_toml,
         load_and_merge_schemas,
@@ -70,6 +71,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - bare-script fallback
     from kg_schema_builder_workflow import (  # type: ignore
         GraphBatch,
+        _prefix,
         apply_schema_constraints,
         ingest_graph_toml,
         load_and_merge_schemas,
@@ -225,12 +227,19 @@ def build_fmea_graph(
         source_ref = rec.get("fmea_source_ref") or "unknown_fmea"
         sheet = rec.get("_sheet") or ""
         component_type = rec.get("component_type") or ""
-        fm_id = rec.get("failure_mode_id") or ""
+        raw_fm_id = rec.get("failure_mode_id") or ""
         fm_name = rec.get("failure_mode_name") or ""
 
-        if not fm_id or not fm_name:
+        if not raw_fm_id or not fm_name:
             LOGGER.debug("Skipping record with missing failure_mode_id / name: %s", rec)
             continue
+
+        # Namespace the failure-mode node id as ``FM:<id>`` to match the RCA
+        # workflow builder (``kg_schema_builder_workflow._prefix(..., "FM")``),
+        # so a failure mode referenced from an RCA case and its FMEA-catalog
+        # definition resolve to the SAME node instead of two unmergeable ones
+        # (MR#48 review).  The raw id is retained as the ``fm_id`` property.
+        fm_id = _prefix(raw_fm_id, "FM") or ""
 
         # ── fmea_case node ────────────────────────────────────────────────
         case_key = f"{source_ref}::{sheet}" if sheet else source_ref
@@ -257,7 +266,7 @@ def build_fmea_graph(
             fm_id,
             "failure_mode",
             {
-                "fm_id": fm_id,
+                "fm_id": raw_fm_id,
                 "name": fm_name,
                 "description": rec.get("local_effect") or fm_name,
                 "failure_mechanism": rec.get("failure_mechanism") or None,
