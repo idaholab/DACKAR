@@ -15,9 +15,35 @@ Created on March, 2025
 # Use ":config initialNodeDisplay: 1000" to set the limit of nodes for display in Neo4j Browser
 
 
+import re
 from neo4j import GraphDatabase
 import logging
 logger = logging.getLogger(__name__)
+
+_SAFE_TOKEN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_token(value, kind):
+    """Validate that *value* is a safe Neo4j identifier (label or relationship type).
+
+    Used by the schema-governed batch-ingestion helpers (``upsert_nodes_batch`` /
+    ``upsert_edges_batch``) to guard against Cypher injection through interpolated
+    labels / relationship types.
+
+    Args:
+        value (str): identifier string to validate.
+        kind (str): human-readable descriptor used in the error message (e.g. "label").
+
+    Returns:
+        str: the original *value* unchanged if it passes validation.
+
+    Raises:
+        ValueError: if *value* is not a string or does not match ``[A-Za-z_][A-Za-z0-9_]*``.
+    """
+    if not isinstance(value, str) or not _SAFE_TOKEN_RE.match(value):
+        raise ValueError(f"Invalid Neo4j {kind}: {value!r}")
+    return value
+
 
 class Py2Neo:
 
@@ -254,23 +280,31 @@ class Py2Neo:
         """
 
         assert self.__driver is not None, "Driver not initialized!"
-        session = None
-        response = None
+        # ``parameters or {}`` is passed positionally (not ``**parameters``) so that
+        # param-less DDL / schema queries work; exceptions propagate to the caller
+        # instead of being swallowed to ``None``.
+        with self.__driver.session(database=db) if db is not None else self.__driver.session() as session:
+            return list(session.run(query, parameters or {}))
 
-        try:
-            session = self.__driver.session(database=db) if db is not None else self.__driver.session()
-            response = list(session.run(query, **parameters))
-        except Exception as e:
-            logger.error("Query failed:", e)
-        finally:
-            if session is not None:
-                session.close()
-        return response
+    def write(self, query, parameters=None, db=None):
+        """Execute a write Cypher query inside a managed (auto-committing) transaction.
 
-    def reset(self):
-        """Reset the database, delete all records, use it with care
+        Args:
+            query (str): Cypher write query string.
+            parameters (dict, optional): parameter map bound into the query. Defaults to None.
+            db (str, optional): target database name; uses the driver default when None. Defaults to None.
         """
-        with self.__driver.session() as session:
+        assert self.__driver is not None, "Driver not initialized!"
+        with self.__driver.session(database=db) if db is not None else self.__driver.session() as session:
+            session.execute_write(lambda tx: tx.run(query, parameters or {}))
+
+    def reset(self, db=None):
+        """Reset the database, delete all records, use it with care
+
+        Args:
+            db (str, optional): target database name; uses the driver default when None. Defaults to None.
+        """
+        with self.__driver.session(database=db) if db is not None else self.__driver.session() as session:
             session.execute_write(self._reset)
 
     @staticmethod
@@ -278,13 +312,16 @@ class Py2Neo:
         query = 'MATCH (n) DETACH DELETE n;'
         tx.run(query)
 
-    def get_all(self):
+    def get_all(self, db=None):
         """Get all records from database
+
+        Args:
+            db (str, optional): target database name; uses the driver default when None. Defaults to None.
 
         Returns:
             list: list of all records
         """
-        with self.__driver.session() as session:
+        with self.__driver.session(database=db) if db is not None else self.__driver.session() as session:
             result = session.execute_write(self._get_all)
             return result
 
@@ -294,6 +331,67 @@ class Py2Neo:
         result = list(tx.run(query))
         # result = [record.values() for record in result]
         return result
+
+    def upsert_nodes_batch(self, nodes, db=None):
+        """Batch-upsert a collection of nodes, grouped by label.
+
+        Nodes are merged on their ``id`` attribute so that repeated calls are
+        idempotent. Each dict in *nodes* must have ``"label"`` and ``"attrs"``
+        keys; ``attrs`` must contain ``"id"``. Used by the schema-governed KG
+        batch-ingestion workflows.
+
+        Args:
+            nodes (Sequence[dict]): sequence of ``{"label": str, "attrs": dict}`` dicts.
+            db (str, optional): target database name; uses the driver default when None. Defaults to None.
+        """
+        grouped = {}
+        for node in nodes:
+            label = _safe_token(node["label"], "label")
+            grouped.setdefault(label, []).append(node["attrs"])
+
+        for label, rows in grouped.items():
+            query = (
+                f"UNWIND $rows AS row "
+                f"MERGE (n:`{label}` {{id: row.id}}) "
+                f"SET n += row"
+            )
+            self.write(query, {"rows": rows}, db=db)
+
+    def upsert_edges_batch(self, edges, db=None):
+        """Batch-upsert a collection of relationships, grouped by endpoint labels and type.
+
+        Each dict in *edges* must contain ``"from_label"``, ``"to_label"``,
+        ``"type"``, ``"from"`` (source node id), ``"to"`` (target node id),
+        and an optional ``"attrs"`` dict for relationship properties. Endpoints
+        are matched on their ``id`` attribute. Used by the schema-governed KG
+        batch-ingestion workflows.
+
+        Args:
+            edges (Sequence[dict]): sequence of edge descriptor dicts.
+            db (str, optional): target database name; uses the driver default when None. Defaults to None.
+        """
+        grouped = {}
+        for edge in edges:
+            key = (
+                _safe_token(edge["from_label"], "label"),
+                _safe_token(edge["to_label"], "label"),
+                _safe_token(edge["type"], "relationship type"),
+            )
+            grouped.setdefault(key, []).append(edge)
+
+        for (src_label, dst_label, rel_type), rows in grouped.items():
+            query = (
+                "UNWIND $rows AS row "
+                f"MATCH (a:`{src_label}` {{id: row.from_id}}) "
+                f"MATCH (b:`{dst_label}` {{id: row.to_id}}) "
+                f"MERGE (a)-[r:`{rel_type}`]->(b) "
+                "SET r += row.attrs"
+            )
+            payload = [
+                {"from_id": r["from"], "to_id": r["to"], "attrs": r.get("attrs", {})}
+                for r in rows
+            ]
+            self.write(query, {"rows": payload}, db=db)
 
     def load_dataframe_for_nodes(self, df, labels, properties):
         """Load pandas dataframe to create nodes
