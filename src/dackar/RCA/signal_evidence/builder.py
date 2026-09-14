@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import mean, stdev
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import uuid4
 
 from orchestrators.temporal_relations import (
@@ -13,6 +13,7 @@ from orchestrators.temporal_relations import (
     onset_lag_hours,
 )
 
+from ._util import clamp01, parse_dt as _parse_dt
 from .historian_adapter import HistorianAdapter, NullHistorianAdapter
 from .models import AnomalyRecord, NodeTopology, PropagationEdge, ScoredChain
 from .topology import is_upstream, resolve_edge_type
@@ -28,22 +29,24 @@ UPSTREAM_RELATIONS = {PRECEDES, OVERLAPS}
 _MIN_INITIATOR_LAG_HOURS = 0.5
 _COTEMPORAL_INITIATOR_FACTOR = 0.6
 
-
-def _parse_dt(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except Exception:
-        return None
+# Propagation edge weighting (MR#49 review, comment #7). allen_relation's
+# RELATION_SCORE is calibrated for anomaly-vs-EVENT relevance, where an OVERLAPS
+# (degradation still active at event onset) scores 0.90 and a PRECEDES (clean
+# lead) 0.75. Reused verbatim as an anomaly->anomaly PROPAGATION edge weight it
+# inverts the causal-lead intuition — a co-temporal OVERLAPS edge would outrank
+# a clean causal lead — and contradicts the P-5 logic above that deliberately
+# discounts co-temporal initiators. For propagation we give a demonstrated lead
+# and a co-temporal overlap the same admissible base, then discount the
+# co-temporal case (an OVERLAPS edge, or a PRECEDES lead below the initiator
+# threshold) by the same factor P-5 applies to roots — so a clean PRECEDES lead
+# is always weighted at least as high as an OVERLAPS edge. The raw event score
+# is retained on the edge as ``allen_score`` for provenance.
+_PROP_RELATION_WEIGHT: Dict[str, float] = {PRECEDES: 0.90, OVERLAPS: 0.90}
+_COTEMPORAL_EDGE_FACTOR = _COTEMPORAL_INITIATOR_FACTOR
 
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def clamp01(x: float) -> float:
-    return max(0.0, min(1.0, float(x)))
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -161,6 +164,28 @@ def _build_propagation_dag(
 ) -> Tuple[List[PropagationEdge], List[dict]]:
     edges: List[PropagationEdge] = []
     warnings: List[dict] = []
+
+    # Memoize graph reachability / edge-type by ordered component pair. Many
+    # anomalies share a component, and each (i, j) pair queries is_upstream up
+    # to twice plus resolve_edge_type; without caching the same
+    # (component_a, component_b) reachability is re-queried across the (i, j)
+    # and (j, i) passes — O(n^2) Neo4j round-trips for a busy window (MR#49
+    # review). The caches live for one DAG build (topology is stable per run).
+    upstream_cache: Dict[Tuple[str, str], bool] = {}
+    edge_type_cache: Dict[Tuple[str, str], str] = {}
+
+    def _is_upstream(src: str, dst: str) -> bool:
+        key = (src, dst)
+        if key not in upstream_cache:
+            upstream_cache[key] = is_upstream(src, dst, neo4j_client, database=database)
+        return upstream_cache[key]
+
+    def _edge_type(src: str, dst: str) -> str:
+        key = (src, dst)
+        if key not in edge_type_cache:
+            edge_type_cache[key] = resolve_edge_type(src, dst, neo4j_client, database=database)
+        return edge_type_cache[key]
+
     for i, a in enumerate(anomalies):
         for j, b in enumerate(anomalies):
             if i == j or a.component_id is None or b.component_id is None:
@@ -168,8 +193,8 @@ def _build_propagation_dag(
             rel, base_score = allen_relation(a.to_interval(), b.to_interval())
             if rel not in UPSTREAM_RELATIONS:
                 continue
-            if is_upstream(b.component_id, a.component_id, neo4j_client, database=database):
-                if is_upstream(a.component_id, b.component_id, neo4j_client, database=database):
+            if _is_upstream(b.component_id, a.component_id):
+                if _is_upstream(a.component_id, b.component_id):
                     warnings.append(
                         {
                             "type": "topology_cycle",
@@ -181,16 +206,27 @@ def _build_propagation_dag(
                         }
                     )
                 continue
-            if is_upstream(a.component_id, b.component_id, neo4j_client, database=database):
-                edge_type = resolve_edge_type(a.component_id, b.component_id, neo4j_client, database=database)
+            if _is_upstream(a.component_id, b.component_id):
+                edge_type = _edge_type(a.component_id, b.component_id)
+                onset_lag = onset_lag_hours(a.to_interval(), b.to_interval())
+                # Propagation weight (comment #7): a demonstrated causal lead is
+                # weighted at least as high as a co-temporal overlap. Discount
+                # the co-temporal case — an OVERLAPS edge, or a PRECEDES lead
+                # below the initiator threshold — so it can never outrank a
+                # clean lead (the raw event-calibrated score would do the
+                # opposite). allen_score keeps the raw prior for provenance.
+                prop_weight = _PROP_RELATION_WEIGHT.get(rel, base_score)
+                if rel == OVERLAPS or abs(onset_lag) < _MIN_INITIATOR_LAG_HOURS:
+                    prop_weight *= _COTEMPORAL_EDGE_FACTOR
                 edges.append(
                     PropagationEdge(
                         from_idx=i,
                         to_idx=j,
                         allen_rel=rel,
                         allen_score=base_score,
+                        prop_score=clamp01(prop_weight),
                         edge_type=edge_type,
-                        onset_lag_h=onset_lag_hours(a.to_interval(), b.to_interval()),
+                        onset_lag_h=onset_lag,
                     )
                 )
     return edges, warnings
@@ -269,26 +305,35 @@ def _find_maximal_paths(
             all_paths.append(list(path))
             return
         extended = False
+        truncated_components: List[str] = []
         for child in children:
             child_component = anomalies[child].component_id
             if child_component and child_component in visited_components:
-                all_paths.append(list(path))
-                chain_warnings.append(
-                    {
-                        "type": "feedback_cascade_truncated",
-                        "components": list(visited_components) + [child_component],
-                        "message": (
-                            f"Path terminated before revisiting component {child_component}; "
-                            "feedback cascade loop patterns are flagged, not modelled."
-                        ),
-                    }
-                )
-                extended = True
+                # Revisiting an already-seen component would close a feedback
+                # loop, which we flag rather than model. Collect every such
+                # child and emit ONE truncated path + ONE warning after the
+                # loop; appending per revisit-child produced identical
+                # duplicate chains (each with its own uuid4, so never deduped)
+                # that inflated propagation_chains (MR#49 review).
+                truncated_components.append(child_component)
                 continue
             new_visited = visited_components | ({child_component} if child_component else set())
             dfs(child, path + [child], new_visited)
             extended = True
-        if not extended:
+        if truncated_components:
+            all_paths.append(list(path))
+            chain_warnings.append(
+                {
+                    "type": "feedback_cascade_truncated",
+                    "components": list(visited_components) + truncated_components,
+                    "message": (
+                        "Path terminated before revisiting component(s) "
+                        f"{', '.join(sorted(set(truncated_components)))}; "
+                        "feedback cascade loop patterns are flagged, not modelled."
+                    ),
+                }
+            )
+        elif not extended:
             all_paths.append(list(path))
 
     for root in roots:
@@ -315,6 +360,7 @@ def _build_node_object(
         "allen_relation_to_next": edge.allen_rel if edge else None,
         "onset_lag_to_next_h": edge.onset_lag_h if edge else None,
         "edge_type_to_next": edge.edge_type if edge else None,
+        "propagation_weight_to_next": edge.prop_score if edge else None,
         "node_pattern_type": (node_topology.get(idx).pattern_type if node_topology.get(idx) else "linear"),
     }
 
@@ -332,6 +378,9 @@ def _score_chain(
         if (path[i], path[i + 1]) in edge_lookup
     ]
     mean_allen = mean(e.allen_score for e in path_edges) if path_edges else 0.0
+    # path_score is driven by the propagation-calibrated weight (comment #7),
+    # not the raw event-calibrated allen prior; mean_allen is kept for provenance.
+    mean_prop = mean(e.prop_score for e in path_edges) if path_edges else 0.0
     edge_types = {e.edge_type for e in path_edges}
     if edge_types == {"containment"}:
         topo_factor = 1.0
@@ -356,7 +405,7 @@ def _score_chain(
     else:
         hub_boost = 0.0
 
-    path_score = clamp01(mean_allen * topo_factor * lag_factor + hub_boost)
+    path_score = clamp01(mean_prop * topo_factor * lag_factor + hub_boost)
     nodes = []
     for i, idx in enumerate(path):
         next_idx = path[i + 1] if i + 1 < len(path) else None
@@ -369,6 +418,7 @@ def _score_chain(
         topology_alignment_factor=topo_factor,
         lag_consistency_factor=lag_factor,
         mean_allen_score=mean_allen,
+        mean_propagation_score=mean_prop,
         hub_boost=hub_boost,
         root_pattern_type=root_pattern,
         nodes=nodes,
@@ -462,6 +512,48 @@ def build_signal_evidence(
     max_paths: int = 20,
     max_chains: int = 10,
 ) -> JsonDict:
+    """Build the Stage B.5 signal-evidence bundle for one RCA run.
+
+    Merges baseline telemetry anomalies with historian-fetched anomalies,
+    builds a component-level propagation DAG from Allen temporal relations and
+    KG reachability, classifies node topology, enumerates and scores
+    propagation chains, and derives per-failure-mode chain-position scores.
+
+    Args:
+        run_id: Identifier for this analysis run; echoed into the bundle.
+        event: Triggering event; ``timestamp_start`` / ``timestamp`` and
+            ``timestamp_end`` seed the analysis window.
+        telemetry_summary: Stage-B summary whose ``signals[].anomalies`` supply
+            the baseline anomaly set.
+        kg_context: KG context providing ``components[].monitored_variable_ids``
+            (the sensor↔component map) and ``failure_modes``.
+        neo4j_client: Optional live graph client. When ``None`` (the default),
+            ``is_upstream`` degrades to ``False`` and ``resolve_edge_type`` to
+            ``"mixed"``, so no propagation edges are built and the DAG, all
+            propagation chains, and per-candidate scores come back empty; a
+            ``{"type": "topology_unavailable"}`` entry is added to
+            ``chain_warnings`` so consumers can tell this apart from
+            "analyzed, no propagation found".
+        neo4j_database: Target Neo4j database; ``None`` uses the driver default.
+        historian_adapter: Anomaly source; defaults to
+            :class:`~.historian_adapter.NullHistorianAdapter` (records a gap
+            per sensor and returns no anomalies).
+        fetch_lookback_hours: Hours before the event to widen the window
+            (raised to the largest failure-mode ``expected_latency_max_hours``
+            when that is greater).
+        fetch_lookahead_hours: Hours after the event to widen the window.
+        dedup_tolerance_min: Minutes within which a historian anomaly is
+            treated as a duplicate of a same-sensor baseline anomaly.
+        max_paths: Cap on enumerated propagation paths (DFS guard).
+        max_chains: Cap on scored chains retained in the bundle.
+
+    Returns:
+        A JSON-serializable dict with keys: ``run_id``, ``generated_at``,
+        ``augmented_anomaly_set``, ``propagation_chains`` (scored, ranked),
+        ``per_candidate_chain_score``, ``dag_topology_summary``,
+        ``chain_coverage``, ``augmented_anomaly_count``,
+        ``historian_anomaly_count``, ``fetch_gaps`` and ``chain_warnings``.
+    """
     historian = historian_adapter or NullHistorianAdapter()
     sensor_to_component, component_to_sensors = _component_sensor_map(kg_context)
     fetch_gaps: List[dict] = []
@@ -489,6 +581,21 @@ def build_signal_evidence(
     fetch_gaps.extend(historian_gaps)
     merged = _merge_anomalies(baseline, historian_rows, dedup_tolerance_min=dedup_tolerance_min)
     edges, chain_warnings = _build_propagation_dag(merged, neo4j_client, neo4j_database)
+    if neo4j_client is None:
+        # No graph client → reachability was never consulted, so the empty DAG
+        # (and every chain / per-candidate score derived from it) reflects a
+        # skipped step, not "analyzed, no propagation". Signal it explicitly,
+        # mirroring how historian outages are recorded in fetch_gaps (MR#49
+        # review).
+        chain_warnings.append(
+            {
+                "type": "topology_unavailable",
+                "message": (
+                    "No Neo4j client supplied; component reachability was not "
+                    "consulted, so no propagation edges were built."
+                ),
+            }
+        )
     node_topology = _classify_nodes(merged, edges)
     paths = _find_maximal_paths(merged, edges, max_paths=max_paths, chain_warnings=chain_warnings)
     chains = [_score_chain(p, merged, edges, node_topology) for p in paths if len(p) >= 2]
@@ -539,6 +646,7 @@ def build_signal_evidence(
                 "topology_alignment_factor": round(c.topology_alignment_factor, 6),
                 "lag_consistency_factor": round(c.lag_consistency_factor, 6),
                 "mean_allen_score": round(c.mean_allen_score, 6),
+                "mean_propagation_score": round(c.mean_propagation_score, 6),
                 "nodes": c.nodes,
             }
             for c in chains
