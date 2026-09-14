@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from dackar.knowledge_graph.py2neo import Py2Neo
+from dackar.knowledge_graph.py2neo import Py2Neo, _safe_token
 
 LOGGER = logging.getLogger(__name__)
 
@@ -277,13 +277,21 @@ def generate_ddl_from_schema(schema: Dict[str, Any]) -> List[str]:
 
     Returns:
         List of Cypher DDL strings ready to be executed against Neo4j.
+
+    Raises:
+        ValueError: If a node label or indexed-property name is not a safe
+            Neo4j identifier (see :func:`dackar.knowledge_graph.py2neo._safe_token`).
     """
     ddl: List[str] = []
     for label, spec in (schema.get("node") or {}).items():
-        ddl.append(f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE")
+        # Validate + backtick-quote interpolated identifiers to guard against
+        # Cypher injection through schema-supplied labels / property names.
+        safe_label = _safe_token(label, "label")
+        ddl.append(f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:`{safe_label}`) REQUIRE n.id IS UNIQUE")
         for prop in _schema_props(spec):
             if prop.get("indexed"):
-                ddl.append(f"CREATE INDEX IF NOT EXISTS FOR (n:{label}) ON (n.{prop['name']})")
+                safe_prop = _safe_token(prop["name"], "property name")
+                ddl.append(f"CREATE INDEX IF NOT EXISTS FOR (n:`{safe_label}`) ON (n.`{safe_prop}`)")
     return ddl
 
 
@@ -431,8 +439,11 @@ def _prefix(value: Optional[str], prefix: str) -> Optional[str]:
     ``FM:loss of lubrication``.  Casing is preserved so that structured IDs
     (e.g. ``CMP-001``) are not altered.
 
-    Already-namespaced strings (containing ``":"``) are returned unchanged to
-    avoid double-prefixing.
+    Strings already namespaced with *this* prefix (``"<prefix>:..."``) are
+    returned unchanged to avoid double-prefixing.  A colon appearing elsewhere
+    in the value (e.g. a time ``"12:30"`` or an ``OPCTX``/``PM`` context value)
+    no longer suppresses namespacing, so distinct raw values can no longer
+    collide onto the same un-prefixed id.
 
     Args:
         value: Raw identifier string (e.g. ``"pump-101"`` or ``"loss of lubrication"``).
@@ -447,7 +458,7 @@ def _prefix(value: Optional[str], prefix: str) -> Optional[str]:
     value = str(value).strip()
     if not value:
         return None
-    if ":" in value:
+    if value.startswith(prefix + ":"):
         return value
     # Collapse internal whitespace to underscores (Cypher-safe, casing preserved).
     value = "_".join(value.split())
@@ -622,15 +633,20 @@ def build_graph_from_workflow_artifacts(
         # intentionally pass no schema_paths still work.
         _resolve = resolve_node_label
 
+    # ``event`` and ``processed_text_record`` are not (yet) declared as node
+    # labels in any shipped schema TOML, so they are resolved leniently
+    # (falling back to the literal label) even when a schema is loaded — using
+    # the strict resolver here would raise KeyError on every real ingest.
+    # All other labels remain strict so genuine schema/TOML mismatches surface.
     labels = {
         "asset": _resolve(schema, "element_usage", "asset"),
         "component": _resolve(schema, "element_usage", "component"),
         "failure_mode": _resolve(schema, "failure_mode"),
         "document": _resolve(schema, "Document", "document"),
-        "processed_text_record": _resolve(schema, "ProcessedTextRecord", "processed_text_record"),
+        "processed_text_record": resolve_node_label(schema, "ProcessedTextRecord", "processed_text_record"),
         "condition_report": _resolve(schema, "condition_report"),
         "work_order": _resolve(schema, "work_order"),
-        "event": _resolve(schema, "abnormal_event", "event"),
+        "event": resolve_node_label(schema, "abnormal_event", "event"),
         "rca_case": _resolve(schema, "rca_case"),
         "causal_factor": _resolve(schema, "causal_factor", "candidate_hypothesis"),
     }
