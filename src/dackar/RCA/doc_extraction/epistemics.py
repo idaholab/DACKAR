@@ -16,6 +16,7 @@ No scoring changes are made in Phase A.  The annotation fields are carried
 through the pipeline for audit and for Phase C consumption.
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
@@ -25,6 +26,8 @@ from .schema import (
     EpistemicClass,
     FindingStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Routing tables — the authoritative source for doc_type → epistemic_class
@@ -108,11 +111,6 @@ class EpistemicsRoutingConfig:
 
     # doc_type → epistemic_class overrides (allows plant-specific additions)
     doc_type_overrides: Dict[str, str] = field(default_factory=dict)
-
-    # When True, fall through to doc_type routing even when finding_status is
-    # present but not recognized.  When False (default), unrecognized
-    # finding_status values are treated as absent, proceeding to authority_level.
-    strict_finding_status: bool = False
 
 
 class EpistemicClassifier:
@@ -307,7 +305,10 @@ def build_epistemics_manifest_summary(
         summary["degraded_classification_by_doc_type"] = degraded_by_type
         summary["degraded_classification_total"] = degraded_total
 
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "build_epistemics_manifest_summary: failed to aggregate cross_pattern_evidence "
+            "links (%s); returning partial summary.", exc
+        )
 
     return summary
