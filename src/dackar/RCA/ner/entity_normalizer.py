@@ -38,10 +38,9 @@ def tokenize(text: str) -> set:
 
 
 def _jaccard(a: set, b: set) -> float:
-    if not a and not b:
-        return 1.0
     union = a | b
     if not union:
+        # both sides empty (e.g. a surface form that tokenizes to nothing): no match
         return 0.0
     return len(a & b) / len(union)
 
@@ -192,7 +191,11 @@ Instruction:
         if not resp:
             return None
 
-        chosen_id = (resp.get("id") or "").strip()
+        try:
+            chosen_id = (resp.get("id") or "").strip()
+        except AttributeError:
+            # malformed id from the LLM (e.g. a non-string); treat as no match
+            return None
         if not chosen_id or chosen_id == "NO_MATCH":
             return None
 
@@ -201,7 +204,11 @@ Instruction:
         if not entry:
             return None
 
-        conf = float(resp.get("confidence", 0.5))
+        try:
+            conf = float(resp.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            # malformed confidence; keep the valid id match with a neutral default
+            conf = 0.5
         return NormResult(
             surface_form=surface_form,
             canonical_id=entry["fm_id"],
