@@ -97,11 +97,43 @@
 <span class="c1"># Use ":config initialNodeDisplay: 1000" to set the limit of nodes for display in Neo4j Browser</span>
 
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">neo4j</span><span class="w"> </span><span class="kn">import</span> <span class="n">GraphDatabase</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <div class="viewcode-block" id="logger">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.logger">[docs]</a>
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_SAFE_TOKEN_RE">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo._SAFE_TOKEN_RE">[docs]</a>
+<span class="n">_SAFE_TOKEN_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^[A-Za-z_][A-Za-z0-9_]*$"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_safe_token">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo._safe_token">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_safe_token</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">kind</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Validate that *value* is a safe Neo4j identifier (label or relationship type).</span>
+
+<span class="sd">    Used by the schema-governed batch-ingestion helpers (``upsert_nodes_batch`` /</span>
+<span class="sd">    ``upsert_edges_batch``) to guard against Cypher injection through interpolated</span>
+<span class="sd">    labels / relationship types.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        value (str): identifier string to validate.</span>
+<span class="sd">        kind (str): human-readable descriptor used in the error message (e.g. "label").</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        str: the original *value* unchanged if it passes validation.</span>
+
+<span class="sd">    Raises:</span>
+<span class="sd">        ValueError: if *value* is not a string or does not match ``[A-Za-z_][A-Za-z0-9_]*``.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">_SAFE_TOKEN_RE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Invalid Neo4j </span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">!r}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">value</span></div>
+
 
 
 <div class="viewcode-block" id="Py2Neo">
@@ -391,26 +423,37 @@
 <span class="sd">        """</span>
 
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"Driver not initialized!"</span>
-        <span class="n">session</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="n">response</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="c1"># ``parameters or {}`` is passed positionally (not ``**parameters``) so that</span>
+        <span class="c1"># param-less DDL / schema queries work; exceptions propagate to the caller</span>
+        <span class="c1"># instead of being swallowed to ``None``.</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">(</span><span class="n">database</span><span class="o">=</span><span class="n">db</span><span class="p">)</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">parameters</span> <span class="ow">or</span> <span class="p">{}))</span></div>
 
-        <span class="k">try</span><span class="p">:</span>
-            <span class="n">session</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">(</span><span class="n">database</span><span class="o">=</span><span class="n">db</span><span class="p">)</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span>
-            <span class="n">response</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">session</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="o">**</span><span class="n">parameters</span><span class="p">))</span>
-        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"Query failed:"</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
-        <span class="k">finally</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">session</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-        <span class="k">return</span> <span class="n">response</span></div>
+
+<div class="viewcode-block" id="Py2Neo.write">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.Py2Neo.write">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">parameters</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">db</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Execute a write Cypher query inside a managed (auto-committing) transaction.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query (str): Cypher write query string.</span>
+<span class="sd">            parameters (dict, optional): parameter map bound into the query. Defaults to None.</span>
+<span class="sd">            db (str, optional): target database name; uses the driver default when None. Defaults to None.</span>
+<span class="sd">        """</span>
+        <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">"Driver not initialized!"</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">(</span><span class="n">database</span><span class="o">=</span><span class="n">db</span><span class="p">)</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+            <span class="n">session</span><span class="o">.</span><span class="n">execute_write</span><span class="p">(</span><span class="k">lambda</span> <span class="n">tx</span><span class="p">:</span> <span class="n">tx</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">parameters</span> <span class="ow">or</span> <span class="p">{}))</span></div>
 
 
 <div class="viewcode-block" id="Py2Neo.reset">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.Py2Neo.reset">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">"""Reset the database, delete all records, use it with care</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            db (str, optional): target database name; uses the driver default when None. Defaults to None.</span>
 <span class="sd">        """</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">(</span><span class="n">database</span><span class="o">=</span><span class="n">db</span><span class="p">)</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
             <span class="n">session</span><span class="o">.</span><span class="n">execute_write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_reset</span><span class="p">)</span></div>
 
 
@@ -424,13 +467,16 @@
 
 <div class="viewcode-block" id="Py2Neo.get_all">
 <a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.Py2Neo.get_all">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_all</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_all</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">"""Get all records from database</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            db (str, optional): target database name; uses the driver default when None. Defaults to None.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            list: list of all records</span>
 <span class="sd">        """</span>
-        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">(</span><span class="n">database</span><span class="o">=</span><span class="n">db</span><span class="p">)</span> <span class="k">if</span> <span class="n">db</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">__driver</span><span class="o">.</span><span class="n">session</span><span class="p">()</span> <span class="k">as</span> <span class="n">session</span><span class="p">:</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">execute_write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_all</span><span class="p">)</span>
             <span class="k">return</span> <span class="n">result</span></div>
 
@@ -443,6 +489,73 @@
         <span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">tx</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">query</span><span class="p">))</span>
         <span class="c1"># result = [record.values() for record in result]</span>
         <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="Py2Neo.upsert_nodes_batch">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.Py2Neo.upsert_nodes_batch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert_nodes_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nodes</span><span class="p">,</span> <span class="n">db</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Batch-upsert a collection of nodes, grouped by label.</span>
+
+<span class="sd">        Nodes are merged on their ``id`` attribute so that repeated calls are</span>
+<span class="sd">        idempotent. Each dict in *nodes* must have ``"label"`` and ``"attrs"``</span>
+<span class="sd">        keys; ``attrs`` must contain ``"id"``. Used by the schema-governed KG</span>
+<span class="sd">        batch-ingestion workflows.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            nodes (Sequence[dict]): sequence of ``{"label": str, "attrs": dict}`` dicts.</span>
+<span class="sd">            db (str, optional): target database name; uses the driver default when None. Defaults to None.</span>
+<span class="sd">        """</span>
+        <span class="n">grouped</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">nodes</span><span class="p">:</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="n">_safe_token</span><span class="p">(</span><span class="n">node</span><span class="p">[</span><span class="s2">"label"</span><span class="p">],</span> <span class="s2">"label"</span><span class="p">)</span>
+            <span class="n">grouped</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">label</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">[</span><span class="s2">"attrs"</span><span class="p">])</span>
+
+        <span class="k">for</span> <span class="n">label</span><span class="p">,</span> <span class="n">rows</span> <span class="ow">in</span> <span class="n">grouped</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"UNWIND $rows AS row "</span>
+                <span class="sa">f</span><span class="s2">"MERGE (n:`</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: row.id</span><span class="se">}}</span><span class="s2">) "</span>
+                <span class="sa">f</span><span class="s2">"SET n += row"</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">{</span><span class="s2">"rows"</span><span class="p">:</span> <span class="n">rows</span><span class="p">},</span> <span class="n">db</span><span class="o">=</span><span class="n">db</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Py2Neo.upsert_edges_batch">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/py2neo/index.html#src.dackar.knowledge_graph.py2neo.Py2Neo.upsert_edges_batch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert_edges_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">db</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Batch-upsert a collection of relationships, grouped by endpoint labels and type.</span>
+
+<span class="sd">        Each dict in *edges* must contain ``"from_label"``, ``"to_label"``,</span>
+<span class="sd">        ``"type"``, ``"from"`` (source node id), ``"to"`` (target node id),</span>
+<span class="sd">        and an optional ``"attrs"`` dict for relationship properties. Endpoints</span>
+<span class="sd">        are matched on their ``id`` attribute. Used by the schema-governed KG</span>
+<span class="sd">        batch-ingestion workflows.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            edges (Sequence[dict]): sequence of edge descriptor dicts.</span>
+<span class="sd">            db (str, optional): target database name; uses the driver default when None. Defaults to None.</span>
+<span class="sd">        """</span>
+        <span class="n">grouped</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">edge</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">:</span>
+            <span class="n">key</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">_safe_token</span><span class="p">(</span><span class="n">edge</span><span class="p">[</span><span class="s2">"from_label"</span><span class="p">],</span> <span class="s2">"label"</span><span class="p">),</span>
+                <span class="n">_safe_token</span><span class="p">(</span><span class="n">edge</span><span class="p">[</span><span class="s2">"to_label"</span><span class="p">],</span> <span class="s2">"label"</span><span class="p">),</span>
+                <span class="n">_safe_token</span><span class="p">(</span><span class="n">edge</span><span class="p">[</span><span class="s2">"type"</span><span class="p">],</span> <span class="s2">"relationship type"</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">grouped</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">edge</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="p">(</span><span class="n">src_label</span><span class="p">,</span> <span class="n">dst_label</span><span class="p">,</span> <span class="n">rel_type</span><span class="p">),</span> <span class="n">rows</span> <span class="ow">in</span> <span class="n">grouped</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"UNWIND $rows AS row "</span>
+                <span class="sa">f</span><span class="s2">"MATCH (a:`</span><span class="si">{</span><span class="n">src_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: row.from_id</span><span class="se">}}</span><span class="s2">) "</span>
+                <span class="sa">f</span><span class="s2">"MATCH (b:`</span><span class="si">{</span><span class="n">dst_label</span><span class="si">}</span><span class="s2">` </span><span class="se">{{</span><span class="s2">id: row.to_id</span><span class="se">}}</span><span class="s2">) "</span>
+                <span class="sa">f</span><span class="s2">"MERGE (a)-[r:`</span><span class="si">{</span><span class="n">rel_type</span><span class="si">}</span><span class="s2">`]-&gt;(b) "</span>
+                <span class="s2">"SET r += row.attrs"</span>
+            <span class="p">)</span>
+            <span class="n">payload</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="p">{</span><span class="s2">"from_id"</span><span class="p">:</span> <span class="n">r</span><span class="p">[</span><span class="s2">"from"</span><span class="p">],</span> <span class="s2">"to_id"</span><span class="p">:</span> <span class="n">r</span><span class="p">[</span><span class="s2">"to"</span><span class="p">],</span> <span class="s2">"attrs"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"attrs"</span><span class="p">,</span> <span class="p">{})}</span>
+                <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span>
+            <span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="p">{</span><span class="s2">"rows"</span><span class="p">:</span> <span class="n">payload</span><span class="p">},</span> <span class="n">db</span><span class="o">=</span><span class="n">db</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Py2Neo.load_dataframe_for_nodes">

@@ -17,6 +17,7 @@ Attributes
 .. autoapisummary::
 
    src.dackar.knowledge_graph.py2neo.logger
+   src.dackar.knowledge_graph.py2neo._SAFE_TOKEN_RE
 
 
 Classes
@@ -27,10 +28,39 @@ Classes
    src.dackar.knowledge_graph.py2neo.Py2Neo
 
 
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.py2neo._safe_token
+
+
 Module Contents
 ---------------
 
 .. py:data:: logger
+
+.. py:data:: _SAFE_TOKEN_RE
+
+.. py:function:: _safe_token(value, kind)
+
+   Validate that *value* is a safe Neo4j identifier (label or relationship type).
+
+   Used by the schema-governed batch-ingestion helpers (``upsert_nodes_batch`` /
+   ``upsert_edges_batch``) to guard against Cypher injection through interpolated
+   labels / relationship types.
+
+   :param value: identifier string to validate.
+   :type value: str
+   :param kind: human-readable descriptor used in the error message (e.g. "label").
+   :type kind: str
+
+   :returns: the original *value* unchanged if it passes validation.
+   :rtype: str
+
+   :raises ValueError: if *value* is not a string or does not match ``[A-Za-z_][A-Za-z0-9_]*``.
+
 
 .. py:class:: Py2Neo(uri, user, pwd)
 
@@ -222,10 +252,25 @@ Module Contents
 
 
 
-   .. py:method:: reset()
+   .. py:method:: write(query, parameters=None, db=None)
+
+      Execute a write Cypher query inside a managed (auto-committing) transaction.
+
+      :param query: Cypher write query string.
+      :type query: str
+      :param parameters: parameter map bound into the query. Defaults to None.
+      :type parameters: dict, optional
+      :param db: target database name; uses the driver default when None. Defaults to None.
+      :type db: str, optional
+
+
+
+   .. py:method:: reset(db=None)
 
       Reset the database, delete all records, use it with care
 
+      :param db: target database name; uses the driver default when None. Defaults to None.
+      :type db: str, optional
 
 
 
@@ -234,9 +279,12 @@ Module Contents
 
 
 
-   .. py:method:: get_all()
+   .. py:method:: get_all(db=None)
 
       Get all records from database
+
+      :param db: target database name; uses the driver default when None. Defaults to None.
+      :type db: str, optional
 
       :returns: list of all records
       :rtype: list
@@ -245,6 +293,39 @@ Module Contents
 
    .. py:method:: _get_all(tx)
       :staticmethod:
+
+
+
+   .. py:method:: upsert_nodes_batch(nodes, db=None)
+
+      Batch-upsert a collection of nodes, grouped by label.
+
+      Nodes are merged on their ``id`` attribute so that repeated calls are
+      idempotent. Each dict in *nodes* must have ``"label"`` and ``"attrs"``
+      keys; ``attrs`` must contain ``"id"``. Used by the schema-governed KG
+      batch-ingestion workflows.
+
+      :param nodes: sequence of ``{"label": str, "attrs": dict}`` dicts.
+      :type nodes: Sequence[dict]
+      :param db: target database name; uses the driver default when None. Defaults to None.
+      :type db: str, optional
+
+
+
+   .. py:method:: upsert_edges_batch(edges, db=None)
+
+      Batch-upsert a collection of relationships, grouped by endpoint labels and type.
+
+      Each dict in *edges* must contain ``"from_label"``, ``"to_label"``,
+      ``"type"``, ``"from"`` (source node id), ``"to"`` (target node id),
+      and an optional ``"attrs"`` dict for relationship properties. Endpoints
+      are matched on their ``id`` attribute. Used by the schema-governed KG
+      batch-ingestion workflows.
+
+      :param edges: sequence of edge descriptor dicts.
+      :type edges: Sequence[dict]
+      :param db: target database name; uses the driver default when None. Defaults to None.
+      :type db: str, optional
 
 
 

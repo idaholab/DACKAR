@@ -1,0 +1,145 @@
+src.dackar.knowledge_graph.kg_ingest_fmea_workflow
+==================================================
+
+.. py:module:: src.dackar.knowledge_graph.kg_ingest_fmea_workflow
+
+.. autoapi-nested-parse::
+
+   kg_ingest_fmea_workflow.py
+   ─────────────────────────────────────────────────────────────────────────────
+   Ingest parsed FMEA records (output of fmeaParser.parse_fmea_file) into Neo4j.
+
+   Graph objects created per FMEA record
+   ──────────────────────────────────────
+   Nodes:
+     fmea_case         one per unique (fmea_source_ref, sheet) combination
+     failure_mode      one per record (keyed by failure_mode_id; merged if duplicate)
+     risk_assessment   one per record when at least one of severity/occurrence/detection
+                       is present
+     effect            one per record when local_effect text is present
+
+   Edges:
+     fmea_case    -[:IDENTIFIES_FAILURE_MODE]->  failure_mode
+     failure_mode -[:HAS_RISK_ASSESSMENT]->      risk_assessment
+     failure_mode -[:LEADS_TO_EFFECT]->          effect
+     failure_mode -[:APPLIES_TO]->               element_usage  (see below)
+
+   Component-type resolution (APPLIES_TO edges)
+   ─────────────────────────────────────────────
+   FMEA data is class-level: a row for "centrifugal_pump / seal degradation"
+   applies to *every* centrifugal pump in the plant.  During ingestion the
+   ``component_type`` value is resolved to individual element_usage node IDs by
+   querying the live KG (mbseSchema v3.1):
+
+     MATCH (c:element_usage)-[:instance_of]->(def:element_definition)
+     WHERE toLower(def.domain_category) = toLower($component_type)
+     RETURN c.id AS component_id
+
+   An ``APPLIES_TO`` edge is created for each matched element_usage.  If no
+   usages are found for a type the failure_mode node is still written (with the
+   ``component_type`` property set) and a warning is logged so the gap can be
+   addressed when MBSE entities are loaded.
+
+   CLI usage
+   ─────────
+     python -m dackar.knowledge_graph.kg_ingest_fmea_workflow \
+         --schema src/dackar/knowledge_graph/schemas/fmeaSchema.toml \
+         --schema src/dackar/knowledge_graph/schemas/mbseSchema.toml \
+         --neo4j-uri bolt://localhost:7687 \
+         --neo4j-user neo4j --neo4j-pass secret \
+         fmea_pump.xlsx fmea_valve.xlsx
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow.LOGGER
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow._ch
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow.JsonLike
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow._resolve_component_type
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow._extract_fmea_ingestion_quality
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow.build_fmea_graph
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow.ingest_fmea_to_neo4j
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow._parse_args
+   src.dackar.knowledge_graph.kg_ingest_fmea_workflow.main
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: _ch
+
+.. py:data:: JsonLike
+
+.. py:function:: _resolve_component_type(client, component_type, database, cache)
+
+   Return all element_usage IDs whose linked element_definition matches *component_type*.
+
+   Matches against ``element_definition.domain_category`` (mbseSchema v3.1).
+   Results are cached per component_type string to avoid redundant queries.
+
+   :param client: Active Neo4j connection.
+   :param component_type: Equipment class string (e.g. ``"centrifugal_pump"``).
+   :param database: Neo4j target database; ``None`` uses the driver default.
+   :param cache: Mutable dict used as an in-process cache across calls.
+
+   :returns: List of element_usage ``id`` values (may be empty).
+
+
+.. py:function:: _extract_fmea_ingestion_quality(fmea_records)
+
+   Extract the shared normalization quality report attached by fmeaParser.
+
+
+.. py:function:: build_fmea_graph(schema_paths, fmea_records, client = None, database = None)
+
+   Build a Neo4j graph batch from parsed FMEA records.
+
+   Creates ``fmea_case``, ``failure_mode``, ``risk_assessment``, and
+   ``effect`` nodes with their connecting edges.  When *client* is supplied,
+   ``APPLIES_TO`` edges to ``element_usage`` nodes are also created after
+   resolving ``component_type`` against the live KG (mbseSchema v3.1).
+
+   :param schema_paths: One or more paths to TOML schema files.
+   :param fmea_records: Output of :func:`fmeaParser.parse_fmea_file`.
+   :param client: Optional live :class:`Py2Neo` connection used to resolve
+                  component types to element_usage IDs.  When ``None``, APPLIES_TO
+                  edges are omitted.
+   :param database: Neo4j target database; ``None`` uses the driver default.
+
+   :returns: A two-tuple ``(nodes, edges)`` suitable for
+             :func:`kg_schema_builder_workflow.ingest_graph_toml`.
+
+
+.. py:function:: ingest_fmea_to_neo4j(client, schema_paths, fmea_records, *, database = None, create_constraints = True)
+
+   Build and ingest a FMEA graph into Neo4j.
+
+   :param client: Active :class:`Py2Neo` connection.
+   :param schema_paths: One or more TOML schema file paths.
+   :param fmea_records: Parsed FMEA records from :func:`fmeaParser.parse_fmea_file`.
+   :param database: Target Neo4j database; ``None`` uses the driver default.
+   :param create_constraints: Apply DDL constraints/indexes before ingestion.
+
+   :returns: ``(node_count, edge_count)`` written to the database.
+
+
+.. py:function:: _parse_args()
+
+.. py:function:: main()
+
+   CLI entry point.
+
+

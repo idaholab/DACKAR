@@ -1,0 +1,130 @@
+src.dackar.knowledge_graph.kg_ingest_neo4j_workflow
+===================================================
+
+.. py:module:: src.dackar.knowledge_graph.kg_ingest_neo4j_workflow
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow.LOGGER
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow.handler
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow.JsonLike
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow.load_json
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow.load_json_list
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow._looks_like_processed_text_record
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow._partition_processed_text_records
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow.ingest_workflow_case_to_neo4j
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow._parse_args
+   src.dackar.knowledge_graph.kg_ingest_neo4j_workflow.main
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: handler
+
+.. py:data:: JsonLike
+
+.. py:function:: load_json(path)
+
+   Load a JSON file and return its contents as a dict, or ``None`` if no path given.
+
+   :param path: Filesystem path to a ``.json`` file, or ``None`` / empty string.
+
+   :returns: Parsed JSON object as a dict, or ``None`` when *path* is falsy.
+
+
+.. py:function:: load_json_list(paths)
+
+   Load a sequence of JSON files, returning only non-empty dict results.
+
+   Silently skips paths whose file parses to something other than a non-empty
+   dict (e.g. a JSON array or an empty object).
+
+   :param paths: Sequence of filesystem paths, or ``None``.
+
+   :returns: List of parsed JSON dicts, one per successfully loaded file.
+
+
+.. py:function:: _looks_like_processed_text_record(obj)
+
+   Return True if *obj* has the minimum required fields of a processed_text_record.
+
+   Validates that ``record_id``, ``doc_id``, and ``doc_type`` are strings and
+   that ``metadata`` and ``provenance`` are dicts.  Does not perform full
+   JSON Schema validation.
+
+   :param obj: Candidate dict to inspect.
+
+   :returns: ``True`` if the dict structurally resembles a valid processed_text_record.
+
+
+.. py:function:: _partition_processed_text_records(records)
+
+   Split a sequence of records into valid and malformed processed_text_records.
+
+   :param records: Sequence of candidate record dicts, or ``None``.
+
+   :returns: A two-tuple ``(good, bad)`` where *good* contains records that pass
+             the :func:`_looks_like_processed_text_record` check and *bad* contains
+             those that do not.
+
+
+.. py:function:: ingest_workflow_case_to_neo4j(client, schema_paths, *, event = None, kg_context = None, telemetry_summary = None, evidence_bundle = None, causality_candidates = None, rca_card = None, operational_context = None, pm_compliance = None, documents = None, processed_text_records = None, database = None, create_constraints = True)
+
+   Build and ingest a full RCA workflow case graph into Neo4j.
+
+   Orchestrates schema constraint application, graph construction from all
+   supplied artifacts, and bulk ingestion.  Malformed processed_text_record
+   entries are filtered out with a warning before the graph is built.
+
+   :param client: Active :class:`Py2Neo` connection.
+   :param schema_paths: One or more paths to TOML schema files.
+   :param event: Parsed ``event`` artifact dict.
+   :param kg_context: Parsed ``kg_context`` artifact dict.
+   :param telemetry_summary: Parsed ``telemetry_summary`` artifact dict.
+   :param evidence_bundle: Parsed ``evidence_bundle`` artifact dict.
+   :param causality_candidates: Parsed ``causality_candidates`` artifact dict.
+   :param rca_card: Parsed ``rca_card`` artifact dict.
+   :param operational_context: Parsed ``operational_context`` artifact dict.
+   :param pm_compliance: Parsed ``pm_compliance`` artifact dict.
+   :param documents: List of document descriptor dicts.
+   :param processed_text_records: List of ``processed_text_record`` dicts;
+                                  malformed entries are skipped with a warning.
+   :param database: Target Neo4j database name; uses the driver default when ``None``.
+   :param create_constraints: When ``True`` (default), DDL constraints and indexes
+                              are applied before ingestion.
+
+   :returns: A two-tuple ``(node_count, edge_count)`` reflecting the number of
+             nodes and edges written to the database.
+
+
+.. py:function:: _parse_args()
+
+   Parse CLI arguments for the Neo4j ingestion script.
+
+   :returns: Populated :class:`argparse.Namespace` with connection settings and
+             optional paths to each artifact type.
+
+
+.. py:function:: main()
+
+   Entry point for the CLI ingestion script.
+
+   Parses command-line arguments, opens a Neo4j connection, runs
+   :func:`ingest_workflow_case_to_neo4j` with the provided artifact paths,
+   and logs a completion summary.  The Neo4j driver is always closed on exit.
+
+

@@ -1,0 +1,423 @@
+src.dackar.knowledge_graph.kg_schema_builder_workflow
+=====================================================
+
+.. py:module:: src.dackar.knowledge_graph.kg_schema_builder_workflow
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.LOGGER
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.GraphBatch
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.load_toml_schema
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.load_and_merge_schemas
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._schema_props
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._node_primary_key
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._label_candidates
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.resolve_node_label
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.resolve_node_label_strict
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.relation_endpoint_map
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._is_primitive
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.sanitize_value
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.sanitize_props
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.generate_ddl_from_schema
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.apply_schema_constraints
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._prefix
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._truthy
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._norm_text_key
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._safe_rel
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._safe_ptr_entity_rel
+   src.dackar.knowledge_graph.kg_schema_builder_workflow._safe_ptr_failure_mode_rel
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.build_graph_from_workflow_artifacts
+   src.dackar.knowledge_graph.kg_schema_builder_workflow.ingest_graph_toml
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:function:: load_toml_schema(path)
+
+   Load a TOML schema file and return its contents as a dict.
+
+   :param path: Filesystem path to the ``.toml`` schema file.
+
+   :returns: Parsed TOML document as a nested dictionary.
+
+
+.. py:function:: load_and_merge_schemas(schema_paths)
+
+   Load one or more TOML schema files and merge them into a single schema dict.
+
+   The merged dict has top-level keys ``"node"`` and ``"relation"``.  Duplicate
+   keys across files raise an error to prevent silent overwrites.
+
+   :param schema_paths: A single path or an iterable of paths to ``.toml`` files.
+
+   :returns: A merged schema dict with ``{"node": {...}, "relation": {...}}``.
+
+   :raises ValueError: If the same node or relation key appears in more than one file.
+
+
+.. py:function:: _schema_props(spec)
+
+   Extract the property list from a node or relation schema spec.
+
+   Checks both ``"node_properties"`` and ``"properties"`` keys for compatibility
+   with different TOML schema conventions.
+
+   :param spec: A single node or relation entry from the merged schema.
+
+   :returns: List of property descriptor dicts, or an empty list if none are defined.
+
+
+.. py:function:: _node_primary_key(spec)
+
+   Determine the primary key property name for a node spec.
+
+   Selects the first non-optional property; falls back to ``"id"`` if present
+   in the property list, then to the first listed property name, and finally
+   to the hard-coded default ``"id"``.
+
+   :param spec: A single node entry from the merged schema.
+
+   :returns: The property name to use as the primary key.
+
+
+.. py:function:: _label_candidates(name)
+
+   Generate a list of label name variants to try when resolving a schema label.
+
+   Produces the original name, its lowercase form, a PascalCase conversion,
+   and a snake_case conversion (from PascalCase input) to account for naming
+   conventions used across different TOML schemas.
+
+   :param name: Base label name.
+
+   :returns: List of candidate strings (original, lowercase, PascalCase, snake_case),
+             deduplicated while preserving order.
+
+
+.. py:function:: resolve_node_label(schema, *candidates)
+
+   Resolve the first candidate name that exists as a node label in the schema.
+
+   For each candidate, tries the original name and common variants (lowercase,
+   PascalCase, snake_case).  If none match, returns the first candidate
+   unchanged as a safe fallback.
+
+   :param schema: Merged schema dict (must contain a ``"node"`` key).
+   :param \*candidates: One or more preferred label names, in priority order.
+
+   :returns: The matched label string from the schema, or *candidates[0]* if no
+             match is found.
+
+
+.. py:function:: resolve_node_label_strict(schema, *candidates)
+
+   Resolve the first candidate name that exists as a node label in the schema.
+
+   Identical to :func:`resolve_node_label` but raises :class:`KeyError` instead
+   of silently falling back when no candidate matches.  Use this wherever a
+   miss should be a hard error (e.g. building the ``labels`` registry at graph
+   construction time).
+
+   :param schema: Merged schema dict (must contain a ``"node"`` key).
+   :param \*candidates: One or more preferred label names, in priority order.
+
+   :returns: The matched label string from the schema.
+
+   :raises KeyError: If no variant of any candidate is found in the schema's node
+       registry.  The error message lists the available node labels so the
+       caller can diagnose schema/TOML mismatches immediately.
+
+
+.. py:function:: relation_endpoint_map(schema)
+
+   Build a lookup from relation type name to its (from_entity, to_entity) pair.
+
+   Only relations that declare both ``from_entity`` and ``to_entity`` in the
+   schema are included.
+
+   :param schema: Merged schema dict (must contain a ``"relation"`` key).
+
+   :returns: Dict mapping each relation name to a ``(source_entity, target_entity)``
+             tuple of entity type strings.
+
+
+.. py:function:: _is_primitive(value)
+
+   Return True if *value* is a Neo4j-native scalar type (str, int, float, or bool).
+
+   :param value: Any Python object.
+
+   :returns: ``True`` if *value* can be stored directly as a Neo4j property scalar.
+
+
+.. py:function:: sanitize_value(value)
+
+   Convert an arbitrary Python value to a Neo4j-compatible property value.
+
+   Conversion rules:
+   - ``datetime`` / ``date`` → ISO-8601 string.
+   - ``dict`` → JSON string (sorted keys, UTF-8).
+   - ``list`` of primitives → kept as-is; mixed/complex lists → JSON string.
+   - ``None`` and primitive scalars → returned unchanged.
+   - Anything else → ``str(value)``.
+
+   :param value: Python value to sanitize.
+
+   :returns: A value safe for storage as a Neo4j node or relationship property.
+
+
+.. py:function:: sanitize_props(props)
+
+   Sanitize all values in a property dict, dropping ``None`` entries.
+
+   :param props: Raw property dict potentially containing non-Neo4j-native types.
+
+   :returns: New dict with all values converted by :func:`sanitize_value` and
+             keys whose value was ``None`` removed.
+
+
+.. py:function:: generate_ddl_from_schema(schema)
+
+   Generate Neo4j DDL statements (constraints and indexes) from a merged schema.
+
+   For every node label a ``UNIQUE`` constraint on ``id`` is created.
+   Additionally, a ``CREATE INDEX`` statement is emitted for each property
+   that carries ``"indexed": true`` in its spec.
+
+   :param schema: Merged schema dict as returned by :func:`load_and_merge_schemas`.
+
+   :returns: List of Cypher DDL strings ready to be executed against Neo4j.
+
+   :raises ValueError: If a node label or indexed-property name is not a safe
+       Neo4j identifier (see :func:`dackar.knowledge_graph.py2neo._safe_token`).
+
+
+.. py:function:: apply_schema_constraints(client, schema_paths, database = None)
+
+   Load schemas and apply all DDL constraints and indexes to the database.
+
+   Combines :func:`load_and_merge_schemas`, :func:`generate_ddl_from_schema`,
+   and :meth:`Py2Neo.query` into a single convenience call.
+
+   :param client: Active :class:`Py2Neo` connection.
+   :param schema_paths: One or more paths to TOML schema files.
+   :param database: Target database name; uses the driver default when ``None``.
+
+
+.. py:class:: GraphBatch(schema = None)
+
+   In-memory accumulator for nodes and edges before bulk Neo4j ingestion.
+
+   Nodes are keyed by their ``id`` string; duplicate additions are merged.
+   Edges are keyed by ``(source_id, target_id, rel_type)`` and support
+   optional schema-based endpoint validation.
+
+
+   .. py:attribute:: schema
+
+
+   .. py:attribute:: nodes
+      :type:  Dict[str, Dict[str, Any]]
+
+
+   .. py:attribute:: edges
+      :type:  Dict[Tuple[str, str, str], Dict[str, Any]]
+
+
+   .. py:attribute:: relation_map
+
+
+   .. py:method:: add_node(node_id, label, attrs = None)
+
+      Add or merge a node into the batch.
+
+      If a node with *node_id* already exists its attributes are updated with
+      the new values (shallow merge after sanitization).
+
+      :param node_id: Unique identifier for the node (used as the ``id`` property).
+      :param label: Neo4j label for the node.
+      :param attrs: Optional property dict; ``id`` is always set from *node_id*.
+
+      :returns: The *node_id* string, for convenience when chaining calls.
+
+
+
+   .. py:method:: add_edge(src, dst, rel_type, attrs = None, allow_untyped = True)
+
+      Add or update a directed edge in the batch.
+
+      Endpoint labels are looked up from already-added nodes.  When *rel_type*
+      is declared in the schema its expected endpoint types are validated.
+
+      :param src: Node id of the source node (must already be in the batch).
+      :param dst: Node id of the target node (must already be in the batch).
+      :param rel_type: Relationship type name.
+      :param attrs: Optional property dict for the relationship.
+      :param allow_untyped: When ``True``, relationship types not declared in the
+                            schema are accepted.  When ``False``, an undeclared type raises
+                            :class:`ValueError`.
+
+      :raises KeyError: If *src* or *dst* has not been added to the batch yet.
+      :raises ValueError: If the schema declares endpoint types for *rel_type* and
+          the actual node labels do not match, or if *allow_untyped* is
+          ``False`` and *rel_type* is not in the schema.
+
+
+
+   .. py:method:: as_lists()
+
+      Return the accumulated nodes and edges as plain lists.
+
+      :returns: A two-tuple ``(nodes, edges)`` where each element is a list of
+                dicts suitable for passing to :meth:`Py2Neo.upsert_nodes_batch`
+                and :meth:`Py2Neo.upsert_edges_batch` respectively.
+
+
+
+.. py:function:: _prefix(value, prefix)
+
+   Build a namespaced node id by prepending *prefix* to *value*.
+
+   Strips whitespace, collapses internal spaces to underscores, and skips
+   empty values.  Normalising spaces ensures the resulting ID is safe to use
+   unquoted in Cypher — ``FM:loss_of_lubrication`` rather than
+   ``FM:loss of lubrication``.  Casing is preserved so that structured IDs
+   (e.g. ``CMP-001``) are not altered.
+
+   Strings already namespaced with *this* prefix (``"<prefix>:..."``) are
+   returned unchanged to avoid double-prefixing.  A colon appearing elsewhere
+   in the value (e.g. a time ``"12:30"`` or an ``OPCTX``/``PM`` context value)
+   no longer suppresses namespacing, so distinct raw values can no longer
+   collide onto the same un-prefixed id.
+
+   :param value: Raw identifier string (e.g. ``"pump-101"`` or ``"loss of lubrication"``).
+   :param prefix: Namespace prefix (e.g. ``"ASSET"``).
+
+   :returns: A string like ``"ASSET:pump-101"``, or ``None`` if *value* is falsy
+             or blank after stripping.
+
+
+.. py:function:: _truthy(value)
+
+   Return True if *value* is non-empty and not a sentinel null-like string.
+
+   Treats ``"unknown"``, ``"none"``, and ``"null"`` as falsy in addition to
+   standard Python falsy values.
+
+   :param value: Any value to test.
+
+   :returns: ``True`` if the value is considered meaningfully present.
+
+
+.. py:function:: _norm_text_key(value)
+
+   Normalise a text string into a stable, lowercase key.
+
+   Collapses internal whitespace, strips leading/trailing whitespace, and
+   lowercases the result.  Used to derive deterministic node ids from free-text
+   labels.
+
+   :param value: Input string to normalise, or ``None``.
+
+   :returns: Normalised string, or ``None`` if *value* is ``None`` or blank.
+
+
+.. py:function:: _safe_rel(g, src, dst, preferred, fallback, attrs = None)
+
+   Add an edge using *preferred* relation type, falling back to *fallback* if not in schema.
+
+   :param g: The :class:`GraphBatch` to add the edge to.
+   :param src: Source node id.
+   :param dst: Target node id.
+   :param preferred: Preferred relationship type name.
+   :param fallback: Fallback relationship type name used when *preferred* is not
+                    declared in the schema's relation map.
+   :param attrs: Optional property dict for the relationship.
+
+
+.. py:function:: _safe_ptr_entity_rel(g, src, dst, attrs = None)
+
+   ProcessedTextRecord -> entity relation chooser.
+   Avoid using document-scoped relations like 'mentions' when the schema
+   types them as condition_report/work_order -> element_usage.
+
+
+.. py:function:: _safe_ptr_failure_mode_rel(g, src, dst, attrs = None)
+
+   Add a ProcessedTextRecord → failure_mode edge using the best available relation type.
+
+   Tries ``"supports_hypothesis"``, ``"references_failure_mode"``, and
+   ``"caused_by"`` in order, picking the first whose endpoint types match the
+   actual node labels.  Falls back to an untyped ``"references_failure_mode"``
+   edge if none match.
+
+   :param g: The :class:`GraphBatch` to add the edge to.
+   :param src: Source node id (a ProcessedTextRecord node).
+   :param dst: Target node id (a failure_mode node).
+   :param attrs: Optional property dict for the relationship.
+
+
+.. py:function:: build_graph_from_workflow_artifacts(schema_paths = None, *, event = None, kg_context = None, telemetry_summary = None, evidence_bundle = None, causality_candidates = None, rca_card = None, operational_context = None, pm_compliance = None, documents = None, processed_text_records = None)
+
+   Translate all RCA workflow artifacts into a graph of nodes and edges.
+
+   Iterates over every supplied artifact, creates typed nodes for each
+   entity (assets, components, failure modes, events, telemetry signals,
+   anomalies, causal candidates, evidence snippets, etc.), and links them
+   with labelled directed edges.  All artifacts are optional; only those
+   provided contribute nodes and edges.
+
+   :param schema_paths: Optional path(s) to TOML schema file(s) used for label
+                        resolution and endpoint validation.  An empty schema is used when
+                        ``None``.
+   :param event: Parsed ``event`` artifact dict.
+   :param kg_context: Parsed ``kg_context`` artifact dict (components, failure
+                      modes, past events).
+   :param telemetry_summary: Parsed ``telemetry_summary`` artifact dict.
+   :param evidence_bundle: Parsed ``evidence_bundle`` artifact dict.
+   :param causality_candidates: Parsed ``causality_candidates`` artifact dict.
+   :param rca_card: Parsed ``rca_card`` artifact dict.
+   :param operational_context: Parsed ``operational_context`` artifact dict.
+   :param pm_compliance: Parsed ``pm_compliance`` artifact dict.
+   :param documents: List of document descriptor dicts.
+   :param processed_text_records: List of ``processed_text_record`` dicts.
+
+   :returns: A two-tuple ``(nodes, edges)`` — lists of dicts ready for bulk
+             ingestion via :func:`ingest_graph_toml`.
+
+
+.. py:function:: ingest_graph_toml(client, nodes, edges, database = None)
+
+   Bulk-upsert a node list and edge list into Neo4j.
+
+   A thin wrapper that calls :meth:`Py2Neo.upsert_nodes_batch` followed by
+   :meth:`Py2Neo.upsert_edges_batch`, skipping each call when the
+   corresponding list is empty.
+
+   :param client: Active :class:`Py2Neo` connection.
+   :param nodes: List of node dicts as returned by :func:`build_graph_from_workflow_artifacts`.
+   :param edges: List of edge dicts as returned by :func:`build_graph_from_workflow_artifacts`.
+   :param database: Target database name; uses the driver default when ``None``.
+
+

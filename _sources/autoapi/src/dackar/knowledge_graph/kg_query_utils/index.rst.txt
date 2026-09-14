@@ -1,0 +1,57 @@
+src.dackar.knowledge_graph.kg_query_utils
+=========================================
+
+.. py:module:: src.dackar.knowledge_graph.kg_query_utils
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.knowledge_graph.kg_query_utils.is_upstream
+   src.dackar.knowledge_graph.kg_query_utils.resolve_edge_type
+
+
+Module Contents
+---------------
+
+.. py:function:: is_upstream(component_a, component_b, neo4j_client, database = None)
+
+   Return True if *component_a* is upstream of *component_b* in the graph.
+
+   Walks up to six containment/connectivity hops (``has_part_usage``,
+   ``owns_port_usage``, ``connects_port``) from ``component_a`` toward
+   ``component_b`` over ``element_usage`` nodes.
+
+   :param component_a: Source component id (``element_usage.id``). A falsy value,
+                       or ``component_a == component_b``, yields ``False``.
+   :param component_b: Target component id (``element_usage.id``).
+   :param neo4j_client: Object exposing ``query(cypher, params, db=...)``; when
+                        ``None`` the function returns ``False`` without querying.
+   :param database: Optional Neo4j database name; ``None`` uses the client default.
+
+   :returns: ``True`` if a directed path ``a -> ... -> b`` exists, otherwise
+             ``False``.  Any query error is swallowed and reported as ``False``.
+
+
+.. py:function:: resolve_edge_type(component_a, component_b, neo4j_client, database = None)
+
+   Classify the relationship path between two components.
+
+   Inspects the relationship types along the (up to six-hop) path from
+   ``component_a`` to ``component_b`` and buckets them into a single category.
+
+   :param component_a: Source component id (``element_usage.id``). A falsy value
+                       yields ``"mixed"``.
+   :param component_b: Target component id (``element_usage.id``).
+   :param neo4j_client: Object exposing ``query(cypher, params, db=...)``; when
+                        ``None`` the function returns ``"mixed"`` without querying.
+   :param database: Optional Neo4j database name; ``None`` uses the client default.
+
+   :returns: ``"containment"`` if the path uses only ``has_part_usage`` edges,
+             ``"connectivity"`` if it uses only ``owns_port_usage`` /
+             ``connects_port`` edges, otherwise ``"mixed"`` (also returned when no
+             path is found or a query error occurs).
+
+

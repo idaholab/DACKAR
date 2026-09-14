@@ -1,0 +1,654 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.knowledge_graph.kg_ingest_fmea_workflow &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.knowledge_graph.kg_ingest_fmea_workflow</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.knowledge_graph.kg_ingest_fmea_workflow</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">kg_ingest_fmea_workflow.py</span>
+<span class="sd">─────────────────────────────────────────────────────────────────────────────</span>
+<span class="sd">Ingest parsed FMEA records (output of fmeaParser.parse_fmea_file) into Neo4j.</span>
+
+<span class="sd">Graph objects created per FMEA record</span>
+<span class="sd">──────────────────────────────────────</span>
+<span class="sd">Nodes:</span>
+<span class="sd">  fmea_case         one per unique (fmea_source_ref, sheet) combination</span>
+<span class="sd">  failure_mode      one per record (keyed by failure_mode_id; merged if duplicate)</span>
+<span class="sd">  risk_assessment   one per record when at least one of severity/occurrence/detection</span>
+<span class="sd">                    is present</span>
+<span class="sd">  effect            one per record when local_effect text is present</span>
+
+<span class="sd">Edges:</span>
+<span class="sd">  fmea_case    -[:IDENTIFIES_FAILURE_MODE]-&gt;  failure_mode</span>
+<span class="sd">  failure_mode -[:HAS_RISK_ASSESSMENT]-&gt;      risk_assessment</span>
+<span class="sd">  failure_mode -[:LEADS_TO_EFFECT]-&gt;          effect</span>
+<span class="sd">  failure_mode -[:APPLIES_TO]-&gt;               element_usage  (see below)</span>
+
+<span class="sd">Component-type resolution (APPLIES_TO edges)</span>
+<span class="sd">─────────────────────────────────────────────</span>
+<span class="sd">FMEA data is class-level: a row for "centrifugal_pump / seal degradation"</span>
+<span class="sd">applies to *every* centrifugal pump in the plant.  During ingestion the</span>
+<span class="sd">``component_type`` value is resolved to individual element_usage node IDs by</span>
+<span class="sd">querying the live KG (mbseSchema v3.1):</span>
+
+<span class="sd">  MATCH (c:element_usage)-[:instance_of]-&gt;(def:element_definition)</span>
+<span class="sd">  WHERE toLower(def.domain_category) = toLower($component_type)</span>
+<span class="sd">  RETURN c.id AS component_id</span>
+
+<span class="sd">An ``APPLIES_TO`` edge is created for each matched element_usage.  If no</span>
+<span class="sd">usages are found for a type the failure_mode node is still written (with the</span>
+<span class="sd">``component_type`` property set) and a warning is logged so the gap can be</span>
+<span class="sd">addressed when MBSE entities are loaded.</span>
+
+<span class="sd">CLI usage</span>
+<span class="sd">─────────</span>
+<span class="sd">  python -m dackar.knowledge_graph.kg_ingest_fmea_workflow \\</span>
+<span class="sd">      --schema src/dackar/knowledge_graph/schemas/fmeaSchema.toml \\</span>
+<span class="sd">      --schema src/dackar/knowledge_graph/schemas/mbseSchema.toml \\</span>
+<span class="sd">      --neo4j-uri bolt://localhost:7687 \\</span>
+<span class="sd">      --neo4j-user neo4j --neo4j-pass secret \\</span>
+<span class="sd">      fmea_pump.xlsx fmea_valve.xlsx</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">argparse</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Resolve imports whether run as a module or directly as a script.</span>
+<span class="c1"># Intended invocation: ``python -m dackar.knowledge_graph.kg_ingest_fmea_workflow``.</span>
+<span class="c1"># The sibling-import fallback supports running this file directly from within</span>
+<span class="c1"># the ``knowledge_graph/`` directory.</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.knowledge_graph.kg_schema_builder_workflow</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+        <span class="n">GraphBatch</span><span class="p">,</span>
+        <span class="n">_prefix</span><span class="p">,</span>
+        <span class="n">apply_schema_constraints</span><span class="p">,</span>
+        <span class="n">ingest_graph_toml</span><span class="p">,</span>
+        <span class="n">load_and_merge_schemas</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.knowledge_graph.py2neo</span><span class="w"> </span><span class="kn">import</span> <span class="n">Py2Neo</span>
+<span class="k">except</span> <span class="ne">ModuleNotFoundError</span><span class="p">:</span>  <span class="c1"># pragma: no cover - bare-script fallback</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">kg_schema_builder_workflow</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>  <span class="c1"># type: ignore</span>
+        <span class="n">GraphBatch</span><span class="p">,</span>
+        <span class="n">_prefix</span><span class="p">,</span>
+        <span class="n">apply_schema_constraints</span><span class="p">,</span>
+        <span class="n">ingest_graph_toml</span><span class="p">,</span>
+        <span class="n">load_and_merge_schemas</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">py2neo</span><span class="w"> </span><span class="kn">import</span> <span class="n">Py2Neo</span>  <span class="c1"># type: ignore</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA.doc_parsers.fmeaParser</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_fmea_files</span>
+<span class="k">except</span> <span class="ne">ModuleNotFoundError</span><span class="p">:</span>  <span class="c1"># pragma: no cover - bare-script fallback</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">doc_parsers.fmeaParser</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_fmea_files</span>  <span class="c1"># type: ignore</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">LOGGER</span><span class="o">.</span><span class="n">handlers</span><span class="p">:</span>
+<div class="viewcode-block" id="_ch">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow._ch">[docs]</a>
+    <span class="n">_ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span></div>
+
+    <span class="n">_ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">"</span><span class="si">%(asctime)s</span><span class="s2"> | </span><span class="si">%(levelname)s</span><span class="s2"> | </span><span class="si">%(name)s</span><span class="s2"> | </span><span class="si">%(message)s</span><span class="s2">"</span><span class="p">))</span>
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">_ch</span><span class="p">)</span>
+<span class="n">LOGGER</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+
+<div class="viewcode-block" id="JsonLike">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow.JsonLike">[docs]</a>
+<span class="n">JsonLike</span> <span class="o">=</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Component-type → element_usage ID resolver</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_resolve_component_type">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow._resolve_component_type">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_resolve_component_type</span><span class="p">(</span>
+    <span class="n">client</span><span class="p">:</span> <span class="n">Py2Neo</span><span class="p">,</span>
+    <span class="n">component_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">database</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">cache</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return all element_usage IDs whose linked element_definition matches *component_type*.</span>
+
+<span class="sd">    Matches against ``element_definition.domain_category`` (mbseSchema v3.1).</span>
+<span class="sd">    Results are cached per component_type string to avoid redundant queries.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        client: Active Neo4j connection.</span>
+<span class="sd">        component_type: Equipment class string (e.g. ``"centrifugal_pump"``).</span>
+<span class="sd">        database: Neo4j target database; ``None`` uses the driver default.</span>
+<span class="sd">        cache: Mutable dict used as an in-process cache across calls.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        List of element_usage ``id`` values (may be empty).</span>
+<span class="sd">    """</span>
+    <span class="n">key</span> <span class="o">=</span> <span class="n">component_type</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">cache</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">client</span><span class="o">.</span><span class="n">query</span><span class="p">(</span>
+            <span class="s2">"MATCH (c:element_usage)-[:instance_of]-&gt;(def:element_definition) "</span>
+            <span class="s2">"WHERE toLower(def.domain_category) = toLower($ct) "</span>
+            <span class="s2">"RETURN c.id AS component_id"</span><span class="p">,</span>
+            <span class="p">{</span><span class="s2">"ct"</span><span class="p">:</span> <span class="n">key</span><span class="p">},</span>
+            <span class="n">db</span><span class="o">=</span><span class="n">database</span><span class="p">,</span>
+        <span class="p">)]</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span> <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)]</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"KG query for component_type '</span><span class="si">%s</span><span class="s2">' failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">component_type</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="n">ids</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ids</span><span class="p">:</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">"No element_usage nodes found for component_type '</span><span class="si">%s</span><span class="s2">'. "</span>
+            <span class="s2">"APPLIES_TO edges will be omitted; ensure MBSE entities are loaded first."</span><span class="p">,</span>
+            <span class="n">component_type</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="n">cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">ids</span>
+    <span class="k">return</span> <span class="n">ids</span></div>
+
+
+
+<div class="viewcode-block" id="_extract_fmea_ingestion_quality">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow._extract_fmea_ingestion_quality">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_fmea_ingestion_quality</span><span class="p">(</span>
+    <span class="n">fmea_records</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Extract the shared normalization quality report attached by fmeaParser.</span>
+<span class="sd">    """</span>
+    <span class="n">default</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"total_fms_ingested"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">fmea_records</span><span class="p">)),</span>
+        <span class="s2">"critical_field_missing_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"enrichment_field_missing_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"derived_field_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"nlp_inferred_field_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"orphaned_fm_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"profile_used"</span><span class="p">:</span> <span class="s2">"auto"</span><span class="p">,</span>
+        <span class="s2">"format_autodetect_confidence"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">fmea_records</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">default</span>
+    <span class="n">orphaned</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">fmea_records</span><span class="p">:</span>
+        <span class="n">component_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">component_type</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">resolved</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_resolved_component_ids"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">resolved</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">resolved</span><span class="p">:</span>
+                <span class="n">orphaned</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="n">report</span> <span class="o">=</span> <span class="n">fmea_records</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_fmea_ingestion_quality"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">default</span><span class="p">)</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">report</span><span class="p">)</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"total_fms_ingested"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">out</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_fms_ingested"</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">fmea_records</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">orphaned</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="nb">any</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_resolved_component_ids"</span><span class="p">),</span> <span class="nb">list</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">fmea_records</span><span class="p">):</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"orphaned_fm_count"</span><span class="p">]</span> <span class="o">=</span> <span class="n">orphaned</span>
+        <span class="k">return</span> <span class="n">out</span>
+    <span class="k">return</span> <span class="n">default</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Graph builder</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="build_fmea_graph">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow.build_fmea_graph">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_fmea_graph</span><span class="p">(</span>
+    <span class="n">schema_paths</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">]]],</span>
+    <span class="n">fmea_records</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="n">client</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Py2Neo</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">database</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]:</span>
+<span class="w">    </span><span class="sd">"""Build a Neo4j graph batch from parsed FMEA records.</span>
+
+<span class="sd">    Creates ``fmea_case``, ``failure_mode``, ``risk_assessment``, and</span>
+<span class="sd">    ``effect`` nodes with their connecting edges.  When *client* is supplied,</span>
+<span class="sd">    ``APPLIES_TO`` edges to ``element_usage`` nodes are also created after</span>
+<span class="sd">    resolving ``component_type`` against the live KG (mbseSchema v3.1).</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        schema_paths: One or more paths to TOML schema files.</span>
+<span class="sd">        fmea_records: Output of :func:`fmeaParser.parse_fmea_file`.</span>
+<span class="sd">        client: Optional live :class:`Py2Neo` connection used to resolve</span>
+<span class="sd">            component types to element_usage IDs.  When ``None``, APPLIES_TO</span>
+<span class="sd">            edges are omitted.</span>
+<span class="sd">        database: Neo4j target database; ``None`` uses the driver default.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A two-tuple ``(nodes, edges)`` suitable for</span>
+<span class="sd">        :func:`kg_schema_builder_workflow.ingest_graph_toml`.</span>
+<span class="sd">    """</span>
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">load_and_merge_schemas</span><span class="p">(</span><span class="n">schema_paths</span><span class="p">)</span>
+    <span class="n">g</span> <span class="o">=</span> <span class="n">GraphBatch</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+
+    <span class="c1"># Cache component_type → [element_usage_id, …] to avoid per-row queries.</span>
+    <span class="n">component_type_cache</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="c1"># Track which fmea_case and failure_mode nodes are already in the batch.</span>
+    <span class="n">seen_cases</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">seen_fms</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">fmea_records</span><span class="p">:</span>
+        <span class="n">source_ref</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fmea_source_ref"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown_fmea"</span>
+        <span class="n">sheet</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_sheet"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">component_type</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">raw_fm_id</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">fm_name</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_name"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">raw_fm_id</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">fm_name</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Skipping record with missing failure_mode_id / name: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">rec</span><span class="p">)</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Namespace the failure-mode node id as ``FM:&lt;id&gt;`` to match the RCA</span>
+        <span class="c1"># workflow builder (``kg_schema_builder_workflow._prefix(..., "FM")``),</span>
+        <span class="c1"># so a failure mode referenced from an RCA case and its FMEA-catalog</span>
+        <span class="c1"># definition resolve to the SAME node instead of two unmergeable ones</span>
+        <span class="c1"># (MR#48 review).  The raw id is retained as the ``fm_id`` property.</span>
+        <span class="n">fm_id</span> <span class="o">=</span> <span class="n">_prefix</span><span class="p">(</span><span class="n">raw_fm_id</span><span class="p">,</span> <span class="s2">"FM"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+
+        <span class="c1"># ── fmea_case node ────────────────────────────────────────────────</span>
+        <span class="n">case_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">source_ref</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">sheet</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">sheet</span> <span class="k">else</span> <span class="n">source_ref</span>
+        <span class="n">case_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"FMEA_CASE:</span><span class="si">{</span><span class="n">case_key</span><span class="si">}</span><span class="s2">"</span>
+        <span class="k">if</span> <span class="n">case_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen_cases</span><span class="p">:</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
+                <span class="n">case_id</span><span class="p">,</span>
+                <span class="s2">"fmea_case"</span><span class="p">,</span>
+                <span class="p">{</span>
+                    <span class="s2">"title"</span><span class="p">:</span> <span class="n">case_key</span><span class="p">,</span>
+                    <span class="s2">"scope"</span><span class="p">:</span> <span class="n">component_type</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"approved"</span><span class="p">,</span>
+                    <span class="s2">"fmea_source_ref"</span><span class="p">:</span> <span class="n">source_ref</span><span class="p">,</span>
+                    <span class="s2">"sheet"</span><span class="p">:</span> <span class="n">sheet</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+            <span class="n">seen_cases</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">case_id</span><span class="p">)</span>
+
+        <span class="c1"># ── failure_mode node ─────────────────────────────────────────────</span>
+        <span class="n">is_new_fm</span> <span class="o">=</span> <span class="n">fm_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen_fms</span>
+        <span class="n">derivation</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_derivation_method"</span><span class="p">)</span>
+        <span class="n">derivation_text</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">derivation</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">derivation</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
+            <span class="n">fm_id</span><span class="p">,</span>
+            <span class="s2">"failure_mode"</span><span class="p">,</span>
+            <span class="p">{</span>
+                <span class="s2">"fm_id"</span><span class="p">:</span> <span class="n">raw_fm_id</span><span class="p">,</span>
+                <span class="s2">"name"</span><span class="p">:</span> <span class="n">fm_name</span><span class="p">,</span>
+                <span class="s2">"description"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"local_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm_name</span><span class="p">,</span>
+                <span class="s2">"failure_mechanism"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mechanism"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"component_type"</span><span class="p">:</span> <span class="n">component_type</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"expected_symptoms"</span><span class="p">:</span> <span class="s2">"; "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_symptoms"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"expected_anomaly_pattern"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_anomaly_pattern"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"expected_latency_min_hours"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_min_hours"</span><span class="p">),</span>
+                <span class="s2">"expected_latency_max_hours"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_max_hours"</span><span class="p">),</span>
+                <span class="s2">"system_effect"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"safety_effect"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_function_impact"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"detection_method"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection_method"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"potential_causes"</span><span class="p">:</span> <span class="s2">"; "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"potential_causes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"fmea_revision_date"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fmea_revision_date"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"derivation_method"</span><span class="p">:</span> <span class="n">derivation_text</span><span class="p">,</span>
+                <span class="s2">"fmea_source_ref"</span><span class="p">:</span> <span class="n">source_ref</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">is_new_fm</span><span class="p">:</span>
+            <span class="n">seen_fms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">fm_id</span><span class="p">)</span>
+
+        <span class="c1"># ── fmea_case → failure_mode ──────────────────────────────────────</span>
+        <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">case_id</span><span class="p">,</span> <span class="n">fm_id</span><span class="p">,</span> <span class="s2">"identifies_failure_mode"</span><span class="p">,</span> <span class="n">allow_untyped</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># ── risk_assessment node ──────────────────────────────────────────</span>
+        <span class="n">sev</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)</span>
+        <span class="n">occ</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"occurrence"</span><span class="p">)</span>
+        <span class="n">det</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"detection"</span><span class="p">)</span>
+        <span class="n">rpn</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rpn"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="n">sev</span><span class="p">,</span> <span class="n">occ</span><span class="p">,</span> <span class="n">det</span><span class="p">,</span> <span class="n">rpn</span><span class="p">)):</span>
+            <span class="n">ra_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"RA:</span><span class="si">{</span><span class="n">fm_id</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
+                <span class="n">ra_id</span><span class="p">,</span>
+                <span class="s2">"risk_assessment"</span><span class="p">,</span>
+                <span class="p">{</span>
+                    <span class="s2">"severity"</span><span class="p">:</span> <span class="n">sev</span><span class="p">,</span>
+                    <span class="s2">"occurrence"</span><span class="p">:</span> <span class="n">occ</span><span class="p">,</span>
+                    <span class="s2">"detection"</span><span class="p">:</span> <span class="n">det</span><span class="p">,</span>
+                    <span class="s2">"RPN"</span><span class="p">:</span> <span class="n">rpn</span><span class="p">,</span>
+                    <span class="s2">"notes"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"notes"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">fm_id</span><span class="p">,</span> <span class="n">ra_id</span><span class="p">,</span> <span class="s2">"has_risk_assessment"</span><span class="p">,</span> <span class="n">allow_untyped</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># ── effect node ───────────────────────────────────────────────────</span>
+        <span class="n">local_effect</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"local_effect"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">local_effect</span><span class="p">:</span>
+            <span class="n">effect_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"EFF:</span><span class="si">{</span><span class="n">fm_id</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
+                <span class="n">effect_id</span><span class="p">,</span>
+                <span class="s2">"effect"</span><span class="p">,</span>
+                <span class="p">{</span>
+                    <span class="s2">"level"</span><span class="p">:</span> <span class="s2">"local"</span><span class="p">,</span>
+                    <span class="s2">"description"</span><span class="p">:</span> <span class="n">local_effect</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">fm_id</span><span class="p">,</span> <span class="n">effect_id</span><span class="p">,</span> <span class="s2">"leads_to_effect"</span><span class="p">,</span> <span class="n">allow_untyped</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">system_effect</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"system_effect"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">system_effect</span><span class="p">:</span>
+            <span class="n">effect_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"EFFSYS:</span><span class="si">{</span><span class="n">fm_id</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
+                <span class="n">effect_id</span><span class="p">,</span>
+                <span class="s2">"effect"</span><span class="p">,</span>
+                <span class="p">{</span>
+                    <span class="s2">"level"</span><span class="p">:</span> <span class="s2">"system"</span><span class="p">,</span>
+                    <span class="s2">"description"</span><span class="p">:</span> <span class="n">system_effect</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">fm_id</span><span class="p">,</span> <span class="n">effect_id</span><span class="p">,</span> <span class="s2">"leads_to_effect"</span><span class="p">,</span> <span class="n">allow_untyped</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">end_effect</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end_effect"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"safety_function_impact"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">end_effect</span><span class="p">:</span>
+            <span class="n">effect_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"EFFEND:</span><span class="si">{</span><span class="n">fm_id</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
+                <span class="n">effect_id</span><span class="p">,</span>
+                <span class="s2">"effect"</span><span class="p">,</span>
+                <span class="p">{</span>
+                    <span class="s2">"level"</span><span class="p">:</span> <span class="s2">"end"</span><span class="p">,</span>
+                    <span class="s2">"description"</span><span class="p">:</span> <span class="n">end_effect</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">)</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">fm_id</span><span class="p">,</span> <span class="n">effect_id</span><span class="p">,</span> <span class="s2">"leads_to_effect"</span><span class="p">,</span> <span class="n">allow_untyped</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># ── APPLIES_TO → element_usage nodes ──────────────────────────────</span>
+        <span class="k">if</span> <span class="n">client</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">component_type</span><span class="p">:</span>
+            <span class="n">mbse_ids</span> <span class="o">=</span> <span class="n">_resolve_component_type</span><span class="p">(</span>
+                <span class="n">client</span><span class="p">,</span> <span class="n">component_type</span><span class="p">,</span> <span class="n">database</span><span class="p">,</span> <span class="n">component_type_cache</span>
+            <span class="p">)</span>
+            <span class="n">rec</span><span class="p">[</span><span class="s2">"_resolved_component_ids"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">mbse_ids</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">mbse_id</span> <span class="ow">in</span> <span class="n">mbse_ids</span><span class="p">:</span>
+                <span class="c1"># element_usage nodes may already be in the KG; add stub here</span>
+                <span class="c1"># so GraphBatch can track the edge endpoint.  MERGE semantics</span>
+                <span class="c1"># in ingest_graph_toml will not overwrite existing properties.</span>
+                <span class="k">if</span> <span class="n">mbse_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">g</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span><span class="n">mbse_id</span><span class="p">,</span> <span class="s2">"element_usage"</span><span class="p">,</span> <span class="p">{</span><span class="s2">"id"</span><span class="p">:</span> <span class="n">mbse_id</span><span class="p">})</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">g</span><span class="o">.</span><span class="n">add_edge</span><span class="p">(</span><span class="n">fm_id</span><span class="p">,</span> <span class="n">mbse_id</span><span class="p">,</span> <span class="s2">"applies_to"</span><span class="p">,</span> <span class="n">allow_untyped</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+                <span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                    <span class="c1"># Schema endpoint mismatch — log and continue.</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"applies_to edge skipped for </span><span class="si">%s</span><span class="s2"> → </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">fm_id</span><span class="p">,</span> <span class="n">mbse_id</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+
+    <span class="c1"># Provenance summary node for governance/readiness checks.</span>
+    <span class="n">ingestion_quality</span> <span class="o">=</span> <span class="n">_extract_fmea_ingestion_quality</span><span class="p">(</span><span class="n">fmea_records</span><span class="p">)</span>
+    <span class="n">g</span><span class="o">.</span><span class="n">add_node</span><span class="p">(</span>
+        <span class="s2">"kg_provenance_latest"</span><span class="p">,</span>
+        <span class="s2">"kg_provenance"</span><span class="p">,</span>
+        <span class="p">{</span>
+            <span class="s2">"id"</span><span class="p">:</span> <span class="s2">"kg_provenance_latest"</span><span class="p">,</span>
+            <span class="s2">"fmea_ingestion_quality_total_fms_ingested"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"total_fms_ingested"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"fmea_ingestion_quality_critical_field_missing_count"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"critical_field_missing_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"fmea_ingestion_quality_enrichment_field_missing_count"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enrichment_field_missing_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"fmea_ingestion_quality_derived_field_count"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"derived_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"fmea_ingestion_quality_nlp_inferred_field_count"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nlp_inferred_field_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"fmea_ingestion_quality_orphaned_fm_count"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"orphaned_fm_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="s2">"fmea_ingestion_quality_profile_used"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"profile_used"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"auto"</span><span class="p">),</span>
+            <span class="s2">"fmea_ingestion_quality_format_autodetect_confidence"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"format_autodetect_confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span>
+        <span class="p">},</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">g</span><span class="o">.</span><span class="n">as_lists</span><span class="p">()</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Top-level ingestion function</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="ingest_fmea_to_neo4j">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow.ingest_fmea_to_neo4j">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">ingest_fmea_to_neo4j</span><span class="p">(</span>
+    <span class="n">client</span><span class="p">:</span> <span class="n">Py2Neo</span><span class="p">,</span>
+    <span class="n">schema_paths</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">]]],</span>
+    <span class="n">fmea_records</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">database</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">create_constraints</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Build and ingest a FMEA graph into Neo4j.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        client: Active :class:`Py2Neo` connection.</span>
+<span class="sd">        schema_paths: One or more TOML schema file paths.</span>
+<span class="sd">        fmea_records: Parsed FMEA records from :func:`fmeaParser.parse_fmea_file`.</span>
+<span class="sd">        database: Target Neo4j database; ``None`` uses the driver default.</span>
+<span class="sd">        create_constraints: Apply DDL constraints/indexes before ingestion.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        ``(node_count, edge_count)`` written to the database.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">create_constraints</span><span class="p">:</span>
+        <span class="n">apply_schema_constraints</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">schema_paths</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="n">database</span><span class="p">)</span>
+
+    <span class="n">nodes</span><span class="p">,</span> <span class="n">edges</span> <span class="o">=</span> <span class="n">build_fmea_graph</span><span class="p">(</span>
+        <span class="n">schema_paths</span><span class="p">,</span>
+        <span class="n">fmea_records</span><span class="p">,</span>
+        <span class="n">client</span><span class="o">=</span><span class="n">client</span><span class="p">,</span>
+        <span class="n">database</span><span class="o">=</span><span class="n">database</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Built FMEA graph: </span><span class="si">%d</span><span class="s2"> nodes, </span><span class="si">%d</span><span class="s2"> edges"</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">nodes</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">edges</span><span class="p">))</span>
+    <span class="n">ingest_graph_toml</span><span class="p">(</span><span class="n">client</span><span class="p">,</span> <span class="n">nodes</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="n">database</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">nodes</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">edges</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># CLI</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_parse_args">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow._parse_args">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_args</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">argparse</span><span class="o">.</span><span class="n">Namespace</span><span class="p">:</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span>
+        <span class="n">description</span><span class="o">=</span><span class="s2">"Parse FMEA spreadsheet(s) and ingest into Neo4j"</span><span class="p">,</span>
+        <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="o">.</span><span class="n">RawDescriptionHelpFormatter</span><span class="p">,</span>
+        <span class="n">epilog</span><span class="o">=</span><span class="vm">__doc__</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">"fmea_files"</span><span class="p">,</span>
+        <span class="n">nargs</span><span class="o">=</span><span class="s2">"+"</span><span class="p">,</span>
+        <span class="n">metavar</span><span class="o">=</span><span class="s2">"FMEA_FILE"</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">"Path(s) to .csv, .xlsx, or .xls FMEA spreadsheet(s)"</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">"--schema"</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">"append"</span><span class="p">,</span>
+        <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s2">"schemas"</span><span class="p">,</span>
+        <span class="n">metavar</span><span class="o">=</span><span class="s2">"SCHEMA_TOML"</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">"Path to TOML schema file (repeat for multiple schemas)"</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--neo4j-uri"</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"Neo4j bolt URI"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--neo4j-user"</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"Neo4j username"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--neo4j-pass"</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"Neo4j password"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s2">"--database"</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">"Neo4j database name"</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">"--no-constraints"</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">"store_true"</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">"Skip DDL constraint/index creation"</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">"--sheet"</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">"append"</span><span class="p">,</span>
+        <span class="n">dest</span><span class="o">=</span><span class="s2">"sheet_filter"</span><span class="p">,</span>
+        <span class="n">metavar</span><span class="o">=</span><span class="s2">"SHEET_NAME"</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">"Only parse the named Excel sheet(s) (repeat for multiple; default: all)"</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">"--ingestion-report-out"</span><span class="p">,</span>
+        <span class="n">default</span><span class="o">=</span><span class="s2">"fmea_ingestion_report.json"</span><span class="p">,</span>
+        <span class="n">metavar</span><span class="o">=</span><span class="s2">"OUT_JSON"</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">"Output path for fmea_ingestion_report.json payload (default: ./fmea_ingestion_report.json)."</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span>
+        <span class="s2">"--no-ingestion-report-out"</span><span class="p">,</span>
+        <span class="n">action</span><span class="o">=</span><span class="s2">"store_true"</span><span class="p">,</span>
+        <span class="n">help</span><span class="o">=</span><span class="s2">"Disable writing the fmea_ingestion_report.json artifact."</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="main">
+<a class="viewcode-back" href="../../../../autoapi/src/dackar/knowledge_graph/kg_ingest_fmea_workflow/index.html#src.dackar.knowledge_graph.kg_ingest_fmea_workflow.main">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""CLI entry point."""</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">_parse_args</span><span class="p">()</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">Py2Neo</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">neo4j_uri</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">neo4j_user</span><span class="p">,</span> <span class="n">args</span><span class="o">.</span><span class="n">neo4j_pass</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="n">parse_fmea_files</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">Path</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">args</span><span class="o">.</span><span class="n">fmea_files</span><span class="p">],</span>
+            <span class="n">sheet_filter</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">sheet_filter</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Parsed </span><span class="si">%d</span><span class="s2"> total FMEA records from </span><span class="si">%d</span><span class="s2"> file(s)."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">records</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">fmea_files</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No FMEA records parsed — nothing to ingest."</span><span class="p">)</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="n">nodes</span><span class="p">,</span> <span class="n">edges</span> <span class="o">=</span> <span class="n">ingest_fmea_to_neo4j</span><span class="p">(</span>
+            <span class="n">client</span><span class="p">,</span>
+            <span class="n">schema_paths</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">schemas</span><span class="p">,</span>
+            <span class="n">fmea_records</span><span class="o">=</span><span class="n">records</span><span class="p">,</span>
+            <span class="n">database</span><span class="o">=</span><span class="n">args</span><span class="o">.</span><span class="n">database</span><span class="p">,</span>
+            <span class="n">create_constraints</span><span class="o">=</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_constraints</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Ingestion complete: </span><span class="si">%d</span><span class="s2"> nodes, </span><span class="si">%d</span><span class="s2"> edges"</span><span class="p">,</span> <span class="n">nodes</span><span class="p">,</span> <span class="n">edges</span><span class="p">)</span>
+        <span class="n">ingestion_quality</span> <span class="o">=</span> <span class="n">_extract_fmea_ingestion_quality</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="n">args</span><span class="o">.</span><span class="n">no_ingestion_report_out</span><span class="p">)</span> <span class="ow">and</span> <span class="n">args</span><span class="o">.</span><span class="n">ingestion_report_out</span><span class="p">:</span>
+            <span class="n">out_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">ingestion_report_out</span><span class="p">)</span>
+            <span class="n">out_path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">out_path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">ingestion_quality</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"Wrote FMEA ingestion quality report: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">out_path</span><span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
