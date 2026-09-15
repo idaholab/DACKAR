@@ -1,0 +1,331 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.storage.lc_retriever_processed &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.storage.lc_retriever_processed</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.storage.lc_retriever_processed</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.chroma_store</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChromaRecordStore</span><span class="p">,</span> <span class="n">_stable_record_id_from_doc</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.multi_vector_fusion</span><span class="w"> </span><span class="kn">import</span> <span class="n">reciprocal_rank_fusion</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_WARNED_NON_RRF_FUSION">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage._WARNED_NON_RRF_FUSION">[docs]</a>
+<span class="n">_WARNED_NON_RRF_FUSION</span> <span class="o">=</span> <span class="kc">False</span></div>
+
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.processed_record_store</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcessedRecordStore</span><span class="p">,</span> <span class="n">select_processed_snippet</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Result dataclasses</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="RetrieveResult">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.RetrieveResult">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RetrieveResult</span><span class="p">:</span>
+<div class="viewcode-block" id="RetrieveResult.record_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.RetrieveResult.record_id">[docs]</a>
+    <span class="n">record_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="RetrieveResult.snippet">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.RetrieveResult.snippet">[docs]</a>
+    <span class="n">snippet</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="RetrieveResult.metadata">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.RetrieveResult.metadata">[docs]</a>
+    <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="RetrieveResult.per_view">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.RetrieveResult.per_view">[docs]</a>
+    <span class="n">per_view</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="RetrieveResult.score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.RetrieveResult.score">[docs]</a>
+    <span class="n">score</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="RetrieveResult.record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.RetrieveResult.record">[docs]</a>
+    <span class="n">record</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span></div>
+</div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="ContextPack">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.ContextPack">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ContextPack</span><span class="p">:</span>
+<div class="viewcode-block" id="ContextPack.query_texts">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.ContextPack.query_texts">[docs]</a>
+    <span class="n">query_texts</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="ContextPack.results">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.ContextPack.results">[docs]</a>
+    <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RetrieveResult</span><span class="p">]</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Retriever / orchestrator</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="LCProcessedRetriever">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.LCProcessedRetriever">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LCProcessedRetriever</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Light adaptation of the earlier retrieval layer for processed_text_record.</span>
+
+<span class="sd">    Differences from the original lc_retriever.py:</span>
+<span class="sd">    - Uses ChromaRecordStore collections keyed by document type.</span>
+<span class="sd">    - Treats record_id as the vector/document identity.</span>
+<span class="sd">    - Hydrates canonical processed_text_record objects instead of raw mdParser chunks.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">manager</span><span class="p">:</span> <span class="n">ChromaRecordStore</span><span class="p">,</span> <span class="n">doc_store</span><span class="p">:</span> <span class="n">ProcessedRecordStore</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="LCProcessedRetriever.manager">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.LCProcessedRetriever.manager">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">manager</span> <span class="o">=</span> <span class="n">manager</span></div>
+
+<div class="viewcode-block" id="LCProcessedRetriever.store">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.LCProcessedRetriever.store">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">store</span> <span class="o">=</span> <span class="n">doc_store</span></div>
+
+
+<div class="viewcode-block" id="LCProcessedRetriever.query_doc_types">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.LCProcessedRetriever.query_doc_types">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">query_doc_types</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">doc_types</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">query_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">top_k_per_doc_type</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="n">k_final</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="n">filter_meta</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">fusion</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"rrf"</span><span class="p">,</span>
+        <span class="n">view_weights</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">hybrid_weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+        <span class="n">snippet_preference</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"raw_text"</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ContextPack</span><span class="p">:</span>
+        <span class="n">per_view</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">for</span> <span class="n">doc_type</span> <span class="ow">in</span> <span class="n">doc_types</span><span class="p">:</span>
+            <span class="c1"># Ensure persisted collections are opened even if this process did</span>
+            <span class="c1"># not perform the original ingest.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">load_collection</span><span class="p">(</span><span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Failed to load collection for doc_type=</span><span class="si">%s</span><span class="s2"> before query: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">doc_type</span><span class="p">,</span>
+                    <span class="n">exc</span><span class="p">,</span>
+                <span class="p">)</span>
+
+            <span class="n">docs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">manager</span><span class="o">.</span><span class="n">query_doc_type</span><span class="p">(</span>
+                <span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">,</span>
+                <span class="n">query_text</span><span class="o">=</span><span class="n">query_text</span><span class="p">,</span>
+                <span class="n">top_k</span><span class="o">=</span><span class="n">top_k_per_doc_type</span><span class="p">,</span>
+                <span class="n">filter_meta</span><span class="o">=</span><span class="n">filter_meta</span><span class="p">,</span>
+                <span class="n">hybrid_weight</span><span class="o">=</span><span class="n">hybrid_weight</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">hits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">:</span>
+                <span class="n">rid</span> <span class="o">=</span> <span class="n">_stable_record_id_from_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">rid</span><span class="p">:</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"Skipping vector hit with no stable record_id for doc_type=</span><span class="si">%s</span><span class="s2"> query=</span><span class="si">%r</span><span class="s2">."</span><span class="p">,</span>
+                        <span class="n">doc_type</span><span class="p">,</span>
+                        <span class="n">query_text</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="k">continue</span>
+                <span class="n">hits</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="s2">"record_id"</span><span class="p">:</span> <span class="n">rid</span><span class="p">,</span>
+                        <span class="s2">"score"</span><span class="p">:</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"_score"</span><span class="p">),</span>
+                        <span class="s2">"document"</span><span class="p">:</span> <span class="n">doc</span><span class="p">,</span>
+                        <span class="s2">"metadata"</span><span class="p">:</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span>
+                    <span class="p">}</span>
+                <span class="p">)</span>
+            <span class="n">per_view</span><span class="p">[</span><span class="n">doc_type</span><span class="p">]</span> <span class="o">=</span> <span class="n">hits</span>
+
+        <span class="n">fused</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fuse</span><span class="p">(</span><span class="n">per_view</span><span class="p">,</span> <span class="n">fusion</span><span class="o">=</span><span class="n">fusion</span><span class="p">,</span> <span class="n">k_final</span><span class="o">=</span><span class="n">k_final</span><span class="p">,</span> <span class="n">view_weights</span><span class="o">=</span><span class="n">view_weights</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">fused</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"No fused hits returned for query '</span><span class="si">%s</span><span class="s2">'."</span><span class="p">,</span> <span class="n">query_text</span><span class="p">)</span>
+        
+        <span class="n">record_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">h</span><span class="p">[</span><span class="s2">"record_id"</span><span class="p">]</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">fused</span><span class="p">]</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">store</span><span class="o">.</span><span class="n">get_many</span><span class="p">(</span><span class="n">record_ids</span><span class="p">)</span>
+        <span class="n">rec_by_id</span> <span class="o">=</span> <span class="p">{</span><span class="n">r</span><span class="p">[</span><span class="s2">"record_id"</span><span class="p">]:</span> <span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">records</span><span class="p">}</span>
+
+        <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RetrieveResult</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">hit</span> <span class="ow">in</span> <span class="n">fused</span><span class="p">:</span>
+            <span class="n">rid</span> <span class="o">=</span> <span class="n">hit</span><span class="p">[</span><span class="s2">"record_id"</span><span class="p">]</span>
+            <span class="n">rec</span> <span class="o">=</span> <span class="n">rec_by_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">rid</span><span class="p">)</span>
+            <span class="n">snippet</span> <span class="o">=</span> <span class="n">select_processed_snippet</span><span class="p">(</span><span class="n">rec</span><span class="p">,</span> <span class="n">prefer</span><span class="o">=</span><span class="n">snippet_preference</span><span class="p">)</span>
+            <span class="n">canonical_meta</span> <span class="o">=</span> <span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rec</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+            <span class="n">result_meta</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="o">**</span><span class="n">canonical_meta</span><span class="p">,</span>
+                <span class="s2">"_vector_metadata"</span><span class="p">:</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{},</span>
+            <span class="p">}</span>
+            <span class="n">results</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">RetrieveResult</span><span class="p">(</span>
+                    <span class="n">record_id</span><span class="o">=</span><span class="n">rid</span><span class="p">,</span>
+                    <span class="n">snippet</span><span class="o">=</span><span class="n">snippet</span><span class="p">,</span>
+                    <span class="n">metadata</span><span class="o">=</span><span class="n">result_meta</span><span class="p">,</span>
+                    <span class="n">per_view</span><span class="o">=</span><span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"views"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{},</span>
+                    <span class="n">score</span><span class="o">=</span><span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">),</span>
+                    <span class="n">record</span><span class="o">=</span><span class="n">rec</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">ContextPack</span><span class="p">(</span><span class="n">query_texts</span><span class="o">=</span><span class="p">{</span><span class="s2">"query"</span><span class="p">:</span> <span class="n">query_text</span><span class="p">},</span> <span class="n">results</span><span class="o">=</span><span class="n">results</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LCProcessedRetriever._fuse">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/lc_retriever_processed/index.html#src.dackar.RCA.storage.LCProcessedRetriever._fuse">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fuse</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">per_view_hits</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]],</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">fusion</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">k_final</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">view_weights</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Fuse per-doc-type hit lists into a single ranked list.</span>
+
+<span class="sd">        Only Reciprocal Rank Fusion (RRF) is valid at this cross-doc-type layer. Each incoming</span>
+<span class="sd">        hit's ``score`` is the *fused RRF score* produced by ``ChromaRecordStore.query_doc_type``</span>
+<span class="sd">        (higher = better), not a raw vector distance. ``weighted_distance_inversion`` assumes a</span>
+<span class="sd">        raw non-negative distance (lower = better), so applying it here would rank matches</span>
+<span class="sd">        worst-first. Any non-``"rrf"`` ``fusion`` value is therefore mapped to RRF with a</span>
+<span class="sd">        one-time warning; ``weighted_distance_inversion`` remains available only for the</span>
+<span class="sd">        per-view (raw-distance) layer inside the store.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">fusion</span> <span class="o">!=</span> <span class="s2">"rrf"</span><span class="p">:</span>
+            <span class="k">global</span> <span class="n">_WARNED_NON_RRF_FUSION</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_WARNED_NON_RRF_FUSION</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Ignoring fusion=</span><span class="si">%r</span><span class="s2"> at the cross-doc-type layer and using RRF instead: "</span>
+                    <span class="s2">"hits here carry already-fused RRF scores (higher=better), not raw "</span>
+                    <span class="s2">"distances, so distance-based fusion would rank results worst-first."</span><span class="p">,</span>
+                    <span class="n">fusion</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="n">_WARNED_NON_RRF_FUSION</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="n">reciprocal_rank_fusion</span><span class="p">(</span><span class="n">per_view_hits</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">k_final</span><span class="p">,</span> <span class="n">view_weights</span><span class="o">=</span><span class="n">view_weights</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

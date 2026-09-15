@@ -1,0 +1,311 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.storage.multi_vector_fusion &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.storage.multi_vector_fusion</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.storage.multi_vector_fusion</h1><div class="highlight"><pre>
+<span></span><span class="c1"># multi_vector_fusion.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Reciprocal Rank Fusion</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="reciprocal_rank_fusion">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/multi_vector_fusion/index.html#src.dackar.RCA.storage.multi_vector_fusion.reciprocal_rank_fusion">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">reciprocal_rank_fusion</span><span class="p">(</span>
+    <span class="n">per_view_hits</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]],</span>
+    <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+    <span class="n">rrf_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">60</span><span class="p">,</span>
+    <span class="n">view_weights</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">min_votes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Fuse ranked hit lists from multiple retrieval views using Reciprocal Rank</span>
+<span class="sd">    Fusion (RRF).</span>
+
+<span class="sd">    RRF is rank-only — it does not rely on raw similarity scores — making it</span>
+<span class="sd">    robust when different views return scores on incompatible scales (e.g.</span>
+<span class="sd">    L2 distance vs. BM25 score).  Each document's contribution from a view</span>
+<span class="sd">    at rank *r* (0-indexed) is ``weight / (rrf_k + r + 1)``.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        per_view_hits:</span>
+<span class="sd">            Mapping of ``view_name -&gt; list[hit]``.  Each hit must have at</span>
+<span class="sd">            least a ``"record_id"`` key.  Optional keys ``"score"``</span>
+<span class="sd">            (raw similarity), ``"metadata"``, and ``"document"`` are</span>
+<span class="sd">            preserved on the first occurrence.</span>
+<span class="sd">        k:</span>
+<span class="sd">            Maximum number of results to return after fusion.</span>
+<span class="sd">        rrf_k:</span>
+<span class="sd">            Smoothing constant (default 60 per the original RRF paper).</span>
+<span class="sd">            Higher values reduce the penalty for lower ranks.</span>
+<span class="sd">        view_weights:</span>
+<span class="sd">            Optional per-view scaling factors (default 1.0 for all views).</span>
+<span class="sd">            Use to up-weight a higher-quality view, e.g.</span>
+<span class="sd">            ``{"bm25": 1.5, "dense": 1.0}``.</span>
+<span class="sd">        min_votes:</span>
+<span class="sd">            Minimum number of views that must have returned a chunk for it</span>
+<span class="sd">            to appear in the output.  Chunks retrieved by only one view are</span>
+<span class="sd">            often lower-confidence matches; set ``min_votes=2`` to enforce</span>
+<span class="sd">            cross-view agreement.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        List[dict]: Up to *k* fused hit dicts, sorted by descending RRF score.</span>
+<span class="sd">        Each dict contains:</span>
+<span class="sd">        - ``"record_id"`` (str)</span>
+<span class="sd">        - ``"score"``    (float) — cumulative RRF score</span>
+<span class="sd">        - ``"votes"``    (list[str]) — view names that returned this chunk</span>
+<span class="sd">        - ``"views"``    (dict) — per-view rank and raw score</span>
+<span class="sd">        - ``"metadata"`` (dict | None) — from the first view that provided it</span>
+<span class="sd">        - ``"document"`` (Any | None)  — LC Document object if available</span>
+<span class="sd">    """</span>
+    <span class="n">view_weights</span> <span class="o">=</span> <span class="n">view_weights</span> <span class="ow">or</span> <span class="p">{}</span>
+
+    <span class="c1"># Accumulate RRF scores per chunk</span>
+    <span class="n">agg</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">"record_id"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+        <span class="s2">"votes"</span><span class="p">:</span> <span class="p">[],</span>
+        <span class="s2">"views"</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="s2">"metadata"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"document"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">})</span>
+
+    <span class="k">for</span> <span class="n">view</span><span class="p">,</span> <span class="n">hits</span> <span class="ow">in</span> <span class="n">per_view_hits</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="n">view_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">rank</span><span class="p">,</span> <span class="n">hit</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">hits</span><span class="p">):</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">entry</span> <span class="o">=</span> <span class="n">agg</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span>
+            <span class="n">entry</span><span class="p">[</span><span class="s2">"record_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>
+            <span class="n">entry</span><span class="p">[</span><span class="s2">"score"</span><span class="p">]</span> <span class="o">+=</span> <span class="n">w</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">rrf_k</span> <span class="o">+</span> <span class="n">rank</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span>
+            <span class="n">entry</span><span class="p">[</span><span class="s2">"votes"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">view</span><span class="p">)</span>
+            <span class="n">entry</span><span class="p">[</span><span class="s2">"views"</span><span class="p">][</span><span class="n">view</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"rank"</span><span class="p">:</span> <span class="n">rank</span><span class="p">,</span> <span class="s2">"score_raw"</span><span class="p">:</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">)}</span>
+
+            <span class="c1"># Preserve metadata / document from the first view that supplies them</span>
+            <span class="k">if</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">):</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hit</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"document"</span><span class="p">):</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hit</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span>
+
+    <span class="c1"># Filter by vote threshold, then sort by score descending</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">agg</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">"votes"</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="n">min_votes</span>
+    <span class="p">]</span>
+    <span class="n">results</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="s2">"score"</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">results</span><span class="p">[:</span><span class="n">k</span><span class="p">]</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Weighted Distance Inversion</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="weighted_distance_inversion">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/multi_vector_fusion/index.html#src.dackar.RCA.storage.multi_vector_fusion.weighted_distance_inversion">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">weighted_distance_inversion</span><span class="p">(</span>
+    <span class="n">per_view_hits</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]],</span>
+    <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+    <span class="n">view_weights</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">min_votes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Fuse hit lists from multiple retrieval views by inverting raw distance</span>
+<span class="sd">    scores into similarity-like contributions.</span>
+
+<span class="sd">    Assumes *score* is a non-negative distance (lower = more similar), as</span>
+<span class="sd">    returned by Chroma's ``similarity_search_with_score`` under L2 or cosine</span>
+<span class="sd">    distance metrics.  The contribution of each hit is</span>
+<span class="sd">    ``weight / (1 + distance)``, mapping distance 0 → contribution 1.0.</span>
+
+<span class="sd">    Hits whose ``"score"`` is ``None`` (e.g. from the BM25 fallback path</span>
+<span class="sd">    which does not produce a numeric distance) are **skipped** rather than</span>
+<span class="sd">    contributing 0.0, which would incorrectly penalise them relative to</span>
+<span class="sd">    scored hits from other views.  (Issue 13)</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        per_view_hits:</span>
+<span class="sd">            Mapping of ``view_name -&gt; list[hit]``.  Each hit must have at</span>
+<span class="sd">            least a ``"record_id"`` key.  ``"score"`` should be a non-negative</span>
+<span class="sd">            float distance; ``None`` is explicitly handled.</span>
+<span class="sd">        k:</span>
+<span class="sd">            Maximum number of results to return.</span>
+<span class="sd">        view_weights:</span>
+<span class="sd">            Optional per-view scaling factors (default 1.0).</span>
+<span class="sd">        min_votes:</span>
+<span class="sd">            Minimum number of views that must contribute a non-None score for</span>
+<span class="sd">            a chunk to appear in the output.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        List[dict]: Up to *k* fused hit dicts sorted by descending score.</span>
+<span class="sd">        Same schema as :func:`reciprocal_rank_fusion`.</span>
+
+<span class="sd">    Note:</span>
+<span class="sd">        If you switch Chroma to return cosine *similarity* (higher = better),</span>
+<span class="sd">        this function's inversion logic will become incorrect.  The metric</span>
+<span class="sd">        assumption (distance, not similarity) must match the Chroma collection</span>
+<span class="sd">        configuration.</span>
+<span class="sd">    """</span>
+    <span class="n">view_weights</span> <span class="o">=</span> <span class="n">view_weights</span> <span class="ow">or</span> <span class="p">{}</span>
+
+    <span class="n">agg</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">view</span><span class="p">,</span> <span class="n">hits</span> <span class="ow">in</span> <span class="n">per_view_hits</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="n">view_weights</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">view</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">hit</span> <span class="ow">in</span> <span class="n">hits</span><span class="p">:</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">)</span>
+
+            <span class="c1"># Issue 13 fix: skip None scores rather than adding 0 contribution.</span>
+            <span class="c1"># A None score means the retrieval path (e.g. BM25) did not produce</span>
+            <span class="c1"># a numeric distance; treating it as 0 would under-rank these hits</span>
+            <span class="c1"># relative to chunks with real scores from other views.</span>
+            <span class="k">if</span> <span class="n">raw</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># Clip to [0, ∞) as a defensive measure against unexpected negative</span>
+            <span class="c1"># values (e.g. numerical noise in inner-product spaces).</span>
+            <span class="n">distance</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">raw</span><span class="p">))</span>
+            <span class="n">contribution</span> <span class="o">=</span> <span class="n">w</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">+</span> <span class="n">distance</span><span class="p">))</span>
+
+            <span class="n">entry</span> <span class="o">=</span> <span class="n">agg</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">cid</span><span class="p">,</span> <span class="p">{</span>
+                <span class="s2">"record_id"</span><span class="p">:</span> <span class="n">cid</span><span class="p">,</span>
+                <span class="s2">"score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                <span class="s2">"votes"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"views"</span><span class="p">:</span> <span class="p">{},</span>
+                <span class="s2">"metadata"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"document"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="p">})</span>
+            <span class="n">entry</span><span class="p">[</span><span class="s2">"score"</span><span class="p">]</span> <span class="o">+=</span> <span class="n">contribution</span>
+            <span class="n">entry</span><span class="p">[</span><span class="s2">"votes"</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">view</span><span class="p">)</span>
+            <span class="n">entry</span><span class="p">[</span><span class="s2">"views"</span><span class="p">][</span><span class="n">view</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"score_raw"</span><span class="p">:</span> <span class="n">raw</span><span class="p">}</span>
+
+            <span class="k">if</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">):</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hit</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"document"</span><span class="p">):</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hit</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span>
+
+    <span class="n">results</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">entry</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">agg</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">entry</span><span class="p">[</span><span class="s2">"votes"</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="n">min_votes</span>
+    <span class="p">]</span>
+    <span class="n">results</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="s2">"score"</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">results</span><span class="p">[:</span><span class="n">k</span><span class="p">]</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,89 @@
+src.dackar.RCA.storage.multi_vector_fusion
+==========================================
+
+.. py:module:: src.dackar.RCA.storage.multi_vector_fusion
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.storage.multi_vector_fusion.reciprocal_rank_fusion
+   src.dackar.RCA.storage.multi_vector_fusion.weighted_distance_inversion
+
+
+Module Contents
+---------------
+
+.. py:function:: reciprocal_rank_fusion(per_view_hits, k = 10, rrf_k = 60, view_weights = None, min_votes = 1)
+
+   Fuse ranked hit lists from multiple retrieval views using Reciprocal Rank
+   Fusion (RRF).
+
+   RRF is rank-only — it does not rely on raw similarity scores — making it
+   robust when different views return scores on incompatible scales (e.g.
+   L2 distance vs. BM25 score).  Each document's contribution from a view
+   at rank *r* (0-indexed) is ``weight / (rrf_k + r + 1)``.
+
+   :param per_view_hits: Mapping of ``view_name -> list[hit]``.  Each hit must have at
+                         least a ``"record_id"`` key.  Optional keys ``"score"``
+                         (raw similarity), ``"metadata"``, and ``"document"`` are
+                         preserved on the first occurrence.
+   :param k: Maximum number of results to return after fusion.
+   :param rrf_k: Smoothing constant (default 60 per the original RRF paper).
+                 Higher values reduce the penalty for lower ranks.
+   :param view_weights: Optional per-view scaling factors (default 1.0 for all views).
+                        Use to up-weight a higher-quality view, e.g.
+                        ``{"bm25": 1.5, "dense": 1.0}``.
+   :param min_votes: Minimum number of views that must have returned a chunk for it
+                     to appear in the output.  Chunks retrieved by only one view are
+                     often lower-confidence matches; set ``min_votes=2`` to enforce
+                     cross-view agreement.
+
+   :returns: Up to *k* fused hit dicts, sorted by descending RRF score.
+             Each dict contains:
+             - ``"record_id"`` (str)
+             - ``"score"``    (float) — cumulative RRF score
+             - ``"votes"``    (list[str]) — view names that returned this chunk
+             - ``"views"``    (dict) — per-view rank and raw score
+             - ``"metadata"`` (dict | None) — from the first view that provided it
+             - ``"document"`` (Any | None)  — LC Document object if available
+   :rtype: List[dict]
+
+
+.. py:function:: weighted_distance_inversion(per_view_hits, k = 10, view_weights = None, min_votes = 1)
+
+   Fuse hit lists from multiple retrieval views by inverting raw distance
+   scores into similarity-like contributions.
+
+   Assumes *score* is a non-negative distance (lower = more similar), as
+   returned by Chroma's ``similarity_search_with_score`` under L2 or cosine
+   distance metrics.  The contribution of each hit is
+   ``weight / (1 + distance)``, mapping distance 0 → contribution 1.0.
+
+   Hits whose ``"score"`` is ``None`` (e.g. from the BM25 fallback path
+   which does not produce a numeric distance) are **skipped** rather than
+   contributing 0.0, which would incorrectly penalise them relative to
+   scored hits from other views.  (Issue 13)
+
+   :param per_view_hits: Mapping of ``view_name -> list[hit]``.  Each hit must have at
+                         least a ``"record_id"`` key.  ``"score"`` should be a non-negative
+                         float distance; ``None`` is explicitly handled.
+   :param k: Maximum number of results to return.
+   :param view_weights: Optional per-view scaling factors (default 1.0).
+   :param min_votes: Minimum number of views that must contribute a non-None score for
+                     a chunk to appear in the output.
+
+   :returns: Up to *k* fused hit dicts sorted by descending score.
+             Same schema as :func:`reciprocal_rank_fusion`.
+   :rtype: List[dict]
+
+   .. note::
+
+      If you switch Chroma to return cosine *similarity* (higher = better),
+      this function's inversion logic will become incorrect.  The metric
+      assumption (distance, not similarity) must match the Chroma collection
+      configuration.
+
+

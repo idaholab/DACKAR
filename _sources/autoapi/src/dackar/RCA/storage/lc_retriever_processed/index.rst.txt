@@ -1,0 +1,103 @@
+src.dackar.RCA.storage.lc_retriever_processed
+=============================================
+
+.. py:module:: src.dackar.RCA.storage.lc_retriever_processed
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.storage.lc_retriever_processed.LOGGER
+   src.dackar.RCA.storage.lc_retriever_processed._WARNED_NON_RRF_FUSION
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.storage.lc_retriever_processed.RetrieveResult
+   src.dackar.RCA.storage.lc_retriever_processed.ContextPack
+   src.dackar.RCA.storage.lc_retriever_processed.LCProcessedRetriever
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: _WARNED_NON_RRF_FUSION
+   :value: False
+
+
+.. py:class:: RetrieveResult
+
+   .. py:attribute:: record_id
+      :type:  str
+
+
+   .. py:attribute:: snippet
+      :type:  str
+
+
+   .. py:attribute:: metadata
+      :type:  Dict[str, Any]
+
+
+   .. py:attribute:: per_view
+      :type:  Dict[str, Any]
+
+
+   .. py:attribute:: score
+      :type:  Optional[float]
+
+
+   .. py:attribute:: record
+      :type:  Optional[Dict[str, Any]]
+
+
+.. py:class:: ContextPack
+
+   .. py:attribute:: query_texts
+      :type:  Dict[str, str]
+
+
+   .. py:attribute:: results
+      :type:  List[RetrieveResult]
+
+
+.. py:class:: LCProcessedRetriever(manager, doc_store)
+
+   Light adaptation of the earlier retrieval layer for processed_text_record.
+
+   Differences from the original lc_retriever.py:
+   - Uses ChromaRecordStore collections keyed by document type.
+   - Treats record_id as the vector/document identity.
+   - Hydrates canonical processed_text_record objects instead of raw mdParser chunks.
+
+
+   .. py:attribute:: manager
+
+
+   .. py:attribute:: store
+
+
+   .. py:method:: query_doc_types(*, doc_types, query_text, top_k_per_doc_type = 8, k_final = 10, filter_meta = None, fusion = 'rrf', view_weights = None, hybrid_weight = 0.5, snippet_preference = 'raw_text')
+
+
+   .. py:method:: _fuse(per_view_hits, *, fusion, k_final, view_weights)
+
+      Fuse per-doc-type hit lists into a single ranked list.
+
+      Only Reciprocal Rank Fusion (RRF) is valid at this cross-doc-type layer. Each incoming
+      hit's ``score`` is the *fused RRF score* produced by ``ChromaRecordStore.query_doc_type``
+      (higher = better), not a raw vector distance. ``weighted_distance_inversion`` assumes a
+      raw non-negative distance (lower = better), so applying it here would rank matches
+      worst-first. Any non-``"rrf"`` ``fusion`` value is therefore mapped to RRF with a
+      one-time warning; ``weighted_distance_inversion`` remains available only for the
+      per-view (raw-distance) layer inside the store.
+
+
+

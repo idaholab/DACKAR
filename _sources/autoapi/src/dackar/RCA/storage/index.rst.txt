@@ -1,0 +1,284 @@
+src.dackar.RCA.storage
+======================
+
+.. py:module:: src.dackar.RCA.storage
+
+.. autoapi-nested-parse::
+
+   Stage-6 storage & retrieval for canonical processed_text_record objects.
+
+   Public API:
+       ChromaRecordStore
+           Per-doc-type Chroma store (dense + in-memory BM25) for processed_text_records.
+       ProcessedRecordStore
+           Corpus-level in-memory index for hydrating records by record_id / chunk_id.
+       LCProcessedRetriever
+           Cross-doc-type hybrid retriever/orchestrator built on the two stores above.
+       ProcessedEvidenceStoreAdapter
+           Thin adapter exposing the retriever through the evidence-store query interface.
+
+
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   /autoapi/src/dackar/RCA/storage/chroma_store/index
+   /autoapi/src/dackar/RCA/storage/lc_retriever_processed/index
+   /autoapi/src/dackar/RCA/storage/multi_vector_fusion/index
+   /autoapi/src/dackar/RCA/storage/processed_evidence_store_adapter/index
+   /autoapi/src/dackar/RCA/storage/processed_record_store/index
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.storage.ChromaRecordStore
+   src.dackar.RCA.storage.LCProcessedRetriever
+   src.dackar.RCA.storage.ProcessedEvidenceStoreAdapter
+   src.dackar.RCA.storage.ProcessedRecordStore
+
+
+Package Contents
+----------------
+
+.. py:class:: ChromaRecordStore(persist_directory, *, embed_model = None, ollama_base_url = None, collection_prefix = 'processed', bm25_k = 20)
+
+   Stage-6 store for canonical processed_text_record objects.
+
+   One Chroma collection is used per document class (CR, MR, SOP, ECA, ...).
+   Every indexed vector corresponds to one validated processed_text_record.
+
+
+   .. py:attribute:: persist_directory
+
+
+   .. py:attribute:: embed_model
+
+
+   .. py:attribute:: ollama_base_url
+
+
+   .. py:attribute:: collection_prefix
+      :value: 'processed'
+
+
+
+   .. py:attribute:: bm25_k
+      :value: 20
+
+
+
+   .. py:attribute:: embedder
+
+
+   .. py:attribute:: _states
+      :type:  Dict[str, _CollectionState]
+
+
+   .. py:method:: _collection_name(doc_type)
+
+
+   .. py:method:: get_or_create_collection(doc_type, collection_name = None)
+
+
+   .. py:method:: load_collection(doc_type, collection_name = None)
+
+      Open a persisted collection for querying and return its :class:`_CollectionState`.
+
+      The dense (vector) side is fully backed by Chroma's on-disk index, so it works
+      regardless of which process performed the original ingest.
+
+      BM25, however, is an *in-memory* corpus built only from documents upserted during the
+      current process (see :meth:`upsert_records`). When a collection is loaded fresh from
+      disk without a matching in-process ingest, ``state.bm25_docs`` is empty and hybrid
+      retrieval degrades to **dense-only** — ``hybrid_weight`` then has no effect. This is a
+      deliberate limitation of the current design (the BM25 corpus is not persisted); callers
+      needing hybrid retrieval in a query-only process must re-ingest the source JSONL first.
+      A warning is emitted here to make the degraded mode explicit.
+
+
+
+   .. py:method:: _get_or_build_bm25(state)
+
+
+   .. py:method:: upsert_records(records, *, doc_type = None, collection_name = None)
+
+      Upsert a batch of processed_text_records into the collection for their doc type.
+
+      All records in a call must share one doc type (a mixed-type batch raises
+      ``ValueError``); the type is taken from ``doc_type`` or inferred from the first record.
+      Malformed records and records with empty embedding text are skipped. Each surviving
+      record is upserted into Chroma by ``record_id`` (dense side) and added to the
+      collection's in-memory BM25 corpus (sparse side), so a subsequent query in the same
+      process gets true hybrid retrieval.
+
+      :returns: The number of records actually upserted.
+
+
+
+   .. py:method:: upsert_jsonl(jsonl_path, *, doc_type_override = None)
+
+      Ingest a JSONL file of processed_text_records, one Chroma collection per doc type.
+
+      Records are read from ``jsonl_path`` (each line may be a bare record or wrapped under a
+      ``processed_text_record`` key), grouped by doc type (or forced to ``doc_type_override``),
+      and upserted via :meth:`upsert_records`.
+
+      :returns: Mapping of ``doc_type -> number of records upserted``.
+
+
+
+   .. py:method:: query_doc_type(doc_type, query_text, *, top_k = 8, filter_meta = None, collection_name = None, hybrid_weight = 0.5)
+
+      Hybrid (dense + BM25) retrieval over a single doc-type collection.
+
+      Runs a dense vector search and a BM25 search, then fuses the two ranked lists with
+      Reciprocal Rank Fusion weighted by ``hybrid_weight`` (dense) / ``1 - hybrid_weight``
+      (BM25). The fused ``_score`` is written back onto each returned document's metadata.
+
+      Filtering:
+          ``filter_meta`` is normalized (see :func:`_normalize_filter_meta`) into scalar
+          Chroma ``$eq``/``$in`` clauses. ``component_ids`` is handled specially: it becomes
+          an index-level ``primary_component_id`` ``$in`` filter, with a legacy post-filter
+          fallback for older records that predate ``primary_component_id`` (see
+          :func:`_doc_matches_component_ids`).
+
+      BM25 availability:
+          BM25 only contributes when this collection was ingested in the current process; on
+          a disk-loaded collection retrieval is dense-only (see :meth:`load_collection`).
+          ``_bm25_available`` is recorded on each returned document's metadata.
+
+      :param doc_type: Document type selecting the collection.
+      :param query_text: Natural-language query.
+      :param top_k: Maximum number of fused results to return.
+      :param filter_meta: Optional high-level metadata filters.
+      :param collection_name: Explicit collection override (else derived from ``doc_type``).
+      :param hybrid_weight: Dense-vs-BM25 blend in [0, 1]; 1.0 is dense-only, 0.0 is BM25-only.
+
+      :returns: Up to ``top_k`` LangChain ``Document`` objects ordered by fused score.
+
+      :raises ValueError: If the target collection has not been initialised via
+          :meth:`upsert_jsonl` / :meth:`upsert_records` / :meth:`load_collection`.
+
+
+
+.. py:class:: LCProcessedRetriever(manager, doc_store)
+
+   Light adaptation of the earlier retrieval layer for processed_text_record.
+
+   Differences from the original lc_retriever.py:
+   - Uses ChromaRecordStore collections keyed by document type.
+   - Treats record_id as the vector/document identity.
+   - Hydrates canonical processed_text_record objects instead of raw mdParser chunks.
+
+
+   .. py:attribute:: manager
+
+
+   .. py:attribute:: store
+
+
+   .. py:method:: query_doc_types(*, doc_types, query_text, top_k_per_doc_type = 8, k_final = 10, filter_meta = None, fusion = 'rrf', view_weights = None, hybrid_weight = 0.5, snippet_preference = 'raw_text')
+
+
+   .. py:method:: _fuse(per_view_hits, *, fusion, k_final, view_weights)
+
+      Fuse per-doc-type hit lists into a single ranked list.
+
+      Only Reciprocal Rank Fusion (RRF) is valid at this cross-doc-type layer. Each incoming
+      hit's ``score`` is the *fused RRF score* produced by ``ChromaRecordStore.query_doc_type``
+      (higher = better), not a raw vector distance. ``weighted_distance_inversion`` assumes a
+      raw non-negative distance (lower = better), so applying it here would rank matches
+      worst-first. Any non-``"rrf"`` ``fusion`` value is therefore mapped to RRF with a
+      one-time warning; ``weighted_distance_inversion`` remains available only for the
+      per-view (raw-distance) layer inside the store.
+
+
+
+.. py:class:: ProcessedEvidenceStoreAdapter
+
+   .. py:attribute:: retriever
+      :type:  src.dackar.RCA.storage.lc_retriever_processed.LCProcessedRetriever
+
+
+   .. py:attribute:: default_doc_types
+      :type:  Optional[List[str]]
+      :value: None
+
+
+
+   .. py:attribute:: top_k_per_doc_type
+      :type:  int
+      :value: 8
+
+
+
+   .. py:attribute:: k_final
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: fusion
+      :type:  str
+      :value: 'rrf'
+
+
+
+   .. py:attribute:: hybrid_weight
+      :type:  float
+      :value: 0.5
+
+
+
+   .. py:attribute:: snippet_preference
+      :type:  str
+      :value: 'raw_text'
+
+
+
+   .. py:method:: query(query_text, *, top_k, filters = None)
+
+
+.. py:class:: ProcessedRecordStore(jsonl_paths = None)
+
+   Corpus-level in-memory index of canonical processed_text_record objects.
+
+   Records are indexed by record_id, with a secondary index by provenance.chunk_id
+   when available, so downstream components can hydrate either identifier.
+
+
+   .. py:attribute:: _by_record_id
+      :type:  Dict[str, Dict[str, Any]]
+
+
+   .. py:attribute:: _record_id_by_chunk_id
+      :type:  Dict[str, str]
+
+
+   .. py:method:: __len__()
+
+
+   .. py:method:: add_jsonl(jsonl_path)
+
+
+   .. py:method:: add_record(rec)
+
+
+   .. py:method:: get(record_id)
+
+
+   .. py:method:: get_by_chunk_id(chunk_id)
+
+
+   .. py:method:: get_many(record_ids)
+
+
+   .. py:method:: all_record_ids()
+
+

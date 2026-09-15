@@ -1,0 +1,1087 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.storage.chroma_store &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.storage.chroma_store</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.storage.chroma_store</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_chroma</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chroma</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_community.retrievers</span><span class="w"> </span><span class="kn">import</span> <span class="n">BM25Retriever</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.documents</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_ollama</span><span class="w"> </span><span class="kn">import</span> <span class="n">OllamaEmbeddings</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.multi_vector_fusion</span><span class="w"> </span><span class="kn">import</span> <span class="n">reciprocal_rank_fusion</span>
+
+<div class="viewcode-block" id="LOGGER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.LOGGER">[docs]</a>
+<span class="n">LOGGER</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># JSONL helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_iter_jsonl">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._iter_jsonl">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_iter_jsonl</span><span class="p">(</span><span class="n">jsonl_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">jsonl_path</span><span class="p">,</span> <span class="s2">"r"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">lineno</span><span class="p">,</span> <span class="n">line</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">start</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+            <span class="n">line</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">obj</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+            <span class="k">except</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"_iter_jsonl: parse error in </span><span class="si">%s</span><span class="s2"> line </span><span class="si">%d</span><span class="s2">: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">jsonl_path</span><span class="p">,</span> <span class="n">lineno</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">yield</span> <span class="n">obj</span></div>
+
+
+
+<div class="viewcode-block" id="_collapse_ws">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._collapse_ws">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_collapse_ws</span><span class="p">(</span><span class="n">s</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">((</span><span class="n">s</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">())</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Processed record helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_looks_like_processed_text_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._looks_like_processed_text_record">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_looks_like_processed_text_record</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="nb">all</span><span class="p">(</span><span class="n">k</span> <span class="ow">in</span> <span class="n">obj</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"record_id"</span><span class="p">,</span> <span class="s2">"doc_id"</span><span class="p">,</span> <span class="s2">"doc_type"</span><span class="p">,</span> <span class="s2">"chunk_index"</span><span class="p">,</span> <span class="s2">"embedding_text"</span><span class="p">,</span> <span class="s2">"metadata"</span><span class="p">,</span> <span class="s2">"provenance"</span><span class="p">))</span>
+        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">),</span> <span class="nb">dict</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">),</span> <span class="nb">dict</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">),</span> <span class="nb">str</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="nb">bool</span><span class="p">(</span><span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="extract_processed_text_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.extract_processed_text_record">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">extract_processed_text_record</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">obj</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">rec</span> <span class="o">=</span> <span class="n">obj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"processed_text_record"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rec</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">_looks_like_processed_text_record</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">rec</span>
+    <span class="k">if</span> <span class="n">_looks_like_processed_text_record</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">obj</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="_stable_record_id_from_doc">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._stable_record_id_from_doc">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_stable_record_id_from_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">metadata</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="s2">"metadata"</span><span class="p">,</span> <span class="p">{})</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"record_id"</span><span class="p">,</span> <span class="s2">"id"</span><span class="p">,</span> <span class="s2">"_id"</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">attr</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"id"</span><span class="p">,</span> <span class="s2">"record_id"</span><span class="p">):</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">attr</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="LIST_FIELDS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.LIST_FIELDS">[docs]</a>
+<span class="n">LIST_FIELDS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"equipment_ids"</span><span class="p">,</span>
+    <span class="s2">"system_names"</span><span class="p">,</span>
+    <span class="s2">"component_names"</span><span class="p">,</span>
+    <span class="s2">"mechanisms"</span><span class="p">,</span>
+    <span class="s2">"failure_outcomes"</span><span class="p">,</span>
+    <span class="s2">"maintenance_actions"</span><span class="p">,</span>
+    <span class="s2">"surveillance_actions"</span><span class="p">,</span>
+    <span class="s2">"tools_methods"</span><span class="p">,</span>
+    <span class="s2">"properties_or_limits"</span><span class="p">,</span>
+    <span class="s2">"doc_refs"</span><span class="p">,</span>
+    <span class="s2">"alarm_ids"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_sanitize_meta_value">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._sanitize_meta_value">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_sanitize_meta_value</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="c1"># Chroma metadata is primitive-only in the common LangChain path.</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_normalize_filter_meta">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._normalize_filter_meta">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_normalize_filter_meta</span><span class="p">(</span><span class="n">filter_meta</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Normalize high-level retrieval filters into the scalar metadata keys that</span>
+<span class="sd">    are actually stored in Chroma.</span>
+
+<span class="sd">    Examples:</span>
+<span class="sd">      - doc_ids   -&gt; doc_id</span>
+<span class="sd">      - doc_types -&gt; doc_type</span>
+<span class="sd">      - component_ids is translated in query_doc_type() into primary_component_id</span>
+<span class="sd">    """</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">filter_meta</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">norm</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="n">alias_map</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"doc_ids"</span><span class="p">:</span> <span class="s2">"doc_id"</span><span class="p">,</span>
+        <span class="s2">"doc_types"</span><span class="p">:</span> <span class="s2">"doc_type"</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">raw</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="n">target_key</span> <span class="o">=</span> <span class="n">alias_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span>
+
+        <span class="c1"># component_ids is handled separately in query_doc_type():</span>
+        <span class="c1"># translated into a primary_component_id Chroma index filter plus</span>
+        <span class="c1"># optional legacy post-filter fallback.</span>
+        <span class="k">if</span> <span class="n">target_key</span> <span class="o">==</span> <span class="s2">"component_ids"</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="c1"># Drop empty containers</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">set</span><span class="p">))</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="n">norm</span><span class="p">[</span><span class="n">target_key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="k">return</span> <span class="n">norm</span></div>
+
+
+
+<div class="viewcode-block" id="_doc_matches_component_ids">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._doc_matches_component_ids">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_doc_matches_component_ids</span><span class="p">(</span><span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">wanted</span><span class="p">:</span> <span class="nb">set</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return True if *doc* is associated with at least one of the *wanted* component IDs.</span>
+
+<span class="sd">    Checks:</span>
+<span class="sd">      1. The scalar ``primary_component_id`` metadata field (index-friendly path).</span>
+<span class="sd">      2. The scalar ``component_id`` metadata field (legacy single-component path).</span>
+<span class="sd">      3. The ``component_ids`` field. In practice this is a JSON-encoded string on every</span>
+<span class="sd">         path, because metadata is passed through :func:`_sanitize_meta` (which stringifies</span>
+<span class="sd">         lists) before it reaches either Chroma or the in-memory BM25 corpus. The plain-list</span>
+<span class="sd">         branch is kept only as a defensive fallback for externally constructed documents.</span>
+<span class="sd">    """</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="n">primary</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_component_id"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">primary</span> <span class="ow">and</span> <span class="n">primary</span> <span class="ow">in</span> <span class="n">wanted</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="n">scalar</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">scalar</span> <span class="ow">and</span> <span class="n">scalar</span> <span class="ow">in</span> <span class="n">wanted</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_ids"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">ids</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">wanted</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">ids</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+            <span class="k">pass</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)):</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">wanted</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="_doc_matches_filter_sane">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._doc_matches_filter_sane">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_doc_matches_filter_sane</span><span class="p">(</span><span class="n">doc</span><span class="p">:</span> <span class="n">Document</span><span class="p">,</span> <span class="n">filter_sane</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Apply the dense-path Chroma filter semantics to a BM25 hit's metadata.</span>
+
+<span class="sd">    The dense path builds ``{k: {"$in": vals}}`` for list-valued filters and ``{k: {"$eq": v}}``</span>
+<span class="sd">    for scalars. This mirrors that membership-vs-equality logic for the in-memory BM25</span>
+<span class="sd">    post-filter so the two retrieval views agree. Previously BM25 used ``==`` even for</span>
+<span class="sd">    list-valued filters, which never matched a scalar metadata value and silently dropped</span>
+<span class="sd">    every BM25 hit — collapsing hybrid retrieval to dense-only whenever a list filter was set.</span>
+<span class="sd">    """</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">filter_sane</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">actual</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">set</span><span class="p">)):</span>
+            <span class="k">if</span> <span class="n">actual</span> <span class="ow">not</span> <span class="ow">in</span> <span class="nb">set</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">elif</span> <span class="n">actual</span> <span class="o">!=</span> <span class="n">v</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span></div>
+
+
+
+<div class="viewcode-block" id="_sanitize_meta">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._sanitize_meta">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_sanitize_meta</span><span class="p">(</span><span class="n">meta</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="n">clean</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">meta</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">vv</span> <span class="o">=</span> <span class="n">_sanitize_meta_value</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">vv</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">clean</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">vv</span>
+    <span class="k">return</span> <span class="n">clean</span></div>
+
+
+
+<div class="viewcode-block" id="_record_component_ids">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._record_component_ids">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_record_component_ids</span><span class="p">(</span><span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">scalar</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scalar</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">scalar</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">scalar</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+
+    <span class="n">raw</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_ids"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">decoded</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">decoded</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">decoded</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="k">pass</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">set</span><span class="p">)):</span>
+        <span class="n">out</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">raw</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+
+    <span class="n">seen</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">deduped</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">out</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+            <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
+            <span class="n">deduped</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">deduped</span></div>
+
+
+
+
+<div class="viewcode-block" id="build_chroma_metadata">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.build_chroma_metadata">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_chroma_metadata</span><span class="p">(</span><span class="n">record</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Flatten a canonical ``processed_text_record`` into Chroma-storable metadata.</span>
+
+<span class="sd">    Chroma metadata values must be primitives (str / int / float / bool). This function</span>
+<span class="sd">    projects the nested record structure onto a flat scalar dict that supports both</span>
+<span class="sd">    index-level filtering and BM25 text search:</span>
+
+<span class="sd">    - Copies identity/traceability keys (``record_id``, ``doc_id``, ``doc_type``,</span>
+<span class="sd">      ``chunk_index``, ``chunk_id``, page span, authority level, section role).</span>
+<span class="sd">    - Derives ``primary_component_id`` (first component) for index-level component filtering.</span>
+<span class="sd">    - Flattens ``condition_assessment``, ``eca``, ``oe_metadata``, NER entities, and Stage-5</span>
+<span class="sd">      causal statements into ``ca_*`` / ``eca_*`` / ``oe_*`` / ``*_text`` scalar keys.</span>
+<span class="sd">    - Sets ``finding_status`` from the document type (ECA=confirmed, CR=preliminary,</span>
+<span class="sd">      OE=fleet_experience, else observational).</span>
+
+<span class="sd">    List-valued keys are preserved but JSON-stringified by :func:`_sanitize_meta` on return,</span>
+<span class="sd">    and companion ``*_text`` keys are added for the fields in :data:`LIST_FIELDS`.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A sanitized, primitive-only metadata dict ready to hand to Chroma.</span>
+<span class="sd">    """</span>
+    <span class="n">metadata</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+    <span class="n">provenance</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+
+    <span class="c1"># Add a few identity / traceability keys that are useful for retrieval.</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">,</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">,</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">,</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"chunk_index"</span><span class="p">,</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chunk_index"</span><span class="p">))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"chunk_id"</span><span class="p">,</span> <span class="n">provenance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"chunk_id"</span><span class="p">))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"page_start"</span><span class="p">,</span> <span class="n">provenance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_start"</span><span class="p">,</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_start"</span><span class="p">)))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"page_end"</span><span class="p">,</span> <span class="n">provenance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_end"</span><span class="p">,</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"page_end"</span><span class="p">)))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"authority_level"</span><span class="p">,</span> <span class="n">provenance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"authority_level"</span><span class="p">,</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"authority_level"</span><span class="p">)))</span>
+    <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"section_role"</span><span class="p">,</span> <span class="n">provenance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_role"</span><span class="p">,</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"section_role"</span><span class="p">)))</span>
+    <span class="c1"># Primary scalar component key enables true Chroma index-level component filtering.</span>
+    <span class="n">component_ids</span> <span class="o">=</span> <span class="n">_record_component_ids</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">component_ids</span><span class="p">:</span>
+        <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"primary_component_id"</span><span class="p">,</span> <span class="n">component_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="c1"># Flatten condition_assessment nested object into scalar keys so Chroma can</span>
+    <span class="c1"># store and return them.  Source priority: record-level &gt; metadata-level.</span>
+    <span class="c1"># These are most meaningful on WO records but are preserved for all doc types.</span>
+    <span class="n">ca</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"condition_assessment"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"condition_assessment"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ca</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">ca_field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"as_found_condition"</span><span class="p">,</span> <span class="s2">"as_left_condition"</span><span class="p">,</span> <span class="s2">"as_found_text"</span><span class="p">,</span> <span class="s2">"as_left_text"</span><span class="p">):</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">ca</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ca_field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="sa">f</span><span class="s2">"ca_</span><span class="si">{</span><span class="n">ca_field</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+        <span class="c1"># Flatten measurements as a compact summary string (first out-of-spec item wins).</span>
+        <span class="n">measurements</span> <span class="o">=</span> <span class="n">ca</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"measurements"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">measurements</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">measurements</span><span class="p">:</span>
+            <span class="n">oos</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">measurements</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">m</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"in_spec"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span><span class="p">]</span>
+            <span class="n">summary</span> <span class="o">=</span> <span class="n">oos</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">oos</span> <span class="k">else</span> <span class="n">measurements</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">summary</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+                    <span class="s2">"ca_measurement_summary"</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'parameter'</span><span class="p">,</span><span class="s1">'?'</span><span class="p">)</span><span class="si">}</span><span class="s2">=</span><span class="si">{</span><span class="n">summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'value'</span><span class="p">,</span><span class="s1">'?'</span><span class="p">)</span><span class="si">}{</span><span class="n">summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'unit'</span><span class="p">,</span><span class="s1">''</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
+                    <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="s1">'OOS'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="n">summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'in_spec'</span><span class="p">,</span><span class="w"> </span><span class="kc">True</span><span class="p">)</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'in-spec'</span><span class="si">}</span><span class="s2">)"</span><span class="p">,</span>
+                <span class="p">)</span>
+
+    <span class="c1"># Flatten ECA structured fields into scalar keys.</span>
+    <span class="c1"># `finding_status` encodes the epistemic status of the document's causal claims:</span>
+    <span class="c1">#   "confirmed"    — ECA with a formally validated root cause conclusion</span>
+    <span class="c1">#   "preliminary"  — CR with an initial engineer assessment (not validated)</span>
+    <span class="c1">#   "observational"— WO, SOP, MANUAL, SPEC, BULLETIN, or unknown — neither</span>
+    <span class="n">doc_type_upper</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">doc_type_upper</span> <span class="o">==</span> <span class="s2">"ECA"</span><span class="p">:</span>
+        <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">,</span> <span class="s2">"confirmed"</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">doc_type_upper</span> <span class="o">==</span> <span class="s2">"CR"</span><span class="p">:</span>
+        <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">,</span> <span class="s2">"preliminary"</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">doc_type_upper</span> <span class="o">==</span> <span class="s2">"OE"</span><span class="p">:</span>
+        <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">,</span> <span class="s2">"fleet_experience"</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">,</span> <span class="s2">"observational"</span><span class="p">)</span>
+
+    <span class="n">eca_block</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"eca"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">eca_block</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">eca_block</span><span class="p">:</span>
+        <span class="n">eca_conf</span> <span class="o">=</span> <span class="n">eca_block</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">eca_conf</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"eca_confidence"</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">eca_conf</span><span class="p">))</span>
+        <span class="n">causal_factors</span> <span class="o">=</span> <span class="n">eca_block</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"causal_factors"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">causal_factors</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">causal_factors</span><span class="p">:</span>
+            <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+                <span class="s2">"eca_causal_factors_text"</span><span class="p">,</span>
+                <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">causal_factors</span> <span class="k">if</span> <span class="n">f</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="n">rationale</span> <span class="o">=</span> <span class="n">eca_block</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rationale"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rationale</span><span class="p">:</span>
+            <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"eca_rationale_excerpt"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">rationale</span><span class="p">)[:</span><span class="mi">300</span><span class="p">])</span>
+
+    <span class="c1"># Flatten OE metadata into scalar oe_* prefixed keys for Chroma pre-filtering.</span>
+    <span class="c1"># Soft filter fields (plant_scope, applicable_system_types, applicable_component_types)</span>
+    <span class="c1"># are stored as strings so evidence_retriever can use them as advisory hints.</span>
+    <span class="n">oe_block</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"oe_metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">oe_block</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">oe_block</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">scalar_field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"issuing_body"</span><span class="p">,</span> <span class="s2">"oe_number"</span><span class="p">,</span> <span class="s2">"plant_scope"</span><span class="p">,</span> <span class="s2">"similarity_basis"</span><span class="p">):</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">oe_block</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">scalar_field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="sa">f</span><span class="s2">"oe_</span><span class="si">{</span><span class="n">scalar_field</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">val</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">list_field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"applicable_system_types"</span><span class="p">,</span> <span class="s2">"applicable_component_types"</span><span class="p">):</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">oe_block</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">list_field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">val</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="sa">f</span><span class="s2">"oe_</span><span class="si">{</span><span class="n">list_field</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="sa">f</span><span class="s2">"oe_</span><span class="si">{</span><span class="n">list_field</span><span class="si">}</span><span class="s2">_text"</span><span class="p">,</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">val</span><span class="p">))</span>
+
+    <span class="c1"># Flatten NER-enriched entities from the enrichment block.</span>
+    <span class="c1"># These are populated by augment_chunks.build_processed_text_record via NERSeed.</span>
+    <span class="n">ner</span> <span class="o">=</span> <span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enrichment"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"extracted_entities"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ner</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">ner</span><span class="p">:</span>
+        <span class="c1"># List fields — kept as lists; LIST_FIELDS loop will also add *_text companions.</span>
+        <span class="k">for</span> <span class="n">list_key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"doc_refs"</span><span class="p">,</span> <span class="s2">"alarm_ids"</span><span class="p">):</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">ner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">list_key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">val</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">list_key</span><span class="p">,</span> <span class="n">val</span><span class="p">)</span>
+
+        <span class="c1"># Temporal refs — raw strings, join for text search.</span>
+        <span class="n">temporal_refs</span> <span class="o">=</span> <span class="n">ner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"temporal_refs"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">temporal_refs</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">temporal_refs</span><span class="p">:</span>
+            <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"temporal_refs_text"</span><span class="p">,</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">temporal_refs</span><span class="p">))</span>
+
+        <span class="c1"># Measurements — compact "value unit" pairs.</span>
+        <span class="n">measurements</span> <span class="o">=</span> <span class="n">ner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"measurements"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">measurements</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">measurements</span><span class="p">:</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">measurements</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"value"</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parameter"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+                <span class="n">u</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unit"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">v</span> <span class="ow">or</span> <span class="n">u</span><span class="p">:</span>
+                    <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">v</span><span class="si">}{</span><span class="n">u</span><span class="si">}</span><span class="s2">"</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">parts</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"ner_measurements_text"</span><span class="p">,</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">))</span>
+
+        <span class="c1"># Conjectures — hedge strings.</span>
+        <span class="n">conjectures</span> <span class="o">=</span> <span class="n">ner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"conjectures"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">conjectures</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">conjectures</span><span class="p">:</span>
+            <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"conjectures_text"</span><span class="p">,</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">conjectures</span><span class="p">))</span>
+
+        <span class="c1"># Locations — dict with text + sub_label.</span>
+        <span class="n">locations</span> <span class="o">=</span> <span class="n">ner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"locations"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">locations</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">locations</span><span class="p">:</span>
+            <span class="n">loc_parts</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">loc</span> <span class="ow">in</span> <span class="n">locations</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">loc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="n">loc_parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">loc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">loc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sub_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">loc</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                    <span class="n">loc_parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">loc</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">loc_parts</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"locations_text"</span><span class="p">,</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">loc_parts</span> <span class="k">if</span> <span class="n">p</span><span class="p">))</span>
+
+        <span class="c1"># Dominant temporal relation for pre-filter hints.</span>
+        <span class="n">temporal_relations</span> <span class="o">=</span> <span class="n">ner</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"temporal_relations"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">temporal_relations</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">temporal_relations</span><span class="p">:</span>
+            <span class="n">votes</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span>
+                <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sub_label"</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">temporal_relations</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sub_label"</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">votes</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"dominant_temporal_relation"</span><span class="p">,</span> <span class="n">votes</span><span class="o">.</span><span class="n">most_common</span><span class="p">(</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="c1"># Flatten Stage 5 causal statements for BM25 / text search and confidence filtering.</span>
+    <span class="c1"># Boolean flags (has_explicit_causal_statement etc.) are already in record["metadata"]</span>
+    <span class="c1"># from build_processed_text_record; here we add the actual span text and max confidence.</span>
+    <span class="n">stage5</span> <span class="o">=</span> <span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"enrichment"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"stage5_causal_condition"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stage5</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">stage5</span><span class="p">:</span>
+        <span class="n">statements</span> <span class="o">=</span> <span class="n">stage5</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"extracted_causal_statements"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">statements</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">statements</span><span class="p">:</span>
+            <span class="n">causal_parts</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">max_conf</span> <span class="o">=</span> <span class="mf">0.0</span>
+            <span class="k">for</span> <span class="n">stmt</span> <span class="ow">in</span> <span class="n">statements</span><span class="p">[:</span><span class="mi">8</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">c</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">e</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"effect_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">k</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"connector"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">conf</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">stmt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+                <span class="n">max_conf</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_conf</span><span class="p">,</span> <span class="n">conf</span><span class="p">)</span>
+                <span class="n">line</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">p</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">[</span><span class="n">c</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">e</span><span class="p">]</span> <span class="k">if</span> <span class="n">p</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">line</span><span class="p">:</span>
+                    <span class="n">causal_parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">causal_parts</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"causal_statements_text"</span><span class="p">,</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">causal_parts</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">max_conf</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">metadata</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"causal_confidence_max"</span><span class="p">,</span> <span class="nb">round</span><span class="p">(</span><span class="n">max_conf</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+
+    <span class="c1"># Add string versions of list metadata for display / debugging. The raw list-valued</span>
+    <span class="c1"># keys remain too, but are stringified by _sanitize_meta because Chroma metadata</span>
+    <span class="c1"># typically expects primitive values only.</span>
+    <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">LIST_FIELDS</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">metadata</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metadata</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="n">metadata</span><span class="p">[</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">_text"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">metadata</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="n">_sanitize_meta</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span></div>
+
+
+
+
+<div class="viewcode-block" id="to_chroma_payload">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.to_chroma_payload">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_chroma_payload</span><span class="p">(</span><span class="n">record</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Convert a processed_text_record into the ``(id, document, metadata)`` triple upserted</span>
+<span class="sd">    into Chroma.</span>
+
+<span class="sd">    The vector id is the record's ``record_id``, the embedded/indexed document text is the</span>
+<span class="sd">    whitespace-collapsed ``embedding_text``, and metadata comes from :func:`build_chroma_metadata`.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"id"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="s2">"record_id"</span><span class="p">]),</span>
+        <span class="s2">"document"</span><span class="p">:</span> <span class="n">_collapse_ws</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"embedding_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+        <span class="s2">"metadata"</span><span class="p">:</span> <span class="n">build_chroma_metadata</span><span class="p">(</span><span class="n">record</span><span class="p">),</span>
+    <span class="p">}</span></div>
+
+
+
+
+<div class="viewcode-block" id="collection_name_for_doc_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.collection_name_for_doc_type">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">collection_name_for_doc_type</span><span class="p">(</span><span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"processed"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return the Chroma collection name for a document type, e.g. ``processed_CR``.</span>
+
+<span class="sd">    The doc type is upper-cased and sanitized (``/`` and spaces become ``_``) so it is a</span>
+<span class="sd">    valid, stable collection identifier; a falsy doc type maps to ``OTHER``.</span>
+<span class="sd">    """</span>
+    <span class="n">dt</span> <span class="o">=</span> <span class="p">(</span><span class="n">doc_type</span> <span class="ow">or</span> <span class="s2">"OTHER"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">prefix</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">dt</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="_CollectionState">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._CollectionState">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">_CollectionState</span><span class="p">:</span>
+<div class="viewcode-block" id="_CollectionState.vectorstore">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._CollectionState.vectorstore">[docs]</a>
+    <span class="n">vectorstore</span><span class="p">:</span> <span class="n">Chroma</span></div>
+
+<div class="viewcode-block" id="_CollectionState.bm25_docs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._CollectionState.bm25_docs">[docs]</a>
+    <span class="n">bm25_docs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Document</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="_CollectionState.bm25">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store._CollectionState.bm25">[docs]</a>
+    <span class="n">bm25</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">BM25Retriever</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ChromaRecordStore">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ChromaRecordStore</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Stage-6 store for canonical processed_text_record objects.</span>
+
+<span class="sd">    One Chroma collection is used per document class (CR, MR, SOP, ECA, ...).</span>
+<span class="sd">    Every indexed vector corresponds to one validated processed_text_record.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">persist_directory</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">embed_model</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">ollama_base_url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">collection_prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"processed"</span><span class="p">,</span>
+        <span class="n">bm25_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Initialise the per-doc-type Chroma store.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            persist_directory: On-disk directory for Chroma's persistent collections</span>
+<span class="sd">                (created if missing).</span>
+<span class="sd">            embed_model: Ollama embedding model name; defaults to ``$OLLAMA_EMBED_MODEL``</span>
+<span class="sd">                or ``mxbai-embed-large:335m``.</span>
+<span class="sd">            ollama_base_url: Ollama server URL; defaults to ``$OLLAMA_BASE_URL`` or</span>
+<span class="sd">                ``http://localhost:11434``.</span>
+<span class="sd">            collection_prefix: Prefix for generated collection names (see</span>
+<span class="sd">                :func:`collection_name_for_doc_type`).</span>
+<span class="sd">            bm25_k: Default fan-out for the in-memory BM25 retriever built per collection.</span>
+
+<span class="sd">        Note:</span>
+<span class="sd">            The embedding model name is baked into each collection name, so switching models</span>
+<span class="sd">            transparently targets a distinct set of collections rather than mixing vector spaces.</span>
+<span class="sd">        """</span>
+<div class="viewcode-block" id="ChromaRecordStore.persist_directory">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.persist_directory">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">persist_directory</span> <span class="o">=</span> <span class="n">persist_directory</span></div>
+
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">persist_directory</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="ChromaRecordStore.embed_model">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.embed_model">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span> <span class="o">=</span> <span class="n">embed_model</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"OLLAMA_EMBED_MODEL"</span><span class="p">,</span> <span class="s2">"mxbai-embed-large:335m"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ChromaRecordStore.ollama_base_url">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.ollama_base_url">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ollama_base_url</span> <span class="o">=</span> <span class="n">ollama_base_url</span> <span class="ow">or</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"OLLAMA_BASE_URL"</span><span class="p">,</span> <span class="s2">"http://localhost:11434"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ChromaRecordStore.collection_prefix">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.collection_prefix">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">collection_prefix</span> <span class="o">=</span> <span class="n">collection_prefix</span></div>
+
+<div class="viewcode-block" id="ChromaRecordStore.bm25_k">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.bm25_k">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bm25_k</span> <span class="o">=</span> <span class="n">bm25_k</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore.embedder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.embedder">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">embedder</span> <span class="o">=</span> <span class="n">OllamaEmbeddings</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">ollama_base_url</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="ChromaRecordStore._states">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/chroma_store/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore._states">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_states</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_CollectionState</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore._collection_name">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore._collection_name">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_collection_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">safe_model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embed_model</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">":"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"/"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="n">collection_name_for_doc_type</span><span class="p">(</span><span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_prefix</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">base</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">safe_model</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore.get_or_create_collection">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.get_or_create_collection">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_or_create_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">collection_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_CollectionState</span><span class="p">:</span>
+        <span class="n">cname</span> <span class="o">=</span> <span class="n">collection_name</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collection_name</span><span class="p">(</span><span class="n">doc_type</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cname</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_states</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_states</span><span class="p">[</span><span class="n">cname</span><span class="p">]</span>
+        <span class="n">vs</span> <span class="o">=</span> <span class="n">Chroma</span><span class="p">(</span>
+            <span class="n">collection_name</span><span class="o">=</span><span class="n">cname</span><span class="p">,</span>
+            <span class="n">embedding_function</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">embedder</span><span class="p">,</span>
+            <span class="n">persist_directory</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">persist_directory</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">_CollectionState</span><span class="p">(</span><span class="n">vectorstore</span><span class="o">=</span><span class="n">vs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_states</span><span class="p">[</span><span class="n">cname</span><span class="p">]</span> <span class="o">=</span> <span class="n">state</span>
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"ChromaRecordStore: opened/created collection '</span><span class="si">%s</span><span class="s2">'."</span><span class="p">,</span> <span class="n">cname</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">state</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore.load_collection">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.load_collection">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">collection_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_CollectionState</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Open a persisted collection for querying and return its :class:`_CollectionState`.</span>
+
+<span class="sd">        The dense (vector) side is fully backed by Chroma's on-disk index, so it works</span>
+<span class="sd">        regardless of which process performed the original ingest.</span>
+
+<span class="sd">        BM25, however, is an *in-memory* corpus built only from documents upserted during the</span>
+<span class="sd">        current process (see :meth:`upsert_records`). When a collection is loaded fresh from</span>
+<span class="sd">        disk without a matching in-process ingest, ``state.bm25_docs`` is empty and hybrid</span>
+<span class="sd">        retrieval degrades to **dense-only** — ``hybrid_weight`` then has no effect. This is a</span>
+<span class="sd">        deliberate limitation of the current design (the BM25 corpus is not persisted); callers</span>
+<span class="sd">        needing hybrid retrieval in a query-only process must re-ingest the source JSONL first.</span>
+<span class="sd">        A warning is emitted here to make the degraded mode explicit.</span>
+<span class="sd">        """</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_or_create_collection</span><span class="p">(</span><span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">,</span> <span class="n">collection_name</span><span class="o">=</span><span class="n">collection_name</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">bm25</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">state</span><span class="o">.</span><span class="n">bm25_docs</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Collection '</span><span class="si">%s</span><span class="s2">' loaded from disk without an in-process ingest — BM25 corpus is "</span>
+                <span class="s2">"empty, so retrieval will be dense-only (hybrid_weight has no effect) until the "</span>
+                <span class="s2">"source records are re-ingested in this process."</span><span class="p">,</span>
+                <span class="n">collection_name</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collection_name</span><span class="p">(</span><span class="n">doc_type</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">state</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore._get_or_build_bm25">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore._get_or_build_bm25">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_or_build_bm25</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">state</span><span class="p">:</span> <span class="n">_CollectionState</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">BM25Retriever</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="n">state</span><span class="o">.</span><span class="n">bm25</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">state</span><span class="o">.</span><span class="n">bm25</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">state</span><span class="o">.</span><span class="n">bm25_docs</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">bm25</span> <span class="o">=</span> <span class="n">BM25Retriever</span><span class="o">.</span><span class="n">from_documents</span><span class="p">(</span><span class="n">state</span><span class="o">.</span><span class="n">bm25_docs</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bm25_k</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">state</span><span class="o">.</span><span class="n">bm25</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore.upsert_records">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.upsert_records">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert_records</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">records</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">doc_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">collection_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Upsert a batch of processed_text_records into the collection for their doc type.</span>
+
+<span class="sd">        All records in a call must share one doc type (a mixed-type batch raises</span>
+<span class="sd">        ``ValueError``); the type is taken from ``doc_type`` or inferred from the first record.</span>
+<span class="sd">        Malformed records and records with empty embedding text are skipped. Each surviving</span>
+<span class="sd">        record is upserted into Chroma by ``record_id`` (dense side) and added to the</span>
+<span class="sd">        collection's in-memory BM25 corpus (sparse side), so a subsequent query in the same</span>
+<span class="sd">        process gets true hybrid retrieval.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The number of records actually upserted.</span>
+<span class="sd">        """</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">records</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="n">inferred_doc_type</span> <span class="o">=</span> <span class="p">(</span><span class="n">doc_type</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">records</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"OTHER"</span><span class="p">))</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+        <span class="n">bad_doc_types</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">rec_dt</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">inferred_doc_type</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">rec_dt</span> <span class="o">!=</span> <span class="n">inferred_doc_type</span><span class="p">:</span>
+                <span class="n">bad_doc_types</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"UNKNOWN"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">bad_doc_types</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"upsert_records received mixed doc_type batch for collection doc_type=</span><span class="si">{</span><span class="n">inferred_doc_type</span><span class="si">}</span><span class="s2">. "</span>
+                <span class="sa">f</span><span class="s2">"Offending record_ids=</span><span class="si">{</span><span class="n">bad_doc_types</span><span class="p">[:</span><span class="mi">10</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_or_create_collection</span><span class="p">(</span><span class="n">doc_type</span><span class="o">=</span><span class="n">inferred_doc_type</span><span class="p">,</span> <span class="n">collection_name</span><span class="o">=</span><span class="n">collection_name</span><span class="p">)</span>
+        <span class="n">vs</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">vectorstore</span>
+
+        <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">docs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">metas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">bm25_docs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Document</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">_looks_like_processed_text_record</span><span class="p">(</span><span class="n">rec</span><span class="p">):</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Skipping malformed processed_text_record during Chroma upsert: keys=</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+                <span class="k">continue</span>
+            <span class="n">payload</span> <span class="o">=</span> <span class="n">to_chroma_payload</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">payload</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]:</span>
+                <span class="k">continue</span>
+            <span class="n">ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">payload</span><span class="p">[</span><span class="s2">"id"</span><span class="p">])</span>
+            <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">payload</span><span class="p">[</span><span class="s2">"document"</span><span class="p">])</span>
+            <span class="n">metas</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">payload</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">])</span>
+            <span class="n">bm25_docs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Document</span><span class="p">(</span><span class="n">page_content</span><span class="o">=</span><span class="n">payload</span><span class="p">[</span><span class="s2">"document"</span><span class="p">],</span> <span class="n">metadata</span><span class="o">=</span><span class="n">payload</span><span class="p">[</span><span class="s2">"metadata"</span><span class="p">]))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ids</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+        <span class="c1"># Use the public LangChain vectorstore API; it embeds the documents and upserts by id.</span>
+        <span class="n">vs</span><span class="o">.</span><span class="n">add_texts</span><span class="p">(</span><span class="n">texts</span><span class="o">=</span><span class="n">docs</span><span class="p">,</span> <span class="n">metadatas</span><span class="o">=</span><span class="n">metas</span><span class="p">,</span> <span class="n">ids</span><span class="o">=</span><span class="n">ids</span><span class="p">)</span>
+
+        <span class="c1"># Keep a fresh BM25 corpus for collections ingested in-process.</span>
+        <span class="n">existing_by_id</span> <span class="o">=</span> <span class="p">{</span><span class="n">d</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">):</span> <span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">state</span><span class="o">.</span><span class="n">bm25_docs</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">bm25_docs</span><span class="p">:</span>
+            <span class="n">rid</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">rid</span><span class="p">:</span>
+                <span class="n">existing_by_id</span><span class="p">[</span><span class="n">rid</span><span class="p">]</span> <span class="o">=</span> <span class="n">d</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">bm25_docs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">existing_by_id</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="n">state</span><span class="o">.</span><span class="n">bm25</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="n">LOGGER</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"ChromaRecordStore: upserted </span><span class="si">%d</span><span class="s2"> records into '</span><span class="si">%s</span><span class="s2">'."</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">),</span> <span class="n">vs</span><span class="o">.</span><span class="n">_collection</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore.upsert_jsonl">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.upsert_jsonl">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert_jsonl</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">jsonl_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">doc_type_override</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Ingest a JSONL file of processed_text_records, one Chroma collection per doc type.</span>
+
+<span class="sd">        Records are read from ``jsonl_path`` (each line may be a bare record or wrapped under a</span>
+<span class="sd">        ``processed_text_record`` key), grouped by doc type (or forced to ``doc_type_override``),</span>
+<span class="sd">        and upserted via :meth:`upsert_records`.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Mapping of ``doc_type -&gt; number of records upserted``.</span>
+<span class="sd">        """</span>
+        <span class="n">grouped</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">obj</span> <span class="ow">in</span> <span class="n">_iter_jsonl</span><span class="p">(</span><span class="n">jsonl_path</span><span class="p">):</span>
+            <span class="n">rec</span> <span class="o">=</span> <span class="n">extract_processed_text_record</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">rec</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">doc_type</span> <span class="o">=</span> <span class="p">(</span><span class="n">doc_type_override</span> <span class="ow">or</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"OTHER"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span>
+            <span class="n">grouped</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">doc_type</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+
+        <span class="n">counts</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">records</span> <span class="ow">in</span> <span class="n">grouped</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">counts</span><span class="p">[</span><span class="n">doc_type</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">upsert_records</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">doc_type</span><span class="o">=</span><span class="n">doc_type</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">counts</span></div>
+
+
+<div class="viewcode-block" id="ChromaRecordStore.query_doc_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/storage/index.html#src.dackar.RCA.storage.chroma_store.ChromaRecordStore.query_doc_type">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">query_doc_type</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">doc_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">query_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">8</span><span class="p">,</span>
+        <span class="n">filter_meta</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">collection_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">hybrid_weight</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Document</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Hybrid (dense + BM25) retrieval over a single doc-type collection.</span>
+
+<span class="sd">        Runs a dense vector search and a BM25 search, then fuses the two ranked lists with</span>
+<span class="sd">        Reciprocal Rank Fusion weighted by ``hybrid_weight`` (dense) / ``1 - hybrid_weight``</span>
+<span class="sd">        (BM25). The fused ``_score`` is written back onto each returned document's metadata.</span>
+
+<span class="sd">        Filtering:</span>
+<span class="sd">            ``filter_meta`` is normalized (see :func:`_normalize_filter_meta`) into scalar</span>
+<span class="sd">            Chroma ``$eq``/``$in`` clauses. ``component_ids`` is handled specially: it becomes</span>
+<span class="sd">            an index-level ``primary_component_id`` ``$in`` filter, with a legacy post-filter</span>
+<span class="sd">            fallback for older records that predate ``primary_component_id`` (see</span>
+<span class="sd">            :func:`_doc_matches_component_ids`).</span>
+
+<span class="sd">        BM25 availability:</span>
+<span class="sd">            BM25 only contributes when this collection was ingested in the current process; on</span>
+<span class="sd">            a disk-loaded collection retrieval is dense-only (see :meth:`load_collection`).</span>
+<span class="sd">            ``_bm25_available`` is recorded on each returned document's metadata.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            doc_type: Document type selecting the collection.</span>
+<span class="sd">            query_text: Natural-language query.</span>
+<span class="sd">            top_k: Maximum number of fused results to return.</span>
+<span class="sd">            filter_meta: Optional high-level metadata filters.</span>
+<span class="sd">            collection_name: Explicit collection override (else derived from ``doc_type``).</span>
+<span class="sd">            hybrid_weight: Dense-vs-BM25 blend in [0, 1]; 1.0 is dense-only, 0.0 is BM25-only.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Up to ``top_k`` LangChain ``Document`` objects ordered by fused score.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError: If the target collection has not been initialised via</span>
+<span class="sd">                :meth:`upsert_jsonl` / :meth:`upsert_records` / :meth:`load_collection`.</span>
+<span class="sd">        """</span>
+        <span class="n">cname</span> <span class="o">=</span> <span class="n">collection_name</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_collection_name</span><span class="p">(</span><span class="n">doc_type</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cname</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_states</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Collection '</span><span class="si">{</span><span class="n">cname</span><span class="si">}</span><span class="s2">' is not initialised. Call upsert_jsonl() or load_collection() first."</span><span class="p">)</span>
+
+        <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_states</span><span class="p">[</span><span class="n">cname</span><span class="p">]</span>
+        <span class="n">vs</span> <span class="o">=</span> <span class="n">state</span><span class="o">.</span><span class="n">vectorstore</span>
+        <span class="n">filter_sane</span> <span class="o">=</span> <span class="n">_normalize_filter_meta</span><span class="p">(</span><span class="n">filter_meta</span><span class="p">)</span>
+
+        <span class="c1"># component_ids is translated to index-level primary_component_id filtering.</span>
+        <span class="c1"># Legacy records without primary_component_id are optionally recovered through</span>
+        <span class="c1"># a compatibility post-filter pass against component_ids/component_id metadata.</span>
+        <span class="n">wanted_component_ids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">((</span><span class="n">filter_meta</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">filter_sane</span><span class="p">:</span>
+            <span class="n">chroma_where</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">clauses</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">filter_sane</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">,</span> <span class="nb">set</span><span class="p">)):</span>
+                    <span class="n">vals</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">v</span> <span class="k">if</span> <span class="n">x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">vals</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">clauses</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"$in"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">vals</span><span class="p">)}})</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">clauses</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="p">{</span><span class="s2">"$eq"</span><span class="p">:</span> <span class="n">v</span><span class="p">}})</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">clauses</span><span class="p">:</span>
+                <span class="n">chroma_where</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">clauses</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="n">chroma_where</span> <span class="o">=</span> <span class="n">clauses</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">chroma_where</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"$and"</span><span class="p">:</span> <span class="n">clauses</span><span class="p">}</span>
+
+        <span class="n">dense_hits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">fetch_k</span> <span class="o">=</span> <span class="n">top_k</span> <span class="o">*</span> <span class="mi">2</span>
+        <span class="n">fallback_fetch_k</span> <span class="o">=</span> <span class="n">top_k</span> <span class="o">*</span> <span class="mi">4</span>
+        <span class="n">indexed_component_filter_active</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">wanted_component_ids</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">indexed_component_filter_active</span><span class="p">:</span>
+            <span class="n">comp_clause</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"primary_component_id"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"$in"</span><span class="p">:</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">wanted_component_ids</span><span class="p">)}}</span>
+            <span class="k">if</span> <span class="n">chroma_where</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">chroma_where</span> <span class="o">=</span> <span class="n">comp_clause</span>
+            <span class="k">elif</span> <span class="s2">"$and"</span> <span class="ow">in</span> <span class="n">chroma_where</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">chroma_where</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"$and"</span><span class="p">),</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">chroma_where</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"$and"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">chroma_where</span><span class="p">[</span><span class="s2">"$and"</span><span class="p">])</span> <span class="o">+</span> <span class="p">[</span><span class="n">comp_clause</span><span class="p">]}</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">chroma_where</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"$and"</span><span class="p">:</span> <span class="p">[</span><span class="n">chroma_where</span><span class="p">,</span> <span class="n">comp_clause</span><span class="p">]}</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">scored</span> <span class="o">=</span> <span class="n">vs</span><span class="o">.</span><span class="n">similarity_search_with_score</span><span class="p">(</span><span class="n">query_text</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">fetch_k</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">chroma_where</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">doc</span><span class="p">,</span> <span class="n">score</span> <span class="ow">in</span> <span class="n">scored</span><span class="p">:</span>
+                <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{})</span>
+                <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_score"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">)</span>
+                <span class="c1"># Preserve raw vector similarity before RRF fusion overwrites _score.</span>
+                <span class="c1"># Downstream consumers (e.g. evidence assessment) use _vector_score</span>
+                <span class="c1"># as a semantic relevance signal that survives RRF re-ranking.</span>
+                <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_vector_score"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">)</span>
+                <span class="n">rid</span> <span class="o">=</span> <span class="n">_stable_record_id_from_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">rid</span><span class="p">:</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Dense retrieval returned hit with no stable record_id; skipping."</span><span class="p">)</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="n">wanted_component_ids</span><span class="p">:</span>
+                    <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_component_filter_strategy"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"index_filter"</span>
+                <span class="n">dense_hits</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                    <span class="s2">"record_id"</span><span class="p">:</span> <span class="n">rid</span><span class="p">,</span>
+                    <span class="s2">"score"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">),</span>
+                    <span class="s2">"document"</span><span class="p">:</span> <span class="n">doc</span><span class="p">,</span>
+                    <span class="s2">"metadata"</span><span class="p">:</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span>
+                <span class="p">})</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Dense retrieval failed for doc_type '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">wanted_component_ids</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">dense_hits</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">top_k</span><span class="p">:</span>
+            <span class="c1"># Compatibility path for older ingested records that do not yet carry</span>
+            <span class="c1"># primary_component_id metadata.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">legacy_scored</span> <span class="o">=</span> <span class="n">vs</span><span class="o">.</span><span class="n">similarity_search_with_score</span><span class="p">(</span><span class="n">query_text</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="n">fallback_fetch_k</span><span class="p">,</span> <span class="nb">filter</span><span class="o">=</span><span class="n">filter_sane</span> <span class="ow">or</span> <span class="kc">None</span><span class="p">)</span>
+                <span class="n">seen</span> <span class="o">=</span> <span class="p">{</span><span class="n">h</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">)</span> <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">dense_hits</span><span class="p">}</span>
+                <span class="n">legacy_added</span> <span class="o">=</span> <span class="mi">0</span>
+                <span class="k">for</span> <span class="n">doc</span><span class="p">,</span> <span class="n">score</span> <span class="ow">in</span> <span class="n">legacy_scored</span><span class="p">:</span>
+                    <span class="n">rid</span> <span class="o">=</span> <span class="n">_stable_record_id_from_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">rid</span> <span class="ow">or</span> <span class="n">rid</span> <span class="ow">in</span> <span class="n">seen</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{})</span>
+                    <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_component_id"</span><span class="p">):</span>
+                        <span class="k">continue</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">_doc_matches_component_ids</span><span class="p">(</span><span class="n">doc</span><span class="p">,</span> <span class="n">wanted_component_ids</span><span class="p">):</span>
+                        <span class="k">continue</span>
+                    <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_score"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">)</span>
+                    <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_vector_score"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">)</span>
+                    <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_component_filter_strategy"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"legacy_post_filter"</span>
+                    <span class="n">dense_hits</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="p">{</span>
+                            <span class="s2">"record_id"</span><span class="p">:</span> <span class="n">rid</span><span class="p">,</span>
+                            <span class="s2">"score"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">score</span><span class="p">),</span>
+                            <span class="s2">"document"</span><span class="p">:</span> <span class="n">doc</span><span class="p">,</span>
+                            <span class="s2">"metadata"</span><span class="p">:</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span>
+                        <span class="p">}</span>
+                    <span class="p">)</span>
+                    <span class="n">seen</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">rid</span><span class="p">)</span>
+                    <span class="n">legacy_added</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">legacy_added</span><span class="p">:</span>
+                    <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"ChromaRecordStore: component filter used index-level primary_component_id "</span>
+                        <span class="s2">"plus legacy post-filter fallback for </span><span class="si">%d</span><span class="s2"> records lacking primary_component_id. "</span>
+                        <span class="s2">"Re-ingest collections to remove fallback dependence."</span><span class="p">,</span>
+                        <span class="n">legacy_added</span><span class="p">,</span>
+                    <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Legacy component fallback retrieval failed for doc_type '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+
+        <span class="n">bm25_hits</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">bm25</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_or_build_bm25</span><span class="p">(</span><span class="n">state</span><span class="p">)</span>
+        <span class="n">bm25_available</span> <span class="o">=</span> <span class="n">bm25</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">bm25_available</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">bm25</span><span class="o">.</span><span class="n">k</span> <span class="o">=</span> <span class="n">fetch_k</span>
+                <span class="n">docs</span> <span class="o">=</span> <span class="n">bm25</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="n">query_text</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">filter_sane</span> <span class="ow">or</span> <span class="n">wanted_component_ids</span><span class="p">:</span>
+                    <span class="n">docs</span> <span class="o">=</span> <span class="p">[</span>
+                        <span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">docs</span>
+                        <span class="k">if</span> <span class="n">_doc_matches_filter_sane</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">filter_sane</span><span class="p">)</span>
+                        <span class="ow">and</span> <span class="p">(</span><span class="ow">not</span> <span class="n">wanted_component_ids</span> <span class="ow">or</span> <span class="n">_doc_matches_component_ids</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">wanted_component_ids</span><span class="p">))</span>
+                    <span class="p">]</span>
+                <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">wanted_component_ids</span> <span class="ow">and</span> <span class="s2">"_component_filter_strategy"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{}):</span>
+                        <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{})</span>
+                        <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_component_id"</span><span class="p">):</span>
+                            <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_component_filter_strategy"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"index_filter"</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_component_filter_strategy"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"legacy_post_filter"</span>
+                    <span class="n">rid</span> <span class="o">=</span> <span class="n">_stable_record_id_from_doc</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">rid</span><span class="p">:</span>
+                        <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"BM25 retrieval returned hit with no stable record_id; skipping."</span><span class="p">)</span>
+                        <span class="k">continue</span>
+                    <span class="n">bm25_hits</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                        <span class="s2">"record_id"</span><span class="p">:</span> <span class="n">rid</span><span class="p">,</span>
+                        <span class="s2">"score"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">"document"</span><span class="p">:</span> <span class="n">doc</span><span class="p">,</span>
+                        <span class="s2">"metadata"</span><span class="p">:</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span>
+                    <span class="p">})</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">bm25_available</span> <span class="o">=</span> <span class="kc">False</span>
+                <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"BM25 retrieval failed for doc_type '</span><span class="si">%s</span><span class="s2">': </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">doc_type</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">LOGGER</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"BM25 unavailable for collection '</span><span class="si">%s</span><span class="s2">' (loaded from disk without in-process ingest); "</span>
+                <span class="s2">"falling back to dense-only retrieval.  hybrid_weight=</span><span class="si">%.2f</span><span class="s2"> has no effect."</span><span class="p">,</span>
+                <span class="n">cname</span><span class="p">,</span>
+                <span class="n">hybrid_weight</span><span class="p">,</span>
+            <span class="p">)</span>
+
+        <span class="n">fused</span> <span class="o">=</span> <span class="n">reciprocal_rank_fusion</span><span class="p">(</span>
+            <span class="p">{</span><span class="s2">"dense"</span><span class="p">:</span> <span class="n">dense_hits</span><span class="p">,</span> <span class="s2">"bm25"</span><span class="p">:</span> <span class="n">bm25_hits</span><span class="p">},</span>
+            <span class="n">k</span><span class="o">=</span><span class="n">top_k</span><span class="p">,</span>
+            <span class="n">view_weights</span><span class="o">=</span><span class="p">{</span><span class="s2">"dense"</span><span class="p">:</span> <span class="n">hybrid_weight</span><span class="p">,</span> <span class="s2">"bm25"</span><span class="p">:</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">hybrid_weight</span><span class="p">},</span>
+        <span class="p">)</span>
+
+        <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Document</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">fused</span><span class="p">:</span>
+            <span class="n">doc</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"document"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">doc</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{})</span>
+            <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_score"</span><span class="p">]</span> <span class="o">=</span> <span class="n">entry</span><span class="p">[</span><span class="s2">"score"</span><span class="p">]</span>
+            <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">"_bm25_available"</span><span class="p">]</span> <span class="o">=</span> <span class="n">bm25_available</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">doc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

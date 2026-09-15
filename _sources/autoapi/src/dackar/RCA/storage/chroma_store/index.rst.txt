@@ -1,0 +1,282 @@
+src.dackar.RCA.storage.chroma_store
+===================================
+
+.. py:module:: src.dackar.RCA.storage.chroma_store
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.storage.chroma_store.LOGGER
+   src.dackar.RCA.storage.chroma_store.LIST_FIELDS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.storage.chroma_store._CollectionState
+   src.dackar.RCA.storage.chroma_store.ChromaRecordStore
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.storage.chroma_store._iter_jsonl
+   src.dackar.RCA.storage.chroma_store._collapse_ws
+   src.dackar.RCA.storage.chroma_store._looks_like_processed_text_record
+   src.dackar.RCA.storage.chroma_store.extract_processed_text_record
+   src.dackar.RCA.storage.chroma_store._stable_record_id_from_doc
+   src.dackar.RCA.storage.chroma_store._sanitize_meta_value
+   src.dackar.RCA.storage.chroma_store._normalize_filter_meta
+   src.dackar.RCA.storage.chroma_store._doc_matches_component_ids
+   src.dackar.RCA.storage.chroma_store._doc_matches_filter_sane
+   src.dackar.RCA.storage.chroma_store._sanitize_meta
+   src.dackar.RCA.storage.chroma_store._record_component_ids
+   src.dackar.RCA.storage.chroma_store.build_chroma_metadata
+   src.dackar.RCA.storage.chroma_store.to_chroma_payload
+   src.dackar.RCA.storage.chroma_store.collection_name_for_doc_type
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:function:: _iter_jsonl(jsonl_path)
+
+.. py:function:: _collapse_ws(s)
+
+.. py:function:: _looks_like_processed_text_record(obj)
+
+.. py:function:: extract_processed_text_record(obj)
+
+.. py:function:: _stable_record_id_from_doc(doc)
+
+.. py:data:: LIST_FIELDS
+
+.. py:function:: _sanitize_meta_value(value)
+
+.. py:function:: _normalize_filter_meta(filter_meta)
+
+   Normalize high-level retrieval filters into the scalar metadata keys that
+   are actually stored in Chroma.
+
+   .. rubric:: Examples
+
+   - doc_ids   -> doc_id
+   - doc_types -> doc_type
+   - component_ids is translated in query_doc_type() into primary_component_id
+
+
+.. py:function:: _doc_matches_component_ids(doc, wanted)
+
+   Return True if *doc* is associated with at least one of the *wanted* component IDs.
+
+   Checks:
+     1. The scalar ``primary_component_id`` metadata field (index-friendly path).
+     2. The scalar ``component_id`` metadata field (legacy single-component path).
+     3. The ``component_ids`` field. In practice this is a JSON-encoded string on every
+        path, because metadata is passed through :func:`_sanitize_meta` (which stringifies
+        lists) before it reaches either Chroma or the in-memory BM25 corpus. The plain-list
+        branch is kept only as a defensive fallback for externally constructed documents.
+
+
+.. py:function:: _doc_matches_filter_sane(doc, filter_sane)
+
+   Apply the dense-path Chroma filter semantics to a BM25 hit's metadata.
+
+   The dense path builds ``{k: {"$in": vals}}`` for list-valued filters and ``{k: {"$eq": v}}``
+   for scalars. This mirrors that membership-vs-equality logic for the in-memory BM25
+   post-filter so the two retrieval views agree. Previously BM25 used ``==`` even for
+   list-valued filters, which never matched a scalar metadata value and silently dropped
+   every BM25 hit — collapsing hybrid retrieval to dense-only whenever a list filter was set.
+
+
+.. py:function:: _sanitize_meta(meta)
+
+.. py:function:: _record_component_ids(metadata)
+
+.. py:function:: build_chroma_metadata(record)
+
+   Flatten a canonical ``processed_text_record`` into Chroma-storable metadata.
+
+   Chroma metadata values must be primitives (str / int / float / bool). This function
+   projects the nested record structure onto a flat scalar dict that supports both
+   index-level filtering and BM25 text search:
+
+   - Copies identity/traceability keys (``record_id``, ``doc_id``, ``doc_type``,
+     ``chunk_index``, ``chunk_id``, page span, authority level, section role).
+   - Derives ``primary_component_id`` (first component) for index-level component filtering.
+   - Flattens ``condition_assessment``, ``eca``, ``oe_metadata``, NER entities, and Stage-5
+     causal statements into ``ca_*`` / ``eca_*`` / ``oe_*`` / ``*_text`` scalar keys.
+   - Sets ``finding_status`` from the document type (ECA=confirmed, CR=preliminary,
+     OE=fleet_experience, else observational).
+
+   List-valued keys are preserved but JSON-stringified by :func:`_sanitize_meta` on return,
+   and companion ``*_text`` keys are added for the fields in :data:`LIST_FIELDS`.
+
+   :returns: A sanitized, primitive-only metadata dict ready to hand to Chroma.
+
+
+.. py:function:: to_chroma_payload(record)
+
+   Convert a processed_text_record into the ``(id, document, metadata)`` triple upserted
+   into Chroma.
+
+   The vector id is the record's ``record_id``, the embedded/indexed document text is the
+   whitespace-collapsed ``embedding_text``, and metadata comes from :func:`build_chroma_metadata`.
+
+
+.. py:function:: collection_name_for_doc_type(doc_type, prefix = 'processed')
+
+   Return the Chroma collection name for a document type, e.g. ``processed_CR``.
+
+   The doc type is upper-cased and sanitized (``/`` and spaces become ``_``) so it is a
+   valid, stable collection identifier; a falsy doc type maps to ``OTHER``.
+
+
+.. py:class:: _CollectionState
+
+   .. py:attribute:: vectorstore
+      :type:  langchain_chroma.Chroma
+
+
+   .. py:attribute:: bm25_docs
+      :type:  List[langchain_core.documents.Document]
+      :value: []
+
+
+
+   .. py:attribute:: bm25
+      :type:  Optional[langchain_community.retrievers.BM25Retriever]
+      :value: None
+
+
+
+.. py:class:: ChromaRecordStore(persist_directory, *, embed_model = None, ollama_base_url = None, collection_prefix = 'processed', bm25_k = 20)
+
+   Stage-6 store for canonical processed_text_record objects.
+
+   One Chroma collection is used per document class (CR, MR, SOP, ECA, ...).
+   Every indexed vector corresponds to one validated processed_text_record.
+
+
+   .. py:attribute:: persist_directory
+
+
+   .. py:attribute:: embed_model
+
+
+   .. py:attribute:: ollama_base_url
+
+
+   .. py:attribute:: collection_prefix
+      :value: 'processed'
+
+
+
+   .. py:attribute:: bm25_k
+      :value: 20
+
+
+
+   .. py:attribute:: embedder
+
+
+   .. py:attribute:: _states
+      :type:  Dict[str, _CollectionState]
+
+
+   .. py:method:: _collection_name(doc_type)
+
+
+   .. py:method:: get_or_create_collection(doc_type, collection_name = None)
+
+
+   .. py:method:: load_collection(doc_type, collection_name = None)
+
+      Open a persisted collection for querying and return its :class:`_CollectionState`.
+
+      The dense (vector) side is fully backed by Chroma's on-disk index, so it works
+      regardless of which process performed the original ingest.
+
+      BM25, however, is an *in-memory* corpus built only from documents upserted during the
+      current process (see :meth:`upsert_records`). When a collection is loaded fresh from
+      disk without a matching in-process ingest, ``state.bm25_docs`` is empty and hybrid
+      retrieval degrades to **dense-only** — ``hybrid_weight`` then has no effect. This is a
+      deliberate limitation of the current design (the BM25 corpus is not persisted); callers
+      needing hybrid retrieval in a query-only process must re-ingest the source JSONL first.
+      A warning is emitted here to make the degraded mode explicit.
+
+
+
+   .. py:method:: _get_or_build_bm25(state)
+
+
+   .. py:method:: upsert_records(records, *, doc_type = None, collection_name = None)
+
+      Upsert a batch of processed_text_records into the collection for their doc type.
+
+      All records in a call must share one doc type (a mixed-type batch raises
+      ``ValueError``); the type is taken from ``doc_type`` or inferred from the first record.
+      Malformed records and records with empty embedding text are skipped. Each surviving
+      record is upserted into Chroma by ``record_id`` (dense side) and added to the
+      collection's in-memory BM25 corpus (sparse side), so a subsequent query in the same
+      process gets true hybrid retrieval.
+
+      :returns: The number of records actually upserted.
+
+
+
+   .. py:method:: upsert_jsonl(jsonl_path, *, doc_type_override = None)
+
+      Ingest a JSONL file of processed_text_records, one Chroma collection per doc type.
+
+      Records are read from ``jsonl_path`` (each line may be a bare record or wrapped under a
+      ``processed_text_record`` key), grouped by doc type (or forced to ``doc_type_override``),
+      and upserted via :meth:`upsert_records`.
+
+      :returns: Mapping of ``doc_type -> number of records upserted``.
+
+
+
+   .. py:method:: query_doc_type(doc_type, query_text, *, top_k = 8, filter_meta = None, collection_name = None, hybrid_weight = 0.5)
+
+      Hybrid (dense + BM25) retrieval over a single doc-type collection.
+
+      Runs a dense vector search and a BM25 search, then fuses the two ranked lists with
+      Reciprocal Rank Fusion weighted by ``hybrid_weight`` (dense) / ``1 - hybrid_weight``
+      (BM25). The fused ``_score`` is written back onto each returned document's metadata.
+
+      Filtering:
+          ``filter_meta`` is normalized (see :func:`_normalize_filter_meta`) into scalar
+          Chroma ``$eq``/``$in`` clauses. ``component_ids`` is handled specially: it becomes
+          an index-level ``primary_component_id`` ``$in`` filter, with a legacy post-filter
+          fallback for older records that predate ``primary_component_id`` (see
+          :func:`_doc_matches_component_ids`).
+
+      BM25 availability:
+          BM25 only contributes when this collection was ingested in the current process; on
+          a disk-loaded collection retrieval is dense-only (see :meth:`load_collection`).
+          ``_bm25_available`` is recorded on each returned document's metadata.
+
+      :param doc_type: Document type selecting the collection.
+      :param query_text: Natural-language query.
+      :param top_k: Maximum number of fused results to return.
+      :param filter_meta: Optional high-level metadata filters.
+      :param collection_name: Explicit collection override (else derived from ``doc_type``).
+      :param hybrid_weight: Dense-vs-BM25 blend in [0, 1]; 1.0 is dense-only, 0.0 is BM25-only.
+
+      :returns: Up to ``top_k`` LangChain ``Document`` objects ordered by fused score.
+
+      :raises ValueError: If the target collection has not been initialised via
+          :meth:`upsert_jsonl` / :meth:`upsert_records` / :meth:`load_collection`.
+
+
+
