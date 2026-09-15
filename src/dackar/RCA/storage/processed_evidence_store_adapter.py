@@ -33,14 +33,32 @@ class ProcessedEvidenceStoreAdapter:
             doc_types = [doc_types]
 
         filter_meta: Dict[str, Any] = {}
-        if "asset_id" in filters:
-            filter_meta["asset_id"] = filters["asset_id"]
         if "doc_ids" in filters:
             filter_meta["doc_ids"] = filters["doc_ids"]
         if "doc_type" in filters:
             filter_meta["doc_types"] = doc_types
-        if "component_ids" in filters:
-            filter_meta["component_ids"] = filters["component_ids"]
+
+        # asset_id and component_ids both address equipment identity. Records persist component
+        # identity (primary_component_id / component_ids) but no dedicated asset_id metadata key,
+        # so an asset_id filter is routed through the component_ids path (asset == component for
+        # retrieval). When both are supplied their values are unioned (order-preserving de-dup).
+        component_filter: List[str] = []
+        for key in ("component_ids", "asset_id"):
+            if key not in filters:
+                continue
+            val = filters[key]
+            if isinstance(val, (list, tuple, set)):
+                component_filter.extend(str(x) for x in val if x is not None and str(x).strip())
+            elif val is not None and str(val).strip():
+                component_filter.append(str(val))
+        if component_filter:
+            seen: set = set()
+            deduped: List[str] = []
+            for cid in component_filter:
+                if cid not in seen:
+                    seen.add(cid)
+                    deduped.append(cid)
+            filter_meta["component_ids"] = deduped
 
         ctx = self.retriever.query_doc_types(
             doc_types=list(doc_types),
