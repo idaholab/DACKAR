@@ -1,0 +1,195 @@
+src.dackar.RCA.signal_evidence.models
+=====================================
+
+.. py:module:: src.dackar.RCA.signal_evidence.models
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.signal_evidence.models.AnomalyRecord
+   src.dackar.RCA.signal_evidence.models.PropagationEdge
+   src.dackar.RCA.signal_evidence.models.NodeTopology
+   src.dackar.RCA.signal_evidence.models.ScoredChain
+
+
+Module Contents
+---------------
+
+.. py:class:: AnomalyRecord
+
+   A single flagged anomaly on one sensor over a time interval.
+
+   Fields carry the sensor and (resolved) component ids, the anomaly window,
+   a ``pattern`` label, a ``severity`` in ``[0, 1]``, the ``source`` that
+   produced it (``"telemetry_summary"`` or ``"historian"``), and optional raw
+   values / units.
+
+
+   .. py:attribute:: sensor_id
+      :type:  str
+
+
+   .. py:attribute:: component_id
+      :type:  Optional[str]
+
+
+   .. py:attribute:: timestamp_start
+      :type:  datetime.datetime
+
+
+   .. py:attribute:: timestamp_end
+      :type:  datetime.datetime
+
+
+   .. py:attribute:: pattern
+      :type:  str
+
+
+   .. py:attribute:: severity
+      :type:  float
+
+
+   .. py:attribute:: source
+      :type:  str
+
+
+   .. py:attribute:: raw_value_start
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: raw_value_peak
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: units
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:method:: to_interval()
+
+      Return this record's ``[start, end]`` as a temporal ``Interval``.
+
+
+
+.. py:class:: PropagationEdge
+
+   A directed propagation edge between two anomalies (by list index).
+
+   ``allen_rel`` captures the temporal relation between the two anomaly
+   intervals and ``allen_score`` its raw event-calibrated relevance prior
+   (kept for provenance). ``prop_score`` is the *propagation*-calibrated
+   weight actually used to rank chains: it rewards a demonstrated causal lead
+   at least as much as a co-temporal overlap and discounts co-temporal edges,
+   so a clean ``precedes`` lead is never outranked by an ``overlaps`` edge the
+   way the raw event score would (MR#49 review). ``edge_type`` is the KG
+   relation (``containment`` / ``connectivity`` / ``mixed``), and
+   ``onset_lag_h`` the onset lead in hours from source to target.
+
+
+   .. py:attribute:: from_idx
+      :type:  int
+
+
+   .. py:attribute:: to_idx
+      :type:  int
+
+
+   .. py:attribute:: allen_rel
+      :type:  str
+
+
+   .. py:attribute:: allen_score
+      :type:  float
+
+
+   .. py:attribute:: prop_score
+      :type:  float
+
+
+   .. py:attribute:: edge_type
+      :type:  str
+
+
+   .. py:attribute:: onset_lag_h
+      :type:  float
+
+
+.. py:class:: NodeTopology
+
+   In/out degree and derived pattern (linear/divergence/convergence/hub/isolated) for one anomaly node.
+
+
+   .. py:attribute:: anomaly_idx
+      :type:  int
+
+
+   .. py:attribute:: in_degree
+      :type:  int
+
+
+   .. py:attribute:: out_degree
+      :type:  int
+
+
+   .. py:attribute:: pattern_type
+      :type:  str
+
+
+.. py:class:: ScoredChain
+
+   A scored propagation path plus the factors that produced its ``path_score``.
+
+   ``path_score`` is driven by ``mean_propagation_score`` (the lead-time-aware
+   edge weight); ``mean_allen_score`` is retained alongside as the mean of the
+   raw event-calibrated relation priors, for provenance.
+
+
+   .. py:attribute:: chain_id
+      :type:  str
+
+
+   .. py:attribute:: path
+      :type:  list[int]
+
+
+   .. py:attribute:: path_score
+      :type:  float
+
+
+   .. py:attribute:: topology_alignment_factor
+      :type:  float
+
+
+   .. py:attribute:: lag_consistency_factor
+      :type:  float
+
+
+   .. py:attribute:: mean_allen_score
+      :type:  float
+
+
+   .. py:attribute:: mean_propagation_score
+      :type:  float
+
+
+   .. py:attribute:: hub_boost
+      :type:  float
+
+
+   .. py:attribute:: root_pattern_type
+      :type:  str
+
+
+   .. py:attribute:: nodes
+      :type:  list[dict]
+
+

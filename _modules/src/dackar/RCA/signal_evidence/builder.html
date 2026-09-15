@@ -1,0 +1,839 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.signal_evidence.builder &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.signal_evidence.builder</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.signal_evidence.builder</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">statistics</span><span class="w"> </span><span class="kn">import</span> <span class="n">mean</span><span class="p">,</span> <span class="n">stdev</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">uuid</span><span class="w"> </span><span class="kn">import</span> <span class="n">uuid4</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">orchestrators.temporal_relations</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">PRECEDES</span><span class="p">,</span>
+    <span class="n">OVERLAPS</span><span class="p">,</span>
+    <span class="n">allen_relation</span><span class="p">,</span>
+    <span class="n">onset_lag_hours</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._util</span><span class="w"> </span><span class="kn">import</span> <span class="n">clamp01</span><span class="p">,</span> <span class="n">parse_dt</span> <span class="k">as</span> <span class="n">_parse_dt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.historian_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">HistorianAdapter</span><span class="p">,</span> <span class="n">NullHistorianAdapter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">AnomalyRecord</span><span class="p">,</span> <span class="n">NodeTopology</span><span class="p">,</span> <span class="n">PropagationEdge</span><span class="p">,</span> <span class="n">ScoredChain</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.topology</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_upstream</span><span class="p">,</span> <span class="n">resolve_edge_type</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="UPSTREAM_RELATIONS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder.UPSTREAM_RELATIONS">[docs]</a>
+<span class="n">UPSTREAM_RELATIONS</span> <span class="o">=</span> <span class="p">{</span><span class="n">PRECEDES</span><span class="p">,</span> <span class="n">OVERLAPS</span><span class="p">}</span></div>
+
+
+<span class="c1"># P-5: an "initiator" (root of a propagation chain) is only credible if it leads its</span>
+<span class="c1"># successor by a demonstrated onset lag. A purely co-temporal root — an OVERLAPS</span>
+<span class="c1"># relation (degradation merely active at the successor's onset) or a lag below this</span>
+<span class="c1"># threshold — is a concurrent anomaly, not a proven upstream initiator, and its</span>
+<span class="c1"># initiator credit is discounted rather than being awarded the full path strength.</span>
+<div class="viewcode-block" id="_MIN_INITIATOR_LAG_HOURS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._MIN_INITIATOR_LAG_HOURS">[docs]</a>
+<span class="n">_MIN_INITIATOR_LAG_HOURS</span> <span class="o">=</span> <span class="mf">0.5</span></div>
+
+<div class="viewcode-block" id="_COTEMPORAL_INITIATOR_FACTOR">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._COTEMPORAL_INITIATOR_FACTOR">[docs]</a>
+<span class="n">_COTEMPORAL_INITIATOR_FACTOR</span> <span class="o">=</span> <span class="mf">0.6</span></div>
+
+
+<span class="c1"># Propagation edge weighting (MR#49 review, comment #7). allen_relation's</span>
+<span class="c1"># RELATION_SCORE is calibrated for anomaly-vs-EVENT relevance, where an OVERLAPS</span>
+<span class="c1"># (degradation still active at event onset) scores 0.90 and a PRECEDES (clean</span>
+<span class="c1"># lead) 0.75. Reused verbatim as an anomaly-&gt;anomaly PROPAGATION edge weight it</span>
+<span class="c1"># inverts the causal-lead intuition — a co-temporal OVERLAPS edge would outrank</span>
+<span class="c1"># a clean causal lead — and contradicts the P-5 logic above that deliberately</span>
+<span class="c1"># discounts co-temporal initiators. For propagation we give a demonstrated lead</span>
+<span class="c1"># and a co-temporal overlap the same admissible base, then discount the</span>
+<span class="c1"># co-temporal case (an OVERLAPS edge, or a PRECEDES lead below the initiator</span>
+<span class="c1"># threshold) by the same factor P-5 applies to roots — so a clean PRECEDES lead</span>
+<span class="c1"># is always weighted at least as high as an OVERLAPS edge. The raw event score</span>
+<span class="c1"># is retained on the edge as ``allen_score`` for provenance.</span>
+<div class="viewcode-block" id="_PROP_RELATION_WEIGHT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._PROP_RELATION_WEIGHT">[docs]</a>
+<span class="n">_PROP_RELATION_WEIGHT</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">PRECEDES</span><span class="p">:</span> <span class="mf">0.90</span><span class="p">,</span> <span class="n">OVERLAPS</span><span class="p">:</span> <span class="mf">0.90</span><span class="p">}</span></div>
+
+<div class="viewcode-block" id="_COTEMPORAL_EDGE_FACTOR">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._COTEMPORAL_EDGE_FACTOR">[docs]</a>
+<span class="n">_COTEMPORAL_EDGE_FACTOR</span> <span class="o">=</span> <span class="n">_COTEMPORAL_INITIATOR_FACTOR</span></div>
+
+
+
+<div class="viewcode-block" id="_utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_to_float">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._to_float">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_float</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">default</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_component_sensor_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._component_sensor_map">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_component_sensor_map</span><span class="p">(</span><span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]:</span>
+    <span class="n">sensor_to_component</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">component_to_sensors</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">set</span><span class="p">)</span>
+    <span class="c1"># Primary contract path from spec: components[].monitored_variable_ids.</span>
+    <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="p">(</span><span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cid</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">for</span> <span class="n">mv_id</span> <span class="ow">in</span> <span class="p">(</span><span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"monitored_variable_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+            <span class="n">sid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">mv_id</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">sid</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">sensor_to_component</span><span class="p">[</span><span class="n">sid</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>
+            <span class="n">component_to_sensors</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">sid</span><span class="p">)</span>
+
+    <span class="c1"># Backward-compatible fallback path used by older Stage B outputs.</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="p">((</span><span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"seed_context"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"monitored_variables"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">sid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"tag_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">sid</span> <span class="ow">and</span> <span class="n">cid</span><span class="p">:</span>
+            <span class="n">sensor_to_component</span><span class="p">[</span><span class="n">sid</span><span class="p">]</span> <span class="o">=</span> <span class="n">cid</span>
+            <span class="n">component_to_sensors</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">sid</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">sensor_to_component</span><span class="p">,</span> <span class="n">component_to_sensors</span></div>
+
+
+
+<div class="viewcode-block" id="_event_window">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._event_window">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_event_window</span><span class="p">(</span>
+    <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">fetch_lookback_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">fetch_lookahead_hours</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]:</span>
+    <span class="n">event_start</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+    <span class="n">event_end</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">event_start</span>
+    <span class="n">max_latency_h</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">_to_float</span><span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_max_hours"</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="p">(</span><span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])),</span>
+        <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">effective_lookback</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">fetch_lookback_hours</span><span class="p">,</span> <span class="n">max_latency_h</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">event_start</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="n">effective_lookback</span><span class="p">),</span>
+        <span class="n">event_end</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">hours</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">fetch_lookahead_hours</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)),</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_baseline_anomalies">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._baseline_anomalies">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_baseline_anomalies</span><span class="p">(</span>
+    <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">sensor_to_component</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">]:</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="p">(</span><span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">sensor_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">component_id</span> <span class="o">=</span> <span class="n">sensor_to_component</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">sensor_id</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">ts_start</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
+            <span class="n">ts_end</span> <span class="o">=</span> <span class="n">_parse_dt</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">ts_start</span>
+            <span class="k">if</span> <span class="n">ts_start</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">ts_end</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">AnomalyRecord</span><span class="p">(</span>
+                    <span class="n">sensor_id</span><span class="o">=</span><span class="n">sensor_id</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+                    <span class="n">component_id</span><span class="o">=</span><span class="n">component_id</span> <span class="ow">or</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">),</span>
+                    <span class="n">timestamp_start</span><span class="o">=</span><span class="n">ts_start</span><span class="p">,</span>
+                    <span class="n">timestamp_end</span><span class="o">=</span><span class="n">ts_end</span><span class="p">,</span>
+                    <span class="n">pattern</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">),</span>
+                    <span class="n">severity</span><span class="o">=</span><span class="n">clamp01</span><span class="p">(</span><span class="n">_to_float</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">)),</span>
+                    <span class="n">source</span><span class="o">=</span><span class="s2">"telemetry_summary"</span><span class="p">,</span>
+                    <span class="n">raw_value_start</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_value_start"</span><span class="p">),</span>
+                    <span class="n">raw_value_peak</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_value_peak"</span><span class="p">),</span>
+                    <span class="n">units</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"units"</span><span class="p">),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">timestamp_start</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_merge_anomalies">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._merge_anomalies">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_merge_anomalies</span><span class="p">(</span>
+    <span class="n">baseline</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+    <span class="n">historian</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">dedup_tolerance_min</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">]:</span>
+    <span class="n">merged</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">baseline</span><span class="p">)</span>
+    <span class="n">tol_s</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">dedup_tolerance_min</span><span class="p">)</span> <span class="o">*</span> <span class="mf">60.0</span>
+    <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">historian</span><span class="p">:</span>
+        <span class="n">dup</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="n">a</span><span class="o">.</span><span class="n">sensor_id</span> <span class="o">==</span> <span class="n">h</span><span class="o">.</span><span class="n">sensor_id</span>
+            <span class="ow">and</span> <span class="nb">abs</span><span class="p">((</span><span class="n">a</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">-</span> <span class="n">h</span><span class="o">.</span><span class="n">timestamp_start</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span> <span class="o">&lt;</span> <span class="n">tol_s</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">baseline</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">dup</span><span class="p">:</span>
+            <span class="n">merged</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">merged</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">timestamp_start</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_build_propagation_dag">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._build_propagation_dag">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_propagation_dag</span><span class="p">(</span>
+    <span class="n">anomalies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+    <span class="n">neo4j_client</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
+    <span class="n">database</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">PropagationEdge</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]:</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PropagationEdge</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">warnings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="c1"># Memoize graph reachability / edge-type by ordered component pair. Many</span>
+    <span class="c1"># anomalies share a component, and each (i, j) pair queries is_upstream up</span>
+    <span class="c1"># to twice plus resolve_edge_type; without caching the same</span>
+    <span class="c1"># (component_a, component_b) reachability is re-queried across the (i, j)</span>
+    <span class="c1"># and (j, i) passes — O(n^2) Neo4j round-trips for a busy window (MR#49</span>
+    <span class="c1"># review). The caches live for one DAG build (topology is stable per run).</span>
+    <span class="n">upstream_cache</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">edge_type_cache</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_is_upstream</span><span class="p">(</span><span class="n">src</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dst</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">upstream_cache</span><span class="p">:</span>
+            <span class="n">upstream_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">is_upstream</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">neo4j_client</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="n">database</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">upstream_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_edge_type</span><span class="p">(</span><span class="n">src</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dst</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">edge_type_cache</span><span class="p">:</span>
+            <span class="n">edge_type_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">resolve_edge_type</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">dst</span><span class="p">,</span> <span class="n">neo4j_client</span><span class="p">,</span> <span class="n">database</span><span class="o">=</span><span class="n">database</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">edge_type_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">anomalies</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">anomalies</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="n">j</span> <span class="ow">or</span> <span class="n">a</span><span class="o">.</span><span class="n">component_id</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">b</span><span class="o">.</span><span class="n">component_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">rel</span><span class="p">,</span> <span class="n">base_score</span> <span class="o">=</span> <span class="n">allen_relation</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">to_interval</span><span class="p">(),</span> <span class="n">b</span><span class="o">.</span><span class="n">to_interval</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">rel</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">UPSTREAM_RELATIONS</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">_is_upstream</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span> <span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">_is_upstream</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">component_id</span><span class="p">):</span>
+                    <span class="n">warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="p">{</span>
+                            <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"topology_cycle"</span><span class="p">,</span>
+                            <span class="s2">"components"</span><span class="p">:</span> <span class="p">[</span><span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">component_id</span><span class="p">],</span>
+                            <span class="s2">"message"</span><span class="p">:</span> <span class="p">(</span>
+                                <span class="sa">f</span><span class="s2">"Bidirectional reachability detected between </span><span class="si">{</span><span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="si">}</span><span class="s2"> and </span><span class="si">{</span><span class="n">b</span><span class="o">.</span><span class="n">component_id</span><span class="si">}</span><span class="s2">; "</span>
+                                <span class="s2">"edge skipped."</span>
+                            <span class="p">),</span>
+                        <span class="p">}</span>
+                    <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">_is_upstream</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">component_id</span><span class="p">):</span>
+                <span class="n">edge_type</span> <span class="o">=</span> <span class="n">_edge_type</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span> <span class="n">b</span><span class="o">.</span><span class="n">component_id</span><span class="p">)</span>
+                <span class="n">onset_lag</span> <span class="o">=</span> <span class="n">onset_lag_hours</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">to_interval</span><span class="p">(),</span> <span class="n">b</span><span class="o">.</span><span class="n">to_interval</span><span class="p">())</span>
+                <span class="c1"># Propagation weight (comment #7): a demonstrated causal lead is</span>
+                <span class="c1"># weighted at least as high as a co-temporal overlap. Discount</span>
+                <span class="c1"># the co-temporal case — an OVERLAPS edge, or a PRECEDES lead</span>
+                <span class="c1"># below the initiator threshold — so it can never outrank a</span>
+                <span class="c1"># clean lead (the raw event-calibrated score would do the</span>
+                <span class="c1"># opposite). allen_score keeps the raw prior for provenance.</span>
+                <span class="n">prop_weight</span> <span class="o">=</span> <span class="n">_PROP_RELATION_WEIGHT</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span> <span class="n">base_score</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">rel</span> <span class="o">==</span> <span class="n">OVERLAPS</span> <span class="ow">or</span> <span class="nb">abs</span><span class="p">(</span><span class="n">onset_lag</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">_MIN_INITIATOR_LAG_HOURS</span><span class="p">:</span>
+                    <span class="n">prop_weight</span> <span class="o">*=</span> <span class="n">_COTEMPORAL_EDGE_FACTOR</span>
+                <span class="n">edges</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">PropagationEdge</span><span class="p">(</span>
+                        <span class="n">from_idx</span><span class="o">=</span><span class="n">i</span><span class="p">,</span>
+                        <span class="n">to_idx</span><span class="o">=</span><span class="n">j</span><span class="p">,</span>
+                        <span class="n">allen_rel</span><span class="o">=</span><span class="n">rel</span><span class="p">,</span>
+                        <span class="n">allen_score</span><span class="o">=</span><span class="n">base_score</span><span class="p">,</span>
+                        <span class="n">prop_score</span><span class="o">=</span><span class="n">clamp01</span><span class="p">(</span><span class="n">prop_weight</span><span class="p">),</span>
+                        <span class="n">edge_type</span><span class="o">=</span><span class="n">edge_type</span><span class="p">,</span>
+                        <span class="n">onset_lag_h</span><span class="o">=</span><span class="n">onset_lag</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+    <span class="k">return</span> <span class="n">edges</span><span class="p">,</span> <span class="n">warnings</span></div>
+
+
+
+<div class="viewcode-block" id="_classify_nodes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._classify_nodes">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_classify_nodes</span><span class="p">(</span><span class="n">anomalies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span> <span class="n">edges</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PropagationEdge</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">NodeTopology</span><span class="p">]:</span>
+    <span class="n">in_deg</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+    <span class="n">out_deg</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">:</span>
+        <span class="n">out_deg</span><span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">from_idx</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">in_deg</span><span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">to_idx</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">NodeTopology</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">anomalies</span><span class="p">)):</span>
+        <span class="n">ind</span><span class="p">,</span> <span class="n">outd</span> <span class="o">=</span> <span class="n">in_deg</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">out_deg</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">ind</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">outd</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="s2">"isolated"</span>
+        <span class="k">elif</span> <span class="n">outd</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">ind</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="s2">"divergence"</span>
+        <span class="k">elif</span> <span class="n">ind</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">outd</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="s2">"convergence"</span>
+        <span class="k">elif</span> <span class="n">ind</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">outd</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="s2">"hub"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="s2">"linear"</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">NodeTopology</span><span class="p">(</span><span class="n">anomaly_idx</span><span class="o">=</span><span class="n">i</span><span class="p">,</span> <span class="n">in_degree</span><span class="o">=</span><span class="n">ind</span><span class="p">,</span> <span class="n">out_degree</span><span class="o">=</span><span class="n">outd</span><span class="p">,</span> <span class="n">pattern_type</span><span class="o">=</span><span class="n">pattern</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="_extract_contributing_candidates">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._extract_contributing_candidates">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_contributing_candidates</span><span class="p">(</span>
+    <span class="n">node_topology</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">NodeTopology</span><span class="p">],</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PropagationEdge</span><span class="p">],</span>
+    <span class="n">failure_modes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">anomalies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+    <span class="n">out</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">topo</span> <span class="ow">in</span> <span class="n">node_topology</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">topo</span><span class="o">.</span><span class="n">pattern_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"convergence"</span><span class="p">,</span> <span class="s2">"hub"</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">upstream_idxs</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">from_idx</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">edges</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">to_idx</span> <span class="o">==</span> <span class="n">idx</span><span class="p">]</span>
+        <span class="n">confluence_component</span> <span class="o">=</span> <span class="n">anomalies</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">component_id</span>
+        <span class="k">for</span> <span class="n">up_idx</span> <span class="ow">in</span> <span class="n">upstream_idxs</span><span class="p">:</span>
+            <span class="n">up_comp</span> <span class="o">=</span> <span class="n">anomalies</span><span class="p">[</span><span class="n">up_idx</span><span class="p">]</span><span class="o">.</span><span class="n">component_id</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">up_comp</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">failure_modes</span><span class="p">:</span>
+                <span class="n">fm_comp</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applies_to_component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+                <span class="n">fm_id</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">fm_id</span> <span class="ow">and</span> <span class="n">fm_comp</span> <span class="o">==</span> <span class="n">up_comp</span><span class="p">:</span>
+                    <span class="n">out</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">fm_id</span><span class="p">)]</span> <span class="o">=</span> <span class="p">{</span>
+                        <span class="s2">"contributing_cause_role"</span><span class="p">:</span> <span class="s2">"concurrent_cause_candidate"</span><span class="p">,</span>
+                        <span class="s2">"confluence_component_id"</span><span class="p">:</span> <span class="n">confluence_component</span><span class="p">,</span>
+                    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="_find_maximal_paths">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._find_maximal_paths">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_find_maximal_paths</span><span class="p">(</span>
+    <span class="n">anomalies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PropagationEdge</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">max_paths</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">chain_warnings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+    <span class="n">incoming</span> <span class="o">=</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">to_idx</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">}</span>
+    <span class="n">roots</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">anomalies</span><span class="p">))</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">incoming</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">from_idx</span> <span class="o">==</span> <span class="n">i</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">)]</span>
+    <span class="n">adj</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">:</span>
+        <span class="n">adj</span><span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">from_idx</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">to_idx</span><span class="p">)</span>
+
+    <span class="n">all_paths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">dfs</span><span class="p">(</span><span class="n">node</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">visited_components</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_paths</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">max_paths</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">children</span> <span class="o">=</span> <span class="n">adj</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">children</span><span class="p">:</span>
+            <span class="n">all_paths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+            <span class="k">return</span>
+        <span class="n">extended</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">truncated_components</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">children</span><span class="p">:</span>
+            <span class="n">child_component</span> <span class="o">=</span> <span class="n">anomalies</span><span class="p">[</span><span class="n">child</span><span class="p">]</span><span class="o">.</span><span class="n">component_id</span>
+            <span class="k">if</span> <span class="n">child_component</span> <span class="ow">and</span> <span class="n">child_component</span> <span class="ow">in</span> <span class="n">visited_components</span><span class="p">:</span>
+                <span class="c1"># Revisiting an already-seen component would close a feedback</span>
+                <span class="c1"># loop, which we flag rather than model. Collect every such</span>
+                <span class="c1"># child and emit ONE truncated path + ONE warning after the</span>
+                <span class="c1"># loop; appending per revisit-child produced identical</span>
+                <span class="c1"># duplicate chains (each with its own uuid4, so never deduped)</span>
+                <span class="c1"># that inflated propagation_chains (MR#49 review).</span>
+                <span class="n">truncated_components</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">child_component</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">new_visited</span> <span class="o">=</span> <span class="n">visited_components</span> <span class="o">|</span> <span class="p">({</span><span class="n">child_component</span><span class="p">}</span> <span class="k">if</span> <span class="n">child_component</span> <span class="k">else</span> <span class="nb">set</span><span class="p">())</span>
+            <span class="n">dfs</span><span class="p">(</span><span class="n">child</span><span class="p">,</span> <span class="n">path</span> <span class="o">+</span> <span class="p">[</span><span class="n">child</span><span class="p">],</span> <span class="n">new_visited</span><span class="p">)</span>
+            <span class="n">extended</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">truncated_components</span><span class="p">:</span>
+            <span class="n">all_paths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+            <span class="n">chain_warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"feedback_cascade_truncated"</span><span class="p">,</span>
+                    <span class="s2">"components"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">visited_components</span><span class="p">)</span> <span class="o">+</span> <span class="n">truncated_components</span><span class="p">,</span>
+                    <span class="s2">"message"</span><span class="p">:</span> <span class="p">(</span>
+                        <span class="s2">"Path terminated before revisiting component(s) "</span>
+                        <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">truncated_components</span><span class="p">)))</span><span class="si">}</span><span class="s2">; "</span>
+                        <span class="s2">"feedback cascade loop patterns are flagged, not modelled."</span>
+                    <span class="p">),</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="ow">not</span> <span class="n">extended</span><span class="p">:</span>
+            <span class="n">all_paths</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">root</span> <span class="ow">in</span> <span class="n">roots</span><span class="p">:</span>
+        <span class="n">root_component</span> <span class="o">=</span> <span class="n">anomalies</span><span class="p">[</span><span class="n">root</span><span class="p">]</span><span class="o">.</span><span class="n">component_id</span>
+        <span class="n">dfs</span><span class="p">(</span><span class="n">root</span><span class="p">,</span> <span class="p">[</span><span class="n">root</span><span class="p">],</span> <span class="p">{</span><span class="n">root_component</span><span class="p">}</span> <span class="k">if</span> <span class="n">root_component</span> <span class="k">else</span> <span class="nb">set</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">all_paths</span></div>
+
+
+
+<div class="viewcode-block" id="_build_node_object">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._build_node_object">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_node_object</span><span class="p">(</span>
+    <span class="n">idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">next_idx</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="n">anomalies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+    <span class="n">edge_lookup</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">PropagationEdge</span><span class="p">],</span>
+    <span class="n">node_topology</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">NodeTopology</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="n">a</span> <span class="o">=</span> <span class="n">anomalies</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+    <span class="n">edge</span> <span class="o">=</span> <span class="n">edge_lookup</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">next_idx</span><span class="p">))</span> <span class="k">if</span> <span class="n">next_idx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"sensor_id"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">sensor_id</span><span class="p">,</span>
+        <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span>
+        <span class="s2">"timestamp_start"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">timestamp_start</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+        <span class="s2">"timestamp_end"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">timestamp_end</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+        <span class="s2">"severity"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">severity</span><span class="p">,</span>
+        <span class="s2">"allen_relation_to_next"</span><span class="p">:</span> <span class="n">edge</span><span class="o">.</span><span class="n">allen_rel</span> <span class="k">if</span> <span class="n">edge</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"onset_lag_to_next_h"</span><span class="p">:</span> <span class="n">edge</span><span class="o">.</span><span class="n">onset_lag_h</span> <span class="k">if</span> <span class="n">edge</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"edge_type_to_next"</span><span class="p">:</span> <span class="n">edge</span><span class="o">.</span><span class="n">edge_type</span> <span class="k">if</span> <span class="n">edge</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"propagation_weight_to_next"</span><span class="p">:</span> <span class="n">edge</span><span class="o">.</span><span class="n">prop_score</span> <span class="k">if</span> <span class="n">edge</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">"node_pattern_type"</span><span class="p">:</span> <span class="p">(</span><span class="n">node_topology</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span><span class="o">.</span><span class="n">pattern_type</span> <span class="k">if</span> <span class="n">node_topology</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span> <span class="k">else</span> <span class="s2">"linear"</span><span class="p">),</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_score_chain">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._score_chain">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_score_chain</span><span class="p">(</span>
+    <span class="n">path</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+    <span class="n">anomalies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+    <span class="n">edges</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PropagationEdge</span><span class="p">],</span>
+    <span class="n">node_topology</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">NodeTopology</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ScoredChain</span><span class="p">:</span>
+    <span class="n">edge_lookup</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">PropagationEdge</span><span class="p">]</span> <span class="o">=</span> <span class="p">{(</span><span class="n">e</span><span class="o">.</span><span class="n">from_idx</span><span class="p">,</span> <span class="n">e</span><span class="o">.</span><span class="n">to_idx</span><span class="p">):</span> <span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">edges</span><span class="p">}</span>
+    <span class="n">path_edges</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">edge_lookup</span><span class="p">[(</span><span class="n">path</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">path</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">path</span><span class="p">[</span><span class="n">i</span><span class="p">],</span> <span class="n">path</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span> <span class="ow">in</span> <span class="n">edge_lookup</span>
+    <span class="p">]</span>
+    <span class="n">mean_allen</span> <span class="o">=</span> <span class="n">mean</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">allen_score</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">path_edges</span><span class="p">)</span> <span class="k">if</span> <span class="n">path_edges</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="c1"># path_score is driven by the propagation-calibrated weight (comment #7),</span>
+    <span class="c1"># not the raw event-calibrated allen prior; mean_allen is kept for provenance.</span>
+    <span class="n">mean_prop</span> <span class="o">=</span> <span class="n">mean</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">prop_score</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">path_edges</span><span class="p">)</span> <span class="k">if</span> <span class="n">path_edges</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="n">edge_types</span> <span class="o">=</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">edge_type</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">path_edges</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">edge_types</span> <span class="o">==</span> <span class="p">{</span><span class="s2">"containment"</span><span class="p">}:</span>
+        <span class="n">topo_factor</span> <span class="o">=</span> <span class="mf">1.0</span>
+    <span class="k">elif</span> <span class="n">edge_types</span> <span class="o">==</span> <span class="p">{</span><span class="s2">"connectivity"</span><span class="p">}:</span>
+        <span class="n">topo_factor</span> <span class="o">=</span> <span class="mf">0.70</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">topo_factor</span> <span class="o">=</span> <span class="mf">0.85</span> <span class="k">if</span> <span class="n">path_edges</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+    <span class="n">lags</span> <span class="o">=</span> <span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">onset_lag_h</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">path_edges</span><span class="p">]</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lags</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="n">cv</span> <span class="o">=</span> <span class="p">(</span><span class="n">stdev</span><span class="p">(</span><span class="n">lags</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">mean</span><span class="p">(</span><span class="n">lags</span><span class="p">))</span> <span class="o">+</span> <span class="mf">1e-6</span><span class="p">))</span>
+        <span class="n">lag_factor</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">cv</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">lags</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="n">lag_factor</span> <span class="o">=</span> <span class="mf">0.80</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">lag_factor</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="n">root_topo</span> <span class="o">=</span> <span class="n">node_topology</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">root_pattern</span> <span class="o">=</span> <span class="n">root_topo</span><span class="o">.</span><span class="n">pattern_type</span> <span class="k">if</span> <span class="n">root_topo</span> <span class="k">else</span> <span class="s2">"linear"</span>
+    <span class="k">if</span> <span class="n">root_pattern</span> <span class="o">==</span> <span class="s2">"divergence"</span> <span class="ow">and</span> <span class="n">root_topo</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">hub_boost</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.15</span><span class="p">,</span> <span class="mf">0.05</span> <span class="o">*</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">root_topo</span><span class="o">.</span><span class="n">out_degree</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">hub_boost</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="n">path_score</span> <span class="o">=</span> <span class="n">clamp01</span><span class="p">(</span><span class="n">mean_prop</span> <span class="o">*</span> <span class="n">topo_factor</span> <span class="o">*</span> <span class="n">lag_factor</span> <span class="o">+</span> <span class="n">hub_boost</span><span class="p">)</span>
+    <span class="n">nodes</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">path</span><span class="p">):</span>
+        <span class="n">next_idx</span> <span class="o">=</span> <span class="n">path</span><span class="p">[</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">path</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">nodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_build_node_object</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">next_idx</span><span class="p">,</span> <span class="n">anomalies</span><span class="p">,</span> <span class="n">edge_lookup</span><span class="p">,</span> <span class="n">node_topology</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">ScoredChain</span><span class="p">(</span>
+        <span class="n">chain_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">uuid4</span><span class="p">()),</span>
+        <span class="n">path</span><span class="o">=</span><span class="n">path</span><span class="p">,</span>
+        <span class="n">path_score</span><span class="o">=</span><span class="n">path_score</span><span class="p">,</span>
+        <span class="n">topology_alignment_factor</span><span class="o">=</span><span class="n">topo_factor</span><span class="p">,</span>
+        <span class="n">lag_consistency_factor</span><span class="o">=</span><span class="n">lag_factor</span><span class="p">,</span>
+        <span class="n">mean_allen_score</span><span class="o">=</span><span class="n">mean_allen</span><span class="p">,</span>
+        <span class="n">mean_propagation_score</span><span class="o">=</span><span class="n">mean_prop</span><span class="p">,</span>
+        <span class="n">hub_boost</span><span class="o">=</span><span class="n">hub_boost</span><span class="p">,</span>
+        <span class="n">root_pattern_type</span><span class="o">=</span><span class="n">root_pattern</span><span class="p">,</span>
+        <span class="n">nodes</span><span class="o">=</span><span class="n">nodes</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_per_candidate_scores">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/builder/index.html#src.dackar.RCA.signal_evidence.builder._per_candidate_scores">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_per_candidate_scores</span><span class="p">(</span>
+    <span class="n">failure_modes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">chains</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ScoredChain</span><span class="p">],</span>
+    <span class="n">anomalies</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">AnomalyRecord</span><span class="p">],</span>
+    <span class="n">node_topology</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">NodeTopology</span><span class="p">],</span>
+    <span class="n">contributing_candidates</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+    <span class="n">result</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">failure_modes</span><span class="p">:</span>
+        <span class="n">fm_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">fm_id</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">component_id</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applies_to_component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+        <span class="n">best_score</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">best_chain</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">best_pos</span> <span class="o">=</span> <span class="s2">"absent"</span>
+        <span class="n">best_lag_established</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">best_path_score</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">chain</span> <span class="ow">in</span> <span class="n">chains</span><span class="p">:</span>
+            <span class="n">chain_components</span> <span class="o">=</span> <span class="p">[</span><span class="n">anomalies</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">component_id</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">chain</span><span class="o">.</span><span class="n">path</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">component_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">chain_components</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">pos_idx</span> <span class="o">=</span> <span class="n">chain_components</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">component_id</span><span class="p">)</span>
+            <span class="n">anomaly_idx</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">path</span><span class="p">[</span><span class="n">pos_idx</span><span class="p">]</span>
+            <span class="n">topo</span> <span class="o">=</span> <span class="n">node_topology</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">anomaly_idx</span><span class="p">)</span>
+            <span class="n">ptype</span> <span class="o">=</span> <span class="n">topo</span><span class="o">.</span><span class="n">pattern_type</span> <span class="k">if</span> <span class="n">topo</span> <span class="k">else</span> <span class="s2">"linear"</span>
+            <span class="n">lag_established</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">pos_idx</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="c1"># P-5(c): require a demonstrated onset lead before crediting a clean</span>
+                <span class="c1"># initiator. A co-temporal root (OVERLAPS relation, or a sub-threshold</span>
+                <span class="c1"># lag to its successor) is a concurrent anomaly, not a proven upstream</span>
+                <span class="c1"># initiator, and is discounted below.</span>
+                <span class="n">root_node</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">nodes</span><span class="p">[</span><span class="n">pos_idx</span><span class="p">]</span> <span class="k">if</span> <span class="n">pos_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">chain</span><span class="o">.</span><span class="n">nodes</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+                <span class="n">rel_to_next</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">root_node</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"allen_relation_to_next"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                <span class="n">lag_to_next</span> <span class="o">=</span> <span class="n">root_node</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"onset_lag_to_next_h"</span><span class="p">)</span>
+                <span class="n">lag_established</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">rel_to_next</span> <span class="o">==</span> <span class="n">PRECEDES</span>
+                    <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">lag_to_next</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span>
+                    <span class="ow">and</span> <span class="nb">abs</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">lag_to_next</span><span class="p">))</span> <span class="o">&gt;=</span> <span class="n">_MIN_INITIATOR_LAG_HOURS</span>
+                <span class="p">)</span>
+                <span class="n">pos</span> <span class="o">=</span> <span class="s2">"common_cause_root"</span> <span class="k">if</span> <span class="n">ptype</span> <span class="o">==</span> <span class="s2">"divergence"</span> <span class="k">else</span> <span class="s2">"root"</span>
+                <span class="c1"># P-5(b): weight the initiator by the propagation chain's quality</span>
+                <span class="c1"># (path_score) rather than a flat 1.0, so a root on a weak/uncertain</span>
+                <span class="c1"># chain does not automatically dominate ranking.</span>
+                <span class="n">score</span> <span class="o">=</span> <span class="n">clamp01</span><span class="p">(</span><span class="n">chain</span><span class="o">.</span><span class="n">path_score</span><span class="p">)</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">lag_established</span><span class="p">:</span>
+                    <span class="n">score</span> <span class="o">=</span> <span class="n">clamp01</span><span class="p">(</span><span class="n">score</span> <span class="o">*</span> <span class="n">_COTEMPORAL_INITIATOR_FACTOR</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">ptype</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"convergence"</span><span class="p">,</span> <span class="s2">"hub"</span><span class="p">):</span>
+                <span class="n">score</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">path_score</span> <span class="o">*</span> <span class="mf">0.3</span>
+                <span class="n">pos</span> <span class="o">=</span> <span class="s2">"convergence_confluence"</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">score</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">chain</span><span class="o">.</span><span class="n">path_score</span> <span class="o">*</span> <span class="p">(</span><span class="mf">1.0</span> <span class="o">-</span> <span class="mf">0.3</span> <span class="o">*</span> <span class="n">pos_idx</span><span class="p">))</span>
+                <span class="n">pos</span> <span class="o">=</span> <span class="s2">"intermediate"</span>
+            <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;</span> <span class="n">best_score</span><span class="p">:</span>
+                <span class="n">best_score</span> <span class="o">=</span> <span class="n">score</span>
+                <span class="n">best_chain</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">chain_id</span>
+                <span class="n">best_pos</span> <span class="o">=</span> <span class="n">pos</span>
+                <span class="n">best_lag_established</span> <span class="o">=</span> <span class="n">lag_established</span>
+                <span class="n">best_path_score</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">path_score</span>
+        <span class="n">contrib</span> <span class="o">=</span> <span class="n">contributing_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">fm_id</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="n">result</span><span class="p">[</span><span class="n">fm_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"chain_position_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">best_score</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"best_chain_id"</span><span class="p">:</span> <span class="n">best_chain</span><span class="p">,</span>
+            <span class="s2">"best_chain_path_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">best_path_score</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"position_type"</span><span class="p">:</span> <span class="n">best_pos</span><span class="p">,</span>
+            <span class="s2">"initiator_lag_established"</span><span class="p">:</span> <span class="n">best_lag_established</span><span class="p">,</span>
+            <span class="s2">"contributing_cause_role"</span><span class="p">:</span> <span class="n">contrib</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"contributing_cause_role"</span><span class="p">),</span>
+            <span class="s2">"confluence_component_id"</span><span class="p">:</span> <span class="n">contrib</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confluence_component_id"</span><span class="p">),</span>
+        <span class="p">}</span>
+    <span class="k">return</span> <span class="n">result</span></div>
+
+
+
+<div class="viewcode-block" id="build_signal_evidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/signal_evidence/index.html#src.dackar.RCA.signal_evidence.builder.build_signal_evidence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_signal_evidence</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">neo4j_client</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">neo4j_database</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">historian_adapter</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">HistorianAdapter</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">fetch_lookback_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">72.0</span><span class="p">,</span>
+    <span class="n">fetch_lookahead_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span>
+    <span class="n">dedup_tolerance_min</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.0</span><span class="p">,</span>
+    <span class="n">max_paths</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">20</span><span class="p">,</span>
+    <span class="n">max_chains</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Build the Stage B.5 signal-evidence bundle for one RCA run.</span>
+
+<span class="sd">    Merges baseline telemetry anomalies with historian-fetched anomalies,</span>
+<span class="sd">    builds a component-level propagation DAG from Allen temporal relations and</span>
+<span class="sd">    KG reachability, classifies node topology, enumerates and scores</span>
+<span class="sd">    propagation chains, and derives per-failure-mode chain-position scores.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        run_id: Identifier for this analysis run; echoed into the bundle.</span>
+<span class="sd">        event: Triggering event; ``timestamp_start`` / ``timestamp`` and</span>
+<span class="sd">            ``timestamp_end`` seed the analysis window.</span>
+<span class="sd">        telemetry_summary: Stage-B summary whose ``signals[].anomalies`` supply</span>
+<span class="sd">            the baseline anomaly set.</span>
+<span class="sd">        kg_context: KG context providing ``components[].monitored_variable_ids``</span>
+<span class="sd">            (the sensor↔component map) and ``failure_modes``.</span>
+<span class="sd">        neo4j_client: Optional live graph client. When ``None`` (the default),</span>
+<span class="sd">            ``is_upstream`` degrades to ``False`` and ``resolve_edge_type`` to</span>
+<span class="sd">            ``"mixed"``, so no propagation edges are built and the DAG, all</span>
+<span class="sd">            propagation chains, and per-candidate scores come back empty; a</span>
+<span class="sd">            ``{"type": "topology_unavailable"}`` entry is added to</span>
+<span class="sd">            ``chain_warnings`` so consumers can tell this apart from</span>
+<span class="sd">            "analyzed, no propagation found".</span>
+<span class="sd">        neo4j_database: Target Neo4j database; ``None`` uses the driver default.</span>
+<span class="sd">        historian_adapter: Anomaly source; defaults to</span>
+<span class="sd">            :class:`~.historian_adapter.NullHistorianAdapter` (records a gap</span>
+<span class="sd">            per sensor and returns no anomalies).</span>
+<span class="sd">        fetch_lookback_hours: Hours before the event to widen the window</span>
+<span class="sd">            (raised to the largest failure-mode ``expected_latency_max_hours``</span>
+<span class="sd">            when that is greater).</span>
+<span class="sd">        fetch_lookahead_hours: Hours after the event to widen the window.</span>
+<span class="sd">        dedup_tolerance_min: Minutes within which a historian anomaly is</span>
+<span class="sd">            treated as a duplicate of a same-sensor baseline anomaly.</span>
+<span class="sd">        max_paths: Cap on enumerated propagation paths (DFS guard).</span>
+<span class="sd">        max_chains: Cap on scored chains retained in the bundle.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        A JSON-serializable dict with keys: ``run_id``, ``generated_at``,</span>
+<span class="sd">        ``augmented_anomaly_set``, ``propagation_chains`` (scored, ranked),</span>
+<span class="sd">        ``per_candidate_chain_score``, ``dag_topology_summary``,</span>
+<span class="sd">        ``chain_coverage``, ``augmented_anomaly_count``,</span>
+<span class="sd">        ``historian_anomaly_count``, ``fetch_gaps`` and ``chain_warnings``.</span>
+<span class="sd">    """</span>
+    <span class="n">historian</span> <span class="o">=</span> <span class="n">historian_adapter</span> <span class="ow">or</span> <span class="n">NullHistorianAdapter</span><span class="p">()</span>
+    <span class="n">sensor_to_component</span><span class="p">,</span> <span class="n">component_to_sensors</span> <span class="o">=</span> <span class="n">_component_sensor_map</span><span class="p">(</span><span class="n">kg_context</span><span class="p">)</span>
+    <span class="n">fetch_gaps</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="p">(</span><span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">cid</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">component_to_sensors</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">):</span>
+            <span class="n">fetch_gaps</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"sensor_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"component::</span><span class="si">{</span><span class="n">cid</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">cid</span><span class="p">,</span>
+                    <span class="s2">"reason"</span><span class="p">:</span> <span class="s2">"no_sensor_map_entry"</span><span class="p">,</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+
+    <span class="n">sensor_ids</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">sensor_to_component</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+    <span class="n">baseline</span> <span class="o">=</span> <span class="n">_baseline_anomalies</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">sensor_to_component</span><span class="p">)</span>
+    <span class="n">w_start</span><span class="p">,</span> <span class="n">w_end</span> <span class="o">=</span> <span class="n">_event_window</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">,</span> <span class="n">fetch_lookback_hours</span><span class="p">,</span> <span class="n">fetch_lookahead_hours</span><span class="p">)</span>
+    <span class="n">historian_rows</span><span class="p">,</span> <span class="n">historian_gaps</span> <span class="o">=</span> <span class="n">historian</span><span class="o">.</span><span class="n">get_anomalies</span><span class="p">(</span><span class="n">sensor_ids</span><span class="p">,</span> <span class="n">w_start</span><span class="p">,</span> <span class="n">w_end</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">historian_rows</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">row</span><span class="o">.</span><span class="n">component_id</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">row</span><span class="o">.</span><span class="n">component_id</span> <span class="o">=</span> <span class="n">sensor_to_component</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">sensor_id</span><span class="p">)</span>
+
+    <span class="n">fetch_gaps</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">historian_gaps</span><span class="p">)</span>
+    <span class="n">merged</span> <span class="o">=</span> <span class="n">_merge_anomalies</span><span class="p">(</span><span class="n">baseline</span><span class="p">,</span> <span class="n">historian_rows</span><span class="p">,</span> <span class="n">dedup_tolerance_min</span><span class="o">=</span><span class="n">dedup_tolerance_min</span><span class="p">)</span>
+    <span class="n">edges</span><span class="p">,</span> <span class="n">chain_warnings</span> <span class="o">=</span> <span class="n">_build_propagation_dag</span><span class="p">(</span><span class="n">merged</span><span class="p">,</span> <span class="n">neo4j_client</span><span class="p">,</span> <span class="n">neo4j_database</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">neo4j_client</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># No graph client → reachability was never consulted, so the empty DAG</span>
+        <span class="c1"># (and every chain / per-candidate score derived from it) reflects a</span>
+        <span class="c1"># skipped step, not "analyzed, no propagation". Signal it explicitly,</span>
+        <span class="c1"># mirroring how historian outages are recorded in fetch_gaps (MR#49</span>
+        <span class="c1"># review).</span>
+        <span class="n">chain_warnings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"topology_unavailable"</span><span class="p">,</span>
+                <span class="s2">"message"</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="s2">"No Neo4j client supplied; component reachability was not "</span>
+                    <span class="s2">"consulted, so no propagation edges were built."</span>
+                <span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+    <span class="n">node_topology</span> <span class="o">=</span> <span class="n">_classify_nodes</span><span class="p">(</span><span class="n">merged</span><span class="p">,</span> <span class="n">edges</span><span class="p">)</span>
+    <span class="n">paths</span> <span class="o">=</span> <span class="n">_find_maximal_paths</span><span class="p">(</span><span class="n">merged</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">max_paths</span><span class="o">=</span><span class="n">max_paths</span><span class="p">,</span> <span class="n">chain_warnings</span><span class="o">=</span><span class="n">chain_warnings</span><span class="p">)</span>
+    <span class="n">chains</span> <span class="o">=</span> <span class="p">[</span><span class="n">_score_chain</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">merged</span><span class="p">,</span> <span class="n">edges</span><span class="p">,</span> <span class="n">node_topology</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">paths</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="n">chains</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">chains</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">c</span><span class="p">:</span> <span class="o">-</span><span class="n">c</span><span class="o">.</span><span class="n">path_score</span><span class="p">)[:</span><span class="n">max_chains</span><span class="p">]</span>
+    <span class="n">contributing</span> <span class="o">=</span> <span class="n">_extract_contributing_candidates</span><span class="p">(</span>
+        <span class="n">node_topology</span><span class="p">,</span>
+        <span class="n">edges</span><span class="p">,</span>
+        <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[],</span>
+        <span class="n">merged</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">per_candidate</span> <span class="o">=</span> <span class="n">_per_candidate_scores</span><span class="p">(</span>
+        <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[],</span>
+        <span class="n">chains</span><span class="p">,</span>
+        <span class="n">merged</span><span class="p">,</span>
+        <span class="n">node_topology</span><span class="p">,</span>
+        <span class="n">contributing</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">covered</span> <span class="o">=</span> <span class="p">{</span><span class="n">idx</span> <span class="k">for</span> <span class="n">chain</span> <span class="ow">in</span> <span class="n">chains</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">chain</span><span class="o">.</span><span class="n">path</span><span class="p">}</span>
+    <span class="n">chain_coverage</span> <span class="o">=</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">covered</span><span class="p">)</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">merged</span><span class="p">))</span> <span class="k">if</span> <span class="n">merged</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+    <span class="n">topo_counts</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"divergence"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"convergence"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"hub"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"linear"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">"isolated"</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>
+    <span class="k">for</span> <span class="n">topo</span> <span class="ow">in</span> <span class="n">node_topology</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="n">topo_counts</span><span class="p">[</span><span class="n">topo</span><span class="o">.</span><span class="n">pattern_type</span><span class="p">]</span> <span class="o">=</span> <span class="n">topo_counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">topo</span><span class="o">.</span><span class="n">pattern_type</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+        <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">_utcnow_iso</span><span class="p">(),</span>
+        <span class="s2">"augmented_anomaly_set"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">"sensor_id"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">sensor_id</span><span class="p">,</span>
+                <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span>
+                <span class="s2">"timestamp_start"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">timestamp_start</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                <span class="s2">"timestamp_end"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">timestamp_end</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                <span class="s2">"pattern"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">pattern</span><span class="p">,</span>
+                <span class="s2">"severity"</span><span class="p">:</span> <span class="n">clamp01</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">severity</span><span class="p">),</span>
+                <span class="s2">"source"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">source</span><span class="p">,</span>
+                <span class="s2">"raw_value_start"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">raw_value_start</span><span class="p">,</span>
+                <span class="s2">"raw_value_peak"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">raw_value_peak</span><span class="p">,</span>
+                <span class="s2">"units"</span><span class="p">:</span> <span class="n">a</span><span class="o">.</span><span class="n">units</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">merged</span>
+        <span class="p">],</span>
+        <span class="s2">"propagation_chains"</span><span class="p">:</span> <span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">"chain_id"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">chain_id</span><span class="p">,</span>
+                <span class="s2">"path_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">path_score</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                <span class="s2">"topology_alignment_factor"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">topology_alignment_factor</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                <span class="s2">"lag_consistency_factor"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">lag_consistency_factor</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                <span class="s2">"mean_allen_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mean_allen_score</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                <span class="s2">"mean_propagation_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">mean_propagation_score</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+                <span class="s2">"nodes"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">nodes</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">chains</span>
+        <span class="p">],</span>
+        <span class="s2">"per_candidate_chain_score"</span><span class="p">:</span> <span class="n">per_candidate</span><span class="p">,</span>
+        <span class="s2">"dag_topology_summary"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">"divergence_node_count"</span><span class="p">:</span> <span class="n">topo_counts</span><span class="p">[</span><span class="s2">"divergence"</span><span class="p">],</span>
+            <span class="s2">"convergence_node_count"</span><span class="p">:</span> <span class="n">topo_counts</span><span class="p">[</span><span class="s2">"convergence"</span><span class="p">],</span>
+            <span class="s2">"hub_node_count"</span><span class="p">:</span> <span class="n">topo_counts</span><span class="p">[</span><span class="s2">"hub"</span><span class="p">],</span>
+            <span class="s2">"linear_node_count"</span><span class="p">:</span> <span class="n">topo_counts</span><span class="p">[</span><span class="s2">"linear"</span><span class="p">],</span>
+            <span class="s2">"isolated_node_count"</span><span class="p">:</span> <span class="n">topo_counts</span><span class="p">[</span><span class="s2">"isolated"</span><span class="p">],</span>
+        <span class="p">},</span>
+        <span class="s2">"chain_coverage"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">chain_coverage</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+        <span class="s2">"augmented_anomaly_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">merged</span><span class="p">),</span>
+        <span class="s2">"historian_anomaly_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">historian_rows</span><span class="p">),</span>
+        <span class="s2">"fetch_gaps"</span><span class="p">:</span> <span class="n">fetch_gaps</span><span class="p">,</span>
+        <span class="s2">"chain_warnings"</span><span class="p">:</span> <span class="n">chain_warnings</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

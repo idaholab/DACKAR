@@ -1,0 +1,270 @@
+src.dackar.RCA.signal_evidence
+==============================
+
+.. py:module:: src.dackar.RCA.signal_evidence
+
+.. autoapi-nested-parse::
+
+   Stage B.5 signal evidence package.
+
+
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   /autoapi/src/dackar/RCA/signal_evidence/_util/index
+   /autoapi/src/dackar/RCA/signal_evidence/builder/index
+   /autoapi/src/dackar/RCA/signal_evidence/contracts/index
+   /autoapi/src/dackar/RCA/signal_evidence/historian_adapter/index
+   /autoapi/src/dackar/RCA/signal_evidence/models/index
+   /autoapi/src/dackar/RCA/signal_evidence/topology/index
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.signal_evidence.SignalEvidenceBuilderContract
+   src.dackar.RCA.signal_evidence.StageCScorerContract
+   src.dackar.RCA.signal_evidence.StageFRefineContract
+   src.dackar.RCA.signal_evidence.HistorianAdapter
+   src.dackar.RCA.signal_evidence.InfileHistorianAdapter
+   src.dackar.RCA.signal_evidence.NullHistorianAdapter
+   src.dackar.RCA.signal_evidence.OSIsoftPIHistorianAdapter
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.signal_evidence.build_signal_evidence
+
+
+Package Contents
+----------------
+
+.. py:function:: build_signal_evidence(*, run_id, event, telemetry_summary, kg_context, neo4j_client = None, neo4j_database = None, historian_adapter = None, fetch_lookback_hours = 72.0, fetch_lookahead_hours = 4.0, dedup_tolerance_min = 5.0, max_paths = 20, max_chains = 10)
+
+   Build the Stage B.5 signal-evidence bundle for one RCA run.
+
+   Merges baseline telemetry anomalies with historian-fetched anomalies,
+   builds a component-level propagation DAG from Allen temporal relations and
+   KG reachability, classifies node topology, enumerates and scores
+   propagation chains, and derives per-failure-mode chain-position scores.
+
+   :param run_id: Identifier for this analysis run; echoed into the bundle.
+   :param event: Triggering event; ``timestamp_start`` / ``timestamp`` and
+                 ``timestamp_end`` seed the analysis window.
+   :param telemetry_summary: Stage-B summary whose ``signals[].anomalies`` supply
+                             the baseline anomaly set.
+   :param kg_context: KG context providing ``components[].monitored_variable_ids``
+                      (the sensor↔component map) and ``failure_modes``.
+   :param neo4j_client: Optional live graph client. When ``None`` (the default),
+                        ``is_upstream`` degrades to ``False`` and ``resolve_edge_type`` to
+                        ``"mixed"``, so no propagation edges are built and the DAG, all
+                        propagation chains, and per-candidate scores come back empty; a
+                        ``{"type": "topology_unavailable"}`` entry is added to
+                        ``chain_warnings`` so consumers can tell this apart from
+                        "analyzed, no propagation found".
+   :param neo4j_database: Target Neo4j database; ``None`` uses the driver default.
+   :param historian_adapter: Anomaly source; defaults to
+                             :class:`~.historian_adapter.NullHistorianAdapter` (records a gap
+                             per sensor and returns no anomalies).
+   :param fetch_lookback_hours: Hours before the event to widen the window
+                                (raised to the largest failure-mode ``expected_latency_max_hours``
+                                when that is greater).
+   :param fetch_lookahead_hours: Hours after the event to widen the window.
+   :param dedup_tolerance_min: Minutes within which a historian anomaly is
+                               treated as a duplicate of a same-sensor baseline anomaly.
+   :param max_paths: Cap on enumerated propagation paths (DFS guard).
+   :param max_chains: Cap on scored chains retained in the bundle.
+
+   :returns: ``run_id``, ``generated_at``,
+             ``augmented_anomaly_set``, ``propagation_chains`` (scored, ranked),
+             ``per_candidate_chain_score``, ``dag_topology_summary``,
+             ``chain_coverage``, ``augmented_anomaly_count``,
+             ``historian_anomaly_count``, ``fetch_gaps`` and ``chain_warnings``.
+   :rtype: A JSON-serializable dict with keys
+
+
+.. py:class:: SignalEvidenceBuilderContract
+
+   Bases: :py:obj:`Protocol`
+
+
+   Base class for protocol classes.
+
+   Protocol classes are defined as::
+
+       class Proto(Protocol):
+           def meth(self) -> int:
+               ...
+
+   Such classes are primarily used with static type checkers that recognize
+   structural subtyping (static duck-typing).
+
+   For example::
+
+       class C:
+           def meth(self) -> int:
+               return 0
+
+       def func(x: Proto) -> int:
+           return x.meth()
+
+       func(C())  # Passes static type check
+
+   See PEP 544 for details. Protocol classes decorated with
+   @typing.runtime_checkable act as simple-minded runtime protocols that check
+   only the presence of given attributes, ignoring their type signatures.
+   Protocol classes can be generic, they are defined as::
+
+       class GenProto[T](Protocol):
+           def meth(self) -> T:
+               ...
+
+
+   .. py:method:: build(*, run_id, event, telemetry_summary, kg_context)
+
+
+.. py:class:: StageCScorerContract
+
+   Bases: :py:obj:`Protocol`
+
+
+   Base class for protocol classes.
+
+   Protocol classes are defined as::
+
+       class Proto(Protocol):
+           def meth(self) -> int:
+               ...
+
+   Such classes are primarily used with static type checkers that recognize
+   structural subtyping (static duck-typing).
+
+   For example::
+
+       class C:
+           def meth(self) -> int:
+               return 0
+
+       def func(x: Proto) -> int:
+           return x.meth()
+
+       func(C())  # Passes static type check
+
+   See PEP 544 for details. Protocol classes decorated with
+   @typing.runtime_checkable act as simple-minded runtime protocols that check
+   only the presence of given attributes, ignoring their type signatures.
+   Protocol classes can be generic, they are defined as::
+
+       class GenProto[T](Protocol):
+           def meth(self) -> T:
+               ...
+
+
+   .. py:method:: score(event, telemetry_summary, kg_context, operational_context, run_context, signal_evidence = None)
+
+
+.. py:class:: StageFRefineContract
+
+   Bases: :py:obj:`Protocol`
+
+
+   Base class for protocol classes.
+
+   Protocol classes are defined as::
+
+       class Proto(Protocol):
+           def meth(self) -> int:
+               ...
+
+   Such classes are primarily used with static type checkers that recognize
+   structural subtyping (static duck-typing).
+
+   For example::
+
+       class C:
+           def meth(self) -> int:
+               return 0
+
+       def func(x: Proto) -> int:
+           return x.meth()
+
+       func(C())  # Passes static type check
+
+   See PEP 544 for details. Protocol classes decorated with
+   @typing.runtime_checkable act as simple-minded runtime protocols that check
+   only the presence of given attributes, ignoring their type signatures.
+   Protocol classes can be generic, they are defined as::
+
+       class GenProto[T](Protocol):
+           def meth(self) -> T:
+               ...
+
+
+   .. py:method:: refine_with_evidence(causality_candidates, evidence_bundle, kg_context = None, signal_evidence = None, entity_normalizer_cfg = None)
+
+
+.. py:class:: HistorianAdapter
+
+   Bases: :py:obj:`Protocol`
+
+
+   Fetches pre-flagged anomaly records for a set of sensors in a window.
+
+
+   .. py:method:: get_anomalies(sensor_ids, window_start, window_end)
+
+      Return ``(anomaly_records, gaps)`` for *sensor_ids* within the window.
+
+      :param sensor_ids: Sensor/tag identifiers to fetch anomalies for.
+      :param window_start: Inclusive UTC-aware start of the query window.
+      :param window_end: Inclusive UTC-aware end of the query window.
+
+      :returns: A tuple of the matched :class:`~.models.AnomalyRecord` list and a
+                list of gap dicts (one per sensor with no data / a fetch failure).
+
+
+
+.. py:class:: InfileHistorianAdapter(source_path)
+
+   Reads pre-flagged anomalies from a JSON/CSV export.
+
+
+   .. py:attribute:: source_path
+
+
+   .. py:method:: get_anomalies(sensor_ids, window_start, window_end)
+
+
+   .. py:method:: _load_rows()
+
+
+.. py:class:: NullHistorianAdapter
+
+   Graceful-degradation adapter used when historian is unavailable.
+
+
+   .. py:method:: get_anomalies(sensor_ids, window_start, window_end)
+
+
+.. py:class:: OSIsoftPIHistorianAdapter
+
+   NOT IMPLEMENTED — placeholder shim for a future OSIsoft PI integration.
+
+   This adapter is contract-compatible but **not** wired to the PI Web API.
+   Every call reports each sensor as ``historian_unavailable`` and returns no
+   anomalies, so it must not be mistaken for a functional PI integration. Use
+   :class:`InfileHistorianAdapter` for real data until PI is implemented.
+
+
+   .. py:method:: get_anomalies(sensor_ids, window_start, window_end)
+
+

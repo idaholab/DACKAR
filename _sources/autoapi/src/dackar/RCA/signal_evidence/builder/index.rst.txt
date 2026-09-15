@@ -1,0 +1,132 @@
+src.dackar.RCA.signal_evidence.builder
+======================================
+
+.. py:module:: src.dackar.RCA.signal_evidence.builder
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.signal_evidence.builder.JsonDict
+   src.dackar.RCA.signal_evidence.builder.UPSTREAM_RELATIONS
+   src.dackar.RCA.signal_evidence.builder._MIN_INITIATOR_LAG_HOURS
+   src.dackar.RCA.signal_evidence.builder._COTEMPORAL_INITIATOR_FACTOR
+   src.dackar.RCA.signal_evidence.builder._PROP_RELATION_WEIGHT
+   src.dackar.RCA.signal_evidence.builder._COTEMPORAL_EDGE_FACTOR
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.signal_evidence.builder._utcnow_iso
+   src.dackar.RCA.signal_evidence.builder._to_float
+   src.dackar.RCA.signal_evidence.builder._component_sensor_map
+   src.dackar.RCA.signal_evidence.builder._event_window
+   src.dackar.RCA.signal_evidence.builder._baseline_anomalies
+   src.dackar.RCA.signal_evidence.builder._merge_anomalies
+   src.dackar.RCA.signal_evidence.builder._build_propagation_dag
+   src.dackar.RCA.signal_evidence.builder._classify_nodes
+   src.dackar.RCA.signal_evidence.builder._extract_contributing_candidates
+   src.dackar.RCA.signal_evidence.builder._find_maximal_paths
+   src.dackar.RCA.signal_evidence.builder._build_node_object
+   src.dackar.RCA.signal_evidence.builder._score_chain
+   src.dackar.RCA.signal_evidence.builder._per_candidate_scores
+   src.dackar.RCA.signal_evidence.builder.build_signal_evidence
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: UPSTREAM_RELATIONS
+
+.. py:data:: _MIN_INITIATOR_LAG_HOURS
+   :value: 0.5
+
+
+.. py:data:: _COTEMPORAL_INITIATOR_FACTOR
+   :value: 0.6
+
+
+.. py:data:: _PROP_RELATION_WEIGHT
+   :type:  Dict[str, float]
+
+.. py:data:: _COTEMPORAL_EDGE_FACTOR
+   :value: 0.6
+
+
+.. py:function:: _utcnow_iso()
+
+.. py:function:: _to_float(value, default = 0.0)
+
+.. py:function:: _component_sensor_map(kg_context)
+
+.. py:function:: _event_window(event, kg_context, fetch_lookback_hours, fetch_lookahead_hours)
+
+.. py:function:: _baseline_anomalies(telemetry_summary, sensor_to_component)
+
+.. py:function:: _merge_anomalies(baseline, historian, *, dedup_tolerance_min = 5.0)
+
+.. py:function:: _build_propagation_dag(anomalies, neo4j_client, database)
+
+.. py:function:: _classify_nodes(anomalies, edges)
+
+.. py:function:: _extract_contributing_candidates(node_topology, edges, failure_modes, anomalies)
+
+.. py:function:: _find_maximal_paths(anomalies, edges, *, max_paths, chain_warnings)
+
+.. py:function:: _build_node_object(idx, next_idx, anomalies, edge_lookup, node_topology)
+
+.. py:function:: _score_chain(path, anomalies, edges, node_topology)
+
+.. py:function:: _per_candidate_scores(failure_modes, chains, anomalies, node_topology, contributing_candidates)
+
+.. py:function:: build_signal_evidence(*, run_id, event, telemetry_summary, kg_context, neo4j_client = None, neo4j_database = None, historian_adapter = None, fetch_lookback_hours = 72.0, fetch_lookahead_hours = 4.0, dedup_tolerance_min = 5.0, max_paths = 20, max_chains = 10)
+
+   Build the Stage B.5 signal-evidence bundle for one RCA run.
+
+   Merges baseline telemetry anomalies with historian-fetched anomalies,
+   builds a component-level propagation DAG from Allen temporal relations and
+   KG reachability, classifies node topology, enumerates and scores
+   propagation chains, and derives per-failure-mode chain-position scores.
+
+   :param run_id: Identifier for this analysis run; echoed into the bundle.
+   :param event: Triggering event; ``timestamp_start`` / ``timestamp`` and
+                 ``timestamp_end`` seed the analysis window.
+   :param telemetry_summary: Stage-B summary whose ``signals[].anomalies`` supply
+                             the baseline anomaly set.
+   :param kg_context: KG context providing ``components[].monitored_variable_ids``
+                      (the sensor↔component map) and ``failure_modes``.
+   :param neo4j_client: Optional live graph client. When ``None`` (the default),
+                        ``is_upstream`` degrades to ``False`` and ``resolve_edge_type`` to
+                        ``"mixed"``, so no propagation edges are built and the DAG, all
+                        propagation chains, and per-candidate scores come back empty; a
+                        ``{"type": "topology_unavailable"}`` entry is added to
+                        ``chain_warnings`` so consumers can tell this apart from
+                        "analyzed, no propagation found".
+   :param neo4j_database: Target Neo4j database; ``None`` uses the driver default.
+   :param historian_adapter: Anomaly source; defaults to
+                             :class:`~.historian_adapter.NullHistorianAdapter` (records a gap
+                             per sensor and returns no anomalies).
+   :param fetch_lookback_hours: Hours before the event to widen the window
+                                (raised to the largest failure-mode ``expected_latency_max_hours``
+                                when that is greater).
+   :param fetch_lookahead_hours: Hours after the event to widen the window.
+   :param dedup_tolerance_min: Minutes within which a historian anomaly is
+                               treated as a duplicate of a same-sensor baseline anomaly.
+   :param max_paths: Cap on enumerated propagation paths (DFS guard).
+   :param max_chains: Cap on scored chains retained in the bundle.
+
+   :returns: ``run_id``, ``generated_at``,
+             ``augmented_anomaly_set``, ``propagation_chains`` (scored, ranked),
+             ``per_candidate_chain_score``, ``dag_topology_summary``,
+             ``chain_coverage``, ``augmented_anomaly_count``,
+             ``historian_anomaly_count``, ``fetch_gaps`` and ``chain_warnings``.
+   :rtype: A JSON-serializable dict with keys
+
+
