@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
-from .chroma_store import extract_processed_text_record
+from .chroma_store import _iter_jsonl, extract_processed_text_record
 
 LOGGER = logging.getLogger(__name__)
 
@@ -12,20 +11,6 @@ LOGGER = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # JSONL helpers
 # ---------------------------------------------------------------------------
-
-def _iter_jsonl(jsonl_path: str) -> Iterable[Dict[str, Any]]:
-    with open(jsonl_path, "r", encoding="utf-8") as f:
-        for lineno, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError as exc:
-                LOGGER.warning("ProcessedRecordStore: parse error in %s line %d: %s", jsonl_path, lineno, exc)
-                continue
-            if isinstance(obj, dict):
-                yield obj
 
 def _is_minimal_processed_record(rec: Dict[str, Any]) -> bool:
     """
@@ -86,12 +71,10 @@ class ProcessedRecordStore:
             )
             return False
 
-        rid = rec.get("record_id")
+        # record_id is guaranteed to be a non-empty str by _is_minimal_processed_record above.
+        rid = str(rec["record_id"])
         if rid in self._by_record_id:
             LOGGER.warning("ProcessedRecordStore: overwriting existing record_id=%s", rid)
-        if not rid:
-            return False
-        rid = str(rid)
         self._by_record_id[rid] = rec
 
         provenance = rec.get("provenance") or {}
