@@ -4,10 +4,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
-from .chroma_store import ChromaRecordStore
-from .multi_vector_fusion import reciprocal_rank_fusion, weighted_distance_inversion
+from .chroma_store import ChromaRecordStore, _stable_record_id_from_doc
+from .multi_vector_fusion import reciprocal_rank_fusion
 
 LOGGER = logging.getLogger(__name__)
+
+_WARNED_NON_RRF_FUSION = False
 
 from .processed_record_store import ProcessedRecordStore, select_processed_snippet
 
@@ -85,7 +87,7 @@ class LCProcessedRetriever:
             )
             hits: List[Dict[str, Any]] = []
             for doc in docs:
-                rid = self._extract_record_id(doc)
+                rid = _stable_record_id_from_doc(doc)
                 if not rid:
                     LOGGER.warning(
                         "Skipping vector hit with no stable record_id for doc_type=%s query=%r.",
@@ -143,25 +145,24 @@ class LCProcessedRetriever:
         k_final: int,
         view_weights: Optional[Dict[str, float]],
     ) -> List[Dict[str, Any]]:
-        if fusion == "rrf":
-            return reciprocal_rank_fusion(per_view_hits, k=k_final, view_weights=view_weights)
-        return weighted_distance_inversion(per_view_hits, k=k_final, view_weights=view_weights)
-    
-    def _extract_record_id(self, doc: Any) -> Optional[str]:
-        """
-        Best-effort stable identifier extraction from a Chroma hit.
-        Never synthesize record_id from page_content hash, because hydration
-        must be based on the canonical processed_text_record identity.
-        """
-        metadata = getattr(doc, "metadata", {}) or {}
-        for key in ("record_id", "id", "_id"):
-            value = metadata.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
+        """Fuse per-doc-type hit lists into a single ranked list.
 
-        for attr in ("id", "record_id"):
-            value = getattr(doc, attr, None)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-        return None
+        Only Reciprocal Rank Fusion (RRF) is valid at this cross-doc-type layer. Each incoming
+        hit's ``score`` is the *fused RRF score* produced by ``ChromaRecordStore.query_doc_type``
+        (higher = better), not a raw vector distance. ``weighted_distance_inversion`` assumes a
+        raw non-negative distance (lower = better), so applying it here would rank matches
+        worst-first. Any non-``"rrf"`` ``fusion`` value is therefore mapped to RRF with a
+        one-time warning; ``weighted_distance_inversion`` remains available only for the
+        per-view (raw-distance) layer inside the store.
+        """
+        if fusion != "rrf":
+            global _WARNED_NON_RRF_FUSION
+            if not _WARNED_NON_RRF_FUSION:
+                LOGGER.warning(
+                    "Ignoring fusion=%r at the cross-doc-type layer and using RRF instead: "
+                    "hits here carry already-fused RRF scores (higher=better), not raw "
+                    "distances, so distance-based fusion would rank results worst-first.",
+                    fusion,
+                )
+                _WARNED_NON_RRF_FUSION = True
+        return reciprocal_rank_fusion(per_view_hits, k=k_final, view_weights=view_weights)
