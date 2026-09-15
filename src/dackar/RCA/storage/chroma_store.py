@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from langchain_chroma import Chroma
-from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
+from langchain_ollama import OllamaEmbeddings
+
+from .multi_vector_fusion import reciprocal_rank_fusion
 
 LOGGER = logging.getLogger(__name__)
 
@@ -148,8 +151,10 @@ def _doc_matches_component_ids(doc: Document, wanted: set) -> bool:
     Checks:
       1. The scalar ``primary_component_id`` metadata field (index-friendly path).
       2. The scalar ``component_id`` metadata field (legacy single-component path).
-      3. The ``component_ids`` field, which may be a JSON-encoded list (how Chroma stores
-         list-valued metadata) or a plain Python list (BM25 in-memory path).
+      3. The ``component_ids`` field. In practice this is a JSON-encoded string on every
+         path, because metadata is passed through :func:`_sanitize_meta` (which stringifies
+         lists) before it reaches either Chroma or the in-memory BM25 corpus. The plain-list
+         branch is kept only as a defensive fallback for externally constructed documents.
     """
     meta = doc.metadata or {}
     primary = meta.get("primary_component_id")
@@ -170,6 +175,27 @@ def _doc_matches_component_ids(doc: Document, wanted: set) -> bool:
         if any(c in wanted for c in raw):
             return True
     return False
+
+
+def _doc_matches_filter_sane(doc: Document, filter_sane: Dict[str, Any]) -> bool:
+    """Apply the dense-path Chroma filter semantics to a BM25 hit's metadata.
+
+    The dense path builds ``{k: {"$in": vals}}`` for list-valued filters and ``{k: {"$eq": v}}``
+    for scalars. This mirrors that membership-vs-equality logic for the in-memory BM25
+    post-filter so the two retrieval views agree. Previously BM25 used ``==`` even for
+    list-valued filters, which never matched a scalar metadata value and silently dropped
+    every BM25 hit — collapsing hybrid retrieval to dense-only whenever a list filter was set.
+    """
+    meta = doc.metadata or {}
+    for k, v in filter_sane.items():
+        actual = meta.get(k)
+        if isinstance(v, (list, tuple, set)):
+            if actual not in set(v):
+                return False
+        elif actual != v:
+            return False
+    return True
+
 
 def _sanitize_meta(meta: Dict[str, Any]) -> Dict[str, Any]:
     clean: Dict[str, Any] = {}
@@ -208,6 +234,26 @@ def _record_component_ids(metadata: Dict[str, Any]) -> List[str]:
 
 
 def build_chroma_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten a canonical ``processed_text_record`` into Chroma-storable metadata.
+
+    Chroma metadata values must be primitives (str / int / float / bool). This function
+    projects the nested record structure onto a flat scalar dict that supports both
+    index-level filtering and BM25 text search:
+
+    - Copies identity/traceability keys (``record_id``, ``doc_id``, ``doc_type``,
+      ``chunk_index``, ``chunk_id``, page span, authority level, section role).
+    - Derives ``primary_component_id`` (first component) for index-level component filtering.
+    - Flattens ``condition_assessment``, ``eca``, ``oe_metadata``, NER entities, and Stage-5
+      causal statements into ``ca_*`` / ``eca_*`` / ``oe_*`` / ``*_text`` scalar keys.
+    - Sets ``finding_status`` from the document type (ECA=confirmed, CR=preliminary,
+      OE=fleet_experience, else observational).
+
+    List-valued keys are preserved but JSON-stringified by :func:`_sanitize_meta` on return,
+    and companion ``*_text`` keys are added for the fields in :data:`LIST_FIELDS`.
+
+    Returns:
+        A sanitized, primitive-only metadata dict ready to hand to Chroma.
+    """
     metadata = dict(record.get("metadata") or {})
     provenance = dict(record.get("provenance") or {})
 
@@ -231,10 +277,10 @@ def build_chroma_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
     # These are most meaningful on WO records but are preserved for all doc types.
     ca = record.get("condition_assessment") or metadata.get("condition_assessment")
     if isinstance(ca, dict):
-        for field in ("as_found_condition", "as_left_condition", "as_found_text", "as_left_text"):
-            val = ca.get(field)
+        for ca_field in ("as_found_condition", "as_left_condition", "as_found_text", "as_left_text"):
+            val = ca.get(ca_field)
             if val is not None:
-                metadata.setdefault(f"ca_{field}", val)
+                metadata.setdefault(f"ca_{ca_field}", val)
         # Flatten measurements as a compact summary string (first out-of-spec item wins).
         measurements = ca.get("measurements")
         if isinstance(measurements, list) and measurements:
@@ -341,7 +387,6 @@ def build_chroma_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
         # Dominant temporal relation for pre-filter hints.
         temporal_relations = ner.get("temporal_relations")
         if isinstance(temporal_relations, list) and temporal_relations:
-            from collections import Counter
             votes = Counter(
                 r.get("sub_label") for r in temporal_relations
                 if isinstance(r, dict) and r.get("sub_label")
@@ -386,6 +431,12 @@ def build_chroma_metadata(record: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def to_chroma_payload(record: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert a processed_text_record into the ``(id, document, metadata)`` triple upserted
+    into Chroma.
+
+    The vector id is the record's ``record_id``, the embedded/indexed document text is the
+    whitespace-collapsed ``embedding_text``, and metadata comes from :func:`build_chroma_metadata`.
+    """
     return {
         "id": str(record["record_id"]),
         "document": _collapse_ws(record.get("embedding_text") or ""),
@@ -395,6 +446,11 @@ def to_chroma_payload(record: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def collection_name_for_doc_type(doc_type: str, prefix: str = "processed") -> str:
+    """Return the Chroma collection name for a document type, e.g. ``processed_CR``.
+
+    The doc type is upper-cased and sanitized (``/`` and spaces become ``_``) so it is a
+    valid, stable collection identifier; a falsy doc type maps to ``OTHER``.
+    """
     dt = (doc_type or "OTHER").strip().upper().replace("/", "_").replace(" ", "_")
     return f"{prefix}_{dt}"
 
@@ -423,6 +479,23 @@ class ChromaRecordStore:
         collection_prefix: str = "processed",
         bm25_k: int = 20,
     ) -> None:
+        """Initialise the per-doc-type Chroma store.
+
+        Args:
+            persist_directory: On-disk directory for Chroma's persistent collections
+                (created if missing).
+            embed_model: Ollama embedding model name; defaults to ``$OLLAMA_EMBED_MODEL``
+                or ``mxbai-embed-large:335m``.
+            ollama_base_url: Ollama server URL; defaults to ``$OLLAMA_BASE_URL`` or
+                ``http://localhost:11434``.
+            collection_prefix: Prefix for generated collection names (see
+                :func:`collection_name_for_doc_type`).
+            bm25_k: Default fan-out for the in-memory BM25 retriever built per collection.
+
+        Note:
+            The embedding model name is baked into each collection name, so switching models
+            transparently targets a distinct set of collections rather than mixing vector spaces.
+        """
         self.persist_directory = persist_directory
         os.makedirs(self.persist_directory, exist_ok=True)
 
@@ -454,10 +527,25 @@ class ChromaRecordStore:
         return state
 
     def load_collection(self, doc_type: str, collection_name: Optional[str] = None) -> _CollectionState:
+        """Open a persisted collection for querying and return its :class:`_CollectionState`.
+
+        The dense (vector) side is fully backed by Chroma's on-disk index, so it works
+        regardless of which process performed the original ingest.
+
+        BM25, however, is an *in-memory* corpus built only from documents upserted during the
+        current process (see :meth:`upsert_records`). When a collection is loaded fresh from
+        disk without a matching in-process ingest, ``state.bm25_docs`` is empty and hybrid
+        retrieval degrades to **dense-only** — ``hybrid_weight`` then has no effect. This is a
+        deliberate limitation of the current design (the BM25 corpus is not persisted); callers
+        needing hybrid retrieval in a query-only process must re-ingest the source JSONL first.
+        A warning is emitted here to make the degraded mode explicit.
+        """
         state = self.get_or_create_collection(doc_type=doc_type, collection_name=collection_name)
-        if state.bm25 is None:
+        if state.bm25 is None and not state.bm25_docs:
             LOGGER.warning(
-                "Collection '%s' loaded from disk — BM25 is unavailable until re-ingest.",
+                "Collection '%s' loaded from disk without an in-process ingest — BM25 corpus is "
+                "empty, so retrieval will be dense-only (hybrid_weight has no effect) until the "
+                "source records are re-ingested in this process.",
                 collection_name or self._collection_name(doc_type),
             )
         return state
@@ -477,6 +565,18 @@ class ChromaRecordStore:
         doc_type: Optional[str] = None,
         collection_name: Optional[str] = None,
     ) -> int:
+        """Upsert a batch of processed_text_records into the collection for their doc type.
+
+        All records in a call must share one doc type (a mixed-type batch raises
+        ``ValueError``); the type is taken from ``doc_type`` or inferred from the first record.
+        Malformed records and records with empty embedding text are skipped. Each surviving
+        record is upserted into Chroma by ``record_id`` (dense side) and added to the
+        collection's in-memory BM25 corpus (sparse side), so a subsequent query in the same
+        process gets true hybrid retrieval.
+
+        Returns:
+            The number of records actually upserted.
+        """
         records = list(records)
         if not records:
             return 0
@@ -516,8 +616,8 @@ class ChromaRecordStore:
         if not ids:
             return 0
 
-        embeddings = self.embedder.embed_documents(docs)
-        vs._collection.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=embeddings)
+        # Use the public LangChain vectorstore API; it embeds the documents and upserts by id.
+        vs.add_texts(texts=docs, metadatas=metas, ids=ids)
 
         # Keep a fresh BM25 corpus for collections ingested in-process.
         existing_by_id = {d.metadata.get("record_id"): d for d in state.bm25_docs}
@@ -537,6 +637,15 @@ class ChromaRecordStore:
         *,
         doc_type_override: Optional[str] = None,
     ) -> Dict[str, int]:
+        """Ingest a JSONL file of processed_text_records, one Chroma collection per doc type.
+
+        Records are read from ``jsonl_path`` (each line may be a bare record or wrapped under a
+        ``processed_text_record`` key), grouped by doc type (or forced to ``doc_type_override``),
+        and upserted via :meth:`upsert_records`.
+
+        Returns:
+            Mapping of ``doc_type -> number of records upserted``.
+        """
         grouped: Dict[str, List[Dict[str, Any]]] = {}
         for obj in _iter_jsonl(jsonl_path):
             rec = extract_processed_text_record(obj)
@@ -560,6 +669,39 @@ class ChromaRecordStore:
         collection_name: Optional[str] = None,
         hybrid_weight: float = 0.5,
     ) -> List[Document]:
+        """Hybrid (dense + BM25) retrieval over a single doc-type collection.
+
+        Runs a dense vector search and a BM25 search, then fuses the two ranked lists with
+        Reciprocal Rank Fusion weighted by ``hybrid_weight`` (dense) / ``1 - hybrid_weight``
+        (BM25). The fused ``_score`` is written back onto each returned document's metadata.
+
+        Filtering:
+            ``filter_meta`` is normalized (see :func:`_normalize_filter_meta`) into scalar
+            Chroma ``$eq``/``$in`` clauses. ``component_ids`` is handled specially: it becomes
+            an index-level ``primary_component_id`` ``$in`` filter, with a legacy post-filter
+            fallback for older records that predate ``primary_component_id`` (see
+            :func:`_doc_matches_component_ids`).
+
+        BM25 availability:
+            BM25 only contributes when this collection was ingested in the current process; on
+            a disk-loaded collection retrieval is dense-only (see :meth:`load_collection`).
+            ``_bm25_available`` is recorded on each returned document's metadata.
+
+        Args:
+            doc_type: Document type selecting the collection.
+            query_text: Natural-language query.
+            top_k: Maximum number of fused results to return.
+            filter_meta: Optional high-level metadata filters.
+            collection_name: Explicit collection override (else derived from ``doc_type``).
+            hybrid_weight: Dense-vs-BM25 blend in [0, 1]; 1.0 is dense-only, 0.0 is BM25-only.
+
+        Returns:
+            Up to ``top_k`` LangChain ``Document`` objects ordered by fused score.
+
+        Raises:
+            ValueError: If the target collection has not been initialised via
+                :meth:`upsert_jsonl` / :meth:`upsert_records` / :meth:`load_collection`.
+        """
         cname = collection_name or self._collection_name(doc_type)
         if cname not in self._states:
             raise ValueError(f"Collection '{cname}' is not initialised. Call upsert_jsonl() or load_collection() first.")
@@ -679,7 +821,7 @@ class ChromaRecordStore:
                 if filter_sane or wanted_component_ids:
                     docs = [
                         d for d in docs
-                        if all(d.metadata.get(k) == v for k, v in filter_sane.items())
+                        if _doc_matches_filter_sane(d, filter_sane)
                         and (not wanted_component_ids or _doc_matches_component_ids(d, wanted_component_ids))
                     ]
                 for doc in docs:
@@ -710,11 +852,10 @@ class ChromaRecordStore:
                 hybrid_weight,
             )
 
-        fused = _reciprocal_rank_fusion(
+        fused = reciprocal_rank_fusion(
             {"dense": dense_hits, "bm25": bm25_hits},
             k=top_k,
             view_weights={"dense": hybrid_weight, "bm25": 1.0 - hybrid_weight},
-            key_field="record_id",
         )
 
         out: List[Document] = []
@@ -727,39 +868,3 @@ class ChromaRecordStore:
             doc.metadata["_bm25_available"] = bm25_available
             out.append(doc)
         return out
-
-
-# ---------------------------------------------------------------------------
-# Small local fusion helper (keeps chroma_store self-contained)
-# ---------------------------------------------------------------------------
-
-def _reciprocal_rank_fusion(
-    per_view: Dict[str, List[Dict[str, Any]]],
-    *,
-    k: int,
-    view_weights: Optional[Dict[str, float]] = None,
-    key_field: str = "record_id",
-) -> List[Dict[str, Any]]:
-    view_weights = view_weights or {}
-    acc: Dict[str, Dict[str, Any]] = {}
-    for view_name, hits in per_view.items():
-        weight = float(view_weights.get(view_name, 1.0))
-        for rank, hit in enumerate(hits, start=1):
-            hid = str(hit.get(key_field) or "")
-            if not hid:
-                continue
-            score = weight * (1.0 / (60 + rank))
-            if hid not in acc:
-                acc[hid] = {
-                    key_field: hid,
-                    "score": 0.0,
-                    "document": hit.get("document"),
-                    "metadata": hit.get("metadata") or {},
-                    "views": {},
-                }
-            acc[hid]["score"] += score
-            acc[hid]["views"][view_name] = {"rank": rank, "raw_score": hit.get("score")}
-            if acc[hid].get("document") is None:
-                acc[hid]["document"] = hit.get("document")
-    ranked = sorted(acc.values(), key=lambda x: x.get("score", 0.0), reverse=True)
-    return ranked[:k]
