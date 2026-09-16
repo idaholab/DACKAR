@@ -315,3 +315,39 @@ def test_temporal_link_skipped_propagated_to_link():
     # The link for this doc should have temporal_link_skipped=True
     link = next(l for l in all_links if l["doc_id"] == "DOC-001")
     assert link["temporal_link_skipped"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Conflict detection (enable_conflict_detection gate)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_conflict_detection_flag_surfaces_conflicting_posture():
+    """A same-asset / different-FM doc is the ONLY way support_posture='conflicting'
+    can arise. It is admitted (and thus surfaced) only when
+    enable_conflict_detection=True; with the flag off (default) the FM pre-filter
+    drops it → outcome 'no_match'. This exercises the conflict path end-to-end in
+    the linker (the summary-side conflict wording is covered separately in
+    test_cross_pattern_summary.py)."""
+    ep = _FakeEpisode(episode_id="ep1", similarity_to_current=0.9, asset_id="ASSET-1")
+    # Shares the episode's asset but carries a DIFFERENT failure mode than the candidate.
+    doc = _make_doc(doc_id="DOC-001", fm_id_candidate="FM-002", asset_id="ASSET-1")
+    candidates = [_make_candidate("CAND-001", fm_id="FM-001")]
+
+    # Flag ON → the different-FM doc links and drives a 'conflicting' posture.
+    on = _linker(
+        link_confidence_threshold=0.05,
+        enable_conflict_detection=True,
+    ).run([ep], [doc], candidates)
+    ev_on = on["candidate_evidence"][0]
+    assert ev_on["linkage_outcome"] == "linked"
+    assert ev_on["support_posture"] == "conflicting"
+
+    # Flag OFF (default) → the non-matching FM never links → no_match / unresolved.
+    off = _linker(link_confidence_threshold=0.05).run(
+        [ep],
+        [_make_doc(doc_id="DOC-001", fm_id_candidate="FM-002", asset_id="ASSET-1")],
+        candidates,
+    )
+    ev_off = off["candidate_evidence"][0]
+    assert ev_off["linkage_outcome"] == "no_match"
+    assert ev_off["support_posture"] == "unresolved"
