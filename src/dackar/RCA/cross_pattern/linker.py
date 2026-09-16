@@ -29,9 +29,6 @@ from .rules import (
 
 LOGGER = logging.getLogger(__name__)
 
-# One-time guard for the episode-contract warning emitted by run() (see A1).
-_WARNED_UNKNOWN_EPISODE_SHAPE = False
-
 
 def _dataclass_to_dict(obj: Any) -> Any:
     """Recursively convert dataclasses (and nested structures) to plain dicts."""
@@ -67,6 +64,9 @@ class CrossPatternLinker:
 
     def __init__(self, config: CrossPatternConfig) -> None:
         self.config = config
+        # One-time (per-instance, NOT process-global) guard for the episode-contract
+        # warning in run(); per-instance keeps concurrent/test runs isolated.
+        self._warned_episode_shape = False
 
     def run(
         self,
@@ -96,41 +96,36 @@ class CrossPatternLinker:
            the highest-precedence link.
         5. Filter links by link_confidence_threshold.
         6. Build CandidateCrossPatternEvidence.
-        7. Mutate doc.source_episode_ids for each linked doc.
 
-        Side effects
-        ------------
-        This method MUTATES the passed-in ``doc_extractions`` in place: each
-        doc's ``source_episode_ids`` is first reset to empty (so repeated calls
-        with the same list are idempotent rather than accumulating), then
-        populated with the ids of the episodes that linked to that doc above
-        threshold.  Callers that need the inputs untouched should pass copies.
+        This method does NOT mutate its inputs.  Episode↔doc linkage is reported
+        entirely in the returned dict (per-candidate ``linked_episode_ids`` /
+        ``linked_doc_ids`` and the flat ``all_links``), so callers can safely
+        reuse the same ``episodes`` / ``doc_extractions`` lists across calls.
         """
         cfg = self.config
 
-        # A3 — reset the in-place mutation target so re-running with the same
-        # doc_extractions list does not accumulate episode ids across calls.
-        for doc in doc_extractions:
-            doc.source_episode_ids = []
-
-        # A1 — every episode attribute below is read via getattr with a default,
-        # so an episode whose field names drift from the HistoricalSignalEpisode
-        # contract would silently yield zero links. Warn ONCE if an episode
-        # exposes none of the expected attributes.
-        global _WARNED_UNKNOWN_EPISODE_SHAPE
-        if not _WARNED_UNKNOWN_EPISODE_SHAPE:
-            _expected_ep_attrs = ("episode_id", "index_status", "similarity_to_current")
+        # A1 — the episode fields below are read via getattr with defaults, so an
+        # episode missing a SCORING-critical attribute silently scores 0.0 /
+        # "no_episodes_indexed" and yields zero links rather than raising.  The
+        # likeliest real drift is being handed the sibling PatternSearcher output
+        # (SearchResult has episode_id but neither index_status nor
+        # similarity_to_current), which an "exposes none of the attrs" check would
+        # miss — so gate on the scoring attrs specifically.  Warn once per linker
+        # instance.
+        if not self._warned_episode_shape:
+            _scoring_attrs = ("index_status", "similarity_to_current")
             for _ep in episodes:
-                if not any(hasattr(_ep, _a) for _a in _expected_ep_attrs):
+                _missing = [a for a in _scoring_attrs if not hasattr(_ep, a)]
+                if _missing:
                     LOGGER.warning(
-                        "CrossPatternLinker: episode of type %r exposes none of the "
-                        "expected attributes %s; every episode field will fall back to "
-                        "its default (similarity 0.0, status 'no_episodes_indexed'), "
-                        "which silently yields zero links. Check the "
-                        "HistoricalSignalEpisode producer contract.",
-                        type(_ep).__name__, _expected_ep_attrs,
+                        "CrossPatternLinker: episode of type %r is missing scoring "
+                        "attribute(s) %s; those fields fall back to defaults "
+                        "(similarity 0.0, status 'no_episodes_indexed'), which "
+                        "silently yields zero links. Check the HistoricalSignalEpisode "
+                        "producer contract.",
+                        type(_ep).__name__, _missing,
                     )
-                    _WARNED_UNKNOWN_EPISODE_SHAPE = True
+                    self._warned_episode_shape = True
                     break
 
         all_links_for_result: List[CrossPatternLink] = []
@@ -404,13 +399,6 @@ class CrossPatternLinker:
                 if above_threshold
                 else 0.0
             )
-
-            # Mutate doc.source_episode_ids for linked docs
-            for doc in doc_extractions:
-                if doc.doc_id in linked_doc_ids:
-                    for ep_id_ref in linked_episode_ids:
-                        if ep_id_ref not in doc.source_episode_ids:
-                            doc.source_episode_ids.append(ep_id_ref)
 
             evidence = CandidateCrossPatternEvidence(
                 candidate_id=cand_id,
