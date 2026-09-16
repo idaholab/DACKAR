@@ -29,6 +29,9 @@ from .rules import (
 
 LOGGER = logging.getLogger(__name__)
 
+# One-time guard for the episode-contract warning emitted by run() (see A1).
+_WARNED_UNKNOWN_EPISODE_SHAPE = False
+
 
 def _dataclass_to_dict(obj: Any) -> Any:
     """Recursively convert dataclasses (and nested structures) to plain dicts."""
@@ -94,8 +97,41 @@ class CrossPatternLinker:
         5. Filter links by link_confidence_threshold.
         6. Build CandidateCrossPatternEvidence.
         7. Mutate doc.source_episode_ids for each linked doc.
+
+        Side effects
+        ------------
+        This method MUTATES the passed-in ``doc_extractions`` in place: each
+        doc's ``source_episode_ids`` is first reset to empty (so repeated calls
+        with the same list are idempotent rather than accumulating), then
+        populated with the ids of the episodes that linked to that doc above
+        threshold.  Callers that need the inputs untouched should pass copies.
         """
         cfg = self.config
+
+        # A3 — reset the in-place mutation target so re-running with the same
+        # doc_extractions list does not accumulate episode ids across calls.
+        for doc in doc_extractions:
+            doc.source_episode_ids = []
+
+        # A1 — every episode attribute below is read via getattr with a default,
+        # so an episode whose field names drift from the HistoricalSignalEpisode
+        # contract would silently yield zero links. Warn ONCE if an episode
+        # exposes none of the expected attributes.
+        global _WARNED_UNKNOWN_EPISODE_SHAPE
+        if not _WARNED_UNKNOWN_EPISODE_SHAPE:
+            _expected_ep_attrs = ("episode_id", "index_status", "similarity_to_current")
+            for _ep in episodes:
+                if not any(hasattr(_ep, _a) for _a in _expected_ep_attrs):
+                    LOGGER.warning(
+                        "CrossPatternLinker: episode of type %r exposes none of the "
+                        "expected attributes %s; every episode field will fall back to "
+                        "its default (similarity 0.0, status 'no_episodes_indexed'), "
+                        "which silently yields zero links. Check the "
+                        "HistoricalSignalEpisode producer contract.",
+                        type(_ep).__name__, _expected_ep_attrs,
+                    )
+                    _WARNED_UNKNOWN_EPISODE_SHAPE = True
+                    break
 
         all_links_for_result: List[CrossPatternLink] = []
         candidate_evidences: List[CandidateCrossPatternEvidence] = []
@@ -160,7 +196,7 @@ class CrossPatternLinker:
                 ep_source_refs: List[str] = list(getattr(ep, "linked_doc_ids", []) or [])
 
                 for doc in doc_extractions:
-                    # Episode-to-candidate mapping: link only when doc fm matches candidate
+                    # Episode-to-candidate mapping.
                     doc_fm = doc.fm_id_candidate or ""
                     doc_fm_alt = doc.fm_id_candidate_alt or ""
                     fm_matches = (
@@ -168,13 +204,21 @@ class CrossPatternLinker:
                         or doc_fm_alt == fm_id
                     )
 
-                    # For level-3 fallback (no temporal link), still require FM match
-                    if not fm_matches:
-                        continue
-
-                    # Check asset compatibility
+                    # Asset compatibility — needed by the conflict gate below and
+                    # recorded in provenance regardless of the linking decision.
                     doc_asset = doc.asset_id or ""
                     asset_match = (ep_asset != "" and doc_asset != "" and ep_asset == doc_asset)
+
+                    # Linking gate:
+                    #   * Default — link only when the doc's FM matches the candidate
+                    #     (reinforcing evidence).
+                    #   * cfg.enable_conflict_detection — ALSO link a doc on the SAME
+                    #     asset whose FM DIFFERS from the candidate, so the conflict path
+                    #     in classify_support_posture (and the conflict wording/flags in
+                    #     summary.py) can surface it for analyst review. A doc that shares
+                    #     neither the FM nor the asset never links.
+                    if not fm_matches and not (cfg.enable_conflict_detection and asset_match):
+                        continue
 
                     # Determine precedence level
                     level = classify_linkage_precedence(ep_id, doc, ep_source_refs)
@@ -247,11 +291,21 @@ class CrossPatternLinker:
                         "fm_id_candidate": doc_fm,
                         "fm_id_candidate_alt": doc_fm_alt,
                         "candidate_fm_id": fm_id,
+                        # Epistemic annotation carried from the doc extraction so the
+                        # already-merged build_epistemics_manifest_summary (see
+                        # doc_extraction/epistemics.py) can aggregate class / level /
+                        # degraded distributions from each link's provenance.
+                        "doc_type": doc.doc_type,
+                        "epistemic_class": doc.epistemic_class,
+                        "classification_resolution_level": doc.classification_resolution_level,
+                        "degraded_classification": doc.degraded_classification,
                     }
 
                     link_confidence = compute_link_confidence(
                         signal_similarity_score=ep_sim,
-                        time_overlap_hours=time_overlap if (time_overlap is not None and time_overlap >= 0) else None,
+                        # Retained for provenance only — no longer gates the temporal
+                        # weight (that now keys off temporal_compatibility_score).
+                        time_overlap_hours=time_overlap,
                         temporal_compatibility_score=temporal_compatibility_score,
                         fm_alignment_score=fm_alignment_score,
                         document_similarity_score=document_similarity_score,
@@ -330,7 +384,11 @@ class CrossPatternLinker:
                 linked_fm = doc_match.fm_id_candidate or ""
                 if linked_fm == fm_id or (doc_match.fm_id_candidate_alt or "") == fm_id:
                     reinforcing_fm_ids.append(linked_fm or fm_id)
-                else:
+                elif linked_fm:
+                    # A non-empty FM that differs from the candidate = genuine conflict.
+                    # Only reachable when cfg.enable_conflict_detection admitted a
+                    # same-asset, different-FM doc above. An asset-linked doc with an
+                    # unknown/empty FM neither reinforces nor conflicts.
                     conflicting_fm_ids.append(linked_fm)
 
             support_posture, reinforcement_strength = classify_support_posture(
