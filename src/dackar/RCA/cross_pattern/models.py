@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -13,7 +13,10 @@ class HistoricalDocExtraction:
     a richer object that carries temporal and FM resolution metadata needed for
     the linkage rules in rules.py.
 
-    source_episode_ids is populated by CrossPatternLinker.run() after linkage.
+    Instances are treated as immutable inputs by CrossPatternLinker.run(): the
+    linker never writes back onto them.  Episode↔doc linkage is reported in the
+    run() result (per-candidate ``linked_episode_ids`` / ``linked_doc_ids`` and
+    the flat ``all_links``), not by mutating these objects.
     """
     doc_id: str
     doc_type: str
@@ -30,7 +33,6 @@ class HistoricalDocExtraction:
     fm_resolution_score: Optional[float]
     confidence: str                      # "high" | "medium" | "low"
     cause_is_symptom: bool
-    source_episode_ids: List[str] = field(default_factory=list)  # populated by linker
     # Epistemic annotation fields — carried from SemanticMatch (Phase A)
     epistemic_class: Optional[str] = None
     classification_resolution_level: Optional[str] = None
