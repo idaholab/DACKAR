@@ -32,12 +32,18 @@ def compute_link_confidence(
     missing dimension does not silently deflate confidence relative to other
     links.
 
+    The temporal weight is gated on ``temporal_compatibility_score`` — the value
+    actually fed into the numerator — NOT on ``time_overlap_hours``.  Gating on
+    the raw overlap would count the temporal dimension while contributing a 0.0
+    score whenever the caller passed a gap-only overlap (formula mode), silently
+    deflating confidence.  ``time_overlap_hours`` is retained for provenance only.
+
     ``provenance`` is mutated to record the contributing terms, their raw
     weights, and the normalization factor.
     """
     present_weights: Dict[str, float] = {}
     present_weights["signal"] = 0.30  # always present
-    present_weights["temporal"] = 0.20 if time_overlap_hours is not None else 0.0
+    present_weights["temporal"] = 0.20 if temporal_compatibility_score is not None else 0.0
     present_weights["fm"] = 0.20 if fm_alignment_score is not None else 0.0
     present_weights["document"] = 0.30 if document_similarity_score is not None else 0.0
 
@@ -61,6 +67,9 @@ def compute_link_confidence(
         "document_weight": present_weights["document"],
         "total_weight": round(total_weight, 4),
         "signal_similarity_score": round(float(signal_similarity_score), 4),
+        "time_overlap_hours": (
+            round(float(time_overlap_hours), 4) if time_overlap_hours is not None else None
+        ),
         "temporal_compatibility_score": (
             round(float(temporal_compatibility_score), 4)
             if temporal_compatibility_score is not None
@@ -88,9 +97,10 @@ def classify_linkage_precedence(
     """Return the precedence level for an (episode, doc) pair.
 
     Level 1 — Direct reference: doc.doc_id appears in episode_source_refs.
-    Level 2 — Temporal + asset: event_time_confidence != "absent" AND asset
-               information is available (not "absent" confidence alone implies
-               temporal data is usable).
+    Level 2 — Temporal: event_time_confidence != "absent" (temporal data is
+               usable).  Asset compatibility is scored separately by the linker
+               (asset_match, recorded in provenance) and is deliberately NOT a
+               gate on this level — the name is "temporal", not "temporal + asset".
     Level 3 — Fallback (semantic/FM): used when neither level 1 nor 2 applies.
 
     Parameters
