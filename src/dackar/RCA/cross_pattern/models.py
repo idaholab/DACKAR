@@ -42,7 +42,8 @@ class CrossPatternLink:
     """A single link between one HistoricalSignalEpisode and one HistoricalDocExtraction.
 
     Carries full provenance so analysts can trace exactly which checks passed
-    (direct reference, temporal+asset, or semantic/FM).
+    (direct reference, temporal, or semantic/FM; asset compatibility is scored
+    separately as asset_match).
     """
     link_id: str
     episode_id: str
@@ -50,7 +51,7 @@ class CrossPatternLink:
     asset_match: bool
     time_overlap_hours: Optional[float]
     temporal_link_skipped: bool
-    linkage_precedence_level: int        # 1=direct, 2=temporal+asset, 3=semantic/FM
+    linkage_precedence_level: int        # 1=direct, 2=temporal, 3=semantic/FM
     component_overlap: List[str]
     fm_alignment_score: Optional[float]
     signal_similarity_score: float
