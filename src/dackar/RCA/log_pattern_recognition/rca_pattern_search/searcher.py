@@ -20,7 +20,7 @@ import pandas as pd
 from .config import SearchConfig
 from .indexer import IncidentIndex, _coerce_ts
 from .metrics import combined_score, emd_similarity, jaccard, nlcs
-from .models import HistoricalSignalEpisode, IncidentFingerprint, SearchResult
+from .models import HistoricalSignalEpisode, IncidentFingerprint
 
 _log = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class PatternSearcher:
         3. NLCS computation on survivors.
         4. EMD computation on survivors.
         5. Combined score: weighted sum using the resolved weight profile.
-        6. Rank descending by combined_score; return top-k SearchResults.
+        6. Rank descending by combined_score; return the top-k HistoricalSignalEpisodes.
 
     The coarse-to-fine design avoids computing NLCS and EMD on clearly
     dissimilar episodes (those failing the Jaccard gate).
@@ -70,7 +70,10 @@ class PatternSearcher:
             weight_profile:        Weight profile override; None → config.weight_profile.
             staleness_window_days: If set and index.build_timestamp is known, episodes
                                    from an index older than this are marked "stale".
-                                   None disables the staleness check.
+                                   None disables the staleness check. By design the
+                                   window lives on PatternSearchConfig.index_staleness_window_days;
+                                   the orchestrator reads it there and passes it in here
+                                   (PatternSearcher itself only carries a SearchConfig).
 
         Notes:
             - All three metric scores (jaccard, nlcs, emd) are individually visible
