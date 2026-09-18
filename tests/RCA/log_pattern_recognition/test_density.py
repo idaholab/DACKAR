@@ -6,14 +6,14 @@ from datetime import datetime, timedelta
 
 import numpy as np
 
-from ..config import SearchConfig
-from ..density import (
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.config import SearchConfig
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.density import (
     EpisodeDetector,
     _extract_contiguous_regions,
     _kde_evaluate,
     _merge_overlapping,
 )
-from ..models import UnifiedEvent
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.models import UnifiedEvent
 
 
 # ---------------------------------------------------------------------------
