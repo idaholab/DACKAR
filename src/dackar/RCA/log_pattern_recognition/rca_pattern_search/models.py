@@ -123,7 +123,11 @@ class HistoricalSignalEpisode:
     linked_doc_ids: list[str]             # populated by cross-pattern linkage (Phase 2)
     index_status: str
     # "indexed"              — episode is from a populated, current index; eligible for linkage
-    # "no_episodes_indexed"  — index contained no episodes for the asset; linkage must not run
+    # "no_episodes_indexed"  — sentinel: no usable episodes to link against. Returned both when
+    #                          the index is genuinely empty AND when a populated index yields no
+    #                          match (no event-type overlap, or all candidates fail the Jaccard
+    #                          gate). Callers skip linkage identically in either case, so a "stale"
+    #                          flag computed for a populated index is intentionally not surfaced here.
     # "stale"                — index was built outside the staleness window; linkage allowed
     #                          but link_confidence capped at 0.70 (§4.11)
 
