@@ -4,10 +4,10 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timedelta
 
-from ..config import SearchConfig
-from ..indexer import IncidentIndex
-from ..models import HistoricalSignalEpisode, IncidentFingerprint
-from ..searcher import PatternSearcher
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.config import SearchConfig
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer import IncidentIndex
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.models import HistoricalSignalEpisode, IncidentFingerprint
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher import PatternSearcher
 
 
 # ---------------------------------------------------------------------------
