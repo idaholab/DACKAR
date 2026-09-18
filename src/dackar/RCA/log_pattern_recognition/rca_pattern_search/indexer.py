@@ -17,7 +17,7 @@ import logging
 import os
 import random
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -95,8 +95,18 @@ class IncidentIndex:
 
         Notes:
             events_df is not modified in place.
-            Calling build_from_history() a second time appends to the
-            existing index — call reset() first to rebuild from scratch.
+            episode_id is derived from the episode window_start
+            (EP_{asset}_{window_start:%Y%m%dT%H%M%S}), so ids are stable across
+            rebuilds. The add path upserts by episode_id: re-building over the
+            same data replaces episodes in place (idempotent), while genuinely
+            new episodes append — call reset() first for a clean rebuild.
+
+            Stage 1 is intended to be built once against a *representative*
+            query: rho_query/query_duration come from that query and calibrate
+            episode boundaries (delta * rho_query; bandwidth query_duration/4),
+            then the index is persisted via save() (save/load is not a per-query
+            cache). Results are sensitive to these values — see rca_pattern_matching.md
+            for guidance on choosing representative rho_query/query_duration.
         """
         all_events = _df_to_events(events_df)
         if not all_events:
@@ -127,7 +137,11 @@ class IncidentIndex:
                 continue
 
             asset_id = _dominant_asset(ep_events) or "UNKNOWN"
-            episode_id = f"EP_{asset_id}_{idx:05d}"
+            # Derive a stable id from the episode window_start (not the per-call
+            # boundary index, which restarts at 0 each build and would collide
+            # on the documented append path). Stable across rebuilds; the add
+            # path upserts by this id.
+            episode_id = f"EP_{asset_id}_{ep_s:%Y%m%dT%H%M%S}"
 
             event_set, event_seq, freq_vec = IncidentExtractor._derive_fingerprint(
                 ep_events, self.config.freq_threshold
@@ -154,8 +168,12 @@ class IncidentIndex:
             )
 
         self.add_batch(fingerprints)
-        self.build_timestamp = datetime.utcnow()
-        self.asset_scope = sorted({fp.asset_id for fp in fingerprints if fp.asset_id})
+        self.build_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
+        # Union with any existing scope so a second build does not drop the
+        # assets recorded by an earlier one.
+        self.asset_scope = sorted(
+            set(self.asset_scope) | {fp.asset_id for fp in fingerprints if fp.asset_id}
+        )
         _log.info(
             "build_from_history: detected %d boundaries, built %d fingerprints (assets: %s).",
             len(boundaries), len(fingerprints), self.asset_scope,
@@ -174,29 +192,44 @@ class IncidentIndex:
 
     def add(self, fingerprint: IncidentFingerprint) -> None:
         """
-        Adds a single fingerprint to the index.
+        Adds a single fingerprint to the index (upsert by episode_id).
 
-        Updates episodes_df and the inverted index incrementally.
-        Less efficient than add_batch() for many insertions because the
-        inverted index is updated per fingerprint rather than rebuilt once.
+        If an episode with the same episode_id already exists it is replaced,
+        and the inverted index is rebuilt once to drop the old episode's stale
+        postings. The common insert-new path stays incremental. Less efficient
+        than add_batch() for many insertions because the inverted index is
+        updated per fingerprint rather than rebuilt once.
         """
         row = _fingerprint_to_row(fingerprint)
         new_df = pd.DataFrame([row])
         if self.episodes_df.empty:
             self.episodes_df = new_df
+            replaced = False
         else:
-            self.episodes_df = pd.concat(
-                [self.episodes_df, new_df], ignore_index=True
+            replaced = bool(
+                (self.episodes_df["episode_id"] == fingerprint.episode_id).any()
             )
-        for event_type in fingerprint.event_set:
-            self._inverted_index.setdefault(event_type, set()).add(
-                fingerprint.episode_id
-            )
+            kept = self.episodes_df[
+                self.episodes_df["episode_id"] != fingerprint.episode_id
+            ]
+            self.episodes_df = pd.concat([kept, new_df], ignore_index=True)
+        if replaced:
+            # event_set may have changed on the replaced episode; rebuild to
+            # drop stale event_type -> episode_id postings.
+            self._rebuild_inverted_index()
+        else:
+            for event_type in fingerprint.event_set:
+                self._inverted_index.setdefault(event_type, set()).add(
+                    fingerprint.episode_id
+                )
 
     def add_batch(self, fingerprints: list[IncidentFingerprint]) -> None:
         """
-        Adds multiple fingerprints in a single operation.
+        Adds multiple fingerprints in a single operation (upsert by episode_id).
 
+        Existing episodes whose episode_id appears in the incoming batch are
+        replaced, and duplicate ids within the batch collapse to the last
+        occurrence, so the append path never produces duplicate episode_ids.
         Rebuilds the inverted index once after all insertions, which is
         more efficient than repeated add() calls.
         """
@@ -207,9 +240,13 @@ class IncidentIndex:
         if self.episodes_df.empty:
             self.episodes_df = new_df
         else:
-            self.episodes_df = pd.concat(
-                [self.episodes_df, new_df], ignore_index=True
-            )
+            new_ids = {fp.episode_id for fp in fingerprints}
+            kept = self.episodes_df[~self.episodes_df["episode_id"].isin(new_ids)]
+            self.episodes_df = pd.concat([kept, new_df], ignore_index=True)
+        # Collapse any duplicate ids within the batch itself (keep last).
+        self.episodes_df = self.episodes_df.drop_duplicates(
+            subset="episode_id", keep="last", ignore_index=True
+        )
         self._rebuild_inverted_index()
 
     # ------------------------------------------------------------------
@@ -228,8 +265,8 @@ class IncidentIndex:
             query_event_set: event_set from the query IncidentFingerprint.
 
         Returns:
-            List of episode_ids (may contain duplicates if an episode shares
-            multiple event types — callers should treat as a set).
+            De-duplicated list of episode_ids sharing >= 1 event type with the
+            query (candidates are accumulated in a set, so no id repeats).
         """
         candidates: set[str] = set()
         for event_type in query_event_set:
@@ -281,8 +318,10 @@ class IncidentIndex:
         if total_possible <= max_pairs:
             pairs_to_eval = all_pairs
         else:
-            random.seed(42)  # Seeded for reproducibility
-            pairs_to_eval = random.sample(all_pairs, max_pairs)
+            # Local RNG for reproducibility; avoids reseeding the process-global
+            # random module as a side effect.
+            rng = random.Random(42)
+            pairs_to_eval = rng.sample(all_pairs, max_pairs)
 
         max_l1 = 0.0
         for i, j in pairs_to_eval:
