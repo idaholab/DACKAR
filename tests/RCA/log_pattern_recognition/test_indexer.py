@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from ..config import SearchConfig
-from ..indexer import (
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.config import SearchConfig
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer import (
     IncidentIndex,
     _coerce_ts,
     _df_to_events,
@@ -19,7 +19,7 @@ from ..indexer import (
     _fingerprint_to_row,
     _serialise_df,
 )
-from ..models import IncidentFingerprint, UnifiedEvent
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.models import IncidentFingerprint, UnifiedEvent
 
 
 # ---------------------------------------------------------------------------
