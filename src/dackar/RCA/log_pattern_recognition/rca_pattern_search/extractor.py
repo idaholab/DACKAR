@@ -244,6 +244,10 @@ class IncidentExtractor:
         events: list[UnifiedEvent] = []
         for rec in summary.get("anomalies", []):
             # Inclusion gate: promoted_to_kg_event preferred; severity_score fallback.
+            # When BOTH fields are absent the anomaly is included by design — a
+            # metadata-less anomaly is kept rather than silently dropped (conservative
+            # inclusion). A record is excluded only by an explicit falsy promotion flag
+            # or a severity_score below threshold.
             promoted = rec.get("promoted_to_kg_event")
             if promoted is not None:
                 if not promoted:
