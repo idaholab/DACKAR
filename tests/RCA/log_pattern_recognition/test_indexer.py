@@ -310,13 +310,35 @@ class TestBuildFromHistory:
         if len(idx) > 0:
             assert len(idx._inverted_index) > 0
 
-    def test_second_call_appends(self):
+    def test_second_call_idempotent_and_unique(self):
+        """Re-building over identical data upserts in place: no growth, no dup ids.
+
+        Episode ids are derived from window_start, so an identical second build
+        produces the same ids and the add path replaces them rather than
+        appending duplicates (the B1 silent-data-loss regression guard).
+        """
         idx = IncidentIndex(CFG)
         df = _events_df(n_clusters=1, events_per_cluster=20)
         idx.build_from_history(df, rho_query=10 / 600, query_duration=600.0)
         n_first = len(idx)
+        ids_first = set(idx.episodes_df["episode_id"])
         idx.build_from_history(df, rho_query=10 / 600, query_duration=600.0)
-        assert len(idx) >= n_first  # second call adds more episodes
+        assert len(idx) == n_first
+        assert idx.episodes_df["episode_id"].is_unique
+        assert set(idx.episodes_df["episode_id"]) == ids_first
+
+    def test_append_distinct_windows_grows_uniquely(self):
+        """A build over a time-shifted copy yields new window_starts → new unique ids."""
+        idx = IncidentIndex(CFG)
+        df1 = _events_df(n_clusters=1, events_per_cluster=20)
+        idx.build_from_history(df1, rho_query=10 / 600, query_duration=600.0)
+        n_first = len(idx)
+        assert n_first > 0
+        df2 = df1.copy()
+        df2["timestamp_start"] = df2["timestamp_start"] + pd.Timedelta(days=30)
+        idx.build_from_history(df2, rho_query=10 / 600, query_duration=600.0)
+        assert len(idx) > n_first
+        assert idx.episodes_df["episode_id"].is_unique
 
     def test_repr(self):
         idx = IncidentIndex(CFG)
