@@ -4,15 +4,15 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timedelta
 
-from ..config import SearchConfig
-from ..extractor import (
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.config import SearchConfig
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor import (
     IncidentExtractor,
     _expand_window,
     _compute_density,
     _derive_soe_end_timestamps,
     _parse_ts,
 )
-from ..models import UnifiedEvent
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.models import UnifiedEvent
 
 
 # ---------------------------------------------------------------------------
