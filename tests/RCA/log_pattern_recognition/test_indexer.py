@@ -1,6 +1,7 @@
 """Unit tests for rca_pattern_search.indexer"""
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 from datetime import datetime, timedelta
@@ -9,6 +10,21 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import pytest
+
+# IncidentIndex.save()/load() round-trip through parquet (pandas .to_parquet /
+# .read_parquet), which requires a parquet engine. pyarrow reaches full installs
+# transitively via the rca/kg dependency groups (streamlit, graphdatascience);
+# a core-only `pip install .` has neither engine, so skip this module there
+# rather than erroring — honoring the "core deps cover the full test suite" CI
+# contract. The engine-backed uv --all-groups jobs still exercise these tests.
+if (
+    importlib.util.find_spec("pyarrow") is None
+    and importlib.util.find_spec("fastparquet") is None
+):
+    pytest.skip(
+        "no parquet engine (pyarrow/fastparquet) available",
+        allow_module_level=True,
+    )
 
 from dackar.RCA.log_pattern_recognition.rca_pattern_search.config import SearchConfig
 from dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer import (
