@@ -560,11 +560,12 @@ calls in a loop build the index in O(N²) time. The `add_batch()` path avoids th
 Users who loop over `add()` will not observe an error but will see degrading performance
 silently. A guard or deprecation warning should be added for frequent single inserts.
 
-**No duplicate `episode_id` protection.**
-Calling `add()` twice with the same fingerprint creates two rows with identical
-`episode_id` in `episodes_df`. The inverted index handles this correctly (sets), but
-`ep_lookup` in `search()` silently overwrites the first entry. This is a silent data
-integrity risk — the second write wins without any warning.
+**No duplicate `episode_id` protection.** *(RESOLVED)*
+`episode_id` is now derived from `window_start` (stable), and `add()`/`add_batch()`
+upsert by `episode_id`: calling `add()` twice with the same id, or re-building over the
+same data, replaces the existing row rather than creating a duplicate. `ep_lookup` in
+`search()` therefore no longer silently shadows an episode, and `_rebuild_inverted_index`
+has no duplicates to collapse.
 
 **`ep_lookup` dict is rebuilt on every `search()` call.**
 `PatternSearcher.search()` iterates over `episodes_df` to build a
@@ -636,8 +637,8 @@ The inline commentary references "four well-separated incident clusters" — sho
 | Finding | Severity | Fix complexity |
 |---|---|---|
 | `known_rca` lost on save/load | High — label integrity | Pass label lookup to `build_from_history()` |
-| `random.seed(42)` pollutes global state | Medium — reproducibility | Use `random.Random(42)` |
-| Duplicate `episode_id` silent overwrite | Medium — data integrity | Assert in `add()` |
+| ~~`random.seed(42)` pollutes global state~~ **(RESOLVED)** | Medium — reproducibility | Now uses a local `random.Random(42)` |
+| ~~Duplicate `episode_id` silent overwrite~~ **(RESOLVED)** | Medium — data integrity | Now upserts by id in `add()`/`add_batch()` |
 | NLCS absolute scores misleading | Medium — interpretability | Add `nlcs_recall` field to `SearchResult` |
 | EP5 ID matching by substring | Medium — notebook correctness | Match by `known_rca` |
 | "four clusters" text error | Low | Edit one word |
@@ -720,13 +721,14 @@ safety-significant decisions (RCA submitted in an LCO, root cause report to the 
 the input fingerprint must be traceable. `SearchResult` should include a hash of the
 query `event_set` and `freq_vec`, or a reference to the query `episode_id`.
 
-**Episode IDs are not stable across index rebuilds.**
-`episode_id` is auto-generated as `EP_{asset_id}_{idx:05d}` where `idx` is the
-detected-boundary position in the chronologically sorted list. Adding one new
-historical event can shift all subsequent boundary indices, renaming every later
-episode. A result archived as "most similar to EP_PLANT_01_00005" becomes stale on
-the next rebuild. Episode IDs should be derived from stable data — e.g.,
-`EP_{asset}_{window_start:%Y%m%dT%H%M}` — so they are consistent across rebuilds.
+**Episode IDs are not stable across index rebuilds.** *(RESOLVED)*
+`episode_id` is now derived from stable data —
+`EP_{asset_id}_{window_start:%Y%m%dT%H%M%S}` (second precision) — so ids are consistent
+across rebuilds and adding one new historical event no longer renames later episodes.
+Previously it was `EP_{asset_id}_{idx:05d}`, where `idx` (the detected-boundary position)
+shifted whenever an earlier event was added. (The asset *prefix* can still vary if
+`_dominant_asset` resolves a different dominant asset — see the `_dominant_asset`
+limitation above.)
 
 **The `bandwidth_scan` result is not persisted with the index.**
 An operator who validated the bandwidth at index build time and reuses the index
@@ -778,7 +780,7 @@ scenarios are untested:
 | `build_from_history()` and `extract()` called with different `freq_threshold` | Silent metric mismatch; fingerprints not comparable |
 | `search()` called after `add()` following `compute_emd_normalization_factor()` | Stale normalization factor; EMD scores silently incorrect |
 | `save()` interrupted mid-write (second file missing) | Inconsistent on-disk state on next `load()` |
-| Duplicate `episode_id` via repeated `add()` | Silent data corruption in `ep_lookup` |
+| ~~Duplicate `episode_id` via repeated `add()`~~ **(RESOLVED — upsert by id)** | Was: silent data corruption in `ep_lookup` |
 | All query events above `freq_threshold` (empty `event_set`) | `search()` returns empty; no warning that index was never queried |
 | Index loaded with `emd_normalization_mode="empirical_max"` but factor is `None` | `RuntimeError` deferred to first `search()` call, not detectable at load time |
 
@@ -816,7 +818,7 @@ notebook cannot.
 |---|---|---|
 | No `is_populated` guard; empty index indistinguishable from no-match | High — operational | Add `is_populated` property; distinct return status |
 | Config mismatch between index build and query extraction | High — correctness | Enforce single config instance or equality check |
-| Episode IDs unstable across rebuilds | High — traceability | Derive IDs from window timestamps |
+| ~~Episode IDs unstable across rebuilds~~ **(RESOLVED)** | High — traceability | Now derived from `window_start` timestamps |
 | `SearchResult` missing query fingerprint hash | High — auditability | Add `query_fingerprint_hash` field |
 | `add()` does not invalidate EMD factor | Medium — data integrity | Invalidate in `add()`, `add_batch()`, `reset()` |
 | No transactional save | Medium — data integrity | Write to tmp dir, rename atomically |
