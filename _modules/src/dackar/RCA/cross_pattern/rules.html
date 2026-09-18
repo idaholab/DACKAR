@@ -1,0 +1,441 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.cross_pattern.rules &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.cross_pattern.rules</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.cross_pattern.rules</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="sd">"""Business-logic functions for cross-pattern linkage.</span>
+
+<span class="sd">All functions here are pure (no I/O).  The linker calls them; callers are</span>
+<span class="sd">responsible for managing state.</span>
+<span class="sd">"""</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CrossPatternLink</span><span class="p">,</span> <span class="n">HistoricalDocExtraction</span>
+
+<span class="c1"># Import lazily to avoid circular dependency at module level; functions that</span>
+<span class="c1"># need HistoricalSignalEpisode accept it as Any and use attribute access.</span>
+
+
+<div class="viewcode-block" id="compute_link_confidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/rules/index.html#src.dackar.RCA.cross_pattern.rules.compute_link_confidence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_link_confidence</span><span class="p">(</span>
+    <span class="n">signal_similarity_score</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">time_overlap_hours</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">temporal_compatibility_score</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">fm_alignment_score</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">document_similarity_score</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">],</span>
+    <span class="n">provenance</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>  <span class="c1"># mutated to record which terms contributed</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Renormalized weighted formula from §4.2.</span>
+
+<span class="sd">    Always present: signal (weight 0.30).</span>
+<span class="sd">    Temporal (0.20), FM (0.20), document (0.30) contribute only if non-None.</span>
+<span class="sd">    The formula is renormalized over the sum of present weights so that a</span>
+<span class="sd">    missing dimension does not silently deflate confidence relative to other</span>
+<span class="sd">    links.</span>
+
+<span class="sd">    The temporal weight is gated on ``temporal_compatibility_score`` — the value</span>
+<span class="sd">    actually fed into the numerator — NOT on ``time_overlap_hours``.  Gating on</span>
+<span class="sd">    the raw overlap would count the temporal dimension while contributing a 0.0</span>
+<span class="sd">    score whenever the caller passed a gap-only overlap (formula mode), silently</span>
+<span class="sd">    deflating confidence.  ``time_overlap_hours`` is retained for provenance only.</span>
+
+<span class="sd">    ``provenance`` is mutated to record the contributing terms, their raw</span>
+<span class="sd">    weights, and the normalization factor.</span>
+<span class="sd">    """</span>
+    <span class="n">present_weights</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">present_weights</span><span class="p">[</span><span class="s2">"signal"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.30</span>  <span class="c1"># always present</span>
+    <span class="n">present_weights</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.20</span> <span class="k">if</span> <span class="n">temporal_compatibility_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="n">present_weights</span><span class="p">[</span><span class="s2">"fm"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.20</span> <span class="k">if</span> <span class="n">fm_alignment_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="n">present_weights</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.30</span> <span class="k">if</span> <span class="n">document_similarity_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+    <span class="n">total_weight</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">present_weights</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+    <span class="c1"># total_weight is always &gt; 0 because signal is always present</span>
+
+    <span class="n">numerator</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">present_weights</span><span class="p">[</span><span class="s2">"signal"</span><span class="p">]</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">signal_similarity_score</span><span class="p">)</span>
+        <span class="o">+</span> <span class="n">present_weights</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">]</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">temporal_compatibility_score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="o">+</span> <span class="n">present_weights</span><span class="p">[</span><span class="s2">"fm"</span><span class="p">]</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">fm_alignment_score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="o">+</span> <span class="n">present_weights</span><span class="p">[</span><span class="s2">"document"</span><span class="p">]</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">document_similarity_score</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">confidence</span> <span class="o">=</span> <span class="n">numerator</span> <span class="o">/</span> <span class="n">total_weight</span>
+
+    <span class="c1"># Record provenance</span>
+    <span class="n">provenance</span><span class="p">[</span><span class="s2">"link_confidence_terms"</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"signal_weight"</span><span class="p">:</span> <span class="n">present_weights</span><span class="p">[</span><span class="s2">"signal"</span><span class="p">],</span>
+        <span class="s2">"temporal_weight"</span><span class="p">:</span> <span class="n">present_weights</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">],</span>
+        <span class="s2">"fm_weight"</span><span class="p">:</span> <span class="n">present_weights</span><span class="p">[</span><span class="s2">"fm"</span><span class="p">],</span>
+        <span class="s2">"document_weight"</span><span class="p">:</span> <span class="n">present_weights</span><span class="p">[</span><span class="s2">"document"</span><span class="p">],</span>
+        <span class="s2">"total_weight"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">total_weight</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+        <span class="s2">"signal_similarity_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">signal_similarity_score</span><span class="p">),</span> <span class="mi">4</span><span class="p">),</span>
+        <span class="s2">"time_overlap_hours"</span><span class="p">:</span> <span class="p">(</span>
+            <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">time_overlap_hours</span><span class="p">),</span> <span class="mi">4</span><span class="p">)</span> <span class="k">if</span> <span class="n">time_overlap_hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">),</span>
+        <span class="s2">"temporal_compatibility_score"</span><span class="p">:</span> <span class="p">(</span>
+            <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">temporal_compatibility_score</span><span class="p">),</span> <span class="mi">4</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">temporal_compatibility_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">),</span>
+        <span class="s2">"fm_alignment_score"</span><span class="p">:</span> <span class="p">(</span>
+            <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">fm_alignment_score</span><span class="p">),</span> <span class="mi">4</span><span class="p">)</span> <span class="k">if</span> <span class="n">fm_alignment_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">),</span>
+        <span class="s2">"document_similarity_score"</span><span class="p">:</span> <span class="p">(</span>
+            <span class="nb">round</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">document_similarity_score</span><span class="p">),</span> <span class="mi">4</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">document_similarity_score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="k">else</span> <span class="kc">None</span>
+        <span class="p">),</span>
+        <span class="s2">"raw_confidence"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">confidence</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">confidence</span><span class="p">)))</span></div>
+
+
+
+<div class="viewcode-block" id="classify_linkage_precedence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/rules/index.html#src.dackar.RCA.cross_pattern.rules.classify_linkage_precedence">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">classify_linkage_precedence</span><span class="p">(</span>
+    <span class="n">episode_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="n">HistoricalDocExtraction</span><span class="p">,</span>
+    <span class="n">episode_source_refs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return the precedence level for an (episode, doc) pair.</span>
+
+<span class="sd">    Level 1 — Direct reference: doc.doc_id appears in episode_source_refs.</span>
+<span class="sd">    Level 2 — Temporal: event_time_confidence != "absent" (temporal data is</span>
+<span class="sd">               usable).  Asset compatibility is scored separately by the linker</span>
+<span class="sd">               (asset_match, recorded in provenance) and is deliberately NOT a</span>
+<span class="sd">               gate on this level — the name is "temporal", not "temporal + asset".</span>
+<span class="sd">    Level 3 — Fallback (semantic/FM): used when neither level 1 nor 2 applies.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    episode_id:</span>
+<span class="sd">        The episode identifier (carried for provenance; not used in logic).</span>
+<span class="sd">    doc:</span>
+<span class="sd">        The HistoricalDocExtraction being evaluated.</span>
+<span class="sd">    episode_source_refs:</span>
+<span class="sd">        Raw event/document references carried on the episode (e.g. linked</span>
+<span class="sd">        CR IDs, work-order IDs, or source_event_id values).</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">doc_id</span> <span class="ow">in</span> <span class="n">episode_source_refs</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">event_time_confidence</span> <span class="o">!=</span> <span class="s2">"absent"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">2</span>
+    <span class="k">return</span> <span class="mi">3</span></div>
+
+
+
+<div class="viewcode-block" id="compute_time_overlap_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/rules/index.html#src.dackar.RCA.cross_pattern.rules.compute_time_overlap_hours">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">compute_time_overlap_hours</span><span class="p">(</span>
+    <span class="n">episode_window_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">],</span>
+    <span class="n">episode_window_end</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">],</span>
+    <span class="n">doc</span><span class="p">:</span> <span class="n">HistoricalDocExtraction</span><span class="p">,</span>
+    <span class="n">max_gap_days</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Compute temporal overlap (in hours) between episode window and doc event window.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    float</span>
+<span class="sd">        Positive → windows overlap; value is overlap duration in hours.</span>
+<span class="sd">        Negative → gap between windows (negative float); the caller can apply</span>
+<span class="sd">                   the max_gap_days gate.</span>
+<span class="sd">    None</span>
+<span class="sd">        Returned when:</span>
+<span class="sd">        - ``doc.event_time_confidence == "absent"``</span>
+<span class="sd">        - any required timestamp is missing (episode or doc)</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">event_time_confidence</span> <span class="o">==</span> <span class="s2">"absent"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="n">ep_start</span> <span class="o">=</span> <span class="n">episode_window_start</span>
+    <span class="n">ep_end</span> <span class="o">=</span> <span class="n">episode_window_end</span>
+    <span class="n">doc_start</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">event_time_start</span>
+    <span class="n">doc_end</span> <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">event_time_end</span>
+
+    <span class="k">if</span> <span class="n">ep_start</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">doc_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># Use end = start when end is absent</span>
+    <span class="n">ep_end_safe</span> <span class="o">=</span> <span class="n">ep_end</span> <span class="k">if</span> <span class="n">ep_end</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">ep_start</span>
+    <span class="n">doc_end_safe</span> <span class="o">=</span> <span class="n">doc_end</span> <span class="k">if</span> <span class="n">doc_end</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">doc_start</span>
+
+    <span class="c1"># Ensure timezone-aware comparison (treat naive as UTC)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_tz</span><span class="p">(</span><span class="n">dt</span><span class="p">:</span> <span class="n">datetime</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">datetime</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">dt</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dt</span>
+
+    <span class="n">ep_start</span> <span class="o">=</span> <span class="n">_ensure_tz</span><span class="p">(</span><span class="n">ep_start</span><span class="p">)</span>
+    <span class="n">ep_end_safe</span> <span class="o">=</span> <span class="n">_ensure_tz</span><span class="p">(</span><span class="n">ep_end_safe</span><span class="p">)</span>
+    <span class="n">doc_start</span> <span class="o">=</span> <span class="n">_ensure_tz</span><span class="p">(</span><span class="n">doc_start</span><span class="p">)</span>
+    <span class="n">doc_end_safe</span> <span class="o">=</span> <span class="n">_ensure_tz</span><span class="p">(</span><span class="n">doc_end_safe</span><span class="p">)</span>
+
+    <span class="c1"># Overlap: max(0, min(end_a, end_b) - max(start_a, start_b))</span>
+    <span class="n">overlap_start</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">ep_start</span><span class="p">,</span> <span class="n">doc_start</span><span class="p">)</span>
+    <span class="n">overlap_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">ep_end_safe</span><span class="p">,</span> <span class="n">doc_end_safe</span><span class="p">)</span>
+    <span class="n">overlap_delta</span> <span class="o">=</span> <span class="n">overlap_end</span> <span class="o">-</span> <span class="n">overlap_start</span>
+
+    <span class="k">if</span> <span class="n">overlap_delta</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">overlap_delta</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span>
+
+    <span class="c1"># No overlap — compute gap</span>
+    <span class="k">if</span> <span class="n">ep_end_safe</span> <span class="o">&lt;=</span> <span class="n">doc_start</span><span class="p">:</span>
+        <span class="n">gap</span> <span class="o">=</span> <span class="n">doc_start</span> <span class="o">-</span> <span class="n">ep_end_safe</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">gap</span> <span class="o">=</span> <span class="n">ep_start</span> <span class="o">-</span> <span class="n">doc_end_safe</span>
+
+    <span class="n">gap_days</span> <span class="o">=</span> <span class="n">gap</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">86400.0</span>
+    <span class="k">if</span> <span class="n">gap_days</span> <span class="o">&gt;</span> <span class="n">max_gap_days</span><span class="p">:</span>
+        <span class="c1"># Gap exceeds gate — signal that this should be suppressed (caller decides)</span>
+        <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">gap</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="o">-</span><span class="p">(</span><span class="n">gap</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="classify_support_posture">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/rules/index.html#src.dackar.RCA.cross_pattern.rules.classify_support_posture">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">classify_support_posture</span><span class="p">(</span>
+    <span class="n">reinforcing_fm_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">conflicting_fm_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Classify the support posture for a candidate based on its linked FM IDs.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    reinforcing_fm_ids:</span>
+<span class="sd">        FM IDs from links where doc.fm_id_candidate matches the candidate FM.</span>
+<span class="sd">    conflicting_fm_ids:</span>
+<span class="sd">        FM IDs from links where doc.fm_id_candidate differs from the candidate FM.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (support_posture, reinforcement_strength)</span>
+
+<span class="sd">    Rules (in precedence order):</span>
+<span class="sd">    1. Any conflicting links → ("conflicting", None)</span>
+<span class="sd">    2. Both lists empty → ("unresolved", None)</span>
+<span class="sd">    3. Exactly one reinforcing → ("reinforcing", "single")</span>
+<span class="sd">    4. Two+ reinforcing, all same fm_id → ("reinforcing", "multiple_consistent")</span>
+<span class="sd">    5. Two+ reinforcing, mixed fm_ids → ("weakly_supporting", "mixed")</span>
+<span class="sd">    6. reinforcing empty, conflicting empty but some docs existed → ("weakly_supporting", None)</span>
+<span class="sd">       (Note: caller passes empty lists when no links at all; rule 2 applies first.)</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">conflicting_fm_ids</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s2">"conflicting"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">reinforcing_fm_ids</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">conflicting_fm_ids</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s2">"unresolved"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">reinforcing_fm_ids</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s2">"reinforcing"</span><span class="p">,</span> <span class="s2">"single"</span><span class="p">)</span>
+
+    <span class="c1"># len &gt;= 2</span>
+    <span class="n">unique_fms</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">reinforcing_fm_ids</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unique_fms</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s2">"reinforcing"</span><span class="p">,</span> <span class="s2">"multiple_consistent"</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="s2">"weakly_supporting"</span><span class="p">,</span> <span class="s2">"mixed"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="classify_linkage_outcome">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/rules/index.html#src.dackar.RCA.cross_pattern.rules.classify_linkage_outcome">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">classify_linkage_outcome</span><span class="p">(</span>
+    <span class="n">episodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>              <span class="c1"># list[HistoricalSignalEpisode]</span>
+    <span class="n">candidate_links</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CrossPatternLink</span><span class="p">],</span>
+    <span class="n">doc_extractions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">HistoricalDocExtraction</span><span class="p">],</span>
+    <span class="n">link_confidence_threshold</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Determine the linkage outcome for one candidate.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    episodes:</span>
+<span class="sd">        All episodes considered for this candidate.</span>
+<span class="sd">    candidate_links:</span>
+<span class="sd">        All CrossPatternLink objects built before threshold filtering (may be empty).</span>
+<span class="sd">    doc_extractions:</span>
+<span class="sd">        All HistoricalDocExtraction objects available.</span>
+<span class="sd">    link_confidence_threshold:</span>
+<span class="sd">        Minimum confidence for "linked" outcome.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    "no_data"</span>
+<span class="sd">        All episodes have index_status "no_episodes_indexed", or no doc_extractions exist.</span>
+<span class="sd">    "no_match"</span>
+<span class="sd">        Index is populated and episodes were found, but no candidate_links were built.</span>
+<span class="sd">    "below_threshold"</span>
+<span class="sd">        Links exist but none exceeds link_confidence_threshold.</span>
+<span class="sd">    "linked"</span>
+<span class="sd">        At least one link exceeds link_confidence_threshold.</span>
+<span class="sd">    """</span>
+    <span class="c1"># Check data availability</span>
+    <span class="n">eligible_statuses</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"indexed"</span><span class="p">,</span> <span class="s2">"stale"</span><span class="p">}</span>
+    <span class="n">has_eligible_episodes</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+        <span class="nb">getattr</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="s2">"index_status"</span><span class="p">,</span> <span class="s2">"no_episodes_indexed"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">eligible_statuses</span>
+        <span class="k">for</span> <span class="n">ep</span> <span class="ow">in</span> <span class="n">episodes</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">has_eligible_episodes</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">doc_extractions</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"no_data"</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">candidate_links</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"no_match"</span>
+
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">lnk</span><span class="o">.</span><span class="n">link_confidence</span> <span class="o">&gt;=</span> <span class="n">link_confidence_threshold</span> <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">candidate_links</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">"linked"</span>
+
+    <span class="k">return</span> <span class="s2">"below_threshold"</span></div>
+
+
+
+<div class="viewcode-block" id="apply_stale_confidence_cap">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/rules/index.html#src.dackar.RCA.cross_pattern.rules.apply_stale_confidence_cap">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_stale_confidence_cap</span><span class="p">(</span><span class="n">link</span><span class="p">:</span> <span class="n">CrossPatternLink</span><span class="p">,</span> <span class="n">cap</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CrossPatternLink</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a new CrossPatternLink with link_confidence capped at ``cap``.</span>
+
+<span class="sd">    Records in ``provenance`` whether the cap was applied and at what value.</span>
+<span class="sd">    Returns the link unchanged (but as a new copy) when confidence is already</span>
+<span class="sd">    below the cap.</span>
+<span class="sd">    """</span>
+    <span class="n">new_provenance</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">provenance</span><span class="p">)</span>
+    <span class="n">was_capped</span> <span class="o">=</span> <span class="n">link</span><span class="o">.</span><span class="n">link_confidence</span> <span class="o">&gt;</span> <span class="n">cap</span>
+    <span class="n">new_provenance</span><span class="p">[</span><span class="s2">"stale_index_cap_applied"</span><span class="p">]</span> <span class="o">=</span> <span class="n">was_capped</span>
+    <span class="n">new_provenance</span><span class="p">[</span><span class="s2">"stale_index_cap_value"</span><span class="p">]</span> <span class="o">=</span> <span class="n">cap</span>
+    <span class="k">if</span> <span class="n">was_capped</span><span class="p">:</span>
+        <span class="n">new_provenance</span><span class="p">[</span><span class="s2">"pre_cap_link_confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">link_confidence</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+
+    <span class="n">new_confidence</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">link_confidence</span><span class="p">,</span> <span class="n">cap</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">CrossPatternLink</span><span class="p">(</span>
+        <span class="n">link_id</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">link_id</span><span class="p">,</span>
+        <span class="n">episode_id</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">episode_id</span><span class="p">,</span>
+        <span class="n">doc_id</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">doc_id</span><span class="p">,</span>
+        <span class="n">asset_match</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">asset_match</span><span class="p">,</span>
+        <span class="n">time_overlap_hours</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">time_overlap_hours</span><span class="p">,</span>
+        <span class="n">temporal_link_skipped</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">temporal_link_skipped</span><span class="p">,</span>
+        <span class="n">linkage_precedence_level</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">linkage_precedence_level</span><span class="p">,</span>
+        <span class="n">component_overlap</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">link</span><span class="o">.</span><span class="n">component_overlap</span><span class="p">),</span>
+        <span class="n">fm_alignment_score</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">fm_alignment_score</span><span class="p">,</span>
+        <span class="n">signal_similarity_score</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">signal_similarity_score</span><span class="p">,</span>
+        <span class="n">document_similarity_score</span><span class="o">=</span><span class="n">link</span><span class="o">.</span><span class="n">document_similarity_score</span><span class="p">,</span>
+        <span class="n">link_confidence</span><span class="o">=</span><span class="n">new_confidence</span><span class="p">,</span>
+        <span class="n">provenance</span><span class="o">=</span><span class="n">new_provenance</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

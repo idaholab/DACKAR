@@ -1,0 +1,356 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.cross_pattern.summary &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.cross_pattern.summary</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.cross_pattern.summary</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="sd">"""Summary and attention-flag utilities for cross-pattern linkage.</span>
+
+<span class="sd">These functions consume CandidateCrossPatternEvidence objects (or their dict</span>
+<span class="sd">representations) and produce text or structured summaries for injection into</span>
+<span class="sd">rca_card and run_manifest.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">CandidateCrossPatternEvidence</span>
+
+<span class="c1"># RCA-card wording from §4.7 linkage_outcome table</span>
+<div class="viewcode-block" id="_OUTCOME_WORDING">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/summary/index.html#src.dackar.RCA.cross_pattern.summary._OUTCOME_WORDING">[docs]</a>
+<span class="n">_OUTCOME_WORDING</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"linked"</span><span class="p">:</span> <span class="s2">""</span><span class="p">,</span>  <span class="c1"># normal cross-pattern summary; handled by format function</span>
+    <span class="s2">"no_data"</span><span class="p">:</span> <span class="p">(</span>
+        <span class="s2">"No historical signal or document data available for cross-pattern assessment."</span>
+    <span class="p">),</span>
+    <span class="s2">"no_match"</span><span class="p">:</span> <span class="p">(</span>
+        <span class="s2">"No historically similar signal episodes were found for this event."</span>
+    <span class="p">),</span>
+    <span class="s2">"below_threshold"</span><span class="p">:</span> <span class="p">(</span>
+        <span class="s2">"Historical episodes and documents were found but could not be reliably linked."</span>
+    <span class="p">),</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="format_rca_card_cross_pattern_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/summary/index.html#src.dackar.RCA.cross_pattern.summary.format_rca_card_cross_pattern_summary">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">format_rca_card_cross_pattern_summary</span><span class="p">(</span>
+    <span class="n">candidate_evidences</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateCrossPatternEvidence</span><span class="p">],</span>
+    <span class="n">linkage_outcome_distribution</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a brief narrative string for injection into rca_card.</span>
+
+<span class="sd">    Uses exact wording from §4.7 linkage_outcome table for each outcome type.</span>
+<span class="sd">    When linked candidates exist, summarizes support posture across them.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">candidate_evidences</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_OUTCOME_WORDING</span><span class="p">[</span><span class="s2">"no_data"</span><span class="p">]</span>
+
+    <span class="n">linked</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">candidate_evidences</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">linkage_outcome</span> <span class="o">==</span> <span class="s2">"linked"</span><span class="p">]</span>
+    <span class="n">no_data</span> <span class="o">=</span> <span class="n">linkage_outcome_distribution</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"no_data"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">no_match</span> <span class="o">=</span> <span class="n">linkage_outcome_distribution</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"no_match"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">below</span> <span class="o">=</span> <span class="n">linkage_outcome_distribution</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"below_threshold"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">candidate_evidences</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">linked</span><span class="p">:</span>
+        <span class="c1"># Pick the most informative outcome wording</span>
+        <span class="k">if</span> <span class="n">no_data</span> <span class="o">==</span> <span class="n">total</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_OUTCOME_WORDING</span><span class="p">[</span><span class="s2">"no_data"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">no_match</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_OUTCOME_WORDING</span><span class="p">[</span><span class="s2">"no_match"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">below</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_OUTCOME_WORDING</span><span class="p">[</span><span class="s2">"below_threshold"</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">_OUTCOME_WORDING</span><span class="p">[</span><span class="s2">"no_data"</span><span class="p">]</span>
+
+    <span class="c1"># Summarize linked candidates</span>
+    <span class="n">reinforcing</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">linked</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span> <span class="o">==</span> <span class="s2">"reinforcing"</span><span class="p">]</span>
+    <span class="n">conflicting</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">linked</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span> <span class="o">==</span> <span class="s2">"conflicting"</span><span class="p">]</span>
+    <span class="n">weakly</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">linked</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span> <span class="o">==</span> <span class="s2">"weakly_supporting"</span><span class="p">]</span>
+
+    <span class="n">parts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">if</span> <span class="n">reinforcing</span><span class="p">:</span>
+        <span class="n">strong</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">reinforcing</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">reinforcement_strength</span> <span class="o">==</span> <span class="s2">"multiple_consistent"</span><span class="p">]</span>
+        <span class="n">single</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">reinforcing</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">reinforcement_strength</span> <span class="o">==</span> <span class="s2">"single"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">strong</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Cross-pattern evidence strongly reinforces </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">strong</span><span class="p">)</span><span class="si">}</span><span class="s2"> candidate(s) "</span>
+                <span class="sa">f</span><span class="s2">"with multiple consistent historical links."</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">single</span><span class="p">:</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Cross-pattern evidence reinforces </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">single</span><span class="p">)</span><span class="si">}</span><span class="s2"> candidate(s) "</span>
+                <span class="sa">f</span><span class="s2">"with a single historical link."</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">conflicting</span><span class="p">:</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Cross-pattern evidence conflicts with </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">conflicting</span><span class="p">)</span><span class="si">}</span><span class="s2"> candidate(s); "</span>
+            <span class="sa">f</span><span class="s2">"analyst review is required."</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">weakly</span><span class="p">:</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Weak or mixed cross-pattern support found for </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">weakly</span><span class="p">)</span><span class="si">}</span><span class="s2"> candidate(s)."</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">no_match</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_OUTCOME_WORDING</span><span class="p">[</span><span class="s2">"no_match"</span><span class="p">])</span>
+    <span class="k">elif</span> <span class="n">below</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">_OUTCOME_WORDING</span><span class="p">[</span><span class="s2">"below_threshold"</span><span class="p">])</span>
+
+    <span class="k">return</span> <span class="s2">"  "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="k">if</span> <span class="n">parts</span> <span class="k">else</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"Cross-pattern linkage completed for </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">linked</span><span class="p">)</span><span class="si">}</span><span class="s2"> candidate(s)."</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="build_manifest_cross_pattern_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/summary/index.html#src.dackar.RCA.cross_pattern.summary.build_manifest_cross_pattern_summary">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_manifest_cross_pattern_summary</span><span class="p">(</span>
+    <span class="n">candidate_evidences</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateCrossPatternEvidence</span><span class="p">],</span>
+    <span class="n">total_episodes</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">total_docs</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">total_links</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">links_above_threshold</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return structured summary for run_manifest.artifacts.</span>
+
+<span class="sd">    Includes per-candidate linkage outcome and support posture breakdowns.</span>
+<span class="sd">    """</span>
+    <span class="n">outcome_dist</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"linked"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"no_data"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"no_match"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">"below_threshold"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">posture_dist</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">precedence_dist</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">temporal_skipped_count</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">candidate_evidences</span><span class="p">:</span>
+        <span class="n">outcome_dist</span><span class="p">[</span><span class="n">ev</span><span class="o">.</span><span class="n">linkage_outcome</span><span class="p">]</span> <span class="o">=</span> <span class="n">outcome_dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">linkage_outcome</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">posture_dist</span><span class="p">[</span><span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span><span class="p">]</span> <span class="o">=</span> <span class="n">posture_dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">ev</span><span class="o">.</span><span class="n">evidence_paths</span><span class="p">:</span>
+            <span class="n">lvl</span> <span class="o">=</span> <span class="n">lnk</span><span class="o">.</span><span class="n">linkage_precedence_level</span>
+            <span class="n">precedence_dist</span><span class="p">[</span><span class="n">lvl</span><span class="p">]</span> <span class="o">=</span> <span class="n">precedence_dist</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lvl</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="k">if</span> <span class="n">lnk</span><span class="o">.</span><span class="n">temporal_link_skipped</span><span class="p">:</span>
+                <span class="n">temporal_skipped_count</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="n">candidate_summaries</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">ev</span><span class="o">.</span><span class="n">candidate_id</span><span class="p">,</span>
+            <span class="s2">"fm_id"</span><span class="p">:</span> <span class="n">ev</span><span class="o">.</span><span class="n">fm_id</span><span class="p">,</span>
+            <span class="s2">"linkage_outcome"</span><span class="p">:</span> <span class="n">ev</span><span class="o">.</span><span class="n">linkage_outcome</span><span class="p">,</span>
+            <span class="s2">"support_posture"</span><span class="p">:</span> <span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span><span class="p">,</span>
+            <span class="s2">"reinforcement_strength"</span><span class="p">:</span> <span class="n">ev</span><span class="o">.</span><span class="n">reinforcement_strength</span><span class="p">,</span>
+            <span class="s2">"best_link_score"</span><span class="p">:</span> <span class="n">ev</span><span class="o">.</span><span class="n">best_link_score</span><span class="p">,</span>
+            <span class="s2">"linked_episode_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">linked_episode_ids</span><span class="p">),</span>
+            <span class="s2">"linked_doc_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">linked_doc_ids</span><span class="p">),</span>
+            <span class="s2">"evidence_path_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">evidence_paths</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">candidate_evidences</span>
+    <span class="p">]</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"present"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">"total_episodes_retrieved"</span><span class="p">:</span> <span class="n">total_episodes</span><span class="p">,</span>
+        <span class="s2">"total_doc_extractions"</span><span class="p">:</span> <span class="n">total_docs</span><span class="p">,</span>
+        <span class="s2">"total_links_built"</span><span class="p">:</span> <span class="n">total_links</span><span class="p">,</span>
+        <span class="s2">"links_above_threshold"</span><span class="p">:</span> <span class="n">links_above_threshold</span><span class="p">,</span>
+        <span class="s2">"linkage_outcome_distribution"</span><span class="p">:</span> <span class="n">outcome_dist</span><span class="p">,</span>
+        <span class="s2">"support_posture_distribution"</span><span class="p">:</span> <span class="n">posture_dist</span><span class="p">,</span>
+        <span class="s2">"linkage_precedence_distribution"</span><span class="p">:</span> <span class="p">{</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">k</span><span class="p">):</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">precedence_dist</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+        <span class="p">},</span>
+        <span class="s2">"temporal_link_skipped_count"</span><span class="p">:</span> <span class="n">temporal_skipped_count</span><span class="p">,</span>
+        <span class="s2">"candidate_summaries"</span><span class="p">:</span> <span class="n">candidate_summaries</span><span class="p">,</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="get_cross_pattern_attention_flags">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cross_pattern/summary/index.html#src.dackar.RCA.cross_pattern.summary.get_cross_pattern_attention_flags">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_cross_pattern_attention_flags</span><span class="p">(</span>
+    <span class="n">candidate_evidences</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CandidateCrossPatternEvidence</span><span class="p">],</span>
+    <span class="n">candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>       <span class="c1"># ranked candidates (index 0 = top)</span>
+    <span class="n">top_n_candidates</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return attention flag strings for injection into analyst_attention_flags.</span>
+
+<span class="sd">    Flags raised:</span>
+<span class="sd">    - "conflicting" support posture on any of top_n_candidates</span>
+<span class="sd">    - "multiple_consistent" reinforcement (positive signal) on top candidates</span>
+<span class="sd">    - "no_data" outcome (data coverage gap) for any candidate</span>
+<span class="sd">    - "stale" index (detected via provenance on any link)</span>
+<span class="sd">    """</span>
+    <span class="n">flags</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="c1"># Build lookup by candidate_id</span>
+    <span class="n">evidence_by_id</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">CandidateCrossPatternEvidence</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">ev</span><span class="o">.</span><span class="n">candidate_id</span><span class="p">:</span> <span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">candidate_evidences</span>
+    <span class="p">}</span>
+
+    <span class="c1"># Determine top-N candidate IDs (by order in candidates list)</span>
+    <span class="n">top_ids</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">[:</span><span class="n">top_n_candidates</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+    <span class="p">]</span>
+
+    <span class="k">for</span> <span class="n">cand_id</span> <span class="ow">in</span> <span class="n">top_ids</span><span class="p">:</span>
+        <span class="n">ev</span> <span class="o">=</span> <span class="n">evidence_by_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cand_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ev</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span> <span class="o">==</span> <span class="s2">"conflicting"</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Cross-pattern evidence conflicts with candidate </span><span class="si">{</span><span class="n">cand_id</span><span class="si">}</span><span class="s2"> "</span>
+                <span class="sa">f</span><span class="s2">"(fm_id=</span><span class="si">{</span><span class="n">ev</span><span class="o">.</span><span class="n">fm_id</span><span class="si">}</span><span class="s2">); analyst review required."</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">ev</span><span class="o">.</span><span class="n">support_posture</span> <span class="o">==</span> <span class="s2">"reinforcing"</span>
+            <span class="ow">and</span> <span class="n">ev</span><span class="o">.</span><span class="n">reinforcement_strength</span> <span class="o">==</span> <span class="s2">"multiple_consistent"</span>
+        <span class="p">):</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Multiple consistent cross-pattern links reinforce candidate </span><span class="si">{</span><span class="n">cand_id</span><span class="si">}</span><span class="s2"> "</span>
+                <span class="sa">f</span><span class="s2">"(fm_id=</span><span class="si">{</span><span class="n">ev</span><span class="o">.</span><span class="n">fm_id</span><span class="si">}</span><span class="s2">)."</span>
+            <span class="p">)</span>
+
+    <span class="c1"># Check all candidates for no_data</span>
+    <span class="n">no_data_cands</span> <span class="o">=</span> <span class="p">[</span><span class="n">ev</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">candidate_evidences</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">linkage_outcome</span> <span class="o">==</span> <span class="s2">"no_data"</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">no_data_cands</span><span class="p">:</span>
+        <span class="n">fm_ids_str</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">fm_id</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">no_data_cands</span><span class="p">))[:</span><span class="mi">5</span><span class="p">])</span>
+        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">"No historical signal or document data available for cross-pattern "</span>
+            <span class="sa">f</span><span class="s2">"assessment on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">no_data_cands</span><span class="p">)</span><span class="si">}</span><span class="s2"> candidate(s) (</span><span class="si">{</span><span class="n">fm_ids_str</span><span class="si">}</span><span class="s2">)."</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Check for stale index via provenance on any link</span>
+    <span class="n">stale_detected</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">candidate_evidences</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">lnk</span> <span class="ow">in</span> <span class="n">ev</span><span class="o">.</span><span class="n">evidence_paths</span><span class="p">:</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">lnk</span><span class="o">.</span><span class="n">provenance</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ep_index_status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"stale"</span><span class="p">:</span>
+                <span class="n">stale_detected</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="k">break</span>
+        <span class="k">if</span> <span class="n">stale_detected</span><span class="p">:</span>
+            <span class="k">break</span>
+
+    <span class="k">if</span> <span class="n">stale_detected</span><span class="p">:</span>
+        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">"Signal episode index is stale; cross-pattern results may not reflect "</span>
+            <span class="s2">"recent plant history."</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">flags</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

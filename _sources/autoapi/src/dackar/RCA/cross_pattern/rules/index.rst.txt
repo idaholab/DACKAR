@@ -1,0 +1,112 @@
+src.dackar.RCA.cross_pattern.rules
+==================================
+
+.. py:module:: src.dackar.RCA.cross_pattern.rules
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cross_pattern.rules.compute_link_confidence
+   src.dackar.RCA.cross_pattern.rules.classify_linkage_precedence
+   src.dackar.RCA.cross_pattern.rules.compute_time_overlap_hours
+   src.dackar.RCA.cross_pattern.rules.classify_support_posture
+   src.dackar.RCA.cross_pattern.rules.classify_linkage_outcome
+   src.dackar.RCA.cross_pattern.rules.apply_stale_confidence_cap
+
+
+Module Contents
+---------------
+
+.. py:function:: compute_link_confidence(signal_similarity_score, time_overlap_hours, temporal_compatibility_score, fm_alignment_score, document_similarity_score, provenance)
+
+   Renormalized weighted formula from §4.2.
+
+   Always present: signal (weight 0.30).
+   Temporal (0.20), FM (0.20), document (0.30) contribute only if non-None.
+   The formula is renormalized over the sum of present weights so that a
+   missing dimension does not silently deflate confidence relative to other
+   links.
+
+   The temporal weight is gated on ``temporal_compatibility_score`` — the value
+   actually fed into the numerator — NOT on ``time_overlap_hours``.  Gating on
+   the raw overlap would count the temporal dimension while contributing a 0.0
+   score whenever the caller passed a gap-only overlap (formula mode), silently
+   deflating confidence.  ``time_overlap_hours`` is retained for provenance only.
+
+   ``provenance`` is mutated to record the contributing terms, their raw
+   weights, and the normalization factor.
+
+
+.. py:function:: classify_linkage_precedence(episode_id, doc, episode_source_refs)
+
+   Return the precedence level for an (episode, doc) pair.
+
+   Level 1 — Direct reference: doc.doc_id appears in episode_source_refs.
+   Level 2 — Temporal: event_time_confidence != "absent" (temporal data is
+              usable).  Asset compatibility is scored separately by the linker
+              (asset_match, recorded in provenance) and is deliberately NOT a
+              gate on this level — the name is "temporal", not "temporal + asset".
+   Level 3 — Fallback (semantic/FM): used when neither level 1 nor 2 applies.
+
+   :param episode_id: The episode identifier (carried for provenance; not used in logic).
+   :param doc: The HistoricalDocExtraction being evaluated.
+   :param episode_source_refs: Raw event/document references carried on the episode (e.g. linked
+                               CR IDs, work-order IDs, or source_event_id values).
+
+
+.. py:function:: compute_time_overlap_hours(episode_window_start, episode_window_end, doc, max_gap_days)
+
+   Compute temporal overlap (in hours) between episode window and doc event window.
+
+   :returns: * *float* -- Positive → windows overlap; value is overlap duration in hours.
+               Negative → gap between windows (negative float); the caller can apply
+                          the max_gap_days gate.
+             * *None* -- Returned when:
+               - ``doc.event_time_confidence == "absent"``
+               - any required timestamp is missing (episode or doc)
+
+
+.. py:function:: classify_support_posture(reinforcing_fm_ids, conflicting_fm_ids)
+
+   Classify the support posture for a candidate based on its linked FM IDs.
+
+   :param reinforcing_fm_ids: FM IDs from links where doc.fm_id_candidate matches the candidate FM.
+   :param conflicting_fm_ids: FM IDs from links where doc.fm_id_candidate differs from the candidate FM.
+
+   :returns: * *(support_posture, reinforcement_strength)*
+             * *Rules (in precedence order)*
+             * *1. Any conflicting links → ("conflicting", None)*
+             * *2. Both lists empty → ("unresolved", None)*
+             * *3. Exactly one reinforcing → ("reinforcing", "single")*
+             * *4. Two+ reinforcing, all same fm_id → ("reinforcing", "multiple_consistent")*
+             * *5. Two+ reinforcing, mixed fm_ids → ("weakly_supporting", "mixed")*
+             * *6. reinforcing empty, conflicting empty but some docs existed → ("weakly_supporting", None)* -- (Note: caller passes empty lists when no links at all; rule 2 applies first.)
+
+
+.. py:function:: classify_linkage_outcome(episodes, candidate_links, doc_extractions, link_confidence_threshold)
+
+   Determine the linkage outcome for one candidate.
+
+   :param episodes: All episodes considered for this candidate.
+   :param candidate_links: All CrossPatternLink objects built before threshold filtering (may be empty).
+   :param doc_extractions: All HistoricalDocExtraction objects available.
+   :param link_confidence_threshold: Minimum confidence for "linked" outcome.
+
+   :returns: * *"no_data"* -- All episodes have index_status "no_episodes_indexed", or no doc_extractions exist.
+             * *"no_match"* -- Index is populated and episodes were found, but no candidate_links were built.
+             * *"below_threshold"* -- Links exist but none exceeds link_confidence_threshold.
+             * *"linked"* -- At least one link exceeds link_confidence_threshold.
+
+
+.. py:function:: apply_stale_confidence_cap(link, cap)
+
+   Return a new CrossPatternLink with link_confidence capped at ``cap``.
+
+   Records in ``provenance`` whether the cap was applied and at what value.
+   Returns the link unchanged (but as a new copy) when confidence is already
+   below the cap.
+
+

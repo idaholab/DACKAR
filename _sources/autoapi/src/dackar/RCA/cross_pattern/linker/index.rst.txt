@@ -1,0 +1,95 @@
+src.dackar.RCA.cross_pattern.linker
+===================================
+
+.. py:module:: src.dackar.RCA.cross_pattern.linker
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cross_pattern.linker.LOGGER
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cross_pattern.linker.CrossPatternLinker
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cross_pattern.linker._dataclass_to_dict
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:function:: _dataclass_to_dict(obj)
+
+   Recursively convert dataclasses (and nested structures) to plain dicts.
+
+
+.. py:class:: CrossPatternLinker(config)
+
+   Links historical signal episodes to doc extractions for each RCA candidate.
+
+   Usage
+   -----
+   linker = CrossPatternLinker(config)
+   result = linker.run(episodes, doc_extractions, candidates)
+
+   The returned dict is JSON-serializable and contains:
+   - "candidate_evidence": list of CandidateCrossPatternEvidence as dicts
+   - "all_links": all CrossPatternLink as dicts
+   - "summary": top-level counts and distribution
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: _warned_episode_shape
+      :value: False
+
+
+
+   .. py:method:: run(episodes, doc_extractions, candidates)
+
+      Build cross-pattern evidence.
+
+      Algorithm per candidate
+      -----------------------
+      1. Check index_status on all episodes.  If all are "no_episodes_indexed"
+         or no doc_extractions exist → outcome = "no_data".
+      2. Filter episodes by signal_similarity_floor.
+      3. For each surviving episode × doc_extraction pair:
+         a. Check asset compatibility (same asset_id).
+         b. Determine precedence level.
+         c. Compute temporal overlap (level ≤ 2) or skip (level 3).
+         d. Apply temporal gate if mode == "gate".
+         e. Compute fm_alignment_score: 1.0 when fm_id_candidate matches
+            candidate.fm_id, else None.
+         f. Compute document_similarity_score: None (Phase 2 placeholder).
+         g. Compute temporal_compatibility_score from overlap hours.
+         h. Compute link_confidence.
+         i. Apply stale cap when episode.index_status == "stale".
+      4. Redundancy suppression: for each (episode_id, doc_id) pair keep only
+         the highest-precedence link.
+      5. Filter links by link_confidence_threshold.
+      6. Build CandidateCrossPatternEvidence.
+
+      This method does NOT mutate its inputs.  Episode↔doc linkage is reported
+      entirely in the returned dict (per-candidate ``linked_episode_ids`` /
+      ``linked_doc_ids`` and the flat ``all_links``), so callers can safely
+      reuse the same ``episodes`` / ``doc_extractions`` lists across calls.
+
+
+
