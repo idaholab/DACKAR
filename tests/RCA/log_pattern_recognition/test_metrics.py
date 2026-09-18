@@ -1,6 +1,6 @@
 """Unit tests for rca_pattern_search.metrics"""
 import pytest
-from ..metrics import jaccard, nlcs, emd_similarity, combined_score
+from dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics import jaccard, nlcs, emd_similarity, combined_score
 
 
 # ---------------------------------------------------------------------------
