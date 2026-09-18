@@ -7,8 +7,9 @@ Two-stage pipeline:
 
 Typical usage::
 
-    from rca_pattern_search import SearchConfig, IncidentIndex, PatternSearcher
-    from rca_pattern_search import IncidentExtractor
+    from dackar.RCA.log_pattern_recognition.rca_pattern_search import (
+        SearchConfig, IncidentIndex, PatternSearcher, IncidentExtractor,
+    )
 
     cfg = SearchConfig()
 
@@ -24,20 +25,21 @@ Typical usage::
     searcher = PatternSearcher(index, cfg)
     results = searcher.search(query_fp)
 """
-from .config import SearchConfig
+from .config import PatternSearchConfig, SearchConfig
 from .density import EpisodeDetector
 from .extractor import IncidentExtractor
 from .indexer import IncidentIndex
 from .metrics import combined_score, emd_similarity, jaccard, nlcs
-from .models import IncidentFingerprint, SearchResult, UnifiedEvent
+from .models import HistoricalSignalEpisode, IncidentFingerprint, UnifiedEvent
 from .searcher import PatternSearcher
 
 __all__ = [
     # Config
     "SearchConfig",
+    "PatternSearchConfig",
     # Models
     "IncidentFingerprint",
-    "SearchResult",
+    "HistoricalSignalEpisode",
     "UnifiedEvent",
     # Pipeline classes
     "EpisodeDetector",
