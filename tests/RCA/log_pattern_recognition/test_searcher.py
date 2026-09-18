@@ -139,6 +139,39 @@ class TestSearchEdgeCases:
 
 
 # ---------------------------------------------------------------------------
+# search() — index_status / staleness
+# ---------------------------------------------------------------------------
+
+class TestIndexStatus:
+    def test_stale_index_marks_results_stale(self):
+        idx = _build_index(_fp("EP_1", ["A", "B"]), cfg=CFG_NO_FILTER)
+        idx.build_timestamp = datetime.utcnow() - timedelta(days=60)
+        s = PatternSearcher(idx, CFG_NO_FILTER)
+        q = _fp("Q", ["A", "B"])
+        results = s.search(q, staleness_window_days=30)
+        assert results[0].episode_id == "EP_1"
+        assert results[0].index_status == "stale"
+
+    def test_fresh_index_marks_results_indexed(self):
+        idx = _build_index(_fp("EP_1", ["A", "B"]), cfg=CFG_NO_FILTER)
+        idx.build_timestamp = datetime.utcnow()
+        s = PatternSearcher(idx, CFG_NO_FILTER)
+        q = _fp("Q", ["A", "B"])
+        results = s.search(q, staleness_window_days=30)
+        assert results[0].index_status == "indexed"
+
+    def test_staleness_check_disabled_when_window_none(self):
+        # Omitting staleness_window_days disables the check by design, even for a
+        # very old index (config holds the window; the orchestrator passes it in).
+        idx = _build_index(_fp("EP_1", ["A", "B"]), cfg=CFG_NO_FILTER)
+        idx.build_timestamp = datetime.utcnow() - timedelta(days=999)
+        s = PatternSearcher(idx, CFG_NO_FILTER)
+        q = _fp("Q", ["A", "B"])
+        results = s.search(q)
+        assert results[0].index_status == "indexed"
+
+
+# ---------------------------------------------------------------------------
 # search() — result correctness
 # ---------------------------------------------------------------------------
 
