@@ -212,6 +212,11 @@ class EpisodeDetector:
             Expanded, merged, filtered episode boundaries.
         """
         # --- Time grid --------------------------------------------------------
+        # Grid length scales with t_max / grid_res (~ historical span divided by
+        # query_duration/100), so a short query over a very long history allocates
+        # a large array (held alongside kde_values and the boolean mask). There is
+        # no hard bound today; for very long logs the grid should be chunked/capped.
+        # Current target is offline/notebook scale (see rca_pattern_matching.md).
         t_max = float(t_seconds.max())
         grid_res = min(query_duration / 100.0, 60.0)
         grid = np.arange(0.0, t_max + grid_res, grid_res)
