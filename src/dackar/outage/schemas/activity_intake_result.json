@@ -1,0 +1,269 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ActivityIntakeResult",
+  "description": "Stage A output. The classified and NER-enriched representation of an emergent activity after intake processing. Establishes emergence type, regulatory constraint flags, extracted entities, resolved references, and data quality scores. This artifact is the input to all subsequent pipeline stages.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "activity_id",
+    "run_id",
+    "generated_at",
+    "emergence_type",
+    "has_regulatory_constraint",
+    "normalized_description",
+    "data_quality_score",
+    "unknown_abbreviation_rate",
+    "provenance"
+  ],
+
+  "properties": {
+
+    "activity_id": {
+      "type": "string",
+      "description": "References the EmergentActivity.activity_id that triggered this run."
+    },
+
+    "run_id": {
+      "type": "string",
+      "description": "Unique identifier for this pipeline run."
+    },
+
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "emergence_type": {
+      "type": "string",
+      "enum": [
+        "truly_unplanned",
+        "scope_expansion",
+        "regulatory_driven",
+        "schedule_optimization",
+        "unknown"
+      ],
+      "description": "Classified emergence type. truly_unplanned: unexpected discovery (e.g., degradation found during inspection). scope_expansion: planned work that grew in scope. regulatory_driven: NRC commitment, TS surveillance, or CAP action surfacing mid-outage. schedule_optimization: formally approved resequencing move."
+    },
+
+    "emergence_type_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confidence in the emergence type classification."
+    },
+
+    "emergence_type_rationale": {
+      "type": ["string", "null"],
+      "description": "Brief explanation of why this emergence type was assigned."
+    },
+
+    "has_regulatory_constraint": {
+      "type": "boolean",
+      "description": "True if any regulatory constraint applies that restricts deferral or reprioritization. Downstream stages must not recommend deferral without licensing review when this is true."
+    },
+
+    "regulatory_drivers": {
+      "type": "array",
+      "description": "Specific regulatory constraints identified for this activity.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["driver_type", "defer_prohibited"],
+        "properties": {
+          "driver_type": {
+            "type": "string",
+            "enum": [
+              "ts_surveillance",
+              "nrc_commitment",
+              "cap_commitment",
+              "hold_point",
+              "alara_constraint",
+              "license_basis_inspection",
+              "other"
+            ],
+            "description": "Type of regulatory driver."
+          },
+          "identifier": {
+            "type": ["string", "null"],
+            "description": "Specific identifier (e.g., TS section number, NRC commitment tracking ID)."
+          },
+          "description": {
+            "type": ["string", "null"],
+            "description": "Human-readable description of the constraint."
+          },
+          "defer_prohibited": {
+            "type": "boolean",
+            "description": "True if deferral is prohibited without explicit licensing review."
+          }
+        }
+      }
+    },
+
+    "normalized_description": {
+      "type": "string",
+      "description": "Cleaned and normalized version of the raw description (lowercase, punctuation normalized, whitespace collapsed)."
+    },
+
+    "expanded_description": {
+      "type": ["string", "null"],
+      "description": "Description after abbreviation expansion. Null if no expansions were applied."
+    },
+
+    "extracted_entities": {
+      "type": "array",
+      "description": "Named entities extracted from the activity description by the NER pipeline.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["entity_id", "text", "start", "end", "label", "confidence", "source_type"],
+        "properties": {
+          "entity_id": { "type": "string" },
+          "text": { "type": "string", "description": "Surface form of the extracted entity." },
+          "start": { "type": "integer", "minimum": 0, "description": "Character offset start in normalized_description." },
+          "end": { "type": "integer", "minimum": 0, "description": "Character offset end in normalized_description." },
+          "label": {
+            "type": "string",
+            "description": "Entity label (e.g., comp_valve, deg_mech, task_replacement, tag_id)."
+          },
+          "label_group": {
+            "type": ["string", "null"],
+            "enum": [
+              "G1_PHYSICAL_COMPONENT",
+              "G2_OPERATIONAL_DEVICE",
+              "G4_MECHANISM_PROCESS",
+              "G5_FAILURE_OUTCOME",
+              "G6_MAINTENANCE_ACTION",
+              "G7_TOOLS_METHODS",
+              "G8_PROPERTIES",
+              "TAG_ID",
+              "WO_REF",
+              "CR_REF",
+              null
+            ]
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "source_type": {
+            "type": "string",
+            "enum": ["gazetteer", "regex", "noun_chunk", "anchored_np", "desc_embed", "llm"],
+            "description": "Which NER generator produced this candidate."
+          }
+        }
+      }
+    },
+
+    "resolved_component_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Component IDs resolved from extracted entities and known_component_id. Must resolve to KG Component nodes."
+    },
+
+    "resolved_system_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "System IDs resolved from extracted entities and known_system_id."
+    },
+
+    "resolved_work_order_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Work order IDs extracted from text or passed through from intake."
+    },
+
+    "resolved_cr_ids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Condition report IDs extracted from text or passed through from intake."
+    },
+
+    "discipline": {
+      "type": ["string", "null"],
+      "enum": ["mechanical", "electrical", "I&C", "civil", "nuclear", "operations", "other", null]
+    },
+
+    "task_family": {
+      "type": ["string", "null"],
+      "enum": [
+        "inspection", "replacement", "maintenance", "calibration",
+        "surveillance", "testing", "modification", "refurbishment",
+        "cleaning", "lubrication", "disassembly", "restoration", "other", null
+      ]
+    },
+
+    "component_family": {
+      "type": ["string", "null"],
+      "enum": [
+        "valve", "pump", "motor", "heat_exchanger", "pipe",
+        "instrument", "cable", "filter", "fan", "compressor",
+        "reactor", "turbine", "generator", "transformer",
+        "breaker", "switchgear", "relay", "sensor", "actuator",
+        "structure", "condenser", "other", null
+      ]
+    },
+
+    "data_quality_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Overall data quality score for this intake record. Composite of completeness, ambiguity, and normalization confidence."
+    },
+
+    "unknown_abbreviation_rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Fraction of tokens that matched no dictionary entry and no known alphanumeric pattern. Values above 0.25 indicate that semantic extraction results may be unreliable — this is an explicit exit criterion for downstream processing."
+    },
+
+    "preprocessing_available": {
+      "type": "boolean",
+      "description": "N1: True if outage_uncertainty.preprocessing cleaners are importable. False means Stage A fell back to basic whitespace normalization; downstream stages should apply lower semantic confidence."
+    },
+
+    "execution_mode_flags": {
+      "type": "object",
+      "description": "P2a: Execution-context flags extracted from the activity description. Used by Stage D for similarity scoring and outlier routing, and by Stage E for permit lead-time calculation.",
+      "additionalProperties": false,
+      "properties": {
+        "has_rp_hold":         { "type": "boolean" },
+        "requires_scaffold":   { "type": "boolean" },
+        "has_clearance":       { "type": "boolean" },
+        "is_vendor_supported": { "type": "boolean" }
+      }
+    },
+
+    "lco_number": {
+      "type": ["string", "null"],
+      "description": "X2: LCO number forwarded from the emergent_activity input (e.g. 'LCO 3.5.1'). Used by Stage G to display the specific LCO in the action-level clock warning prefix. Null when no LCO number is present in the input."
+    },
+
+    "lco_action_level_expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "M1: ISO-8601 timestamp at which the TS action level expires. Null when no LCO entry condition applies or expiry cannot be determined."
+    },
+
+    "hours_to_action_level": {
+      "type": ["number", "null"],
+      "description": "M1: Signed hours from the pipeline start time to lco_action_level_expires_at. Negative means the action level has already expired. Null when lco_action_level_expires_at is null."
+    },
+
+    "lco_clock_status": {
+      "type": "string",
+      "enum": ["not_applicable", "unknown", "expired", "critical", "urgent", "normal"],
+      "description": "M1: Bucketed status of the LCO action-level clock. expired: past deadline. critical: ≤4 h remaining. urgent: ≤24 h remaining. normal: >24 h remaining. unknown: LCO present but expiry undetermined. not_applicable: no LCO entry condition."
+    },
+
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["generated_by", "run_id"],
+      "properties": {
+        "generated_by": { "type": "string" },
+        "run_id": { "type": "string" },
+        "ner_pipeline_version": { "type": ["string", "null"] },
+        "taxonomy_version": { "type": ["string", "null"] },
+        "abbreviation_dict_version": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
