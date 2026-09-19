@@ -1,0 +1,386 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">PatternSearcher — coarse-to-fine similarity retrieval pipeline.</span>
+
+<span class="sd">Executes three-step retrieval against a pre-built IncidentIndex:</span>
+<span class="sd">    1. Inverted-index lookup — O(|query_event_set|) candidate set</span>
+<span class="sd">    2. Jaccard pre-filter   — discard clearly dissimilar episodes</span>
+<span class="sd">    3. Full metric scoring  — NLCS + EMD + combined weighted score</span>
+
+<span class="sd">All three metric scores are always computed and returned so that callers</span>
+<span class="sd">can switch weight profiles or analyse individual signals without re-running.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">SearchConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.indexer</span><span class="w"> </span><span class="kn">import</span> <span class="n">IncidentIndex</span><span class="p">,</span> <span class="n">_coerce_ts</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.metrics</span><span class="w"> </span><span class="kn">import</span> <span class="n">combined_score</span><span class="p">,</span> <span class="n">emd_similarity</span><span class="p">,</span> <span class="n">jaccard</span><span class="p">,</span> <span class="n">nlcs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">HistoricalSignalEpisode</span><span class="p">,</span> <span class="n">IncidentFingerprint</span>
+
+<div class="viewcode-block" id="_log">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._log">[docs]</a>
+<span class="n">_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_INDEX_STATUS_INDEXED">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._INDEX_STATUS_INDEXED">[docs]</a>
+<span class="n">_INDEX_STATUS_INDEXED</span> <span class="o">=</span> <span class="s2">"indexed"</span></div>
+
+<div class="viewcode-block" id="_INDEX_STATUS_NO_DATA">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._INDEX_STATUS_NO_DATA">[docs]</a>
+<span class="n">_INDEX_STATUS_NO_DATA</span> <span class="o">=</span> <span class="s2">"no_episodes_indexed"</span></div>
+
+<div class="viewcode-block" id="_INDEX_STATUS_STALE">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._INDEX_STATUS_STALE">[docs]</a>
+<span class="n">_INDEX_STATUS_STALE</span>   <span class="o">=</span> <span class="s2">"stale"</span></div>
+
+
+
+<div class="viewcode-block" id="PatternSearcher">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.PatternSearcher">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PatternSearcher</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Retrieves the top-k most similar historical episodes for a query incident.</span>
+
+<span class="sd">    Pipeline per search() call:</span>
+<span class="sd">        1. Inverted-index lookup: episode_ids sharing ≥ 1 event type with query.</span>
+<span class="sd">        2. Jaccard pre-filter: discard candidates below config.min_jaccard.</span>
+<span class="sd">        3. NLCS computation on survivors.</span>
+<span class="sd">        4. EMD computation on survivors.</span>
+<span class="sd">        5. Combined score: weighted sum using the resolved weight profile.</span>
+<span class="sd">        6. Rank descending by combined_score; return the top-k HistoricalSignalEpisodes.</span>
+
+<span class="sd">    The coarse-to-fine design avoids computing NLCS and EMD on clearly</span>
+<span class="sd">    dissimilar episodes (those failing the Jaccard gate).</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">IncidentIndex</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">SearchConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="PatternSearcher.index">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.PatternSearcher.index">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="n">index</span></div>
+
+<div class="viewcode-block" id="PatternSearcher.config">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.PatternSearcher.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span></div>
+
+
+<div class="viewcode-block" id="PatternSearcher.search">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.PatternSearcher.search">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query</span><span class="p">:</span> <span class="n">IncidentFingerprint</span><span class="p">,</span>
+        <span class="n">weight_profile</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">staleness_window_days</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">HistoricalSignalEpisode</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Retrieves top-k most similar historical episodes for a query fingerprint.</span>
+
+<span class="sd">        Returns list[HistoricalSignalEpisode] with index_status populated on every</span>
+<span class="sd">        result (§4.11):</span>
+<span class="sd">          - "indexed"             — normal result from a current, populated index</span>
+<span class="sd">          - "no_episodes_indexed" — index is empty; returns a single sentinel episode</span>
+<span class="sd">          - "stale"               — index is older than staleness_window_days; results</span>
+<span class="sd">                                    returned but flagged; link_confidence capped downstream</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query:                 IncidentFingerprint for the query incident.</span>
+<span class="sd">            weight_profile:        Weight profile override; None → config.weight_profile.</span>
+<span class="sd">            staleness_window_days: If set and index.build_timestamp is known, episodes</span>
+<span class="sd">                                   from an index older than this are marked "stale".</span>
+<span class="sd">                                   None disables the staleness check. By design the</span>
+<span class="sd">                                   window lives on PatternSearchConfig.index_staleness_window_days;</span>
+<span class="sd">                                   the orchestrator reads it there and passes it in here</span>
+<span class="sd">                                   (PatternSearcher itself only carries a SearchConfig).</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">            - All three metric scores (jaccard, nlcs, emd) are individually visible</span>
+<span class="sd">              on every returned HistoricalSignalEpisode (§5).</span>
+<span class="sd">            - matched_events, query_only_events, episode_only_events are derived from</span>
+<span class="sd">              event_set comparison.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">_make_no_data_sentinel</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">asset_id</span><span class="p">)]</span>
+
+        <span class="c1"># --- Determine index_status ------------------------------------------</span>
+        <span class="n">index_status</span> <span class="o">=</span> <span class="n">_compute_index_status</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">staleness_window_days</span><span class="p">)</span>
+
+        <span class="c1"># --- Step 1: Inverted-index candidate lookup -------------------------</span>
+        <span class="n">candidate_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">get_candidates</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">event_set</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">candidate_ids</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"search(): no candidates share event types with query."</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">_make_no_data_sentinel</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">asset_id</span><span class="p">,</span> <span class="n">index_status</span><span class="o">=</span><span class="n">_INDEX_STATUS_NO_DATA</span><span class="p">)]</span>
+
+        <span class="c1"># Build an episode_id → row mapping for O(1) lookup per candidate.</span>
+        <span class="n">ep_lookup</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+            <span class="n">ep_lookup</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"episode_id"</span><span class="p">])]</span> <span class="o">=</span> <span class="n">row</span>
+
+        <span class="c1"># --- Step 2: Jaccard pre-filter --------------------------------------</span>
+        <span class="n">survivors</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span> <span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ep_id</span> <span class="ow">in</span> <span class="n">candidate_ids</span><span class="p">:</span>
+            <span class="n">row</span> <span class="o">=</span> <span class="n">ep_lookup</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">ep_id</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">row</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Candidate episode_id </span><span class="si">%r</span><span class="s2"> not found in episodes_df."</span><span class="p">,</span> <span class="n">ep_id</span><span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">ep_set</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"event_set"</span><span class="p">])</span>
+            <span class="n">j</span> <span class="o">=</span> <span class="n">jaccard</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">event_set</span><span class="p">,</span> <span class="n">ep_set</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">j</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">min_jaccard</span><span class="p">:</span>
+                <span class="n">survivors</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ep_id</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">j</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">survivors</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"search(): all </span><span class="si">%d</span><span class="s2"> candidates filtered out by Jaccard threshold </span><span class="si">%.2f</span><span class="s2">."</span><span class="p">,</span>
+                <span class="nb">len</span><span class="p">(</span><span class="n">candidate_ids</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">min_jaccard</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">_make_no_data_sentinel</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">asset_id</span><span class="p">,</span> <span class="n">index_status</span><span class="o">=</span><span class="n">_INDEX_STATUS_NO_DATA</span><span class="p">)]</span>
+
+        <span class="c1"># --- Resolve weights -------------------------------------------------</span>
+        <span class="n">profile</span> <span class="o">=</span> <span class="n">weight_profile</span> <span class="k">if</span> <span class="n">weight_profile</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">weight_profile</span>
+        <span class="n">alpha</span><span class="p">,</span> <span class="n">beta_w</span><span class="p">,</span> <span class="n">gamma</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_weights</span><span class="p">(</span><span class="n">profile</span><span class="p">)</span>
+
+        <span class="c1"># --- Determine EMD normalization factor ------------------------------</span>
+        <span class="n">norm_factor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">emd_normalization_mode</span> <span class="o">==</span> <span class="s2">"empirical_max"</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="s2">"emd_normalization_mode='empirical_max' requires "</span>
+                    <span class="s2">"index.compute_emd_normalization_factor() to be called first."</span>
+                <span class="p">)</span>
+            <span class="n">norm_factor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">emd_normalization_factor</span>
+
+        <span class="c1"># --- Steps 3–5: NLCS, EMD, combined score ----------------------------</span>
+        <span class="n">episodes</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">HistoricalSignalEpisode</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ep_id</span><span class="p">,</span> <span class="n">row</span><span class="p">,</span> <span class="n">j_score</span> <span class="ow">in</span> <span class="n">survivors</span><span class="p">:</span>
+            <span class="n">ep_set</span>   <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"event_set"</span><span class="p">])</span>
+            <span class="n">ep_seq</span>   <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"event_seq"</span><span class="p">])</span>
+            <span class="n">ep_fvec</span>  <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">dict</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"freq_vec"</span><span class="p">])</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+            <span class="n">ep_src</span>   <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"source_types"</span><span class="p">])</span> <span class="k">if</span> <span class="s2">"source_types"</span> <span class="ow">in</span> <span class="n">row</span><span class="o">.</span><span class="n">index</span> <span class="k">else</span> <span class="p">[]</span>
+
+            <span class="n">n_score</span> <span class="o">=</span> <span class="n">nlcs</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">event_seq</span><span class="p">,</span> <span class="n">ep_seq</span><span class="p">)</span>
+            <span class="n">e_score</span> <span class="o">=</span> <span class="n">emd_similarity</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">freq_vec</span><span class="p">,</span> <span class="n">ep_fvec</span><span class="p">,</span> <span class="n">normalization_factor</span><span class="o">=</span><span class="n">norm_factor</span><span class="p">)</span>
+            <span class="n">c_score</span> <span class="o">=</span> <span class="n">combined_score</span><span class="p">(</span><span class="n">j_score</span><span class="p">,</span> <span class="n">n_score</span><span class="p">,</span> <span class="n">e_score</span><span class="p">,</span> <span class="n">alpha</span><span class="p">,</span> <span class="n">beta_w</span><span class="p">,</span> <span class="n">gamma</span><span class="p">)</span>
+
+            <span class="n">rca</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"known_rca"</span><span class="p">)</span>
+            <span class="n">episodes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">HistoricalSignalEpisode</span><span class="p">(</span>
+                    <span class="n">episode_id</span><span class="o">=</span><span class="n">ep_id</span><span class="p">,</span>
+                    <span class="n">asset_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                    <span class="n">window_start</span><span class="o">=</span><span class="n">_coerce_ts</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"window_start"</span><span class="p">]),</span>
+                    <span class="n">window_end</span><span class="o">=</span><span class="n">_coerce_ts</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"window_end"</span><span class="p">]),</span>
+                    <span class="n">source_types</span><span class="o">=</span><span class="n">ep_src</span><span class="p">,</span>
+                    <span class="n">event_set</span><span class="o">=</span><span class="n">ep_set</span><span class="p">,</span>
+                    <span class="n">event_seq</span><span class="o">=</span><span class="n">ep_seq</span><span class="p">,</span>
+                    <span class="n">freq_vec</span><span class="o">=</span><span class="n">ep_fvec</span><span class="p">,</span>
+                    <span class="n">similarity_to_current</span><span class="o">=</span><span class="n">c_score</span><span class="p">,</span>
+                    <span class="n">jaccard_score</span><span class="o">=</span><span class="n">j_score</span><span class="p">,</span>
+                    <span class="n">nlcs_score</span><span class="o">=</span><span class="n">n_score</span><span class="p">,</span>
+                    <span class="n">emd_score</span><span class="o">=</span><span class="n">e_score</span><span class="p">,</span>
+                    <span class="n">weight_profile</span><span class="o">=</span><span class="n">profile</span><span class="p">,</span>
+                    <span class="n">matched_events</span><span class="o">=</span><span class="nb">set</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">event_set</span> <span class="o">&amp;</span> <span class="n">ep_set</span><span class="p">),</span>
+                    <span class="n">query_only_events</span><span class="o">=</span><span class="nb">set</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">event_set</span> <span class="o">-</span> <span class="n">ep_set</span><span class="p">),</span>
+                    <span class="n">episode_only_events</span><span class="o">=</span><span class="nb">set</span><span class="p">(</span><span class="n">ep_set</span> <span class="o">-</span> <span class="n">query</span><span class="o">.</span><span class="n">event_set</span><span class="p">),</span>
+                    <span class="n">episode_density</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"density"</span><span class="p">]),</span>
+                    <span class="n">known_rca</span><span class="o">=</span><span class="n">rca</span> <span class="k">if</span> <span class="p">(</span><span class="n">rca</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">pd</span><span class="o">.</span><span class="n">notna</span><span class="p">(</span><span class="n">rca</span><span class="p">))</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="n">linked_doc_ids</span><span class="o">=</span><span class="p">[],</span>
+                    <span class="n">index_status</span><span class="o">=</span><span class="n">index_status</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="c1"># --- Step 6: rank and truncate ---------------------------------------</span>
+        <span class="n">episodes</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">e</span><span class="p">:</span> <span class="n">e</span><span class="o">.</span><span class="n">similarity_to_current</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">top</span> <span class="o">=</span> <span class="n">episodes</span><span class="p">[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">top_k</span><span class="p">]</span>
+
+        <span class="n">_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"search(): </span><span class="si">%d</span><span class="s2"> candidates → </span><span class="si">%d</span><span class="s2"> survivors → returning </span><span class="si">%d</span><span class="s2"> results "</span>
+            <span class="s2">"(profile=</span><span class="si">%r</span><span class="s2">, top_k=</span><span class="si">%d</span><span class="s2">, index_status=</span><span class="si">%r</span><span class="s2">)."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">candidate_ids</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">survivors</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">top</span><span class="p">),</span> <span class="n">profile</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">top_k</span><span class="p">,</span> <span class="n">index_status</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">top</span></div>
+
+
+<div class="viewcode-block" id="PatternSearcher._resolve_weights">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.PatternSearcher._resolve_weights">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_weights</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">weight_profile</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Returns (alpha, beta_w, gamma) for the given weight profile name.</span>
+
+<span class="sd">        Delegates to SearchConfig.resolve_weights() which owns the profile</span>
+<span class="sd">        registry and "custom" fallback logic.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            ValueError for unrecognised profile names.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">resolve_weights</span><span class="p">(</span><span class="n">weight_profile</span><span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_compute_index_status">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._compute_index_status">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_index_status</span><span class="p">(</span><span class="n">index</span><span class="p">:</span> <span class="n">IncidentIndex</span><span class="p">,</span> <span class="n">staleness_window_days</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return the index_status string for a given index and staleness window."""</span>
+    <span class="k">if</span> <span class="n">staleness_window_days</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">now</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">tz</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+        <span class="n">built</span> <span class="o">=</span> <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="k">if</span> <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span><span class="o">.</span><span class="n">tzinfo</span> <span class="k">else</span> <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span>
+        <span class="n">age_days</span> <span class="o">=</span> <span class="p">(</span><span class="n">now</span> <span class="o">-</span> <span class="n">built</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">86400.0</span>
+        <span class="k">if</span> <span class="n">age_days</span> <span class="o">&gt;</span> <span class="n">staleness_window_days</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_INDEX_STATUS_STALE</span>
+    <span class="k">return</span> <span class="n">_INDEX_STATUS_INDEXED</span></div>
+
+
+
+<div class="viewcode-block" id="_make_no_data_sentinel">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/searcher/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._make_no_data_sentinel">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_no_data_sentinel</span><span class="p">(</span>
+    <span class="n">asset_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">index_status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">_INDEX_STATUS_NO_DATA</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">HistoricalSignalEpisode</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a sentinel HistoricalSignalEpisode for the no-data case.</span>
+
+<span class="sd">    Callers must check index_status before attempting cross-pattern linkage.</span>
+<span class="sd">    A sentinel has episode_id == "" and similarity_to_current == 0.0.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">HistoricalSignalEpisode</span><span class="p">(</span>
+        <span class="n">episode_id</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
+        <span class="n">asset_id</span><span class="o">=</span><span class="n">asset_id</span><span class="p">,</span>
+        <span class="n">window_start</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">window_end</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">source_types</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">event_set</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">(),</span>
+        <span class="n">event_seq</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">freq_vec</span><span class="o">=</span><span class="p">{},</span>
+        <span class="n">similarity_to_current</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">jaccard_score</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">nlcs_score</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">emd_score</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">weight_profile</span><span class="o">=</span><span class="s2">""</span><span class="p">,</span>
+        <span class="n">matched_events</span><span class="o">=</span><span class="nb">set</span><span class="p">(),</span>
+        <span class="n">query_only_events</span><span class="o">=</span><span class="nb">set</span><span class="p">(),</span>
+        <span class="n">episode_only_events</span><span class="o">=</span><span class="nb">set</span><span class="p">(),</span>
+        <span class="n">episode_density</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">known_rca</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">linked_doc_ids</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">index_status</span><span class="o">=</span><span class="n">index_status</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

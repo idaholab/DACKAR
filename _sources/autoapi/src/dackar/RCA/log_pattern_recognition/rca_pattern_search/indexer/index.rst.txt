@@ -1,0 +1,301 @@
+src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer
+=================================================================
+
+.. py:module:: src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer
+
+.. autoapi-nested-parse::
+
+   IncidentIndex — historical episode database.
+
+   Stores pre-computed IncidentFingerprints and provides fast candidate
+   retrieval via an inverted index over event types.
+
+   Lifecycle:
+       1. build_from_history() — run detector + extractor on raw events_df
+       2. add() / add_batch() — incremental updates
+       3. get_candidates() — O(|query_event_set|) pre-filter lookup
+       4. save() / load() — parquet + JSON persistence
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._log
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._EPISODES_PARQUET
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._INVERTED_INDEX_JSON
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._EMD_META_JSON
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._INDEX_META_JSON
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._COMPLEX_COLS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer.IncidentIndex
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._df_to_events
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._fingerprint_to_row
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._coerce_ts
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._serialise_df
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer._deserialise_df
+
+
+Module Contents
+---------------
+
+.. py:data:: _log
+
+.. py:data:: _EPISODES_PARQUET
+   :value: 'episodes.parquet'
+
+
+.. py:data:: _INVERTED_INDEX_JSON
+   :value: 'inverted_index.json'
+
+
+.. py:data:: _EMD_META_JSON
+   :value: 'emd_meta.json'
+
+
+.. py:data:: _INDEX_META_JSON
+   :value: 'index_meta.json'
+
+
+.. py:data:: _COMPLEX_COLS
+   :value: ('event_set', 'event_seq', 'freq_vec', 'source_types')
+
+
+.. py:class:: IncidentIndex(config)
+
+   Stores and manages pre-computed IncidentFingerprints for the historical
+   episode database.
+
+   Internal storage:
+       episodes_df       — pd.DataFrame, one row per episode.
+       _inverted_index   — dict[str, set[str]]: event_type → set of episode_ids.
+                           Used for O(|query_event_set|) Jaccard pre-filtering.
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: episodes_df
+      :type:  pandas.DataFrame
+
+
+   .. py:attribute:: _inverted_index
+      :type:  dict[str, set[str]]
+
+
+   .. py:attribute:: emd_normalization_factor
+      :type:  Optional[float]
+      :value: None
+
+
+
+   .. py:attribute:: build_timestamp
+      :type:  Optional[datetime.datetime]
+      :value: None
+
+
+
+   .. py:attribute:: asset_scope
+      :type:  list[str]
+      :value: []
+
+
+
+   .. py:method:: build_from_history(events_df, rho_query, query_duration)
+
+      Populates the index from a raw historical events_df.
+
+      Steps:
+          1. Convert events_df rows to UnifiedEvent list.
+          2. Run EpisodeDetector.detect() to find episode boundaries.
+          3. Group events by episode boundary.
+          4. Derive IncidentFingerprint for each episode via
+             IncidentExtractor._derive_fingerprint().
+          5. Store fingerprints via add_batch().
+
+      :param events_df: Raw historical event log. Expected columns:
+                        raw_id, asset_id, source, event_type,
+                        timestamp_start, timestamp_end.
+                        No episode_id column required.
+      :param rho_query: Reference density from the query incident
+                        (events per second). Passed to EpisodeDetector.
+      :param query_duration: D_query in seconds. Used for KDE bandwidth and
+                             minimum episode duration filter.
+
+      .. rubric:: Notes
+
+      events_df is not modified in place.
+      episode_id is derived from the episode window_start
+      (EP_{asset}_{window_start:%Y%m%dT%H%M%S}), so ids are stable across
+      rebuilds. The add path upserts by episode_id: re-building over the
+      same data replaces episodes in place (idempotent), while genuinely
+      new episodes append — call reset() first for a clean rebuild.
+
+      Stage 1 is intended to be built once against a *representative*
+      query: rho_query/query_duration come from that query and calibrate
+      episode boundaries (delta * rho_query; bandwidth query_duration/4),
+      then the index is persisted via save() (save/load is not a per-query
+      cache). Results are sensitive to these values — see rca_pattern_matching.md
+      for guidance on choosing representative rho_query/query_duration.
+
+
+
+   .. py:method:: reset()
+
+      Clears all stored episodes and the inverted index.
+
+
+
+   .. py:method:: add(fingerprint)
+
+      Adds a single fingerprint to the index (upsert by episode_id).
+
+      If an episode with the same episode_id already exists it is replaced,
+      and the inverted index is rebuilt once to drop the old episode's stale
+      postings. The common insert-new path stays incremental. Less efficient
+      than add_batch() for many insertions because the inverted index is
+      updated per fingerprint rather than rebuilt once.
+
+
+
+   .. py:method:: add_batch(fingerprints)
+
+      Adds multiple fingerprints in a single operation (upsert by episode_id).
+
+      Existing episodes whose episode_id appears in the incoming batch are
+      replaced, and duplicate ids within the batch collapse to the last
+      occurrence, so the append path never produces duplicate episode_ids.
+      Rebuilds the inverted index once after all insertions, which is
+      more efficient than repeated add() calls.
+
+
+
+   .. py:method:: get_candidates(query_event_set)
+
+      Returns episode_ids of historical episodes that share at least one
+      event type with the query.
+
+      Uses the inverted index for O(|query_event_set|) lookup.  Episodes
+      with no event-type overlap cannot have Jaccard > 0 and are excluded.
+
+      :param query_event_set: event_set from the query IncidentFingerprint.
+
+      :returns: De-duplicated list of episode_ids sharing >= 1 event type with the
+                query (candidates are accumulated in a set, so no id repeats).
+
+
+
+   .. py:method:: compute_emd_normalization_factor(max_pairs = 1000)
+
+      Computes the empirical maximum raw L1 distance across historical episode pairs.
+
+      Used to normalise EMD scores when emd_normalization_mode="empirical_max".
+      Should be called once after build_from_history() and before search().
+
+      Algorithm:
+          - Extract all freq_vec dicts from episodes_df.
+          - If N*(N-1)/2 <= max_pairs: evaluate all pairs.
+          - Else: draw max_pairs random pairs without replacement (seeded).
+          - For each pair (a, b): raw_l1 = Σ_t |a.get(t,0) - b.get(t,0)|
+          - Store the maximum observed L1 distance.
+
+      :param max_pairs: Maximum number of pairs to evaluate. If the index has
+                        fewer pairs than this, all pairs are used.
+
+      :returns: The empirical maximum raw L1 distance (float >= 0).
+                Returns 1.0 if index is empty or contains only one episode
+                (to avoid division by zero and provide a sensible fallback).
+
+      Side effect:
+          Sets self.emd_normalization_factor to the computed value.
+
+
+
+   .. py:method:: save(path)
+
+      Persists the index to disk.
+
+      episodes_df is saved as parquet with complex columns (frozenset,
+      list, dict) JSON-serialised to strings.
+      The inverted index is saved as JSON (sets → sorted lists).
+      EMD metadata (normalization factor) is saved as JSON.
+      All files are written atomically via a .tmp rename.
+
+      :param path: Directory path.  Created if it does not exist.
+
+
+
+   .. py:method:: load(path, config)
+      :classmethod:
+
+
+      Loads a persisted index from disk.
+
+      Reconstructs episodes_df (deserialising complex columns from JSON
+      strings), the inverted index, and EMD metadata if available.
+
+      :param path: Directory path written by save().
+      :param config: SearchConfig to attach to the loaded index.
+
+      :returns: Populated IncidentIndex.
+
+      :raises FileNotFoundError if core files (parquet, inverted index) are missing.:
+
+
+
+   .. py:method:: _rebuild_inverted_index()
+
+      Rebuilds the inverted index from scratch from episodes_df.
+
+
+
+   .. py:method:: __len__()
+
+
+   .. py:method:: __repr__()
+
+
+.. py:function:: _df_to_events(events_df)
+
+   Converts a raw events_df to a list of UnifiedEvents.
+
+
+.. py:function:: _fingerprint_to_row(fp)
+
+   Converts an IncidentFingerprint to a flat dict for DataFrame storage.
+
+
+.. py:function:: _coerce_ts(value)
+
+   Coerces a pandas Timestamp or datetime to a plain datetime.
+
+   pandas NaT subclasses datetime, so the NaT check must come first.
+   pandas Timestamp also subclasses datetime, so to_pydatetime() must
+   be tried before the plain isinstance guard.
+
+
+.. py:function:: _serialise_df(df)
+
+   Returns a copy of df with frozenset/list/dict columns JSON-encoded as strings.
+
+
+.. py:function:: _deserialise_df(df)
+
+   Returns a copy of df with JSON-string columns decoded back to Python objects.
+
+

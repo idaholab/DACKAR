@@ -1,0 +1,200 @@
+src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density
+=================================================================
+
+.. py:module:: src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density
+
+.. autoapi-nested-parse::
+
+   EpisodeDetector — KDE-based episode boundary detection.
+
+   Detects contiguous periods in a historical event log where the estimated
+   event rate exceeds a fraction of the query incident's reference density.
+
+   KDE implementation uses an event-centric Gaussian kernel: each event
+   contributes only to grid points within 4σ of its timestamp.  This is
+   O(N × support_window / grid_res) instead of O(N × G), which is essential
+   for long historical windows with fine grid resolution.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._log
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._SQRT_2PI
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._KDE_SUPPORT_SIGMAS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._kde_evaluate
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._extract_contiguous_regions
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._merge_overlapping
+
+
+Module Contents
+---------------
+
+.. py:data:: _log
+
+.. py:data:: _SQRT_2PI
+   :type:  float
+
+.. py:data:: _KDE_SUPPORT_SIGMAS
+   :type:  float
+   :value: 4.0
+
+
+.. py:class:: EpisodeDetector(config)
+
+   Detects episode boundaries in a continuous historical event log using
+   kernel density estimation (KDE) over event timestamps.
+
+   The detection threshold is relative to the query incident density,
+   making the method self-calibrating: a busier query requires historically
+   busier windows to qualify as matching episodes.
+
+   Pipeline (per detect() call):
+       1. Convert event timestamps to float seconds since earliest event.
+       2. Evaluate Gaussian KDE on a fine time grid.
+       3. Threshold: mask = KDE(t) >= delta * rho_query.
+       4. Extract contiguous masked regions as raw episode boundaries.
+       5. Apply beta buffer expansion to each boundary.
+       6. Merge overlapping expanded boundaries.
+       7. Discard episodes shorter than query_duration / 10.
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: compute_reference_density(query_events, window_start, window_end)
+
+      Computes the reference event density for the query incident.
+
+          rho_query = N_query / D_query
+
+      N_query: events with timestamp_start in [window_start, window_end].
+      D_query: (window_end - window_start).total_seconds()
+
+      All sources contribute equally.  Returns 0.0 if duration <= 0.
+
+
+
+   .. py:method:: detect(historical_events, rho_query, query_duration)
+
+      Detects episode boundaries in the historical event log.
+
+      :param historical_events: Full flat event list, all sources merged.
+                                No episode_id expected at this stage.
+      :param rho_query: Reference density from compute_reference_density().
+                        Units: events per second.
+      :param query_duration: D_query in seconds.  Used for KDE bandwidth and
+                             minimum episode duration filter.
+
+      :returns: List of (episode_start, episode_end) tuples, sorted ascending.
+                These are expanded boundaries (beta already applied) ready for
+                fingerprinting.  Empty list if no qualifying episodes found.
+
+
+
+   .. py:method:: bandwidth_scan(historical_events, rho_query, query_duration, bandwidths = None)
+
+      Multi-scale diagnostic: counts detected episodes at different bandwidths.
+
+      Helps operators validate episode segmentation by showing how many episodes
+      are detected when the smoothing scale varies. Useful when query timescale
+      may not match historical episode timescales (e.g., fast transient query
+      for slow degradation history, or vice versa).
+
+      :param historical_events: Full flat event list, all sources merged.
+      :param rho_query: Reference density from compute_reference_density().
+                        Units: events per second.
+      :param query_duration: D_query in seconds.
+      :param bandwidths: Explicit bandwidth list in seconds. If None, defaults to
+                         [D/32, D/16, D/8, D/4, D/2, D, 2D, 4D] for broad coverage.
+
+      :returns: dict mapping bandwidth (float, seconds) to episode count (int),
+                sorted by bandwidth ascending.
+
+
+
+   .. py:method:: _run_detection(t_seconds, t_epoch, rho_query, query_duration, bw)
+
+      Core detection pipeline: KDE → threshold → extract → expand → merge → filter.
+
+      Called by detect() and bandwidth_scan() to avoid code duplication.
+
+      :param t_seconds: Event timestamps as float seconds since t_epoch.
+      :param t_epoch: Reference time (datetime).
+      :param rho_query: Reference density (events/second).
+      :param query_duration: Duration of query window in seconds.
+      :param bw: Bandwidth in seconds (already resolved, > 0).
+
+      :returns: Expanded, merged, filtered episode boundaries.
+
+
+
+   .. py:method:: assign_episode_ids(historical_events, episode_boundaries)
+
+      Assigns episode_id to each historical event based on detected boundaries.
+
+      An event is assigned to the episode whose expanded boundary contains
+      its timestamp_start.  Events outside all boundaries retain
+      episode_id = None (background noise).
+
+      If an event falls within multiple boundaries (should not occur after
+      merging, handled defensively), it is assigned to the first match and
+      a WARNING is logged.
+
+      Episode ids: "EP_{asset_id}_{index:05d}" where asset_id is the
+      dominant asset among events in that episode.
+
+      :param historical_events: Full flat event list.
+      :param episode_boundaries: Output of detect(), sorted (start, end) tuples.
+
+      :returns: New list of UnifiedEvents with episode_id populated.
+                Original list is not mutated.
+
+
+
+.. py:function:: _kde_evaluate(t_seconds, grid, bw, grid_res)
+
+   Evaluates a Gaussian KDE at each grid point.
+
+   Uses an event-centric approach: each event contributes only to grid
+   points within _KDE_SUPPORT_SIGMAS * bw seconds, limiting work to
+   O(N × support_window / grid_res) instead of O(N × G).
+
+   Returns rho_hist in events per second:
+       rho_hist(t) = Σ_i (1 / (bw √2π)) · exp(-½ · ((t − tᵢ) / bw)²)
+
+
+.. py:function:: _extract_contiguous_regions(mask, grid, t_epoch, grid_res)
+
+   Extracts (start, end) datetime pairs for every contiguous True run in mask.
+
+   Pads the mask with False on both ends to detect edges at array boundaries.
+   Uses the last grid point of each run as t_end.  If a run is a single grid
+   point, t_end is set to t_start + grid_res to give it a non-zero duration.
+
+
+.. py:function:: _merge_overlapping(boundaries)
+
+   Merges overlapping or touching (start, end) intervals.
+
+   Input order does not matter.  Returns intervals sorted by start ascending.
+
+

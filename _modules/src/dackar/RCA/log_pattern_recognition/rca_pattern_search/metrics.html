@@ -1,0 +1,288 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Similarity metrics for the RCA pattern search pipeline.</span>
+
+<span class="sd">Three metrics answer complementary questions about two incident fingerprints:</span>
+
+<span class="sd">    jaccard        — did the same event types occur?        (set, order-agnostic)</span>
+<span class="sd">    nlcs           — did they occur in a similar order?     (sequence-aware)</span>
+<span class="sd">    emd_similarity — did they repeat with similar intensity? (frequency-based)</span>
+
+<span class="sd">All functions return a value in [0, 1] where 1 is identical.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Metric 1: Jaccard similarity</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="jaccard">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/metrics/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.jaccard">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">jaccard</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">b</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Set-based similarity between two event sets.</span>
+
+<span class="sd">    J(A, B) = |A ∩ B| / |A ∪ B|</span>
+
+<span class="sd">    Returns 0.0 when both sets are empty (undefined ratio treated as no</span>
+<span class="sd">    similarity rather than perfect similarity, which is the safer default</span>
+<span class="sd">    for retrieval purposes).</span>
+<span class="sd">    """</span>
+    <span class="n">union_size</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span> <span class="o">|</span> <span class="n">b</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">union_size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span> <span class="o">&amp;</span> <span class="n">b</span><span class="p">)</span> <span class="o">/</span> <span class="n">union_size</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Metric 2: NLCS (Normalised Longest Common Subsequence)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_lcs_length">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/metrics/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._lcs_length">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_lcs_length</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">b</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Standard O(m·n) DP for LCS length."""</span>
+    <span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+    <span class="c1"># Use two rolling rows to keep memory at O(min(m, n)).</span>
+    <span class="k">if</span> <span class="n">m</span> <span class="o">&lt;</span> <span class="n">n</span><span class="p">:</span>
+        <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span>
+        <span class="n">m</span><span class="p">,</span> <span class="n">n</span> <span class="o">=</span> <span class="n">n</span><span class="p">,</span> <span class="n">m</span>
+    <span class="n">prev</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">curr</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">m</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">a</span><span class="p">[</span><span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">b</span><span class="p">[</span><span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="n">curr</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">prev</span><span class="p">[</span><span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">curr</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">curr</span><span class="p">[</span><span class="n">j</span> <span class="o">-</span> <span class="mi">1</span><span class="p">],</span> <span class="n">prev</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+        <span class="n">prev</span><span class="p">,</span> <span class="n">curr</span> <span class="o">=</span> <span class="n">curr</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="n">n</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">prev</span><span class="p">[</span><span class="n">n</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="nlcs">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/metrics/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.nlcs">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">nlcs</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">b</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Normalised Longest Common Subsequence similarity.</span>
+
+<span class="sd">    NLCS(A, B) = |LCS(A, B)| / max(|A|, |B|)</span>
+
+<span class="sd">    Operates on deduplicated ordered sequences so high-frequency events do not</span>
+<span class="sd">    dominate the ordering signal.</span>
+
+<span class="sd">    Returns 0.0 when both sequences are empty.</span>
+<span class="sd">    """</span>
+    <span class="n">denom</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">a</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">denom</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="k">return</span> <span class="n">_lcs_length</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="o">/</span> <span class="n">denom</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Metric 3: EMD similarity (categorical frequency distributions)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="emd_similarity">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/metrics/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.emd_similarity">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">emd_similarity</span><span class="p">(</span>
+    <span class="n">a</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">b</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">normalization_factor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Frequency-based similarity between two event count vectors.</span>
+
+<span class="sd">    Captures the repetition signal that Jaccard and NLCS deliberately discard.</span>
+
+<span class="sd">    Implementation uses the Total Variation (TV) distance between the two</span>
+<span class="sd">    probability distributions derived by normalising the count vectors.  For</span>
+<span class="sd">    categorical distributions with unit ground distance between any two</span>
+<span class="sd">    distinct types, TV distance equals the (unit-ground) Earth Mover's</span>
+<span class="sd">    Distance:</span>
+
+<span class="sd">        TV(P, Q) = 0.5 · Σ_t |P(t) − Q(t)|   where P(t) = a[t] / Σa</span>
+
+<span class="sd">    This is always in [0, 1], so:</span>
+
+<span class="sd">        emd_similarity = 1 − TV(P, Q)</span>
+
+<span class="sd">    Alternative (raw-count) normalisation:</span>
+<span class="sd">        If normalization_factor is provided the raw L1 distance between the</span>
+<span class="sd">        unnormalised count vectors is used instead:</span>
+
+<span class="sd">            raw_emd = Σ_t |a.get(t, 0) − b.get(t, 0)|</span>
+<span class="sd">            emd_similarity = max(0.0, 1 − raw_emd / normalization_factor)</span>
+
+<span class="sd">        Suitable when an empirically derived or vocabulary-size-based upper</span>
+<span class="sd">        bound is available (see spec open point on normalisation).</span>
+
+<span class="sd">    Edge cases:</span>
+<span class="sd">        Both empty  → 1.0  (identical — neither has any events)</span>
+<span class="sd">        One empty   → 0.0  (maximally dissimilar)</span>
+<span class="sd">    """</span>
+    <span class="n">total_a</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="k">if</span> <span class="n">a</span> <span class="k">else</span> <span class="mi">0</span>
+    <span class="n">total_b</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="k">if</span> <span class="n">b</span> <span class="k">else</span> <span class="mi">0</span>
+
+    <span class="k">if</span> <span class="n">total_a</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">total_b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">1.0</span>
+    <span class="k">if</span> <span class="n">total_a</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">total_b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+
+    <span class="n">vocab</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">b</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">normalization_factor</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">normalization_factor</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"normalization_factor must be positive, got </span><span class="si">{</span><span class="n">normalization_factor</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="n">raw_l1</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="n">b</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">vocab</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">raw_l1</span> <span class="o">/</span> <span class="n">normalization_factor</span><span class="p">)</span>
+
+    <span class="c1"># Default: TV distance on probability distributions.</span>
+    <span class="n">tv</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="nb">sum</span><span class="p">(</span>
+        <span class="nb">abs</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">total_a</span> <span class="o">-</span> <span class="n">b</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">total_b</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">vocab</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">tv</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Combined score</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="combined_score">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/metrics/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.combined_score">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">combined_score</span><span class="p">(</span>
+    <span class="n">j</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">n</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">e</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">beta_w</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Weighted combination of the three metric scores.</span>
+
+<span class="sd">    Score = alpha · J + beta_w · NLCS + gamma · EMD</span>
+
+<span class="sd">    Inputs are assumed to be valid (alpha + beta_w + gamma ≈ 1).</span>
+<span class="sd">    No re-normalisation is applied here; the caller (PatternSearcher) is</span>
+<span class="sd">    responsible for passing a coherent weight triple via SearchConfig.</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="n">alpha</span> <span class="o">*</span> <span class="n">j</span> <span class="o">+</span> <span class="n">beta_w</span> <span class="o">*</span> <span class="n">n</span> <span class="o">+</span> <span class="n">gamma</span> <span class="o">*</span> <span class="n">e</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

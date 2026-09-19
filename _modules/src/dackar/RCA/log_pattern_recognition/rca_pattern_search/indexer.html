@@ -1,0 +1,827 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.log_pattern_recognition.rca_pattern_search.indexer</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">IncidentIndex — historical episode database.</span>
+
+<span class="sd">Stores pre-computed IncidentFingerprints and provides fast candidate</span>
+<span class="sd">retrieval via an inverted index over event types.</span>
+
+<span class="sd">Lifecycle:</span>
+<span class="sd">    1. build_from_history() — run detector + extractor on raw events_df</span>
+<span class="sd">    2. add() / add_batch() — incremental updates</span>
+<span class="sd">    3. get_candidates() — O(|query_event_set|) pre-filter lookup</span>
+<span class="sd">    4. save() / load() — parquet + JSON persistence</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">SearchConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.density</span><span class="w"> </span><span class="kn">import</span> <span class="n">EpisodeDetector</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.extractor</span><span class="w"> </span><span class="kn">import</span> <span class="n">IncidentExtractor</span><span class="p">,</span> <span class="n">_dominant_asset</span><span class="p">,</span> <span class="n">_parse_ts</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">IncidentFingerprint</span><span class="p">,</span> <span class="n">UnifiedEvent</span>
+
+<div class="viewcode-block" id="_log">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._log">[docs]</a>
+<span class="n">_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Parquet file name inside the save directory.</span>
+<div class="viewcode-block" id="_EPISODES_PARQUET">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._EPISODES_PARQUET">[docs]</a>
+<span class="n">_EPISODES_PARQUET</span> <span class="o">=</span> <span class="s2">"episodes.parquet"</span></div>
+
+<span class="c1"># Inverted index file name inside the save directory.</span>
+<div class="viewcode-block" id="_INVERTED_INDEX_JSON">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._INVERTED_INDEX_JSON">[docs]</a>
+<span class="n">_INVERTED_INDEX_JSON</span> <span class="o">=</span> <span class="s2">"inverted_index.json"</span></div>
+
+<span class="c1"># EMD normalization metadata file name inside the save directory.</span>
+<div class="viewcode-block" id="_EMD_META_JSON">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._EMD_META_JSON">[docs]</a>
+<span class="n">_EMD_META_JSON</span> <span class="o">=</span> <span class="s2">"emd_meta.json"</span></div>
+
+<span class="c1"># Index metadata file name (build timestamp, asset scope, episode count).</span>
+<div class="viewcode-block" id="_INDEX_META_JSON">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._INDEX_META_JSON">[docs]</a>
+<span class="n">_INDEX_META_JSON</span> <span class="o">=</span> <span class="s2">"index_meta.json"</span></div>
+
+
+<span class="c1"># Columns that store Python objects and need JSON serialisation for parquet.</span>
+<div class="viewcode-block" id="_COMPLEX_COLS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._COMPLEX_COLS">[docs]</a>
+<span class="n">_COMPLEX_COLS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"event_set"</span><span class="p">,</span> <span class="s2">"event_seq"</span><span class="p">,</span> <span class="s2">"freq_vec"</span><span class="p">,</span> <span class="s2">"source_types"</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="IncidentIndex">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">IncidentIndex</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Stores and manages pre-computed IncidentFingerprints for the historical</span>
+<span class="sd">    episode database.</span>
+
+<span class="sd">    Internal storage:</span>
+<span class="sd">        episodes_df       — pd.DataFrame, one row per episode.</span>
+<span class="sd">        _inverted_index   — dict[str, set[str]]: event_type → set of episode_ids.</span>
+<span class="sd">                            Used for O(|query_event_set|) Jaccard pre-filtering.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">SearchConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="IncidentIndex.config">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span></div>
+
+<div class="viewcode-block" id="IncidentIndex.episodes_df">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.episodes_df">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="IncidentIndex._inverted_index">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex._inverted_index">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+<div class="viewcode-block" id="IncidentIndex.emd_normalization_factor">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.emd_normalization_factor">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="IncidentIndex.build_timestamp">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.build_timestamp">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">build_timestamp</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>   <span class="c1"># set by build_from_history() and load()</span></div>
+
+<div class="viewcode-block" id="IncidentIndex.asset_scope">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.asset_scope">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asset_scope</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>                  <span class="c1"># unique asset_ids indexed; set by build_from_history()</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Index build</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentIndex.build_from_history">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.build_from_history">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_from_history</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">events_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">rho_query</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">query_duration</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Populates the index from a raw historical events_df.</span>
+
+<span class="sd">        Steps:</span>
+<span class="sd">            1. Convert events_df rows to UnifiedEvent list.</span>
+<span class="sd">            2. Run EpisodeDetector.detect() to find episode boundaries.</span>
+<span class="sd">            3. Group events by episode boundary.</span>
+<span class="sd">            4. Derive IncidentFingerprint for each episode via</span>
+<span class="sd">               IncidentExtractor._derive_fingerprint().</span>
+<span class="sd">            5. Store fingerprints via add_batch().</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            events_df:      Raw historical event log. Expected columns:</span>
+<span class="sd">                            raw_id, asset_id, source, event_type,</span>
+<span class="sd">                            timestamp_start, timestamp_end.</span>
+<span class="sd">                            No episode_id column required.</span>
+<span class="sd">            rho_query:      Reference density from the query incident</span>
+<span class="sd">                            (events per second). Passed to EpisodeDetector.</span>
+<span class="sd">            query_duration: D_query in seconds. Used for KDE bandwidth and</span>
+<span class="sd">                            minimum episode duration filter.</span>
+
+<span class="sd">        Notes:</span>
+<span class="sd">            events_df is not modified in place.</span>
+<span class="sd">            episode_id is derived from the episode window_start</span>
+<span class="sd">            (EP_{asset}_{window_start:%Y%m%dT%H%M%S}), so ids are stable across</span>
+<span class="sd">            rebuilds. The add path upserts by episode_id: re-building over the</span>
+<span class="sd">            same data replaces episodes in place (idempotent), while genuinely</span>
+<span class="sd">            new episodes append — call reset() first for a clean rebuild.</span>
+
+<span class="sd">            Stage 1 is intended to be built once against a *representative*</span>
+<span class="sd">            query: rho_query/query_duration come from that query and calibrate</span>
+<span class="sd">            episode boundaries (delta * rho_query; bandwidth query_duration/4),</span>
+<span class="sd">            then the index is persisted via save() (save/load is not a per-query</span>
+<span class="sd">            cache). Results are sensitive to these values — see rca_pattern_matching.md</span>
+<span class="sd">            for guidance on choosing representative rho_query/query_duration.</span>
+<span class="sd">        """</span>
+        <span class="n">all_events</span> <span class="o">=</span> <span class="n">_df_to_events</span><span class="p">(</span><span class="n">events_df</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">all_events</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"build_from_history: events_df produced no valid events."</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">detector</span> <span class="o">=</span> <span class="n">EpisodeDetector</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="n">boundaries</span> <span class="o">=</span> <span class="n">detector</span><span class="o">.</span><span class="n">detect</span><span class="p">(</span><span class="n">all_events</span><span class="p">,</span> <span class="n">rho_query</span><span class="p">,</span> <span class="n">query_duration</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">boundaries</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"build_from_history: no episodes detected."</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="c1"># Group events by the first matching episode boundary index.</span>
+        <span class="n">ep_event_map</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">all_events</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">ep_s</span><span class="p">,</span> <span class="n">ep_e</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">boundaries</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">ep_s</span> <span class="o">&lt;=</span> <span class="n">ev</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">&lt;=</span> <span class="n">ep_e</span><span class="p">:</span>
+                    <span class="n">ep_event_map</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span>
+                    <span class="k">break</span>  <span class="c1"># assign to first (sorted, non-overlapping after merge)</span>
+
+        <span class="c1"># Build a fingerprint per episode.</span>
+        <span class="n">fingerprints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">IncidentFingerprint</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">ep_s</span><span class="p">,</span> <span class="n">ep_e</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">boundaries</span><span class="p">):</span>
+            <span class="n">ep_events</span> <span class="o">=</span> <span class="n">ep_event_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">ep_events</span><span class="p">:</span>
+                <span class="n">_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Episode boundary </span><span class="si">%d</span><span class="s2"> has no events after grouping; skipping."</span><span class="p">,</span> <span class="n">idx</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">asset_id</span> <span class="o">=</span> <span class="n">_dominant_asset</span><span class="p">(</span><span class="n">ep_events</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"UNKNOWN"</span>
+            <span class="c1"># Derive a stable id from the episode window_start (not the per-call</span>
+            <span class="c1"># boundary index, which restarts at 0 each build and would collide</span>
+            <span class="c1"># on the documented append path). Stable across rebuilds; the add</span>
+            <span class="c1"># path upserts by this id.</span>
+            <span class="n">episode_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"EP_</span><span class="si">{</span><span class="n">asset_id</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">ep_s</span><span class="si">:</span><span class="s2">%Y%m%dT%H%M%S</span><span class="si">}</span><span class="s2">"</span>
+
+            <span class="n">event_set</span><span class="p">,</span> <span class="n">event_seq</span><span class="p">,</span> <span class="n">freq_vec</span> <span class="o">=</span> <span class="n">IncidentExtractor</span><span class="o">.</span><span class="n">_derive_fingerprint</span><span class="p">(</span>
+                <span class="n">ep_events</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">freq_threshold</span>
+            <span class="p">)</span>
+
+            <span class="n">duration_s</span> <span class="o">=</span> <span class="p">(</span><span class="n">ep_e</span> <span class="o">-</span> <span class="n">ep_s</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+            <span class="n">density</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">ep_events</span><span class="p">)</span> <span class="o">/</span> <span class="n">duration_s</span> <span class="k">if</span> <span class="n">duration_s</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+            <span class="n">source_types</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">ev</span><span class="o">.</span><span class="n">source</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">ep_events</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">source</span><span class="p">})</span>
+
+            <span class="n">fingerprints</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">IncidentFingerprint</span><span class="p">(</span>
+                    <span class="n">episode_id</span><span class="o">=</span><span class="n">episode_id</span><span class="p">,</span>
+                    <span class="n">asset_id</span><span class="o">=</span><span class="n">asset_id</span><span class="p">,</span>
+                    <span class="n">window_start</span><span class="o">=</span><span class="n">ep_s</span><span class="p">,</span>
+                    <span class="n">window_end</span><span class="o">=</span><span class="n">ep_e</span><span class="p">,</span>
+                    <span class="n">density</span><span class="o">=</span><span class="n">density</span><span class="p">,</span>
+                    <span class="n">event_set</span><span class="o">=</span><span class="n">event_set</span><span class="p">,</span>
+                    <span class="n">event_seq</span><span class="o">=</span><span class="n">event_seq</span><span class="p">,</span>
+                    <span class="n">freq_vec</span><span class="o">=</span><span class="n">freq_vec</span><span class="p">,</span>
+                    <span class="n">known_rca</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="n">source_types</span><span class="o">=</span><span class="n">source_types</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">add_batch</span><span class="p">(</span><span class="n">fingerprints</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+        <span class="c1"># Union with any existing scope so a second build does not drop the</span>
+        <span class="c1"># assets recorded by an earlier one.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asset_scope</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">asset_scope</span><span class="p">)</span> <span class="o">|</span> <span class="p">{</span><span class="n">fp</span><span class="o">.</span><span class="n">asset_id</span> <span class="k">for</span> <span class="n">fp</span> <span class="ow">in</span> <span class="n">fingerprints</span> <span class="k">if</span> <span class="n">fp</span><span class="o">.</span><span class="n">asset_id</span><span class="p">}</span>
+        <span class="p">)</span>
+        <span class="n">_log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"build_from_history: detected </span><span class="si">%d</span><span class="s2"> boundaries, built </span><span class="si">%d</span><span class="s2"> fingerprints (assets: </span><span class="si">%s</span><span class="s2">)."</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">boundaries</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">fingerprints</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">asset_scope</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IncidentIndex.reset">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.reset">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">reset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Clears all stored episodes and the inverted index."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">asset_scope</span> <span class="o">=</span> <span class="p">[]</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Add</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentIndex.add">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.add">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">:</span> <span class="n">IncidentFingerprint</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Adds a single fingerprint to the index (upsert by episode_id).</span>
+
+<span class="sd">        If an episode with the same episode_id already exists it is replaced,</span>
+<span class="sd">        and the inverted index is rebuilt once to drop the old episode's stale</span>
+<span class="sd">        postings. The common insert-new path stays incremental. Less efficient</span>
+<span class="sd">        than add_batch() for many insertions because the inverted index is</span>
+<span class="sd">        updated per fingerprint rather than rebuilt once.</span>
+<span class="sd">        """</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="n">_fingerprint_to_row</span><span class="p">(</span><span class="n">fingerprint</span><span class="p">)</span>
+        <span class="n">new_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">([</span><span class="n">row</span><span class="p">])</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span> <span class="o">=</span> <span class="n">new_df</span>
+            <span class="n">replaced</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">replaced</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span>
+                <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">[</span><span class="s2">"episode_id"</span><span class="p">]</span> <span class="o">==</span> <span class="n">fingerprint</span><span class="o">.</span><span class="n">episode_id</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()</span>
+            <span class="p">)</span>
+            <span class="n">kept</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">[</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">[</span><span class="s2">"episode_id"</span><span class="p">]</span> <span class="o">!=</span> <span class="n">fingerprint</span><span class="o">.</span><span class="n">episode_id</span>
+            <span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">kept</span><span class="p">,</span> <span class="n">new_df</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">replaced</span><span class="p">:</span>
+            <span class="c1"># event_set may have changed on the replaced episode; rebuild to</span>
+            <span class="c1"># drop stale event_type -&gt; episode_id postings.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rebuild_inverted_index</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">event_type</span> <span class="ow">in</span> <span class="n">fingerprint</span><span class="o">.</span><span class="n">event_set</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">event_type</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+                    <span class="n">fingerprint</span><span class="o">.</span><span class="n">episode_id</span>
+                <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IncidentIndex.add_batch">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.add_batch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fingerprints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">IncidentFingerprint</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Adds multiple fingerprints in a single operation (upsert by episode_id).</span>
+
+<span class="sd">        Existing episodes whose episode_id appears in the incoming batch are</span>
+<span class="sd">        replaced, and duplicate ids within the batch collapse to the last</span>
+<span class="sd">        occurrence, so the append path never produces duplicate episode_ids.</span>
+<span class="sd">        Rebuilds the inverted index once after all insertions, which is</span>
+<span class="sd">        more efficient than repeated add() calls.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">fingerprints</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="p">[</span><span class="n">_fingerprint_to_row</span><span class="p">(</span><span class="n">fp</span><span class="p">)</span> <span class="k">for</span> <span class="n">fp</span> <span class="ow">in</span> <span class="n">fingerprints</span><span class="p">]</span>
+        <span class="n">new_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span> <span class="o">=</span> <span class="n">new_df</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">fp</span><span class="o">.</span><span class="n">episode_id</span> <span class="k">for</span> <span class="n">fp</span> <span class="ow">in</span> <span class="n">fingerprints</span><span class="p">}</span>
+            <span class="n">kept</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">[</span><span class="o">~</span><span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">[</span><span class="s2">"episode_id"</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">new_ids</span><span class="p">)]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">kept</span><span class="p">,</span> <span class="n">new_df</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># Collapse any duplicate ids within the batch itself (keep last).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">drop_duplicates</span><span class="p">(</span>
+            <span class="n">subset</span><span class="o">=</span><span class="s2">"episode_id"</span><span class="p">,</span> <span class="n">keep</span><span class="o">=</span><span class="s2">"last"</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_rebuild_inverted_index</span><span class="p">()</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Query</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentIndex.get_candidates">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.get_candidates">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_candidates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query_event_set</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Returns episode_ids of historical episodes that share at least one</span>
+<span class="sd">        event type with the query.</span>
+
+<span class="sd">        Uses the inverted index for O(|query_event_set|) lookup.  Episodes</span>
+<span class="sd">        with no event-type overlap cannot have Jaccard &gt; 0 and are excluded.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            query_event_set: event_set from the query IncidentFingerprint.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            De-duplicated list of episode_ids sharing &gt;= 1 event type with the</span>
+<span class="sd">            query (candidates are accumulated in a set, so no id repeats).</span>
+<span class="sd">        """</span>
+        <span class="n">candidates</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">event_type</span> <span class="ow">in</span> <span class="n">query_event_set</span><span class="p">:</span>
+            <span class="n">candidates</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event_type</span><span class="p">,</span> <span class="nb">set</span><span class="p">()))</span>
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">candidates</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># EMD Normalization</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentIndex.compute_emd_normalization_factor">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.compute_emd_normalization_factor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_emd_normalization_factor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_pairs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Computes the empirical maximum raw L1 distance across historical episode pairs.</span>
+
+<span class="sd">        Used to normalise EMD scores when emd_normalization_mode="empirical_max".</span>
+<span class="sd">        Should be called once after build_from_history() and before search().</span>
+
+<span class="sd">        Algorithm:</span>
+<span class="sd">            - Extract all freq_vec dicts from episodes_df.</span>
+<span class="sd">            - If N*(N-1)/2 &lt;= max_pairs: evaluate all pairs.</span>
+<span class="sd">            - Else: draw max_pairs random pairs without replacement (seeded).</span>
+<span class="sd">            - For each pair (a, b): raw_l1 = Σ_t |a.get(t,0) - b.get(t,0)|</span>
+<span class="sd">            - Store the maximum observed L1 distance.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            max_pairs: Maximum number of pairs to evaluate. If the index has</span>
+<span class="sd">                       fewer pairs than this, all pairs are used.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            The empirical maximum raw L1 distance (float &gt;= 0).</span>
+<span class="sd">            Returns 1.0 if index is empty or contains only one episode</span>
+<span class="sd">            (to avoid division by zero and provide a sensible fallback).</span>
+
+<span class="sd">        Side effect:</span>
+<span class="sd">            Sets self.emd_normalization_factor to the computed value.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">empty</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="o">=</span> <span class="mf">1.0</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+
+        <span class="n">freq_vecs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+            <span class="n">freq_vecs</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="n">k</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="nb">dict</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">"freq_vec"</span><span class="p">])</span><span class="o">.</span><span class="n">items</span><span class="p">()})</span>
+
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">freq_vecs</span><span class="p">)</span>
+        <span class="n">all_pairs</span> <span class="o">=</span> <span class="p">[(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">n</span><span class="p">)]</span>
+        <span class="n">total_possible</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">all_pairs</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">total_possible</span> <span class="o">&lt;=</span> <span class="n">max_pairs</span><span class="p">:</span>
+            <span class="n">pairs_to_eval</span> <span class="o">=</span> <span class="n">all_pairs</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Local RNG for reproducibility; avoids reseeding the process-global</span>
+            <span class="c1"># random module as a side effect.</span>
+            <span class="n">rng</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+            <span class="n">pairs_to_eval</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">all_pairs</span><span class="p">,</span> <span class="n">max_pairs</span><span class="p">)</span>
+
+        <span class="n">max_l1</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">pairs_to_eval</span><span class="p">:</span>
+            <span class="n">vocab</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">freq_vecs</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">freq_vecs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span>
+            <span class="n">raw_l1</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">sum</span><span class="p">(</span>
+                <span class="nb">abs</span><span class="p">(</span><span class="n">freq_vecs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-</span> <span class="n">freq_vecs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">vocab</span>
+            <span class="p">))</span>
+            <span class="n">max_l1</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_l1</span><span class="p">,</span> <span class="n">raw_l1</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_l1</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>  <span class="c1"># Floor at 1.0 to avoid division by near-zero</span>
+        <span class="n">_log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"compute_emd_normalization_factor: evaluated </span><span class="si">%d</span><span class="s2">/</span><span class="si">%d</span><span class="s2"> pairs, "</span>
+            <span class="s2">"max raw L1 distance = </span><span class="si">%.1f</span><span class="s2">"</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">pairs_to_eval</span><span class="p">),</span> <span class="n">total_possible</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Persistence</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentIndex.save">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Persists the index to disk.</span>
+
+<span class="sd">        episodes_df is saved as parquet with complex columns (frozenset,</span>
+<span class="sd">        list, dict) JSON-serialised to strings.</span>
+<span class="sd">        The inverted index is saved as JSON (sets → sorted lists).</span>
+<span class="sd">        EMD metadata (normalization factor) is saved as JSON.</span>
+<span class="sd">        All files are written atomically via a .tmp rename.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            path: Directory path.  Created if it does not exist.</span>
+<span class="sd">        """</span>
+        <span class="n">save_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">save_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="c1"># --- episodes.parquet ------------------------------------------------</span>
+        <span class="n">parquet_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_EPISODES_PARQUET</span>
+        <span class="n">tmp_parquet</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">parquet_path</span><span class="p">)</span> <span class="o">+</span> <span class="s2">".tmp"</span>
+        <span class="n">serialised_df</span> <span class="o">=</span> <span class="n">_serialise_df</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">)</span>
+        <span class="n">serialised_df</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="n">tmp_parquet</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp_parquet</span><span class="p">,</span> <span class="n">parquet_path</span><span class="p">)</span>
+
+        <span class="c1"># --- inverted_index.json ---------------------------------------------</span>
+        <span class="n">json_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_INVERTED_INDEX_JSON</span>
+        <span class="n">tmp_json</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">json_path</span><span class="p">)</span> <span class="o">+</span> <span class="s2">".tmp"</span>
+        <span class="n">serialisable</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">et</span><span class="p">:</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">ep_ids</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">et</span><span class="p">,</span> <span class="n">ep_ids</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tmp_json</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">serialisable</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp_json</span><span class="p">,</span> <span class="n">json_path</span><span class="p">)</span>
+
+        <span class="c1"># --- emd_meta.json ---------------------------------------------------</span>
+        <span class="n">emd_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_EMD_META_JSON</span>
+        <span class="n">tmp_emd</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">emd_path</span><span class="p">)</span> <span class="o">+</span> <span class="s2">".tmp"</span>
+        <span class="n">emd_meta</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"emd_normalization_factor"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span>
+        <span class="p">}</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tmp_emd</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">emd_meta</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp_emd</span><span class="p">,</span> <span class="n">emd_path</span><span class="p">)</span>
+
+        <span class="c1"># --- index_meta.json -------------------------------------------------</span>
+        <span class="n">meta_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_INDEX_META_JSON</span>
+        <span class="n">tmp_meta</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta_path</span><span class="p">)</span> <span class="o">+</span> <span class="s2">".tmp"</span>
+        <span class="n">index_meta</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"build_timestamp"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_timestamp</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"asset_scope"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">asset_scope</span><span class="p">,</span>
+            <span class="s2">"episode_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">),</span>
+        <span class="p">}</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">tmp_meta</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">index_meta</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp_meta</span><span class="p">,</span> <span class="n">meta_path</span><span class="p">)</span>
+
+        <span class="n">_log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"IncidentIndex saved to </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> episodes, emd_factor=</span><span class="si">%.1f</span><span class="s2">, built_at=</span><span class="si">%s</span><span class="s2">)."</span><span class="p">,</span>
+            <span class="n">path</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">build_timestamp</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="k">else</span> <span class="s2">"unknown"</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="IncidentIndex.load">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.load">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">SearchConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"IncidentIndex"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Loads a persisted index from disk.</span>
+
+<span class="sd">        Reconstructs episodes_df (deserialising complex columns from JSON</span>
+<span class="sd">        strings), the inverted index, and EMD metadata if available.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            path:   Directory path written by save().</span>
+<span class="sd">            config: SearchConfig to attach to the loaded index.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Populated IncidentIndex.</span>
+
+<span class="sd">        Raises:</span>
+<span class="sd">            FileNotFoundError if core files (parquet, inverted index) are missing.</span>
+<span class="sd">        """</span>
+        <span class="n">save_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="n">parquet_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_EPISODES_PARQUET</span>
+        <span class="n">json_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_INVERTED_INDEX_JSON</span>
+        <span class="n">emd_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_EMD_META_JSON</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">parquet_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Episodes parquet not found: </span><span class="si">{</span><span class="n">parquet_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">json_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Inverted index JSON not found: </span><span class="si">{</span><span class="n">json_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="n">index</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+        <span class="c1"># Load and deserialise episodes_df.</span>
+        <span class="n">raw_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">parquet_path</span><span class="p">)</span>
+        <span class="n">index</span><span class="o">.</span><span class="n">episodes_df</span> <span class="o">=</span> <span class="n">_deserialise_df</span><span class="p">(</span><span class="n">raw_df</span><span class="p">)</span>
+
+        <span class="c1"># Load inverted index (lists → sets).</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">json_path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">raw_inv</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="n">index</span><span class="o">.</span><span class="n">_inverted_index</span> <span class="o">=</span> <span class="p">{</span><span class="n">et</span><span class="p">:</span> <span class="nb">set</span><span class="p">(</span><span class="n">ep_ids</span><span class="p">)</span> <span class="k">for</span> <span class="n">et</span><span class="p">,</span> <span class="n">ep_ids</span> <span class="ow">in</span> <span class="n">raw_inv</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+
+        <span class="c1"># Load EMD metadata if it exists (backward compatible with old indices).</span>
+        <span class="k">if</span> <span class="n">emd_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">emd_path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">emd_meta</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+            <span class="n">index</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="o">=</span> <span class="n">emd_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"emd_normalization_factor"</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"EMD metadata file not found at </span><span class="si">%s</span><span class="s2">; emd_normalization_factor will be None. "</span>
+                <span class="s2">"Call compute_emd_normalization_factor() if needed."</span><span class="p">,</span> <span class="n">emd_path</span>
+            <span class="p">)</span>
+            <span class="n">index</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Load index metadata (build timestamp, asset scope, episode count).</span>
+        <span class="n">meta_path</span> <span class="o">=</span> <span class="n">save_dir</span> <span class="o">/</span> <span class="n">_INDEX_META_JSON</span>
+        <span class="k">if</span> <span class="n">meta_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">meta_path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">index_meta</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+            <span class="n">raw_ts</span> <span class="o">=</span> <span class="n">index_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"build_timestamp"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">raw_ts</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">raw_ts</span><span class="p">)</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+                    <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">index</span><span class="o">.</span><span class="n">asset_scope</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">index_meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_scope"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"Index metadata file not found at </span><span class="si">%s</span><span class="s2">; build_timestamp and asset_scope unavailable. "</span>
+                <span class="s2">"Staleness checks will be skipped."</span><span class="p">,</span> <span class="n">meta_path</span>
+            <span class="p">)</span>
+
+        <span class="n">_log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">"IncidentIndex loaded from </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%d</span><span class="s2"> episodes, emd_factor=</span><span class="si">%s</span><span class="s2">, built_at=</span><span class="si">%s</span><span class="s2">)."</span><span class="p">,</span>
+            <span class="n">path</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">index</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">),</span>
+            <span class="n">index</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="k">if</span> <span class="n">index</span><span class="o">.</span><span class="n">emd_normalization_factor</span> <span class="k">else</span> <span class="s2">"None"</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="k">if</span> <span class="n">index</span><span class="o">.</span><span class="n">build_timestamp</span> <span class="k">else</span> <span class="s2">"unknown"</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">index</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentIndex._rebuild_inverted_index">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex._rebuild_inverted_index">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rebuild_inverted_index</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Rebuilds the inverted index from scratch from episodes_df."""</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+            <span class="n">ep_id</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s2">"episode_id"</span><span class="p">]</span>
+            <span class="n">event_set</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s2">"event_set"</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">et</span> <span class="ow">in</span> <span class="n">event_set</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">et</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ep_id</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IncidentIndex.__len__">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.__len__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">episodes_df</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="IncidentIndex.__repr__">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.IncidentIndex.__repr__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"IncidentIndex(episodes=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="si">}</span><span class="s2">, "</span>
+            <span class="sa">f</span><span class="s2">"event_types=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_inverted_index</span><span class="p">)</span><span class="si">}</span><span class="s2">)"</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_df_to_events">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._df_to_events">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_df_to_events</span><span class="p">(</span><span class="n">events_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Converts a raw events_df to a list of UnifiedEvents."""</span>
+    <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">events_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
+        <span class="n">ts_start</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">ts_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="s2">"Row with raw_id=</span><span class="si">%r</span><span class="s2"> has no valid timestamp_start; skipping."</span><span class="p">,</span>
+                <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_id"</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">UnifiedEvent</span><span class="p">(</span>
+                <span class="n">raw_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                <span class="n">asset_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                <span class="n">source</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                <span class="n">event_type</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                <span class="n">timestamp_start</span><span class="o">=</span><span class="n">ts_start</span><span class="p">,</span>
+                <span class="n">timestamp_end</span><span class="o">=</span><span class="n">_parse_ts</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">)),</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">events</span></div>
+
+
+
+<div class="viewcode-block" id="_fingerprint_to_row">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._fingerprint_to_row">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_fingerprint_to_row</span><span class="p">(</span><span class="n">fp</span><span class="p">:</span> <span class="n">IncidentFingerprint</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Converts an IncidentFingerprint to a flat dict for DataFrame storage."""</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"episode_id"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">episode_id</span><span class="p">,</span>
+        <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">asset_id</span><span class="p">,</span>
+        <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">window_start</span><span class="p">,</span>
+        <span class="s2">"window_end"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">window_end</span><span class="p">,</span>
+        <span class="s2">"density"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">density</span><span class="p">,</span>
+        <span class="s2">"event_set"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">event_set</span><span class="p">,</span>          <span class="c1"># frozenset — stored as object column</span>
+        <span class="s2">"event_seq"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">event_seq</span><span class="p">,</span>          <span class="c1"># list[str]</span>
+        <span class="s2">"freq_vec"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">freq_vec</span><span class="p">,</span>            <span class="c1"># dict[str, int]</span>
+        <span class="s2">"known_rca"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">known_rca</span><span class="p">,</span>
+        <span class="s2">"source_types"</span><span class="p">:</span> <span class="n">fp</span><span class="o">.</span><span class="n">source_types</span><span class="p">,</span>    <span class="c1"># list[str]</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_coerce_ts">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._coerce_ts">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_coerce_ts</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">datetime</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Coerces a pandas Timestamp or datetime to a plain datetime.</span>
+
+<span class="sd">    pandas NaT subclasses datetime, so the NaT check must come first.</span>
+<span class="sd">    pandas Timestamp also subclasses datetime, so to_pydatetime() must</span>
+<span class="sd">    be tried before the plain isinstance guard.</span>
+<span class="sd">    """</span>
+    <span class="c1"># pandas NaT is a datetime subclass — check it first.</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"NaTType"</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Cannot coerce NaT to datetime"</span><span class="p">)</span>
+    <span class="c1"># pandas Timestamp has to_pydatetime(); use it to get a plain datetime.</span>
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s2">"to_pydatetime"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span><span class="o">.</span><span class="n">to_pydatetime</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Cannot coerce </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="si">}</span><span class="s2"> to datetime"</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Parquet serialisation / deserialisation for complex columns</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_serialise_df">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._serialise_df">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_serialise_df</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Returns a copy of df with frozenset/list/dict columns JSON-encoded as strings.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="s2">"event_set"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"event_set"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"event_set"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="p">(</span><span class="nb">frozenset</span><span class="p">,</span> <span class="nb">set</span><span class="p">))</span> <span class="k">else</span> <span class="n">x</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"event_seq"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"event_seq"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"event_seq"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"freq_vec"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"freq_vec"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"freq_vec"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"source_types"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"source_types"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"source_types"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+
+
+<div class="viewcode-block" id="_deserialise_df">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/indexer/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search._deserialise_df">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_deserialise_df</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Returns a copy of df with JSON-string columns decoded back to Python objects.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="s2">"event_set"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"event_set"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"event_set"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">x</span><span class="p">))</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"event_seq"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"event_seq"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"event_seq"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">x</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"freq_vec"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"freq_vec"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"freq_vec"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span>
+            <span class="k">else</span> <span class="n">x</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="s2">"source_types"</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"source_types"</span><span class="p">]</span> <span class="o">=</span> <span class="n">out</span><span class="p">[</span><span class="s2">"source_types"</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="p">(</span><span class="n">x</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="p">[])</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

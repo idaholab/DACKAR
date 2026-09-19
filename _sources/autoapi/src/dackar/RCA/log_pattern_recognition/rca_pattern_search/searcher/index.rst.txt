@@ -1,0 +1,139 @@
+src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher
+==================================================================
+
+.. py:module:: src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher
+
+.. autoapi-nested-parse::
+
+   PatternSearcher — coarse-to-fine similarity retrieval pipeline.
+
+   Executes three-step retrieval against a pre-built IncidentIndex:
+       1. Inverted-index lookup — O(|query_event_set|) candidate set
+       2. Jaccard pre-filter   — discard clearly dissimilar episodes
+       3. Full metric scoring  — NLCS + EMD + combined weighted score
+
+   All three metric scores are always computed and returned so that callers
+   can switch weight profiles or analyse individual signals without re-running.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher._log
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher._INDEX_STATUS_INDEXED
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher._INDEX_STATUS_NO_DATA
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher._INDEX_STATUS_STALE
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher.PatternSearcher
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher._compute_index_status
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.searcher._make_no_data_sentinel
+
+
+Module Contents
+---------------
+
+.. py:data:: _log
+
+.. py:data:: _INDEX_STATUS_INDEXED
+   :value: 'indexed'
+
+
+.. py:data:: _INDEX_STATUS_NO_DATA
+   :value: 'no_episodes_indexed'
+
+
+.. py:data:: _INDEX_STATUS_STALE
+   :value: 'stale'
+
+
+.. py:class:: PatternSearcher(index, config)
+
+   Retrieves the top-k most similar historical episodes for a query incident.
+
+   Pipeline per search() call:
+       1. Inverted-index lookup: episode_ids sharing ≥ 1 event type with query.
+       2. Jaccard pre-filter: discard candidates below config.min_jaccard.
+       3. NLCS computation on survivors.
+       4. EMD computation on survivors.
+       5. Combined score: weighted sum using the resolved weight profile.
+       6. Rank descending by combined_score; return the top-k HistoricalSignalEpisodes.
+
+   The coarse-to-fine design avoids computing NLCS and EMD on clearly
+   dissimilar episodes (those failing the Jaccard gate).
+
+
+   .. py:attribute:: index
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: search(query, weight_profile = None, staleness_window_days = None)
+
+      Retrieves top-k most similar historical episodes for a query fingerprint.
+
+      Returns list[HistoricalSignalEpisode] with index_status populated on every
+      result (§4.11):
+        - "indexed"             — normal result from a current, populated index
+        - "no_episodes_indexed" — index is empty; returns a single sentinel episode
+        - "stale"               — index is older than staleness_window_days; results
+                                  returned but flagged; link_confidence capped downstream
+
+      :param query: IncidentFingerprint for the query incident.
+      :param weight_profile: Weight profile override; None → config.weight_profile.
+      :param staleness_window_days: If set and index.build_timestamp is known, episodes
+                                    from an index older than this are marked "stale".
+                                    None disables the staleness check. By design the
+                                    window lives on PatternSearchConfig.index_staleness_window_days;
+                                    the orchestrator reads it there and passes it in here
+                                    (PatternSearcher itself only carries a SearchConfig).
+
+      .. rubric:: Notes
+
+      - All three metric scores (jaccard, nlcs, emd) are individually visible
+        on every returned HistoricalSignalEpisode (§5).
+      - matched_events, query_only_events, episode_only_events are derived from
+        event_set comparison.
+
+
+
+   .. py:method:: _resolve_weights(weight_profile)
+
+      Returns (alpha, beta_w, gamma) for the given weight profile name.
+
+      Delegates to SearchConfig.resolve_weights() which owns the profile
+      registry and "custom" fallback logic.
+
+      :raises ValueError for unrecognised profile names.:
+
+
+
+.. py:function:: _compute_index_status(index, staleness_window_days)
+
+   Return the index_status string for a given index and staleness window.
+
+
+.. py:function:: _make_no_data_sentinel(asset_id, index_status = _INDEX_STATUS_NO_DATA)
+
+   Return a sentinel HistoricalSignalEpisode for the no-data case.
+
+   Callers must check index_status before attempting cross-pattern linkage.
+   A sentinel has episode_id == "" and similarity_to_current == 0.0.
+
+

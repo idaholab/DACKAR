@@ -1,0 +1,543 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">IncidentExtractor — event normalisation and fingerprint derivation.</span>
+
+<span class="sd">Converts raw alarm / SOE / anomaly records into a unified event list and</span>
+<span class="sd">derives the three fingerprint representations (event_set, event_seq,</span>
+<span class="sd">freq_vec) used by all downstream similarity metrics.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span><span class="p">,</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">SearchConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">IncidentFingerprint</span><span class="p">,</span> <span class="n">UnifiedEvent</span>
+
+<div class="viewcode-block" id="_log">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._log">[docs]</a>
+<span class="n">_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<span class="c1"># Anomaly inclusion: fall back to severity_score when promoted_to_kg_event is absent.</span>
+<div class="viewcode-block" id="_DEFAULT_SEVERITY_THRESHOLD">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._DEFAULT_SEVERITY_THRESHOLD">[docs]</a>
+<span class="n">_DEFAULT_SEVERITY_THRESHOLD</span> <span class="o">=</span> <span class="mf">0.5</span></div>
+
+
+
+<div class="viewcode-block" id="IncidentExtractor">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">IncidentExtractor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Converts raw source records to UnifiedEvents and derives IncidentFingerprints.</span>
+
+<span class="sd">    Two public entry points:</span>
+<span class="sd">        to_unified_events()  — normalise all three sources into a flat list</span>
+<span class="sd">        extract()            — full pipeline: expand window → filter → fingerprint</span>
+
+<span class="sd">    _derive_fingerprint() is a staticmethod so that indexer.py can call it</span>
+<span class="sd">    directly on pre-filtered episode event lists without instantiating an extractor.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">SearchConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="IncidentExtractor.config">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public API</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentExtractor.to_unified_events">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor.to_unified_events">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_unified_events</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">alarm_log</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">soe_log</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">telemetry_summaries</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">anomaly_severity_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_DEFAULT_SEVERITY_THRESHOLD</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Converts raw schema records to a flat UnifiedEvent list.</span>
+
+<span class="sd">        Applies filtering defaults:</span>
+<span class="sd">            - Alarms with state == "suppressed" are excluded.</span>
+<span class="sd">            - Anomalies with promoted_to_kg_event == False are excluded.</span>
+<span class="sd">              If the field is absent, severity_score &gt;= anomaly_severity_threshold</span>
+<span class="sd">              is used as the inclusion gate.</span>
+<span class="sd">            - All SOE records are included.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            alarm_log:                  Dict with key "alarms": list of alarm dicts.</span>
+<span class="sd">            soe_log:                    Dict with key "records": list of SOE record dicts.</span>
+<span class="sd">            telemetry_summaries:        List of telemetry summary dicts, each with</span>
+<span class="sd">                                        key "anomalies": list of anomaly dicts.</span>
+<span class="sd">            anomaly_severity_threshold: Fallback gate when promoted_to_kg_event absent.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Flat list of UnifiedEvent, unsorted.</span>
+<span class="sd">        """</span>
+        <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parse_alarm_log</span><span class="p">(</span><span class="n">alarm_log</span><span class="p">))</span>
+        <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_parse_soe_log</span><span class="p">(</span><span class="n">soe_log</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">ts</span> <span class="ow">in</span> <span class="n">telemetry_summaries</span><span class="p">:</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_parse_telemetry_summary</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">anomaly_severity_threshold</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="IncidentExtractor.extract">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor.extract">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extract</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">alarm_log</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">soe_log</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">telemetry_summaries</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span>
+        <span class="n">incident_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">window_start</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+        <span class="n">window_end</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+        <span class="n">metadata</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">IncidentFingerprint</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Full extraction pipeline for a single query incident.</span>
+
+<span class="sd">        Steps:</span>
+<span class="sd">            1. Apply beta buffer to compute expanded window.</span>
+<span class="sd">            2. Call to_unified_events() for all sources.</span>
+<span class="sd">            3. Filter events to those with timestamp_start in expanded window.</span>
+<span class="sd">            4. Compute density over the expanded window (consistent with historical episode density).</span>
+<span class="sd">            5. Derive event_set, event_seq, freq_vec via _derive_fingerprint().</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            alarm_log:           Raw alarm log dict.</span>
+<span class="sd">            soe_log:             Raw SOE log dict.</span>
+<span class="sd">            telemetry_summaries: List of telemetry summary dicts.</span>
+<span class="sd">            incident_id:         Identifier for this query incident.</span>
+<span class="sd">            window_start:        Incident window start (before buffer expansion).</span>
+<span class="sd">            window_end:          Incident window end (before buffer expansion).</span>
+<span class="sd">            metadata:            Optional dict; "known_rca" and "asset_id" are read</span>
+<span class="sd">                                 if present.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            IncidentFingerprint with expanded window stored as window_start/end.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">metadata</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="n">exp_start</span><span class="p">,</span> <span class="n">exp_end</span> <span class="o">=</span> <span class="n">_expand_window</span><span class="p">(</span><span class="n">window_start</span><span class="p">,</span> <span class="n">window_end</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">beta</span><span class="p">)</span>
+
+        <span class="n">all_events</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">to_unified_events</span><span class="p">(</span><span class="n">alarm_log</span><span class="p">,</span> <span class="n">soe_log</span><span class="p">,</span> <span class="n">telemetry_summaries</span><span class="p">)</span>
+
+        <span class="n">window_events</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">all_events</span>
+            <span class="k">if</span> <span class="n">exp_start</span> <span class="o">&lt;=</span> <span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">&lt;=</span> <span class="n">exp_end</span>
+        <span class="p">]</span>
+
+        <span class="n">density</span> <span class="o">=</span> <span class="n">_compute_density</span><span class="p">(</span><span class="n">all_events</span><span class="p">,</span> <span class="n">exp_start</span><span class="p">,</span> <span class="n">exp_end</span><span class="p">)</span>
+
+        <span class="n">event_set</span><span class="p">,</span> <span class="n">event_seq</span><span class="p">,</span> <span class="n">freq_vec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_derive_fingerprint</span><span class="p">(</span>
+            <span class="n">window_events</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">freq_threshold</span>
+        <span class="p">)</span>
+
+        <span class="n">asset_id</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_dominant_asset</span><span class="p">(</span><span class="n">window_events</span><span class="p">)</span>
+        <span class="n">source_types</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">ev</span><span class="o">.</span><span class="n">source</span> <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">window_events</span> <span class="k">if</span> <span class="n">ev</span><span class="o">.</span><span class="n">source</span><span class="p">})</span>
+
+        <span class="k">return</span> <span class="n">IncidentFingerprint</span><span class="p">(</span>
+            <span class="n">episode_id</span><span class="o">=</span><span class="n">incident_id</span><span class="p">,</span>
+            <span class="n">asset_id</span><span class="o">=</span><span class="n">asset_id</span><span class="p">,</span>
+            <span class="n">window_start</span><span class="o">=</span><span class="n">exp_start</span><span class="p">,</span>
+            <span class="n">window_end</span><span class="o">=</span><span class="n">exp_end</span><span class="p">,</span>
+            <span class="n">density</span><span class="o">=</span><span class="n">density</span><span class="p">,</span>
+            <span class="n">event_set</span><span class="o">=</span><span class="n">event_set</span><span class="p">,</span>
+            <span class="n">event_seq</span><span class="o">=</span><span class="n">event_seq</span><span class="p">,</span>
+            <span class="n">freq_vec</span><span class="o">=</span><span class="n">freq_vec</span><span class="p">,</span>
+            <span class="n">known_rca</span><span class="o">=</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"known_rca"</span><span class="p">),</span>
+            <span class="n">source_types</span><span class="o">=</span><span class="n">source_types</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Fingerprint derivation (called by indexer.py as well)</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="IncidentExtractor._derive_fingerprint">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor._derive_fingerprint">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_derive_fingerprint</span><span class="p">(</span>
+        <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">],</span>
+        <span class="n">freq_threshold</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Derives the three similarity representations from a list of events.</span>
+
+<span class="sd">        High-frequency event types (count &gt; freq_threshold) are excluded from</span>
+<span class="sd">        event_set and event_seq but retained in freq_vec.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            events:          Events belonging to a single episode or incident.</span>
+<span class="sd">            freq_threshold:  Count above which a type is considered high-frequency.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            (event_set, event_seq, freq_vec)</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">events</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(),</span> <span class="p">[],</span> <span class="p">{}</span>
+
+        <span class="n">freq_vec</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">event_type</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span><span class="p">)</span>
+
+        <span class="n">high_freq</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">freq_vec</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">c</span> <span class="o">&gt;</span> <span class="n">freq_threshold</span><span class="p">}</span>
+
+        <span class="c1"># event_set: deduplicated, high-freq excluded</span>
+        <span class="n">event_set</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">freq_vec</span> <span class="k">if</span> <span class="n">t</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">high_freq</span><span class="p">)</span>
+
+        <span class="c1"># event_seq: deduplicated, ordered by first occurrence timestamp</span>
+        <span class="n">first_seen</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">event_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">high_freq</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">event_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">first_seen</span> <span class="ow">or</span> <span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">&lt;</span> <span class="n">first_seen</span><span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">event_type</span><span class="p">]:</span>
+                    <span class="n">first_seen</span><span class="p">[</span><span class="n">e</span><span class="o">.</span><span class="n">event_type</span><span class="p">]</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span>
+
+        <span class="n">event_seq</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">first_seen</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">first_seen</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">event_set</span><span class="p">,</span> <span class="n">event_seq</span><span class="p">,</span> <span class="nb">dict</span><span class="p">(</span><span class="n">freq_vec</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Per-source parsers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="IncidentExtractor._parse_alarm_log">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor._parse_alarm_log">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_alarm_log</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">alarm_log</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]:</span>
+        <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">alarm_log</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alarms"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"state"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"suppressed"</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">ts_start</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">ts_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"Alarm record missing timestamp; skipping: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alarm_id"</span><span class="p">))</span>
+                <span class="k">continue</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">UnifiedEvent</span><span class="p">(</span>
+                    <span class="n">raw_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alarm_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                    <span class="n">asset_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                    <span class="n">source</span><span class="o">=</span><span class="s2">"alarm"</span><span class="p">,</span>
+                    <span class="n">event_type</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alarm_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                    <span class="n">timestamp_start</span><span class="o">=</span><span class="n">ts_start</span><span class="p">,</span>
+                    <span class="n">timestamp_end</span><span class="o">=</span><span class="n">_parse_ts</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"acknowledged_at"</span><span class="p">)),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="IncidentExtractor._parse_soe_log">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor._parse_soe_log">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_soe_log</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">soe_log</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]:</span>
+        <span class="n">records</span> <span class="o">=</span> <span class="n">soe_log</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"records"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">end_map</span> <span class="o">=</span> <span class="n">_derive_soe_end_timestamps</span><span class="p">(</span><span class="n">records</span><span class="p">)</span>
+        <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+            <span class="n">ts_start</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">ts_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"SOE record missing timestamp; skipping: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">))</span>
+                <span class="k">continue</span>
+            <span class="n">signal_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signal_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+            <span class="n">transition</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"transition"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">UnifiedEvent</span><span class="p">(</span>
+                    <span class="n">raw_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                    <span class="n">asset_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                    <span class="n">source</span><span class="o">=</span><span class="s2">"soe"</span><span class="p">,</span>
+                    <span class="n">event_type</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">signal_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">transition</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">timestamp_start</span><span class="o">=</span><span class="n">ts_start</span><span class="p">,</span>
+                    <span class="n">timestamp_end</span><span class="o">=</span><span class="n">end_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+
+
+<div class="viewcode-block" id="IncidentExtractor._parse_telemetry_summary">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor._parse_telemetry_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_telemetry_summary</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">summary</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+        <span class="n">severity_threshold</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]:</span>
+        <span class="n">top_asset</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="c1"># Inclusion gate: promoted_to_kg_event preferred; severity_score fallback.</span>
+            <span class="c1"># When BOTH fields are absent the anomaly is included by design — a</span>
+            <span class="c1"># metadata-less anomaly is kept rather than silently dropped (conservative</span>
+            <span class="c1"># inclusion). A record is excluded only by an explicit falsy promotion flag</span>
+            <span class="c1"># or a severity_score below threshold.</span>
+            <span class="n">promoted</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"promoted_to_kg_event"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">promoted</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">promoted</span><span class="p">:</span>
+                    <span class="k">continue</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">score</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity_score"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">score</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">score</span> <span class="o">&lt;</span> <span class="n">severity_threshold</span><span class="p">:</span>
+                    <span class="k">continue</span>
+
+            <span class="n">ts_start</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">ts_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"Anomaly record missing timestamp_start; skipping: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_id"</span><span class="p">),</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">sensor_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+            <span class="n">events</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">UnifiedEvent</span><span class="p">(</span>
+                    <span class="n">raw_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)),</span>
+                    <span class="n">asset_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">top_asset</span><span class="p">),</span>
+                    <span class="n">source</span><span class="o">=</span><span class="s2">"anomaly"</span><span class="p">,</span>
+                    <span class="n">event_type</span><span class="o">=</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">sensor_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">pattern</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                    <span class="n">timestamp_start</span><span class="o">=</span><span class="n">ts_start</span><span class="p">,</span>
+                    <span class="n">timestamp_end</span><span class="o">=</span><span class="n">_parse_ts</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">)),</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">events</span></div>
+</div>
+
+
+
+<span class="c1"># ------------------------------------------------------------------</span>
+<span class="c1"># Module-level helpers (used by density.py and indexer.py too)</span>
+<span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_expand_window">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._expand_window">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_expand_window</span><span class="p">(</span>
+    <span class="n">window_start</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+    <span class="n">window_end</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+    <span class="n">beta</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Applies beta buffer expansion symmetrically to a time window.</span>
+
+<span class="sd">    E_search_start = window_start - beta * duration</span>
+<span class="sd">    E_search_end   = window_end   + beta * duration</span>
+<span class="sd">    """</span>
+    <span class="n">duration_s</span> <span class="o">=</span> <span class="p">(</span><span class="n">window_end</span> <span class="o">-</span> <span class="n">window_start</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+    <span class="n">delta</span> <span class="o">=</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">beta</span> <span class="o">*</span> <span class="n">duration_s</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">window_start</span> <span class="o">-</span> <span class="n">delta</span><span class="p">,</span> <span class="n">window_end</span> <span class="o">+</span> <span class="n">delta</span></div>
+
+
+
+<div class="viewcode-block" id="_compute_density">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._compute_density">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_density</span><span class="p">(</span>
+    <span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">],</span>
+    <span class="n">window_start</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+    <span class="n">window_end</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Computes event density over the given (unexpanded) window.</span>
+
+<span class="sd">    rho = N_events_in_window / window_duration_seconds</span>
+
+<span class="sd">    Returns 0.0 if duration is zero or negative.</span>
+<span class="sd">    """</span>
+    <span class="n">duration_s</span> <span class="o">=</span> <span class="p">(</span><span class="n">window_end</span> <span class="o">-</span> <span class="n">window_start</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">duration_s</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">window_start</span> <span class="o">&lt;=</span> <span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">&lt;=</span> <span class="n">window_end</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">n</span> <span class="o">/</span> <span class="n">duration_s</span></div>
+
+
+
+<div class="viewcode-block" id="_dominant_asset">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._dominant_asset">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_dominant_asset</span><span class="p">(</span><span class="n">events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Returns the most frequently occurring asset_id among events, or '' if empty."""</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">events</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="n">counts</span><span class="p">:</span> <span class="n">Counter</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">asset_id</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">events</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">asset_id</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">counts</span><span class="o">.</span><span class="n">most_common</span><span class="p">(</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">counts</span> <span class="k">else</span> <span class="s2">""</span></div>
+
+
+
+<div class="viewcode-block" id="_parse_ts">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._parse_ts">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_ts</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Coerces a value to datetime.</span>
+
+<span class="sd">    Accepts: datetime objects, ISO 8601 strings.</span>
+<span class="sd">    Returns None for None, pandas NaT, unparseable strings, or unknown types.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="c1"># pandas NaT subclasses datetime, so check it BEFORE the isinstance guard.</span>
+    <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"NaTType"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">datetime</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Could not parse timestamp string: </span><span class="si">%r</span><span class="s2">"</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_derive_soe_end_timestamps">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/extractor/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._derive_soe_end_timestamps">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_derive_soe_end_timestamps</span><span class="p">(</span><span class="n">records</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Derives timestamp_end for each SOE record as the timestamp of the next</span>
+<span class="sd">    record with the same signal_id but a different transition value.</span>
+
+<span class="sd">    This models the "opposing transition" pairing (e.g. trip → reset) without</span>
+<span class="sd">    requiring an explicit transition vocabulary.</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Mapping from record_id (str) to timestamp_end (datetime | None).</span>
+<span class="sd">    """</span>
+    <span class="c1"># Group (ts, record_id, transition) by signal_id, sorted by ts.</span>
+    <span class="n">by_signal</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">records</span><span class="p">:</span>
+        <span class="n">ts</span> <span class="o">=</span> <span class="n">_parse_ts</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">))</span>
+        <span class="n">rec_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">signal_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signal_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="n">transition</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"transition"</span><span class="p">,</span> <span class="s2">""</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">ts</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">signal_id</span><span class="p">:</span>
+            <span class="n">by_signal</span><span class="p">[</span><span class="n">signal_id</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">ts</span><span class="p">,</span> <span class="n">rec_id</span><span class="p">,</span> <span class="n">transition</span><span class="p">))</span>
+
+    <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">by_signal</span><span class="p">:</span>
+        <span class="n">by_signal</span><span class="p">[</span><span class="n">sig</span><span class="p">]</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">events</span> <span class="ow">in</span> <span class="n">by_signal</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">_</span><span class="p">,</span> <span class="n">rec_id</span><span class="p">,</span> <span class="n">transition</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">events</span><span class="p">):</span>
+            <span class="n">end_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">events</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="n">events</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="n">transition</span><span class="p">:</span>
+                    <span class="n">end_ts</span> <span class="o">=</span> <span class="n">events</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                    <span class="k">break</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">rec_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">end_ts</span>
+
+    <span class="k">return</span> <span class="n">result</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

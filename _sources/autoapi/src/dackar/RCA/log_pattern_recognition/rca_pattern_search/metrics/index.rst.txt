@@ -1,0 +1,106 @@
+src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics
+=================================================================
+
+.. py:module:: src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics
+
+.. autoapi-nested-parse::
+
+   Similarity metrics for the RCA pattern search pipeline.
+
+   Three metrics answer complementary questions about two incident fingerprints:
+
+       jaccard        — did the same event types occur?        (set, order-agnostic)
+       nlcs           — did they occur in a similar order?     (sequence-aware)
+       emd_similarity — did they repeat with similar intensity? (frequency-based)
+
+   All functions return a value in [0, 1] where 1 is identical.
+
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics.jaccard
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics._lcs_length
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics.nlcs
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics.emd_similarity
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.metrics.combined_score
+
+
+Module Contents
+---------------
+
+.. py:function:: jaccard(a, b)
+
+   Set-based similarity between two event sets.
+
+   J(A, B) = |A ∩ B| / |A ∪ B|
+
+   Returns 0.0 when both sets are empty (undefined ratio treated as no
+   similarity rather than perfect similarity, which is the safer default
+   for retrieval purposes).
+
+
+.. py:function:: _lcs_length(a, b)
+
+   Standard O(m·n) DP for LCS length.
+
+
+.. py:function:: nlcs(a, b)
+
+   Normalised Longest Common Subsequence similarity.
+
+   NLCS(A, B) = |LCS(A, B)| / max(|A|, |B|)
+
+   Operates on deduplicated ordered sequences so high-frequency events do not
+   dominate the ordering signal.
+
+   Returns 0.0 when both sequences are empty.
+
+
+.. py:function:: emd_similarity(a, b, normalization_factor = None)
+
+   Frequency-based similarity between two event count vectors.
+
+   Captures the repetition signal that Jaccard and NLCS deliberately discard.
+
+   Implementation uses the Total Variation (TV) distance between the two
+   probability distributions derived by normalising the count vectors.  For
+   categorical distributions with unit ground distance between any two
+   distinct types, TV distance equals the (unit-ground) Earth Mover's
+   Distance:
+
+       TV(P, Q) = 0.5 · Σ_t |P(t) − Q(t)|   where P(t) = a[t] / Σa
+
+   This is always in [0, 1], so:
+
+       emd_similarity = 1 − TV(P, Q)
+
+   Alternative (raw-count) normalisation:
+       If normalization_factor is provided the raw L1 distance between the
+       unnormalised count vectors is used instead:
+
+           raw_emd = Σ_t |a.get(t, 0) − b.get(t, 0)|
+           emd_similarity = max(0.0, 1 − raw_emd / normalization_factor)
+
+       Suitable when an empirically derived or vocabulary-size-based upper
+       bound is available (see spec open point on normalisation).
+
+   Edge cases:
+       Both empty  → 1.0  (identical — neither has any events)
+       One empty   → 0.0  (maximally dissimilar)
+
+
+.. py:function:: combined_score(j, n, e, alpha, beta_w, gamma)
+
+   Weighted combination of the three metric scores.
+
+   Score = alpha · J + beta_w · NLCS + gamma · EMD
+
+   Inputs are assumed to be valid (alpha + beta_w + gamma ≈ 1).
+   No re-normalisation is applied here; the caller (PatternSearcher) is
+   responsible for passing a coherent weight triple via SearchConfig.
+
+

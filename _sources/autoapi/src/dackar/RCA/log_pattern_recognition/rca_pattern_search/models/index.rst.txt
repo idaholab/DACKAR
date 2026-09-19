@@ -1,0 +1,277 @@
+src.dackar.RCA.log_pattern_recognition.rca_pattern_search.models
+================================================================
+
+.. py:module:: src.dackar.RCA.log_pattern_recognition.rca_pattern_search.models
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.models.UnifiedEvent
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.models.IncidentFingerprint
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.models.HistoricalSignalEpisode
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.models.SearchResult
+
+
+Module Contents
+---------------
+
+.. py:class:: UnifiedEvent
+
+   Canonical representation of a single event from any source.
+
+   All three input sources (alarm, SOE, anomaly) are normalised into this
+   structure before any further processing.
+
+   Lifecycle:
+       - Created by IncidentExtractor.to_unified_events()
+       - episode_id is None until EpisodeDetector assigns membership
+       - timestamp_end is nullable and not used in current similarity metrics
+         but carried for traceability and future use
+
+
+   .. py:attribute:: raw_id
+      :type:  str
+
+
+   .. py:attribute:: asset_id
+      :type:  str
+
+
+   .. py:attribute:: source
+      :type:  str
+
+
+   .. py:attribute:: event_type
+      :type:  str
+
+
+   .. py:attribute:: timestamp_start
+      :type:  datetime.datetime
+
+
+   .. py:attribute:: timestamp_end
+      :type:  datetime.datetime | None
+
+
+   .. py:attribute:: episode_id
+      :type:  str | None
+      :value: None
+
+
+
+.. py:class:: IncidentFingerprint
+
+   Pre-computed similarity representations for a single incident or detected
+   historical episode.  This is the unit of comparison in the retrieval
+   pipeline.
+
+   Derived from a list of UnifiedEvents by IncidentExtractor.extract() or
+   EpisodeDetector after episode boundary assignment.
+
+   The three representations serve distinct metrics:
+       event_set  → Jaccard  (what types occurred, ignoring order/repetition)
+       event_seq  → NLCS     (what types occurred and in what order)
+       freq_vec   → EMD      (how many times each type occurred)
+
+   High-frequency event types (count > freq_threshold) are excluded from
+   event_set and event_seq but retained in freq_vec.
+
+
+   .. py:attribute:: episode_id
+      :type:  str
+
+
+   .. py:attribute:: asset_id
+      :type:  str
+
+
+   .. py:attribute:: window_start
+      :type:  datetime.datetime
+
+
+   .. py:attribute:: window_end
+      :type:  datetime.datetime
+
+
+   .. py:attribute:: density
+      :type:  float
+
+
+   .. py:attribute:: event_set
+      :type:  frozenset[str]
+
+
+   .. py:attribute:: event_seq
+      :type:  list[str]
+
+
+   .. py:attribute:: freq_vec
+      :type:  dict[str, int]
+
+
+   .. py:attribute:: known_rca
+      :type:  str | None
+      :value: None
+
+
+
+   .. py:attribute:: source_types
+      :type:  list[str]
+      :value: []
+
+
+
+.. py:class:: HistoricalSignalEpisode
+
+   Public output type for PatternSearcher.search().
+
+   Represents a single historical signal episode retrieved for a query incident.
+   Carries all three metric scores individually (§5 of the integration plan) and
+   an index_status field that governs cross-pattern linkage eligibility (§4.11).
+
+   Sentinel (no_episodes_indexed) instances have episode_id == "" and
+   similarity_to_current == 0.0.  Callers must check index_status before
+   attempting linkage.
+
+
+   .. py:attribute:: episode_id
+      :type:  str
+
+
+   .. py:attribute:: asset_id
+      :type:  str
+
+
+   .. py:attribute:: window_start
+      :type:  Optional[datetime.datetime]
+
+
+   .. py:attribute:: window_end
+      :type:  Optional[datetime.datetime]
+
+
+   .. py:attribute:: source_types
+      :type:  list[str]
+
+
+   .. py:attribute:: event_set
+      :type:  frozenset[str]
+
+
+   .. py:attribute:: event_seq
+      :type:  list[str]
+
+
+   .. py:attribute:: freq_vec
+      :type:  dict[str, int]
+
+
+   .. py:attribute:: similarity_to_current
+      :type:  float
+
+
+   .. py:attribute:: jaccard_score
+      :type:  float
+
+
+   .. py:attribute:: nlcs_score
+      :type:  float
+
+
+   .. py:attribute:: emd_score
+      :type:  float
+
+
+   .. py:attribute:: weight_profile
+      :type:  str
+
+
+   .. py:attribute:: matched_events
+      :type:  set[str]
+
+
+   .. py:attribute:: query_only_events
+      :type:  set[str]
+
+
+   .. py:attribute:: episode_only_events
+      :type:  set[str]
+
+
+   .. py:attribute:: episode_density
+      :type:  float
+
+
+   .. py:attribute:: known_rca
+      :type:  Optional[str]
+
+
+   .. py:attribute:: linked_doc_ids
+      :type:  list[str]
+
+
+   .. py:attribute:: index_status
+      :type:  str
+
+
+.. py:class:: SearchResult
+
+   A single entry in the ranked retrieval output.
+
+   Returned by PatternSearcher.search() for each matching historical episode.
+   Includes all three metric scores for transparency and downstream analysis.
+
+
+   .. py:attribute:: episode_id
+      :type:  str
+
+
+   .. py:attribute:: jaccard_score
+      :type:  float
+
+
+   .. py:attribute:: nlcs_score
+      :type:  float
+
+
+   .. py:attribute:: emd_score
+      :type:  float
+
+
+   .. py:attribute:: combined_score
+      :type:  float
+
+
+   .. py:attribute:: weight_profile
+      :type:  str
+
+
+   .. py:attribute:: episode_window
+      :type:  tuple[datetime.datetime, datetime.datetime]
+
+
+   .. py:attribute:: episode_density
+      :type:  float
+
+
+   .. py:attribute:: matched_events
+      :type:  set[str]
+
+
+   .. py:attribute:: query_only_events
+      :type:  set[str]
+
+
+   .. py:attribute:: episode_only_events
+      :type:  set[str]
+
+
+   .. py:attribute:: known_rca
+      :type:  str | None
+      :value: None
+
+
+

@@ -1,0 +1,179 @@
+src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor
+===================================================================
+
+.. py:module:: src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor
+
+.. autoapi-nested-parse::
+
+   IncidentExtractor — event normalisation and fingerprint derivation.
+
+   Converts raw alarm / SOE / anomaly records into a unified event list and
+   derives the three fingerprint representations (event_set, event_seq,
+   freq_vec) used by all downstream similarity metrics.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._log
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._DEFAULT_SEVERITY_THRESHOLD
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor.IncidentExtractor
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._expand_window
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._compute_density
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._dominant_asset
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._parse_ts
+   src.dackar.RCA.log_pattern_recognition.rca_pattern_search.extractor._derive_soe_end_timestamps
+
+
+Module Contents
+---------------
+
+.. py:data:: _log
+
+.. py:data:: _DEFAULT_SEVERITY_THRESHOLD
+   :value: 0.5
+
+
+.. py:class:: IncidentExtractor(config)
+
+   Converts raw source records to UnifiedEvents and derives IncidentFingerprints.
+
+   Two public entry points:
+       to_unified_events()  — normalise all three sources into a flat list
+       extract()            — full pipeline: expand window → filter → fingerprint
+
+   _derive_fingerprint() is a staticmethod so that indexer.py can call it
+   directly on pre-filtered episode event lists without instantiating an extractor.
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: to_unified_events(alarm_log, soe_log, telemetry_summaries, *, anomaly_severity_threshold = _DEFAULT_SEVERITY_THRESHOLD)
+
+      Converts raw schema records to a flat UnifiedEvent list.
+
+      Applies filtering defaults:
+          - Alarms with state == "suppressed" are excluded.
+          - Anomalies with promoted_to_kg_event == False are excluded.
+            If the field is absent, severity_score >= anomaly_severity_threshold
+            is used as the inclusion gate.
+          - All SOE records are included.
+
+      :param alarm_log: Dict with key "alarms": list of alarm dicts.
+      :param soe_log: Dict with key "records": list of SOE record dicts.
+      :param telemetry_summaries: List of telemetry summary dicts, each with
+                                  key "anomalies": list of anomaly dicts.
+      :param anomaly_severity_threshold: Fallback gate when promoted_to_kg_event absent.
+
+      :returns: Flat list of UnifiedEvent, unsorted.
+
+
+
+   .. py:method:: extract(alarm_log, soe_log, telemetry_summaries, incident_id, window_start, window_end, metadata = None)
+
+      Full extraction pipeline for a single query incident.
+
+      Steps:
+          1. Apply beta buffer to compute expanded window.
+          2. Call to_unified_events() for all sources.
+          3. Filter events to those with timestamp_start in expanded window.
+          4. Compute density over the expanded window (consistent with historical episode density).
+          5. Derive event_set, event_seq, freq_vec via _derive_fingerprint().
+
+      :param alarm_log: Raw alarm log dict.
+      :param soe_log: Raw SOE log dict.
+      :param telemetry_summaries: List of telemetry summary dicts.
+      :param incident_id: Identifier for this query incident.
+      :param window_start: Incident window start (before buffer expansion).
+      :param window_end: Incident window end (before buffer expansion).
+      :param metadata: Optional dict; "known_rca" and "asset_id" are read
+                       if present.
+
+      :returns: IncidentFingerprint with expanded window stored as window_start/end.
+
+
+
+   .. py:method:: _derive_fingerprint(events, freq_threshold)
+      :staticmethod:
+
+
+      Derives the three similarity representations from a list of events.
+
+      High-frequency event types (count > freq_threshold) are excluded from
+      event_set and event_seq but retained in freq_vec.
+
+      :param events: Events belonging to a single episode or incident.
+      :param freq_threshold: Count above which a type is considered high-frequency.
+
+      :returns: (event_set, event_seq, freq_vec)
+
+
+
+   .. py:method:: _parse_alarm_log(alarm_log)
+
+
+   .. py:method:: _parse_soe_log(soe_log)
+
+
+   .. py:method:: _parse_telemetry_summary(summary, severity_threshold)
+
+
+.. py:function:: _expand_window(window_start, window_end, beta)
+
+   Applies beta buffer expansion symmetrically to a time window.
+
+   E_search_start = window_start - beta * duration
+   E_search_end   = window_end   + beta * duration
+
+
+.. py:function:: _compute_density(events, window_start, window_end)
+
+   Computes event density over the given (unexpanded) window.
+
+   rho = N_events_in_window / window_duration_seconds
+
+   Returns 0.0 if duration is zero or negative.
+
+
+.. py:function:: _dominant_asset(events)
+
+   Returns the most frequently occurring asset_id among events, or '' if empty.
+
+
+.. py:function:: _parse_ts(value)
+
+   Coerces a value to datetime.
+
+   Accepts: datetime objects, ISO 8601 strings.
+   Returns None for None, pandas NaT, unparseable strings, or unknown types.
+
+
+.. py:function:: _derive_soe_end_timestamps(records)
+
+   Derives timestamp_end for each SOE record as the timestamp of the next
+   record with the same signal_id but a different transition value.
+
+   This models the "opposing transition" pairing (e.g. trip → reset) without
+   requiring an explicit transition vocabulary.
+
+   :returns: Mapping from record_id (str) to timestamp_end (datetime | None).
+
+

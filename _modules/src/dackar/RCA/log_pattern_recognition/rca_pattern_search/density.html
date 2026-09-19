@@ -1,0 +1,575 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">EpisodeDetector — KDE-based episode boundary detection.</span>
+
+<span class="sd">Detects contiguous periods in a historical event log where the estimated</span>
+<span class="sd">event rate exceeds a fraction of the query incident's reference density.</span>
+
+<span class="sd">KDE implementation uses an event-centric Gaussian kernel: each event</span>
+<span class="sd">contributes only to grid points within 4σ of its timestamp.  This is</span>
+<span class="sd">O(N × support_window / grid_res) instead of O(N × G), which is essential</span>
+<span class="sd">for long historical windows with fine grid resolution.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">dataclasses</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">SearchConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.extractor</span><span class="w"> </span><span class="kn">import</span> <span class="n">_compute_density</span><span class="p">,</span> <span class="n">_dominant_asset</span><span class="p">,</span> <span class="n">_expand_window</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">UnifiedEvent</span>
+
+<div class="viewcode-block" id="_log">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/density/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._log">[docs]</a>
+<span class="n">_log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_SQRT_2PI">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/density/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._SQRT_2PI">[docs]</a>
+<span class="n">_SQRT_2PI</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span></div>
+
+<span class="c1"># Gaussian kernel is negligible beyond 4σ (&lt; 0.003% of peak).</span>
+<div class="viewcode-block" id="_KDE_SUPPORT_SIGMAS">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/density/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._KDE_SUPPORT_SIGMAS">[docs]</a>
+<span class="n">_KDE_SUPPORT_SIGMAS</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span></div>
+
+
+
+<div class="viewcode-block" id="EpisodeDetector">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EpisodeDetector</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Detects episode boundaries in a continuous historical event log using</span>
+<span class="sd">    kernel density estimation (KDE) over event timestamps.</span>
+
+<span class="sd">    The detection threshold is relative to the query incident density,</span>
+<span class="sd">    making the method self-calibrating: a busier query requires historically</span>
+<span class="sd">    busier windows to qualify as matching episodes.</span>
+
+<span class="sd">    Pipeline (per detect() call):</span>
+<span class="sd">        1. Convert event timestamps to float seconds since earliest event.</span>
+<span class="sd">        2. Evaluate Gaussian KDE on a fine time grid.</span>
+<span class="sd">        3. Threshold: mask = KDE(t) &gt;= delta * rho_query.</span>
+<span class="sd">        4. Extract contiguous masked regions as raw episode boundaries.</span>
+<span class="sd">        5. Apply beta buffer expansion to each boundary.</span>
+<span class="sd">        6. Merge overlapping expanded boundaries.</span>
+<span class="sd">        7. Discard episodes shorter than query_duration / 10.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">SearchConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="EpisodeDetector.config">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/density/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span></div>
+
+
+<div class="viewcode-block" id="EpisodeDetector.compute_reference_density">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector.compute_reference_density">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_reference_density</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query_events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">],</span>
+        <span class="n">window_start</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+        <span class="n">window_end</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Computes the reference event density for the query incident.</span>
+
+<span class="sd">            rho_query = N_query / D_query</span>
+
+<span class="sd">        N_query: events with timestamp_start in [window_start, window_end].</span>
+<span class="sd">        D_query: (window_end - window_start).total_seconds()</span>
+
+<span class="sd">        All sources contribute equally.  Returns 0.0 if duration &lt;= 0.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="n">_compute_density</span><span class="p">(</span><span class="n">query_events</span><span class="p">,</span> <span class="n">window_start</span><span class="p">,</span> <span class="n">window_end</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="EpisodeDetector.detect">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector.detect">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">detect</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">historical_events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">],</span>
+        <span class="n">rho_query</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">query_duration</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Detects episode boundaries in the historical event log.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            historical_events: Full flat event list, all sources merged.</span>
+<span class="sd">                               No episode_id expected at this stage.</span>
+<span class="sd">            rho_query:         Reference density from compute_reference_density().</span>
+<span class="sd">                               Units: events per second.</span>
+<span class="sd">            query_duration:    D_query in seconds.  Used for KDE bandwidth and</span>
+<span class="sd">                               minimum episode duration filter.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            List of (episode_start, episode_end) tuples, sorted ascending.</span>
+<span class="sd">            These are expanded boundaries (beta already applied) ready for</span>
+<span class="sd">            fingerprinting.  Empty list if no qualifying episodes found.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">historical_events</span> <span class="ow">or</span> <span class="n">rho_query</span> <span class="o">&lt;=</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="n">query_duration</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># --- Resolve bandwidth ------------------------------------------------</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">kde_bandwidth</span> <span class="o">==</span> <span class="s2">"auto"</span><span class="p">:</span>
+            <span class="n">bw</span> <span class="o">=</span> <span class="n">query_duration</span> <span class="o">/</span> <span class="mf">4.0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">bw</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">kde_bandwidth</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">bw</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"KDE bandwidth resolved to </span><span class="si">%.3f</span><span class="s2"> s; using 1.0 s fallback."</span><span class="p">,</span> <span class="n">bw</span><span class="p">)</span>
+            <span class="n">bw</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+        <span class="c1"># --- Convert timestamps to float seconds since earliest event ----------</span>
+        <span class="n">t_epoch</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">historical_events</span><span class="p">)</span>
+        <span class="n">t_seconds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[(</span><span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">-</span> <span class="n">t_epoch</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">historical_events</span><span class="p">],</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># --- Run detection pipeline with resolved bandwidth -------------------</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_detection</span><span class="p">(</span>
+            <span class="n">t_seconds</span><span class="p">,</span> <span class="n">t_epoch</span><span class="p">,</span> <span class="n">rho_query</span><span class="p">,</span> <span class="n">query_duration</span><span class="p">,</span> <span class="n">bw</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="EpisodeDetector.bandwidth_scan">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector.bandwidth_scan">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">bandwidth_scan</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">historical_events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">],</span>
+        <span class="n">rho_query</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">query_duration</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">bandwidths</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Multi-scale diagnostic: counts detected episodes at different bandwidths.</span>
+
+<span class="sd">        Helps operators validate episode segmentation by showing how many episodes</span>
+<span class="sd">        are detected when the smoothing scale varies. Useful when query timescale</span>
+<span class="sd">        may not match historical episode timescales (e.g., fast transient query</span>
+<span class="sd">        for slow degradation history, or vice versa).</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            historical_events: Full flat event list, all sources merged.</span>
+<span class="sd">            rho_query:         Reference density from compute_reference_density().</span>
+<span class="sd">                               Units: events per second.</span>
+<span class="sd">            query_duration:    D_query in seconds.</span>
+<span class="sd">            bandwidths:        Explicit bandwidth list in seconds. If None, defaults to</span>
+<span class="sd">                               [D/32, D/16, D/8, D/4, D/2, D, 2D, 4D] for broad coverage.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            dict mapping bandwidth (float, seconds) to episode count (int),</span>
+<span class="sd">            sorted by bandwidth ascending.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">historical_events</span> <span class="ow">or</span> <span class="n">rho_query</span> <span class="o">&lt;=</span> <span class="mf">0.0</span> <span class="ow">or</span> <span class="n">query_duration</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="n">bandwidths</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Default: 8 scales covering 1/32× to 4× query duration.</span>
+            <span class="n">bandwidths</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">query_duration</span> <span class="o">/</span> <span class="mi">32</span><span class="p">,</span>
+                <span class="n">query_duration</span> <span class="o">/</span> <span class="mi">16</span><span class="p">,</span>
+                <span class="n">query_duration</span> <span class="o">/</span> <span class="mi">8</span><span class="p">,</span>
+                <span class="n">query_duration</span> <span class="o">/</span> <span class="mi">4</span><span class="p">,</span>
+                <span class="n">query_duration</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span>
+                <span class="n">query_duration</span><span class="p">,</span>
+                <span class="mi">2</span> <span class="o">*</span> <span class="n">query_duration</span><span class="p">,</span>
+                <span class="mi">4</span> <span class="o">*</span> <span class="n">query_duration</span><span class="p">,</span>
+            <span class="p">]</span>
+
+        <span class="n">t_epoch</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">historical_events</span><span class="p">)</span>
+        <span class="n">t_seconds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span>
+            <span class="p">[(</span><span class="n">e</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">-</span> <span class="n">t_epoch</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">historical_events</span><span class="p">],</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">bw</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">bandwidths</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">bw</span> <span class="o">&lt;=</span> <span class="mf">0.0</span><span class="p">:</span>
+                <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"bandwidth_scan: ignoring non-positive bandwidth </span><span class="si">%.3f</span><span class="s2"> s"</span><span class="p">,</span> <span class="n">bw</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">boundaries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_run_detection</span><span class="p">(</span>
+                <span class="n">t_seconds</span><span class="p">,</span> <span class="n">t_epoch</span><span class="p">,</span> <span class="n">rho_query</span><span class="p">,</span> <span class="n">query_duration</span><span class="p">,</span> <span class="n">bw</span>
+            <span class="p">)</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">bw</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">boundaries</span><span class="p">)</span>
+
+        <span class="n">_log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"bandwidth_scan(): tested </span><span class="si">%d</span><span class="s2"> bandwidths. Summary:</span><span class="se">\n</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">),</span>
+            <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">bw</span><span class="si">:</span><span class="s2">9.1f</span><span class="si">}</span><span class="s2"> s (D/</span><span class="si">{</span><span class="n">query_duration</span><span class="o">/</span><span class="n">bw</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="n">count</span><span class="si">:</span><span class="s2">3d</span><span class="si">}</span><span class="s2"> episodes"</span>
+                <span class="k">for</span> <span class="n">bw</span><span class="p">,</span> <span class="n">count</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="EpisodeDetector._run_detection">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector._run_detection">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_run_detection</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">t_seconds</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">t_epoch</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+        <span class="n">rho_query</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">query_duration</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">bw</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Core detection pipeline: KDE → threshold → extract → expand → merge → filter.</span>
+
+<span class="sd">        Called by detect() and bandwidth_scan() to avoid code duplication.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            t_seconds:     Event timestamps as float seconds since t_epoch.</span>
+<span class="sd">            t_epoch:       Reference time (datetime).</span>
+<span class="sd">            rho_query:     Reference density (events/second).</span>
+<span class="sd">            query_duration: Duration of query window in seconds.</span>
+<span class="sd">            bw:            Bandwidth in seconds (already resolved, &gt; 0).</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            Expanded, merged, filtered episode boundaries.</span>
+<span class="sd">        """</span>
+        <span class="c1"># --- Time grid --------------------------------------------------------</span>
+        <span class="c1"># Grid length scales with t_max / grid_res (~ historical span divided by</span>
+        <span class="c1"># query_duration/100), so a short query over a very long history allocates</span>
+        <span class="c1"># a large array (held alongside kde_values and the boolean mask). There is</span>
+        <span class="c1"># no hard bound today; for very long logs the grid should be chunked/capped.</span>
+        <span class="c1"># Current target is offline/notebook scale (see rca_pattern_matching.md).</span>
+        <span class="n">t_max</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">t_seconds</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+        <span class="n">grid_res</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">query_duration</span> <span class="o">/</span> <span class="mf">100.0</span><span class="p">,</span> <span class="mf">60.0</span><span class="p">)</span>
+        <span class="n">grid</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">t_max</span> <span class="o">+</span> <span class="n">grid_res</span><span class="p">,</span> <span class="n">grid_res</span><span class="p">)</span>
+
+        <span class="c1"># --- Gaussian KDE (event-centric, O(N × support / grid_res)) ----------</span>
+        <span class="n">kde_values</span> <span class="o">=</span> <span class="n">_kde_evaluate</span><span class="p">(</span><span class="n">t_seconds</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">bw</span><span class="p">,</span> <span class="n">grid_res</span><span class="p">)</span>
+
+        <span class="c1"># --- Threshold and extract contiguous regions -------------------------</span>
+        <span class="n">threshold</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">delta</span> <span class="o">*</span> <span class="n">rho_query</span>
+        <span class="n">mask</span> <span class="o">=</span> <span class="n">kde_values</span> <span class="o">&gt;=</span> <span class="n">threshold</span>
+
+        <span class="n">boundaries</span> <span class="o">=</span> <span class="n">_extract_contiguous_regions</span><span class="p">(</span><span class="n">mask</span><span class="p">,</span> <span class="n">grid</span><span class="p">,</span> <span class="n">t_epoch</span><span class="p">,</span> <span class="n">grid_res</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">boundaries</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># --- Beta expansion ---------------------------------------------------</span>
+        <span class="n">expanded</span> <span class="o">=</span> <span class="p">[</span><span class="n">_expand_window</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">e</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">beta</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">boundaries</span><span class="p">]</span>
+
+        <span class="c1"># --- Merge overlapping ------------------------------------------------</span>
+        <span class="n">merged</span> <span class="o">=</span> <span class="n">_merge_overlapping</span><span class="p">(</span><span class="n">expanded</span><span class="p">)</span>
+
+        <span class="c1"># --- Minimum duration filter ------------------------------------------</span>
+        <span class="n">min_dur_s</span> <span class="o">=</span> <span class="n">query_duration</span> <span class="o">/</span> <span class="mf">10.0</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">merged</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">e</span> <span class="o">-</span> <span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">min_dur_s</span>
+        <span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="EpisodeDetector.assign_episode_ids">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density.EpisodeDetector.assign_episode_ids">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">assign_episode_ids</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">historical_events</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">],</span>
+        <span class="n">episode_boundaries</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Assigns episode_id to each historical event based on detected boundaries.</span>
+
+<span class="sd">        An event is assigned to the episode whose expanded boundary contains</span>
+<span class="sd">        its timestamp_start.  Events outside all boundaries retain</span>
+<span class="sd">        episode_id = None (background noise).</span>
+
+<span class="sd">        If an event falls within multiple boundaries (should not occur after</span>
+<span class="sd">        merging, handled defensively), it is assigned to the first match and</span>
+<span class="sd">        a WARNING is logged.</span>
+
+<span class="sd">        Episode ids: "EP_{asset_id}_{index:05d}" where asset_id is the</span>
+<span class="sd">        dominant asset among events in that episode.</span>
+
+<span class="sd">        Args:</span>
+<span class="sd">            historical_events:   Full flat event list.</span>
+<span class="sd">            episode_boundaries:  Output of detect(), sorted (start, end) tuples.</span>
+
+<span class="sd">        Returns:</span>
+<span class="sd">            New list of UnifiedEvents with episode_id populated.</span>
+<span class="sd">            Original list is not mutated.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">episode_boundaries</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">e</span><span class="p">,</span> <span class="n">episode_id</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">historical_events</span><span class="p">]</span>
+
+        <span class="c1"># Pre-pass: count events per episode to compute densities for tie-breaking.</span>
+        <span class="n">ep_counts</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">historical_events</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">ep_s</span><span class="p">,</span> <span class="n">ep_e</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">episode_boundaries</span><span class="p">):</span>
+                <span class="k">if</span> <span class="n">ep_s</span> <span class="o">&lt;=</span> <span class="n">ev</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">&lt;=</span> <span class="n">ep_e</span><span class="p">:</span>
+                    <span class="n">ep_counts</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="n">ep_densities</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">ep_s</span><span class="p">,</span> <span class="n">ep_e</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">episode_boundaries</span><span class="p">):</span>
+            <span class="n">dur</span> <span class="o">=</span> <span class="p">(</span><span class="n">ep_e</span> <span class="o">-</span> <span class="n">ep_s</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span>
+            <span class="n">ep_densities</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="n">ep_counts</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">/</span> <span class="n">dur</span> <span class="k">if</span> <span class="n">dur</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Pass 1: assign episode index (int) to each event --------------------</span>
+        <span class="n">idx_assignments</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">ep_event_lists</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">historical_events</span><span class="p">:</span>
+            <span class="n">matches</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">idx</span>
+                <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="p">(</span><span class="n">ep_s</span><span class="p">,</span> <span class="n">ep_e</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">episode_boundaries</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">ep_s</span> <span class="o">&lt;=</span> <span class="n">ev</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">&lt;=</span> <span class="n">ep_e</span>
+            <span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">matches</span><span class="p">:</span>
+                <span class="n">idx_assignments</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">chosen</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">matches</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">i</span><span class="p">:</span> <span class="n">ep_densities</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+                    <span class="n">_log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                        <span class="s2">"Event </span><span class="si">%r</span><span class="s2"> at </span><span class="si">%s</span><span class="s2"> falls in </span><span class="si">%d</span><span class="s2"> episode boundaries after merging; "</span>
+                        <span class="s2">"assigning to highest-density episode (ep index </span><span class="si">%d</span><span class="s2">)."</span><span class="p">,</span>
+                        <span class="n">ev</span><span class="o">.</span><span class="n">raw_id</span><span class="p">,</span> <span class="n">ev</span><span class="o">.</span><span class="n">timestamp_start</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">matches</span><span class="p">),</span> <span class="n">chosen</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">chosen</span> <span class="o">=</span> <span class="n">matches</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="n">idx_assignments</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">chosen</span><span class="p">)</span>
+                <span class="n">ep_event_lists</span><span class="p">[</span><span class="n">chosen</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ev</span><span class="p">)</span>
+
+        <span class="c1"># Pass 2: generate episode ID strings per episode index ---------------</span>
+        <span class="n">ep_id_strings</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">episode_boundaries</span><span class="p">)):</span>
+            <span class="n">asset_id</span> <span class="o">=</span> <span class="n">_dominant_asset</span><span class="p">(</span><span class="n">ep_event_lists</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="p">[]))</span> <span class="ow">or</span> <span class="s2">"UNKNOWN"</span>
+            <span class="n">ep_id_strings</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"EP_</span><span class="si">{</span><span class="n">asset_id</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="n">idx</span><span class="si">:</span><span class="s2">05d</span><span class="si">}</span><span class="s2">"</span>
+
+        <span class="c1"># Pass 3: build result with episode_id populated ----------------------</span>
+        <span class="n">result</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">UnifiedEvent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ev</span><span class="p">,</span> <span class="n">ep_idx</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">historical_events</span><span class="p">,</span> <span class="n">idx_assignments</span><span class="p">):</span>
+            <span class="n">ep_id</span> <span class="o">=</span> <span class="n">ep_id_strings</span><span class="p">[</span><span class="n">ep_idx</span><span class="p">]</span> <span class="k">if</span> <span class="n">ep_idx</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dataclasses</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span> <span class="n">episode_id</span><span class="o">=</span><span class="n">ep_id</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">result</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># KDE helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_kde_evaluate">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/density/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._kde_evaluate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_kde_evaluate</span><span class="p">(</span>
+    <span class="n">t_seconds</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">grid</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">bw</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">grid_res</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Evaluates a Gaussian KDE at each grid point.</span>
+
+<span class="sd">    Uses an event-centric approach: each event contributes only to grid</span>
+<span class="sd">    points within _KDE_SUPPORT_SIGMAS * bw seconds, limiting work to</span>
+<span class="sd">    O(N × support_window / grid_res) instead of O(N × G).</span>
+
+<span class="sd">    Returns rho_hist in events per second:</span>
+<span class="sd">        rho_hist(t) = Σ_i (1 / (bw √2π)) · exp(-½ · ((t − tᵢ) / bw)²)</span>
+<span class="sd">    """</span>
+    <span class="n">kde</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">grid</span><span class="p">))</span>
+    <span class="n">support_radius</span> <span class="o">=</span> <span class="n">_KDE_SUPPORT_SIGMAS</span> <span class="o">*</span> <span class="n">bw</span>
+    <span class="n">inv_bw_sqrt2pi</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="p">(</span><span class="n">bw</span> <span class="o">*</span> <span class="n">_SQRT_2PI</span><span class="p">)</span>
+    <span class="n">grid_start</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">grid</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">grid</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+    <span class="k">for</span> <span class="n">t_i</span> <span class="ow">in</span> <span class="n">t_seconds</span><span class="p">:</span>
+        <span class="c1"># Compute grid index bounds relative to grid[0], not 0.</span>
+        <span class="n">lo</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">int</span><span class="p">((</span><span class="n">t_i</span> <span class="o">-</span> <span class="n">grid_start</span> <span class="o">-</span> <span class="n">support_radius</span><span class="p">)</span> <span class="o">/</span> <span class="n">grid_res</span><span class="p">))</span>
+        <span class="n">hi</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">grid</span><span class="p">),</span> <span class="nb">int</span><span class="p">((</span><span class="n">t_i</span> <span class="o">-</span> <span class="n">grid_start</span> <span class="o">+</span> <span class="n">support_radius</span><span class="p">)</span> <span class="o">/</span> <span class="n">grid_res</span><span class="p">)</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">diff</span> <span class="o">=</span> <span class="p">(</span><span class="n">grid</span><span class="p">[</span><span class="n">lo</span><span class="p">:</span><span class="n">hi</span><span class="p">]</span> <span class="o">-</span> <span class="n">t_i</span><span class="p">)</span> <span class="o">/</span> <span class="n">bw</span>
+        <span class="n">kde</span><span class="p">[</span><span class="n">lo</span><span class="p">:</span><span class="n">hi</span><span class="p">]</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">diff</span> <span class="o">*</span> <span class="n">diff</span><span class="p">)</span>
+
+    <span class="n">kde</span> <span class="o">*=</span> <span class="n">inv_bw_sqrt2pi</span>
+    <span class="k">return</span> <span class="n">kde</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Region extraction helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_extract_contiguous_regions">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/density/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._extract_contiguous_regions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_extract_contiguous_regions</span><span class="p">(</span>
+    <span class="n">mask</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">grid</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+    <span class="n">t_epoch</span><span class="p">:</span> <span class="n">datetime</span><span class="p">,</span>
+    <span class="n">grid_res</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Extracts (start, end) datetime pairs for every contiguous True run in mask.</span>
+
+<span class="sd">    Pads the mask with False on both ends to detect edges at array boundaries.</span>
+<span class="sd">    Uses the last grid point of each run as t_end.  If a run is a single grid</span>
+<span class="sd">    point, t_end is set to t_start + grid_res to give it a non-zero duration.</span>
+<span class="sd">    """</span>
+    <span class="n">padded</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">([[</span><span class="kc">False</span><span class="p">],</span> <span class="n">mask</span><span class="p">,</span> <span class="p">[</span><span class="kc">False</span><span class="p">]])</span>
+    <span class="n">diff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">diff</span><span class="p">(</span><span class="n">padded</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int8</span><span class="p">))</span>
+    <span class="n">rising</span>  <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">diff</span> <span class="o">==</span>  <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>   <span class="c1"># first grid index of each run</span>
+    <span class="n">falling</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">diff</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>   <span class="c1"># first grid index AFTER each run</span>
+
+    <span class="n">regions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">r</span><span class="p">,</span> <span class="n">f</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">rising</span><span class="p">,</span> <span class="n">falling</span><span class="p">):</span>
+        <span class="n">t_start</span> <span class="o">=</span> <span class="n">t_epoch</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">grid</span><span class="p">[</span><span class="n">r</span><span class="p">]))</span>
+        <span class="n">last_idx</span> <span class="o">=</span> <span class="n">f</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># last True index in run</span>
+        <span class="k">if</span> <span class="n">last_idx</span> <span class="o">&gt;</span> <span class="n">r</span><span class="p">:</span>
+            <span class="n">t_end</span> <span class="o">=</span> <span class="n">t_epoch</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">grid</span><span class="p">[</span><span class="n">last_idx</span><span class="p">]))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">t_end</span> <span class="o">=</span> <span class="n">t_start</span> <span class="o">+</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">seconds</span><span class="o">=</span><span class="n">grid_res</span><span class="p">)</span>
+        <span class="n">regions</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">t_start</span><span class="p">,</span> <span class="n">t_end</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">regions</span></div>
+
+
+
+<div class="viewcode-block" id="_merge_overlapping">
+<a class="viewcode-back" href="../../../../../../autoapi/src/dackar/RCA/log_pattern_recognition/rca_pattern_search/density/index.html#src.dackar.RCA.log_pattern_recognition.rca_pattern_search.density._merge_overlapping">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_merge_overlapping</span><span class="p">(</span>
+    <span class="n">boundaries</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">datetime</span><span class="p">,</span> <span class="n">datetime</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Merges overlapping or touching (start, end) intervals.</span>
+
+<span class="sd">    Input order does not matter.  Returns intervals sorted by start ascending.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">boundaries</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[]</span>
+
+    <span class="n">sorted_b</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">boundaries</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">merged</span> <span class="o">=</span> <span class="p">[</span><span class="n">sorted_b</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+
+    <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="ow">in</span> <span class="n">sorted_b</span><span class="p">[</span><span class="mi">1</span><span class="p">:]:</span>
+        <span class="n">prev_start</span><span class="p">,</span> <span class="n">prev_end</span> <span class="o">=</span> <span class="n">merged</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">start</span> <span class="o">&lt;=</span> <span class="n">prev_end</span><span class="p">:</span>
+            <span class="n">merged</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">prev_start</span><span class="p">,</span> <span class="nb">max</span><span class="p">(</span><span class="n">prev_end</span><span class="p">,</span> <span class="n">end</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">merged</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">))</span>
+
+    <span class="k">return</span> <span class="n">merged</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
