@@ -15,6 +15,7 @@ separately by the orchestrator, which has access to the evidence store.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -24,6 +25,20 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
+
+# cmms_context.json cr_records / wo_records item whitelists (additionalProperties:
+# false).  Enriched records are projected onto these before entering the artifact
+# so a Path-A-rich adapter's extra fields never break schema validation.
+_CR_SCHEMA_KEYS = frozenset({
+    "cr_id", "cr_type", "status", "priority", "short_description", "long_text",
+    "functional_location", "equipment_id", "component_id", "created_date",
+    "closed_date", "days_before_event", "is_sister_equipment",
+})
+_WO_SCHEMA_KEYS = frozenset({
+    "wo_id", "wo_type", "status", "priority", "short_description", "long_text",
+    "functional_location", "equipment_id", "component_id", "created_date",
+    "closed_date", "days_before_event", "is_sister_equipment",
+})
 
 
 def _utcnow_iso() -> str:
@@ -46,7 +61,9 @@ def _days_between(earlier: Optional[datetime], later: Optional[datetime]) -> Opt
     if earlier is None or later is None:
         return None
     delta = later - earlier
-    return int(delta.total_seconds() // 86400)
+    # Round toward zero so a record a few hours after the event reads 0, not -1
+    # (schema semantics: negative days_before_event = after the event).
+    return int(delta.total_seconds() / 86400)
 
 
 # ---------------------------------------------------------------------------
@@ -151,11 +168,16 @@ class CMMSContextBuilder:
         cmms_context_id = f"CMMSCTX::{event_id}::{generated_at}"
 
         # 1. Derive lookback window
+        lookback_to = event_ts or datetime.now(timezone.utc)
         lookback_from, lookback_anchor = self._resolve_lookback(
             kg_context=kg_context,
             event_ts=event_ts,
+            primary_asset_id=asset_id or "",
         )
-        lookback_to = event_ts or datetime.now(timezone.utc)
+        # Never hand adapters a backward window: a last PM after the event, a
+        # sister PM, or clock skew can otherwise invert from/to.
+        if lookback_from > lookback_to:
+            lookback_from = lookback_to
         lookback_from_iso = lookback_from.isoformat()
         lookback_to_iso   = lookback_to.isoformat()
 
@@ -176,26 +198,42 @@ class CMMSContextBuilder:
         raw_crs = raw.get("cr_records") or []
         raw_wos = raw.get("wo_records") or []
 
-        # 4. Enrich records
+        # 4. Enrich records (resolve component_id via the KG FLOC/equipment maps)
+        floc_to_cid, equip_to_cid = self._build_component_lookups(kg_context)
+        sister_id_set = set(sister_ids)
         cr_records = [
-            self._enrich_record(r, lookback_to, is_cr=True)
+            self._enrich_record(
+                r, lookback_to, is_cr=True,
+                floc_to_cid=floc_to_cid, equip_to_cid=equip_to_cid,
+                sister_ids=sister_id_set,
+            )
             for r in raw_crs
             if isinstance(r, dict)
         ]
         wo_records = [
-            self._enrich_record(r, lookback_to, is_cr=False)
+            self._enrich_record(
+                r, lookback_to, is_cr=False,
+                floc_to_cid=floc_to_cid, equip_to_cid=equip_to_cid,
+                sister_ids=sister_id_set,
+            )
             for r in raw_wos
             if isinstance(r, dict)
         ]
 
-        # 5. Cap
+        # 5. Cap — sort on the parsed datetime, not the raw string, so records
+        # with mixed offsets (+00:00 / Z / naive) aren't dropped out of order.
+        _epoch = datetime.min.replace(tzinfo=timezone.utc)
         if self.config.max_cr_records:
             cr_records = sorted(
-                cr_records, key=lambda r: r.get("created_date") or "", reverse=True
+                cr_records,
+                key=lambda r: _parse_iso(r.get("created_date")) or _epoch,
+                reverse=True,
             )[: self.config.max_cr_records]
         if self.config.max_wo_records:
             wo_records = sorted(
-                wo_records, key=lambda r: r.get("created_date") or "", reverse=True
+                wo_records,
+                key=lambda r: _parse_iso(r.get("created_date")) or _epoch,
+                reverse=True,
             )[: self.config.max_wo_records]
 
         # 6. Recurrence summary
@@ -238,6 +276,15 @@ class CMMSContextBuilder:
         - ``text``: the narrative to embed (``long_text`` field)
         - ``metadata``: source, run_id, record ID, is_sister_equipment
 
+        Metadata is emitted Chroma-clean (``None`` and empty values dropped,
+        list/dict values JSON-encoded via ``_chroma_clean_metadata``) so the
+        orchestrator can inject it without a separate sanitizer.  Path-A
+        structured extras (``condition_assessment`` etc.) are still read off the
+        record when present, but ``build()`` projects them out of the artifact
+        records, so the default artifact-driven flow carries none — routing
+        those extras to Chroma is left to the injection MR (pass un-projected
+        records here).
+
         The orchestrator passes these to ``evidence_store.add_documents()``
         (or equivalent) after calling ``build()``.
         """
@@ -255,7 +302,7 @@ class CMMSContextBuilder:
             structured = self._extract_structured_fields(rec)
             docs.append({
                 "text": text,
-                "metadata": {
+                "metadata": self._chroma_clean_metadata({
                     "ingestion_path":      "path_a_structured",
                     "source":              "cmms_live",
                     "source_tier":         "plant_instance",
@@ -272,7 +319,7 @@ class CMMSContextBuilder:
                     "days_before_event":   rec.get("days_before_event"),
                     "status":              rec.get("status", ""),
                     **structured,
-                },
+                }),
             })
 
         for rec in cmms_context.get("wo_records") or []:
@@ -284,7 +331,7 @@ class CMMSContextBuilder:
             structured = self._extract_structured_fields(rec)
             docs.append({
                 "text": text,
-                "metadata": {
+                "metadata": self._chroma_clean_metadata({
                     "ingestion_path":      "path_a_structured",
                     "source":              "cmms_live",
                     "source_tier":         "plant_instance",
@@ -301,10 +348,35 @@ class CMMSContextBuilder:
                     "days_before_event":   rec.get("days_before_event"),
                     "status":              rec.get("status", ""),
                     **structured,
-                },
+                }),
             })
 
         return docs
+
+    @staticmethod
+    def _chroma_clean_metadata(meta: JsonDict) -> JsonDict:
+        """
+        Coerce a metadata dict to Chroma-native scalar values.
+
+        Native Chroma metadata values must be non-null ``str``/``int``/``float``/
+        ``bool``.  This drops ``None``-valued keys and empty containers, and
+        JSON-encodes any remaining list/dict values, so ``get_chroma_documents``
+        emits Chroma-clean metadata itself rather than relying on the
+        orchestrator's storage sanitizer.
+        """
+        clean: JsonDict = {}
+        for key, value in meta.items():
+            if value is None:
+                continue
+            if isinstance(value, (list, dict)):
+                if not value:
+                    continue
+                clean[key] = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            elif isinstance(value, (str, int, float, bool)):
+                clean[key] = value
+            else:
+                clean[key] = str(value)
+        return clean
 
     @staticmethod
     def _normalize_token(value: Any) -> str:
@@ -372,17 +444,49 @@ class CMMSContextBuilder:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _build_component_lookups(kg_context: JsonDict) -> tuple:
+        """
+        Build ``functional_location`` → ``component_id`` and
+        ``equipment_id`` → ``component_id`` maps from ``kg_context.components[]``.
+
+        Uses the ``maximo_floc`` / ``sap_equipment_id`` KG properties (the same
+        properties the adapters map sister components through).  First writer
+        wins on duplicate keys.
+        """
+        floc_to_cid: Dict[str, str] = {}
+        equip_to_cid: Dict[str, str] = {}
+        for comp in kg_context.get("components") or []:
+            if not isinstance(comp, dict):
+                continue
+            cid = comp.get("component_id")
+            if not cid:
+                continue
+            floc = comp.get("maximo_floc")
+            if floc:
+                floc_to_cid.setdefault(str(floc), cid)
+            equip = comp.get("sap_equipment_id")
+            if equip:
+                equip_to_cid.setdefault(str(equip), cid)
+        return floc_to_cid, equip_to_cid
+
     def _resolve_lookback(
         self,
         kg_context: JsonDict,
         event_ts: Optional[datetime],
+        primary_asset_id: str = "",
     ) -> tuple:
         """
         Returns (lookback_from: datetime, anchor_label: str).
 
-        Searches kg_context.past_events[] for the most recent event of
-        type "PM" or "preventive_maintenance" on the primary asset.
-        Falls back to event_ts − fallback_lookback_days.
+        Searches kg_context.past_events[] for the most recent PM
+        ("PM" / "preventive_maintenance") on the primary asset that precedes the
+        event, and anchors the window there.  Falls back to
+        event_ts − fallback_lookback_days.
+
+        past_events[] can span sister components, so entries are filtered to the
+        primary ``asset_id``; and a PM must precede ``event_ts`` to bound a valid
+        (non-inverted) window.
         """
         past_events = kg_context.get("past_events") or []
         pm_dates: List[datetime] = []
@@ -390,10 +494,15 @@ class CMMSContextBuilder:
         for ev in past_events:
             if not isinstance(ev, dict):
                 continue
+            # Restrict to the primary asset — past_events can include sisters.
+            if primary_asset_id and ev.get("asset_id") and ev.get("asset_id") != primary_asset_id:
+                continue
             ev_type = (ev.get("event_type") or "").lower()
             if "pm" in ev_type or "preventive" in ev_type:
-                dt = _parse_iso(ev.get("event_date") or ev.get("timestamp"))
-                if dt:
+                # kg_context schema dates are timestamp_start / timestamp_end.
+                dt = _parse_iso(ev.get("timestamp_start") or ev.get("timestamp_end"))
+                # A PM after the event cannot anchor a backward lookback window.
+                if dt and (event_ts is None or dt <= event_ts):
                     pm_dates.append(dt)
 
         if pm_dates:
@@ -401,15 +510,24 @@ class CMMSContextBuilder:
             logger.debug("Lookback anchor: last PM at %s", last_pm.isoformat())
             return last_pm, "last_pm"
 
-        # Fallback
+        # Fallback: event_time − fallback_lookback_days.  The schema enum names
+        # only the 90-day case literally, so any other window is reported as the
+        # generic "custom" anchor (the actual day count lives in
+        # provenance.query_params.fallback_lookback_days).
         anchor_dt = event_ts or datetime.now(timezone.utc)
         lookback_from = anchor_dt - timedelta(days=self.config.fallback_lookback_days)
+        anchor_label = (
+            "event_time_minus_90d"
+            if self.config.fallback_lookback_days == 90
+            else "custom"
+        )
         logger.debug(
-            "Lookback anchor: event_time − %d days = %s",
+            "Lookback anchor: event_time − %d days = %s (%s)",
             self.config.fallback_lookback_days,
             lookback_from.isoformat(),
+            anchor_label,
         )
-        return lookback_from, "event_time_minus_90d"
+        return lookback_from, anchor_label
 
     def _resolve_sisters(self, kg_context: JsonDict) -> List[JsonDict]:
         """
@@ -484,18 +602,43 @@ class CMMSContextBuilder:
         record: JsonDict,
         event_dt: Optional[datetime],
         is_cr: bool,
+        *,
+        floc_to_cid: Optional[Dict[str, str]] = None,
+        equip_to_cid: Optional[Dict[str, str]] = None,
+        sister_ids: Optional[set] = None,
     ) -> JsonDict:
         """
-        Add derived fields to a raw CMMS record:
+        Add derived fields to a raw CMMS record and project it onto the
+        cmms_context schema whitelist:
         - ``days_before_event``: int or None
+        - ``component_id``: resolved from ``functional_location`` /
+          ``equipment_id`` via the KG lookups when the adapter did not supply one
         - ``status``: normalised to open/closed/cancelled/unknown
-        - ``is_sister_equipment``: bool (preserved from adapter or default False)
+        - ``is_sister_equipment``: preserved from the adapter, else derived from
+          whether the resolved ``component_id`` is a KG sister
+
+        Adapter-supplied fields outside the schema whitelist (e.g. Path-A
+        ``condition_assessment`` / ``failure_mode_refs``) are dropped from the
+        returned record so the artifact validates against ``cmms_context.json``
+        (``additionalProperties: false``).
         """
         enriched = dict(record)
 
         # days_before_event
         created_dt = _parse_iso(record.get("created_date"))
         enriched["days_before_event"] = _days_between(created_dt, event_dt)
+
+        # component_id: FLOC / equipment-ID → KG component match (adapter wins)
+        component_id = enriched.get("component_id")
+        if not component_id:
+            floc = record.get("functional_location")
+            equip = record.get("equipment_id")
+            if floc and floc_to_cid:
+                component_id = floc_to_cid.get(str(floc))
+            if not component_id and equip and equip_to_cid:
+                component_id = equip_to_cid.get(str(equip))
+            if component_id:
+                enriched["component_id"] = component_id
 
         # normalise status
         raw_status = (record.get("status") or "").lower().strip()
@@ -510,11 +653,15 @@ class CMMSContextBuilder:
         else:
             enriched["status"] = raw_status  # pass through unknown codes
 
-        # default is_sister_equipment
+        # is_sister_equipment: preserve adapter value, else derive from the match
         if "is_sister_equipment" not in enriched:
-            enriched["is_sister_equipment"] = False
+            enriched["is_sister_equipment"] = bool(
+                component_id and sister_ids and component_id in sister_ids
+            )
 
-        return enriched
+        # Project onto the schema whitelist (additionalProperties: false).
+        allowed = _CR_SCHEMA_KEYS if is_cr else _WO_SCHEMA_KEYS
+        return {k: v for k, v in enriched.items() if k in allowed}
 
     def _build_recurrence_summary(
         self,
@@ -526,8 +673,12 @@ class CMMSContextBuilder:
         open_wos   = [r for r in wo_records if r.get("status") == "open"]
         open_crs   = [r for r in cr_records if r.get("status") == "open"]
 
+        # Order by parsed datetime (raw strings with mixed offsets sort wrong),
+        # but report the original date strings.
+        _epoch = datetime.min.replace(tzinfo=timezone.utc)
         all_cr_dates = sorted(
-            [r.get("created_date") for r in cr_records if r.get("created_date")]
+            (r.get("created_date") for r in cr_records if r.get("created_date")),
+            key=lambda s: _parse_iso(s) or _epoch,
         )
 
         return {
