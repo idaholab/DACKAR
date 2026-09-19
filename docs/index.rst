@@ -19,6 +19,7 @@ Welcome to DACKAR's documentation!
    support
    Notebooks <notebooks/index>
    knowledge_graph
+   rca
    .. install
    .. install_spacy3.5
 
