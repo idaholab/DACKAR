@@ -95,8 +95,8 @@ class SAPPMCMMSAdapter:
         TODO — plant teams implement:
         1. Map sister_component_ids to SAP equipment IDs using the KG
            sap_equipment_id property (same property used for CAP export).
-        2. Build OData $filter:
-             TechObjNr in ('EQ-001','EQ-002')
+        2. Build OData $filter (see ``_build_odata_filter``):
+             Equipment in ('EQ-001','EQ-002')
              and MaintNotifCreationDate ge datetime'{lookback_from}'
              and MaintNotifCreationDate le datetime'{lookback_to}'
         3. GET {notification_endpoint}?$filter=...&$format=json
