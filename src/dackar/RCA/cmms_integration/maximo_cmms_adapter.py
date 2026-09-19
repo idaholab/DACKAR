@@ -38,7 +38,7 @@ class MaximoCMMSAdapter:
         Maximo object name for work orders (default ``"WOTRACK"``).
     floc_field:
         Maximo field containing the Functional Location (default
-        ``"SITEID"`` — override per plant convention).
+        ``"LOCATION"`` — override per plant convention, e.g. ``"SITEID"``).
     timeout:
         HTTP request timeout in seconds.
     """
@@ -127,16 +127,18 @@ class MaximoCMMSAdapter:
         lookback_to: str,
     ) -> str:
         """
-        Build an OSLC WHERE clause string for Maximo.
+        Build an OSLC WHERE clause string for Maximo.  The functional-location
+        field name is taken from ``self.floc_field`` so overriding it (e.g. to
+        ``"SITEID"``) actually changes the query.
 
-        Example output:
+        Example output (with the default ``floc_field="LOCATION"``):
             LOCATION in ["PLANT/SYS/BEARING-01","PLANT/SYS/PUMP-02"]
             and REPORTDATE>="2025-10-01T00:00:00+00:00"
             and REPORTDATE<="2026-01-01T12:00:00+00:00"
         """
         floc_list = ",".join(f'"{f}"' for f in flocs)
         return (
-            f'LOCATION in [{floc_list}]'
+            f'{self.floc_field} in [{floc_list}]'
             f' and REPORTDATE>="{lookback_from}"'
             f' and REPORTDATE<="{lookback_to}"'
         )
