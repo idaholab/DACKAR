@@ -932,6 +932,8 @@ class CausalSentence(CausalBase):
       Returns:
         None
     """
+    if cause is None or effect is None:  # a rootCause tuple can carry a None cause/effect component;
+      return                             # no triple to form (upstream guard only checks the top-level list)
     root = sent.root
     if conjecture is None:
       conjecture = self.isConjecture(root)
