@@ -1165,8 +1165,12 @@ class CausalSentence(CausalBase):
         else:
           healthStatus = root
       elif root.pos_ in ['AUX']:
-        leftInd = list(root.lefts)[0].i
-        healthStatus = root.doc[leftInd:root.i]
+        lefts = list(root.lefts)
+        if lefts:                          # AUX with no left dependents -> no left-span status
+          leftInd = lefts[0].i
+          healthStatus = root.doc[leftInd:root.i]
+        else:
+          logger.warning(f'No status identified for "{ent}" in "{sent}"')
       else:
         logger.warning(f'No status identified for "{ent}" in "{sent}"')
     else:
