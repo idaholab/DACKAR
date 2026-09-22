@@ -118,6 +118,7 @@ c.sap_equipment_id AS sap_equipment_id
 | `monitoring`           | `SR`             | `M4`                       | Service request / inspection |
 | `procedure_update`     | `TQ`             | `Q3`                       | Technical query / doc change |
 | `engineering_evaluation` | `ECR`          | `Q1`                       | Engineering change request |
+| `pm_corrective`        | `CM`             | `M2`                       | Corrective maintenance raised from PM findings |
 
 These defaults are defined in `field_maps/maximo_default.json` and `field_maps/sap_pm_default.json`. They can be overridden per-plant by providing a custom map in `CAPExportConfig`.
 
@@ -269,12 +270,12 @@ result = orchestrator.export_cap(
     run_id=run_id,
     rca_card=modified_card,        # post-override card
     kg_context=kg_context,         # for FLOC resolution
-    override_record=override_record,  # optional; links override_id in package
+    override_record=override_record,  # required; gates on writeback_decision=="accept" and seeds the stable export_id
 )
 # result keys: "export_package", "submission_receipt"
 ```
 
-**Prerequisites:** `export_cap()` should only be called after `apply_override()` has returned a card with `writeback_decision == "accept"`. The orchestrator enforces this by raising `RuntimeError` if `analyst_review.writeback_recommendation != "ready_if_accepted"`.
+**Prerequisites:** `export_cap()` must be passed the `override_record` returned by `apply_override()`. The serializer's authoritative acceptance gate is the override record itself: it raises `ValueError` if `override_record.writeback_decision != "accept"` (or the record lacks an `override_id`), and secondarily raises `ValueError` if the card's `analyst_review.writeback_recommendation != "ready_if_accepted"`.
 
 **Artifacts persisted:**
 - `cap_export_package.json` — the full export package
@@ -330,7 +331,8 @@ print(cap_result["submission_receipt"]["cr_numbers"])
 ### Unit tests (`unit_tests/test_cap_export_serializer.py`)
 
 Cover:
-- `action_type` → `cr_type` mapping for all six action types
+- `action_type` → `cr_type` mapping for all seven action types (including `pm_corrective`)
+- an unmapped `action_type` raises `ValueError` (no silent passthrough)
 - `priority` → `priority_code` mapping for all four priorities
 - FLOC resolved from `kg_context.components[].maximo_floc` when present
 - FLOC null and `mapping_status = "unresolved"` when KG property absent
@@ -352,7 +354,7 @@ Cover:
 
 ### Integration guard (orchestrator level)
 
-- `export_cap()` raises `RuntimeError` if called with a card whose `writeback_recommendation != "ready_if_accepted"`
+- `export_cap()` raises `ValueError` if the `override_record` does not carry `writeback_decision == "accept"` (authoritative gate), or if the card's `writeback_recommendation != "ready_if_accepted"`
 - Both artifacts (`cap_export_package.json`, `cap_submission_receipt.json`) are persisted when `persist_intermediate_artifacts = True`
 
 ### Testing a new adapter without a live CMMS
