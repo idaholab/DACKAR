@@ -12,14 +12,51 @@ These lock down the review fixes on the CMMSContextBuilder:
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from dackar.RCA.cmms_integration.cmms_adapter import MockCMMSAdapter
+import pytest
+
+import dackar
+from dackar.RCA.cmms_integration.cmms_adapter import (
+    MockCMMSAdapter,
+    normalize_cmms_status,
+)
 from dackar.RCA.cmms_integration.cmms_context_builder import (
     _CR_SCHEMA_KEYS,
     CMMSContextBuilder,
     CMMSContextBuilderConfig,
 )
+from dackar.RCA.cmms_integration.maximo_cmms_adapter import MaximoCMMSAdapter
+from dackar.RCA.cmms_integration.sap_pm_cmms_adapter import SAPPMCMMSAdapter
+
+
+# ---------------------------------------------------------------------------
+# Schema validation harness (jsonschema is a declared dependency; skip the
+# schema-validating tests cleanly where it — or its date-time format validator
+# — is unavailable, so the rest of the suite still runs).
+# ---------------------------------------------------------------------------
+
+try:
+    from jsonschema import Draft7Validator, FormatChecker
+    _HAVE_JSONSCHEMA = True
+except ImportError:  # pragma: no cover - environment without the optional dep
+    _HAVE_JSONSCHEMA = False
+
+requires_jsonschema = pytest.mark.skipif(
+    not _HAVE_JSONSCHEMA, reason="jsonschema not installed"
+)
+
+_SCHEMA_PATH = Path(dackar.__file__).parent / "RCA" / "schemas" / "cmms_context.json"
+
+
+def _validate_artifact(ctx: dict) -> None:
+    """Validate a built cmms_context against schemas/cmms_context.json with
+    date-time format checking.  Raises jsonschema.ValidationError on any
+    required-field, type, enum, or additionalProperties violation."""
+    schema = json.loads(_SCHEMA_PATH.read_text())
+    Draft7Validator(schema, format_checker=FormatChecker()).validate(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +136,17 @@ class TestLookbackAnchor:
         assert ctx["lookback_anchor"] == "event_time_minus_90d"
         # Window is never inverted.
         assert ctx["lookback_from"] <= ctx["lookback_to"]
+
+    def test_equipment_failure_is_not_treated_as_pm(self):
+        """'equipment_failure' contains the letters 'pm' but is not a PM — a
+        substring test would wrongly truncate the lookback to the failure date."""
+        past = [
+            {"event_id": "EF", "asset_id": "ASSET-1", "event_type": "equipment_failure",
+             "timestamp_start": "2026-02-20T00:00:00+00:00"},
+        ]
+        ctx = _build(past_events=past)
+        assert ctx["lookback_anchor"] == "event_time_minus_90d"
+        assert ctx["lookback_from"] != "2026-02-20T00:00:00+00:00"
 
 
 # ---------------------------------------------------------------------------
@@ -245,3 +293,216 @@ class TestDaysBeforeEvent:
               "created_date": "2026-02-27T00:00:00+00:00"}   # 2 days before
         rec = _build(cr_records=[cr])["cr_records"][0]
         assert rec["days_before_event"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Status normalization: every documented Maximo/SAP code + unknown (blocking)
+# ---------------------------------------------------------------------------
+
+# (raw CMMS code, expected cmms_context enum value)
+_STATUS_CASES = [
+    # Maximo
+    ("WAPPR", "open"), ("WMATL", "open"), ("WPCOND", "open"),
+    ("INPRG", "open"), ("APPR", "open"),
+    ("COMP", "closed"), ("CLOSE", "closed"), ("CAN", "cancelled"),
+    # SAP PM
+    ("OSNO", "open"), ("OSMA", "open"), ("OSTS", "open"), ("NOCO", "open"),
+    ("CLSD", "closed"), ("TECO", "closed"), ("DLFL", "cancelled"),
+    # already-normalized + adversarial
+    ("open", "open"), ("closed", "closed"), ("cancelled", "cancelled"),
+    ("WeirdCode", "unknown"), ("", "unknown"),
+]
+
+
+class TestStatusNormalization:
+    @pytest.mark.parametrize("raw,expected", _STATUS_CASES)
+    def test_shared_normalizer(self, raw, expected):
+        assert normalize_cmms_status(raw) == expected
+
+    @pytest.mark.parametrize("raw,expected", _STATUS_CASES)
+    def test_maximo_adapter_delegates(self, raw, expected):
+        assert MaximoCMMSAdapter._map_status(raw) == expected
+
+    @pytest.mark.parametrize("raw,expected", _STATUS_CASES)
+    def test_sap_adapter_delegates(self, raw, expected):
+        assert SAPPMCMMSAdapter._map_status(raw) == expected
+
+    @pytest.mark.parametrize("raw,expected", _STATUS_CASES)
+    def test_builder_projects_status_to_enum(self, raw, expected):
+        cr = {"cr_id": "CR1", "status": raw, "short_description": "x",
+              "created_date": "2026-02-15T00:00:00+00:00"}
+        rec = _build(cr_records=[cr])["cr_records"][0]
+        assert rec["status"] == expected
+        assert rec["status"] in {"open", "closed", "cancelled", "unknown"}
+
+
+# ---------------------------------------------------------------------------
+# Adapter-boundary validation: malformed records skipped with provenance (blocking)
+# ---------------------------------------------------------------------------
+
+class TestMalformedRecordSkip:
+    def test_missing_required_fields_are_skipped(self):
+        good = {"cr_id": "CR1", "status": "OPEN", "short_description": "ok",
+                "created_date": "2026-02-15T00:00:00+00:00"}
+        bad_no_id   = {"status": "OPEN", "short_description": "x",
+                       "created_date": "2026-02-15T00:00:00+00:00"}
+        bad_no_desc = {"cr_id": "CR2", "status": "OPEN",
+                       "created_date": "2026-02-15T00:00:00+00:00"}
+        bad_no_date = {"cr_id": "CR3", "status": "OPEN", "short_description": "x"}
+        bad_date    = {"cr_id": "CR4", "status": "OPEN", "short_description": "x",
+                       "created_date": "not-a-date"}
+        ctx = _build(cr_records=[good, bad_no_id, bad_no_desc, bad_no_date, bad_date])
+        assert [r["cr_id"] for r in ctx["cr_records"]] == ["CR1"]
+        assert ctx["provenance"]["dropped_records"]["cr"] == 4
+
+    def test_truthy_string_is_sister_is_coerced_to_bool(self):
+        cr = {"cr_id": "CR1", "status": "OPEN", "short_description": "x",
+              "created_date": "2026-02-15T00:00:00+00:00",
+              "is_sister_equipment": "false"}   # truthy string, must read False
+        rec = _build(cr_records=[cr])["cr_records"][0]
+        assert rec["is_sister_equipment"] is False
+
+    @requires_jsonschema
+    def test_adversarial_batch_yields_valid_artifact(self):
+        cr  = {"cr_id": "CR1", "status": "OSNO", "short_description": "x",
+               "created_date": "2026-02-15T00:00:00+00:00",
+               "is_sister_equipment": "false"}
+        bad = {"status": "OPEN"}  # no id / short_description / created_date
+        ctx = _build(cr_records=[cr], wo_records=[bad])
+        _validate_artifact(ctx)
+        assert ctx["provenance"]["dropped_records"]["wo"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Recurrence summary is aggregated from the FULL lists, before capping (important)
+# ---------------------------------------------------------------------------
+
+class TestRecurrenceBeforeCap:
+    def test_summary_counts_full_not_capped(self):
+        crs = [
+            {"cr_id": f"CR{i}", "status": "OPEN", "short_description": "x",
+             "created_date": f"2026-02-{10 + i:02d}T00:00:00+00:00"}
+            for i in range(3)
+        ]
+        cfg = CMMSContextBuilderConfig(max_cr_records=1)
+        ctx = _build(cr_records=crs, config=cfg)
+        # Detail array is capped …
+        assert len(ctx["cr_records"]) == 1
+        # … but the recurrence aggregate reflects all three.
+        assert ctx["recurrence_summary"]["cr_count_primary"] == 3
+        assert ctx["recurrence_summary"]["open_cr_count"] == 3
+
+
+# ---------------------------------------------------------------------------
+# MockCMMSAdapter.filter_by_asset — both modes (important)
+# ---------------------------------------------------------------------------
+
+class TestMockAdapterFilterByAsset:
+    def test_default_returns_all_untagged(self):
+        cr = {"cr_id": "CR1", "functional_location": "PLANT/PUMP-01"}
+        out = MockCMMSAdapter(cr_records=[cr]).fetch(
+            "ASSET-1", [], "from", "to", {})
+        assert out["cr_records"] == [cr]
+        assert "is_sister_equipment" not in out["cr_records"][0]
+
+    def test_filter_tags_primary_vs_sister(self):
+        primary = {"cr_id": "CR1", "functional_location": "ASSET-1/PUMP"}
+        sister  = {"cr_id": "CR2", "functional_location": "OTHER/PUMP"}
+        out = MockCMMSAdapter(
+            cr_records=[primary, sister], filter_by_asset=True,
+        ).fetch("ASSET-1", [], "from", "to", {})
+        tags = {r["cr_id"]: r["is_sister_equipment"] for r in out["cr_records"]}
+        assert tags == {"CR1": False, "CR2": True}
+
+    def test_filter_matches_on_equipment_id(self):
+        rec = {"cr_id": "CR1", "equipment_id": "ASSET-1-EQ"}
+        out = MockCMMSAdapter(
+            cr_records=[rec], filter_by_asset=True,
+        ).fetch("ASSET-1", [], "from", "to", {})
+        assert out["cr_records"][0]["is_sister_equipment"] is False
+
+
+# ---------------------------------------------------------------------------
+# A parseable event timestamp is required at the build() boundary (important)
+# ---------------------------------------------------------------------------
+
+class TestEventTimestampRequired:
+    def test_missing_timestamp_raises(self):
+        builder = CMMSContextBuilder(MockCMMSAdapter())
+        with pytest.raises(ValueError, match="timestamp"):
+            builder.build(
+                {"event_id": "E1", "asset_id": "ASSET-1"},
+                _kg_context(), run_id="RUN-1",
+            )
+
+    def test_unparseable_timestamp_raises(self):
+        builder = CMMSContextBuilder(MockCMMSAdapter())
+        with pytest.raises(ValueError):
+            builder.build(
+                {"event_id": "E1", "asset_id": "ASSET-1", "timestamp_start": "nope"},
+                _kg_context(), run_id="RUN-1",
+            )
+
+
+# ---------------------------------------------------------------------------
+# Topology-only sisters carry embedding_score 0.0, per schema (nit)
+# ---------------------------------------------------------------------------
+
+class TestTopologySisterEmbeddingScore:
+    def test_topology_only_sister_score_is_zero(self):
+        ctx = _build()  # C-SISTER (same_train) is a topology-only sister
+        sisters = {s["component_id"]: s for s in ctx["sister_components"]}
+        assert "C-SISTER" in sisters
+        assert sisters["C-SISTER"]["match_type"] == "topology"
+        assert sisters["C-SISTER"]["embedding_score"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Similarity-resolver results are projected onto the sister schema (architecture)
+# ---------------------------------------------------------------------------
+
+class _FakeSister:
+    """Stands in for an EquipmentSimilarityResolver result — exposes both the
+    attribute access the old code used and a to_dict()."""
+
+    def __init__(self, **fields):
+        self._fields = dict(fields)
+        self.__dict__.update(fields)
+
+    def to_dict(self) -> dict:
+        return dict(self._fields)
+
+
+class _FakeResolver:
+    def __init__(self, results):
+        self._results = results
+
+    def resolve_similar(self, target_component_ids, kg_context):
+        return self._results
+
+
+class TestSimilarityResultProjection:
+    def test_extra_fields_are_projected_out(self):
+        res = [_FakeSister(component_id="C-EMB", component_label="Emb",
+                           match_type="spec_embedding", shared_fm_count=2,
+                           embedding_score=0.3, leak_me="secret")]
+        cfg = CMMSContextBuilderConfig(similarity_resolver=_FakeResolver(res))
+        emb = {s["component_id"]: s for s in _build(config=cfg)["sister_components"]}["C-EMB"]
+        assert set(emb).issubset({
+            "component_id", "component_label", "match_type",
+            "shared_fm_count", "embedding_score",
+        })
+        assert "leak_me" not in emb
+
+    def test_result_missing_match_type_is_skipped(self):
+        res = [_FakeSister(component_id="C-BAD", embedding_score=0.1)]  # no match_type
+        cfg = CMMSContextBuilderConfig(similarity_resolver=_FakeResolver(res))
+        ids = {s["component_id"] for s in _build(config=cfg)["sister_components"]}
+        assert "C-BAD" not in ids
+
+    @requires_jsonschema
+    def test_projected_sisters_validate(self):
+        res = [_FakeSister(component_id="C-EMB", match_type="spec_embedding",
+                           shared_fm_count=2, embedding_score=0.3, leak_me="x")]
+        cfg = CMMSContextBuilderConfig(similarity_resolver=_FakeResolver(res))
+        _validate_artifact(_build(config=cfg))
