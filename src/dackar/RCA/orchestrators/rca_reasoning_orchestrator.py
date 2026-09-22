@@ -6414,10 +6414,10 @@ class RCAReasoningOrchestrator:
         run_id: str,
         rca_card: JsonDict,
         kg_context: JsonDict,
-        override_id: Optional[str] = None,
+        override_record: JsonDict,
     ) -> tuple:
         """
-        Serialize an approved rca_card into a CAPExportPackage and submit it
+        Serialize an accepted rca_card into a CAPExportPackage and submit it
         via the configured CAPAdapter.
 
         Parameters
@@ -6425,12 +6425,14 @@ class RCAReasoningOrchestrator:
         run_id:
             RCA run identifier.
         rca_card:
-            Analyst-approved RCA card (writeback_recommendation must be
+            Analyst-accepted RCA card (writeback_recommendation must be
             ``"ready_if_accepted"``).
         kg_context:
             KG context artifact from the same run (used for FLOC resolution).
-        override_id:
-            ``override_id`` from the AnalystOverride record, if available.
+        override_record:
+            The ``AnalystOverride`` record returned by ``apply_override()``;
+            must carry ``writeback_decision == "accept"`` and seeds the
+            stable ``export_id``.
 
         Returns
         -------
@@ -6441,7 +6443,8 @@ class RCAReasoningOrchestrator:
         Raises
         ------
         ValueError
-            If ``rca_card`` has not been approved (wrong writeback_recommendation).
+            If the override record is not an accepted writeback, or the card
+            has not been approved (wrong writeback_recommendation).
         RuntimeError
             If no CAPAdapter is configured.
         """
@@ -6462,7 +6465,7 @@ class RCAReasoningOrchestrator:
             rca_card=rca_card,
             kg_context=kg_context,
             run_id=run_id,
-            override_id=override_id,
+            override_record=override_record,
         )
 
         if self.config.persist_intermediate_artifacts:

@@ -170,6 +170,15 @@ class TestFileDropCAPAdapter:
         written_files = list(tmp_path.glob("cap_export_*.json"))
         assert len(written_files) == 1
 
+    def test_atomic_write_leaves_no_temp_file(self, tmp_path):
+        # B2: the write is atomic (temp file + os.replace); no .tmp remnant
+        # and no hidden partial file survives a successful submit.
+        adapter = FileDropCAPAdapter(tmp_path)
+        adapter.submit(_make_package())
+        assert list(tmp_path.glob("*.tmp")) == []
+        assert list(tmp_path.glob(".*")) == []
+        assert len(list(tmp_path.glob("cap_export_*.json"))) == 1
+
     def test_written_file_is_valid_json(self, tmp_path):
         adapter = FileDropCAPAdapter(tmp_path)
         pkg = _make_package()
