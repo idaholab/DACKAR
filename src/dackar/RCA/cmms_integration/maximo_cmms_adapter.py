@@ -145,11 +145,10 @@ class MaximoCMMSAdapter:
 
     @staticmethod
     def _map_status(maximo_status: str) -> str:
-        """Map Maximo status codes to cmms_context schema values."""
-        mapping = {
-            "WAPPR": "open", "WMATL": "open", "WPCOND": "open",
-            "INPRG": "open", "APPR": "open",
-            "COMP": "closed", "CLOSE": "closed",
-            "CAN": "cancelled",
-        }
-        return mapping.get((maximo_status or "").upper(), "unknown")
+        """Map Maximo status codes to cmms_context schema values.
+
+        Delegates to the shared :func:`normalize_cmms_status` so Maximo, SAP,
+        and generic codes normalize identically wherever a status enters.
+        """
+        from .cmms_adapter import normalize_cmms_status
+        return normalize_cmms_status(maximo_status)

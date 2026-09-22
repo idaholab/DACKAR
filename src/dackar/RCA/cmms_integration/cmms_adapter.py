@@ -14,6 +14,55 @@ JsonDict = Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
+# Status normalization (shared by the builder and every adapter)
+# ---------------------------------------------------------------------------
+
+# The canonical map from documented raw CMMS status codes to the four values
+# permitted by cmms_context.json (status enum: open/closed/cancelled/unknown).
+# Both live adapters (Maximo, SAP PM) and the builder's record enrichment
+# delegate here so a raw code is normalized identically wherever it enters.
+_STATUS_OPEN = frozenset({
+    "open",
+    # Maximo
+    "wappr", "wmatl", "wpcond", "inprg", "appr",
+    # SAP PM
+    "osno", "osma", "osts", "noco",
+})
+_STATUS_CLOSED = frozenset({
+    "closed", "close", "comp", "completed",
+    # SAP PM
+    "clsd", "teco",
+})
+_STATUS_CANCELLED = frozenset({
+    "cancelled", "canceled", "can",
+    # SAP PM
+    "dlfl",
+})
+
+
+def normalize_cmms_status(raw_status: Any) -> str:
+    """
+    Map a raw CMMS status code to the cmms_context schema enum.
+
+    Recognizes every documented Maximo and SAP PM code plus the already-
+    normalized values; any unrecognized or empty value maps to ``"unknown"``
+    so the artifact never carries a status outside
+    ``schemas/cmms_context.json`` (``status`` enum:
+    ``open`` / ``closed`` / ``cancelled`` / ``unknown``).
+    """
+    code = (str(raw_status) if raw_status is not None else "").lower().strip()
+    if not code:
+        return "unknown"
+    if code in _STATUS_OPEN:
+        return "open"
+    if code in _STATUS_CLOSED:
+        return "closed"
+    if code in _STATUS_CANCELLED:
+        return "cancelled"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------
 
@@ -44,9 +93,16 @@ class CMMSContextAdapter(Protocol):
             Asset ID of the event asset.  Used as the primary query scope.
         sister_component_ids:
             KG component IDs of sister equipment (same_train / adjacent).
-            Implementations should map these to CMMS FLOCs / equipment IDs
-            using the same KG property lookup used by ``CAPExportSerializer``
-            (``maximo_floc`` / ``sap_equipment_id``).
+            These are opaque KG identifiers; a live adapter must resolve them
+            to CMMS FLOCs / equipment IDs (via the ``maximo_floc`` /
+            ``sap_equipment_id`` KG properties, the same lookup
+            ``CAPExportSerializer`` uses) before querying.  This Protocol
+            passes only the IDs, so an adapter that needs the mapping must be
+            constructed with its own KG/FLOC resolver (or a site config table).
+            Threading a schema-shaped query scope (component ID + FLOC +
+            equipment ID) or a KG resolver through ``fetch()`` itself is a
+            planned contract enhancement, deferred to the live-adapter /
+            injection MR — see CMMS_INTEGRATION_GUIDE.md §4.
         lookback_from:
             ISO-8601 UTC timestamp — start of the query window (inclusive).
             Derived from the last PM date on the primary asset, or the
@@ -140,7 +196,28 @@ class MockCMMSAdapter:
         lookback_to: str,
         event: JsonDict,
     ) -> JsonDict:
+        if not self._filter_by_asset:
+            return {
+                "cr_records": list(self._cr_records),
+                "wo_records": list(self._wo_records),
+            }
+        # filter_by_asset=True: classify each fixture by whether its FLOC /
+        # equipment_id contains primary_asset_id (case-insensitive substring);
+        # matches are the primary scope, all others are tagged sister.
         return {
-            "cr_records": list(self._cr_records),
-            "wo_records": list(self._wo_records),
+            "cr_records": [self._scope(r, primary_asset_id) for r in self._cr_records],
+            "wo_records": [self._scope(r, primary_asset_id) for r in self._wo_records],
         }
+
+    @staticmethod
+    def _scope(record: JsonDict, primary_asset_id: str) -> JsonDict:
+        """Return a copy of ``record`` with ``is_sister_equipment`` set by a
+        case-insensitive substring match of ``primary_asset_id`` against the
+        record's ``functional_location`` / ``equipment_id``."""
+        needle = (primary_asset_id or "").lower()
+        haystack = " ".join(
+            str(record.get(k) or "") for k in ("functional_location", "equipment_id")
+        ).lower()
+        tagged = dict(record)
+        tagged["is_sister_equipment"] = bool(needle) and needle not in haystack
+        return tagged
