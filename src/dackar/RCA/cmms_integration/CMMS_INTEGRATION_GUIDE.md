@@ -407,8 +407,15 @@ class CMMSContextAdapter(Protocol):
    `element_usage` nodes. These are available in `kg_context.components[]`
    (see `kg_context.json` schema). Your adapter receives the KG component IDs;
    you need to resolve them to CMMS location codes for the CMMS query.
-   The simplest approach: pass the full `kg_context` alongside `sister_component_ids`
-   and build a lookup dict at fetch time.
+
+   Note the current `CMMSContextAdapter.fetch()` Protocol passes **only** the
+   component IDs — not the `kg_context` — so an adapter that needs the FLOC /
+   equipment mapping must be **constructed with its own KG/FLOC resolver** (or a
+   site config table) and build the lookup there. Threading a schema-shaped
+   query scope (component ID + FLOC + equipment ID) or a KG resolver through
+   `fetch()` itself is a planned contract enhancement, deferred to the
+   live-adapter / injection MR; until then, inject the resolver at construction
+   time rather than relying on `fetch()` receiving the full `kg_context`.
 
 2. **Build the query filter** using `lookback_from`, `lookback_to`, and the
    resolved location codes. See the helper methods in `maximo_cmms_adapter.py`
