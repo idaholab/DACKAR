@@ -8,7 +8,9 @@ implementation skeleton.
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -73,6 +75,16 @@ class CAPSubmissionReceipt:
     notes: Optional[str] = None
 
     def to_dict(self) -> JsonDict:
+        """
+        Return the receipt as a plain JSON-serializable dict.
+
+        Returns
+        -------
+        dict
+            Keys mirror the dataclass attributes; suitable for persisting
+            alongside the CAPExportPackage as the ``cap_submission_receipt``
+            artifact.
+        """
         return {
             "receipt_id": self.receipt_id,
             "submitted_at": self.submitted_at,
@@ -138,13 +150,31 @@ class FileDropCAPAdapter:
         self.drop_dir.mkdir(parents=True, exist_ok=True)
 
     def submit(self, package: JsonDict) -> CAPSubmissionReceipt:
+        """
+        Write the package to the drop zone as JSON and return a receipt.
+
+        The file is written atomically (to a hidden ``*.tmp`` sibling, then
+        ``os.replace``d into place) so a CMMS import job polling the directory
+        never observes a partially written ``cap_export_*.json`` file.
+
+        Parameters
+        ----------
+        package:
+            Dict conforming to ``schemas/cap_export_package.json``.
+
+        Returns
+        -------
+        CAPSubmissionReceipt
+            ``status="pending"`` with an empty ``cr_numbers`` list; ``notes``
+            holds the written file path.
+        """
         export_id = package.get("export_id") or "unknown"
         submitted_at = _utcnow_iso()
         receipt_id = f"RCPT::{export_id}::{submitted_at}"
 
         safe_name = _safe_export_filename(export_id)
         file_path = self.drop_dir / f"cap_export_{safe_name}.json"
-        file_path.write_text(json.dumps(package, indent=2, default=str))
+        self._atomic_write_json(file_path, package)
 
         return CAPSubmissionReceipt(
             receipt_id=receipt_id,
@@ -155,6 +185,22 @@ class FileDropCAPAdapter:
             status="pending",
             notes=str(file_path),
         )
+
+    @staticmethod
+    def _atomic_write_json(file_path: Path, package: JsonDict) -> None:
+        """Write ``package`` as JSON to ``file_path`` via a temp file + os.replace."""
+        data = json.dumps(package, indent=2, default=str)
+        fd, tmp = tempfile.mkstemp(
+            dir=str(file_path.parent), prefix=f".{file_path.stem}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(data)
+            os.replace(tmp, file_path)
+        except BaseException:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +216,20 @@ class NoOpCAPAdapter:
     """
 
     def submit(self, package: JsonDict) -> CAPSubmissionReceipt:
+        """
+        Discard the package and return a ``status="noop"`` receipt.
+
+        Parameters
+        ----------
+        package:
+            Dict conforming to ``schemas/cap_export_package.json``.  Only
+            ``export_id`` is read; nothing is written.
+
+        Returns
+        -------
+        CAPSubmissionReceipt
+            ``status="noop"`` with an empty ``cr_numbers`` list.
+        """
         export_id = package.get("export_id") or "unknown"
         submitted_at = _utcnow_iso()
         return CAPSubmissionReceipt(
