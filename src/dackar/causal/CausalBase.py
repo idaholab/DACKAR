@@ -1232,10 +1232,14 @@ class CausalBase(object):
         else:
           status = root
       elif root.pos_ in ['AUX']:
-        leftInd = list(root.lefts)[0].i
-        subj = root.doc[leftInd:root.i]
-        amod = self.findRightKeyword(root)
-        status = [amod, subj]
+        lefts = list(root.lefts)
+        if lefts:                          # AUX with no left dependents -> no left-span status
+          leftInd = lefts[0].i
+          subj = root.doc[leftInd:root.i]
+          amod = self.findRightKeyword(root)
+          status = [amod, subj]
+        else:
+          logger.warning(f'No status identified for "{ent}" in "{ent.sent}"')
       else:
         logger.warning(f'No status identified for "{ent}" in "{ent.sent}"')
     else:
