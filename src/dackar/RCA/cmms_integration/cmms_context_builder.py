@@ -22,9 +22,25 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from .cmms_adapter import normalize_cmms_status
+
 logger = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
+
+# Event-type tokens that mark a past_event as preventive maintenance.  Matched
+# as whole normalized tokens (not substrings) so "equipment_failure" — which
+# contains the adjacent letters "pm" — is not mistaken for a PM.
+_PM_EVENT_TOKENS = frozenset({"pm", "preventive", "preventative"})
+
+# cmms_context.json sister_components[] item whitelist (additionalProperties:
+# false; required: component_id, match_type).  Similarity-resolver results are
+# projected onto this before entering the artifact so an arbitrary resolver's
+# extra fields never break schema validation.
+_SISTER_SCHEMA_KEYS = frozenset({
+    "component_id", "component_label", "match_type",
+    "shared_fm_count", "embedding_score",
+})
 
 # cmms_context.json cr_records / wo_records item whitelists (additionalProperties:
 # false).  Enriched records are projected onto these before entering the artifact
@@ -164,11 +180,22 @@ class CMMSContextBuilder:
             or event.get("event_time")
             or event.get("timestamp")
         )
+        # timestamp_start is required by schemas/event.json.  Without a parseable
+        # one the lookback window would silently anchor to the current wall-clock
+        # time, turning a historical RCA into a now-relative query (and
+        # days_before_event would be computed against now) — a visible contract
+        # error is safer than plausible-but-wrong evidence.
+        if event_ts is None:
+            raise ValueError(
+                f"CMMSContextBuilder.build(): event {event_id!r} has a missing or "
+                f"unparseable timestamp (expected an ISO-8601 'timestamp_start'). "
+                f"The CMMS lookback window cannot be anchored to wall-clock time."
+            )
         generated_at = _utcnow_iso()
         cmms_context_id = f"CMMSCTX::{event_id}::{generated_at}"
 
         # 1. Derive lookback window
-        lookback_to = event_ts or datetime.now(timezone.utc)
+        lookback_to = event_ts
         lookback_from, lookback_anchor = self._resolve_lookback(
             kg_context=kg_context,
             event_ts=event_ts,
@@ -198,30 +225,27 @@ class CMMSContextBuilder:
         raw_crs = raw.get("cr_records") or []
         raw_wos = raw.get("wo_records") or []
 
-        # 4. Enrich records (resolve component_id via the KG FLOC/equipment maps)
+        # 4. Enrich records (resolve component_id via the KG FLOC/equipment maps),
+        # skipping any record still malformed after normalization.
         floc_to_cid, equip_to_cid = self._build_component_lookups(kg_context)
         sister_id_set = set(sister_ids)
-        cr_records = [
-            self._enrich_record(
-                r, lookback_to, is_cr=True,
-                floc_to_cid=floc_to_cid, equip_to_cid=equip_to_cid,
-                sister_ids=sister_id_set,
-            )
-            for r in raw_crs
-            if isinstance(r, dict)
-        ]
-        wo_records = [
-            self._enrich_record(
-                r, lookback_to, is_cr=False,
-                floc_to_cid=floc_to_cid, equip_to_cid=equip_to_cid,
-                sister_ids=sister_id_set,
-            )
-            for r in raw_wos
-            if isinstance(r, dict)
-        ]
+        cr_records, dropped_cr = self._enrich_all(
+            raw_crs, lookback_to, is_cr=True,
+            floc_to_cid=floc_to_cid, equip_to_cid=equip_to_cid, sister_ids=sister_id_set,
+        )
+        wo_records, dropped_wo = self._enrich_all(
+            raw_wos, lookback_to, is_cr=False,
+            floc_to_cid=floc_to_cid, equip_to_cid=equip_to_cid, sister_ids=sister_id_set,
+        )
 
-        # 5. Cap — sort on the parsed datetime, not the raw string, so records
-        # with mixed offsets (+00:00 / Z / naive) aren't dropped out of order.
+        # 5. Recurrence summary — computed from the FULL enriched lists, before
+        # capping, so the aggregate reflects every record in the window.  The
+        # caps below bound only the detail arrays retained in the artifact.
+        recurrence_summary = self._build_recurrence_summary(cr_records, wo_records)
+
+        # 6. Cap the detail arrays — sort on the parsed datetime, not the raw
+        # string, so records with mixed offsets (+00:00 / Z / naive) aren't
+        # dropped out of order.
         _epoch = datetime.min.replace(tzinfo=timezone.utc)
         if self.config.max_cr_records:
             cr_records = sorted(
@@ -235,9 +259,6 @@ class CMMSContextBuilder:
                 key=lambda r: _parse_iso(r.get("created_date")) or _epoch,
                 reverse=True,
             )[: self.config.max_wo_records]
-
-        # 6. Recurrence summary
-        recurrence_summary = self._build_recurrence_summary(cr_records, wo_records)
 
         return {
             "cmms_context_id": cmms_context_id,
@@ -257,6 +278,7 @@ class CMMSContextBuilder:
             "provenance": {
                 "generated_by": "CMMSContextBuilder",
                 "kg_context_id": kg_context.get("subgraph_id"),
+                "dropped_records": {"cr": dropped_cr, "wo": dropped_wo},
                 "query_params": {
                     "primary_asset_id": primary_asset_id,
                     "sister_component_ids": sister_ids,
@@ -497,8 +519,10 @@ class CMMSContextBuilder:
             # Restrict to the primary asset — past_events can include sisters.
             if primary_asset_id and ev.get("asset_id") and ev.get("asset_id") != primary_asset_id:
                 continue
-            ev_type = (ev.get("event_type") or "").lower()
-            if "pm" in ev_type or "preventive" in ev_type:
+            # Whole-token match — a substring test would treat unrelated types
+            # like "equipment_failure" (contains "pm") as preventive maintenance.
+            ev_tokens = set(self._normalize_token(ev.get("event_type")).split())
+            if ev_tokens & _PM_EVENT_TOKENS:
                 # kg_context schema dates are timestamp_start / timestamp_end.
                 dt = _parse_iso(ev.get("timestamp_start") or ev.get("timestamp_end"))
                 # A PM after the event cannot anchor a backward lookback window.
@@ -563,7 +587,10 @@ class CMMSContextBuilder:
                             "component_label": comp.get("component_label"),
                             "match_type":      "topology",
                             "shared_fm_count": 0,
-                            "embedding_score": 1.0,
+                            # Schema: embedding_score is a Chroma distance, 0.0
+                            # for topology-only matches (no embedding compared);
+                            # lower = more similar.
+                            "embedding_score": 0.0,
                         }
 
         # Tier 2/3: failure mode overlap + spec embedding
@@ -577,25 +604,125 @@ class CMMSContextBuilder:
                 and comp.get("component_id")
                 and comp.get("component_id") not in sister_set
             ]
+            # Confine the broad except to the resolver call itself, so a genuine
+            # resolver defect surfaces as a warning (not silently as "no
+            # sisters") and never masks a bug in our own projection below.
             try:
                 emb_sisters = self.config.similarity_resolver.resolve_similar(
                     target_component_ids=target_ids,
                     kg_context=kg_context,
                 )
-                for s in emb_sisters:
-                    if s.component_id in sisters:
-                        existing = sisters[s.component_id]
-                        existing["match_type"] = f"topology+{s.match_type}"
-                        existing["shared_fm_count"] = s.shared_fm_count
-                        existing["embedding_score"] = s.embedding_score
-                    else:
-                        sisters[s.component_id] = s.to_dict()
             except Exception as exc:
                 logger.warning(
-                    "CMMSContextBuilder: similarity_resolver failed: %s", exc
+                    "CMMSContextBuilder: similarity_resolver.resolve_similar() "
+                    "failed: %s", exc
                 )
+                emb_sisters = []
+
+            # similarity_resolver is typed Any — project every result onto the
+            # sister_components[] schema whitelist before it enters the artifact.
+            for s in emb_sisters or []:
+                projected = self._project_sister(s)
+                if projected is None:
+                    continue  # missing required field — already logged
+                cid = projected["component_id"]
+                if cid in sisters:
+                    existing = sisters[cid]
+                    existing["match_type"] = f"topology+{projected['match_type']}"
+                    if "shared_fm_count" in projected:
+                        existing["shared_fm_count"] = projected["shared_fm_count"]
+                    if "embedding_score" in projected:
+                        existing["embedding_score"] = projected["embedding_score"]
+                else:
+                    sisters[cid] = projected
 
         return list(sisters.values())
+
+    @classmethod
+    def _project_sister(cls, result: Any) -> Optional[JsonDict]:
+        """
+        Project one similarity-resolver result onto the sister_components[]
+        schema whitelist.
+
+        ``config.similarity_resolver`` is typed ``Any``, so a result may carry
+        extra keys, a missing ``match_type``, or wrongly-typed numerics that
+        would fail strict ``sister_components[]`` validation.  Drops non-schema
+        keys, coerces ``shared_fm_count`` / ``embedding_score`` to the schema's
+        numeric types, and returns ``None`` (logging a warning) when a required
+        field (``component_id`` / ``match_type``) is absent.
+        """
+        if hasattr(result, "to_dict"):
+            try:
+                raw = result.to_dict()
+            except Exception as exc:
+                logger.warning(
+                    "CMMSContextBuilder: sister result to_dict() failed: %s", exc
+                )
+                return None
+        elif isinstance(result, dict):
+            raw = result
+        else:
+            logger.warning(
+                "CMMSContextBuilder: unusable sister result type %s",
+                type(result).__name__,
+            )
+            return None
+        if not isinstance(raw, dict):
+            return None
+
+        if not raw.get("component_id") or not raw.get("match_type"):
+            logger.warning(
+                "CMMSContextBuilder: skipping sister result missing "
+                "component_id/match_type: %r", raw
+            )
+            return None
+
+        rec = {k: v for k, v in raw.items() if k in _SISTER_SCHEMA_KEYS}
+        if rec.get("shared_fm_count") is not None:
+            try:
+                rec["shared_fm_count"] = int(rec["shared_fm_count"])
+            except (TypeError, ValueError):
+                rec.pop("shared_fm_count", None)
+        if rec.get("embedding_score") is not None:
+            try:
+                rec["embedding_score"] = float(rec["embedding_score"])
+            except (TypeError, ValueError):
+                rec.pop("embedding_score", None)
+        return rec
+
+    def _enrich_all(
+        self,
+        raw_records: List[Any],
+        event_dt: Optional[datetime],
+        *,
+        is_cr: bool,
+        floc_to_cid: Dict[str, str],
+        equip_to_cid: Dict[str, str],
+        sister_ids: set,
+    ) -> tuple:
+        """
+        Enrich a list of raw CMMS records, skipping any that are still malformed
+        after normalization.  Returns ``(valid_records, dropped_count)``.
+        """
+        id_key = "cr_id" if is_cr else "wo_id"
+        valid: List[JsonDict] = []
+        dropped = 0
+        for idx, r in enumerate(raw_records):
+            rec = self._enrich_record(
+                r, event_dt, is_cr=is_cr,
+                floc_to_cid=floc_to_cid, equip_to_cid=equip_to_cid,
+                sister_ids=sister_ids,
+            ) if isinstance(r, dict) else None
+            if rec is None:
+                dropped += 1
+                ident = r.get(id_key, f"<index {idx}>") if isinstance(r, dict) else f"<index {idx}>"
+                logger.warning(
+                    "CMMSContextBuilder: skipping malformed %s record %r "
+                    "(missing/invalid required field)", id_key, ident,
+                )
+                continue
+            valid.append(rec)
+        return valid, dropped
 
     def _enrich_record(
         self,
@@ -606,16 +733,22 @@ class CMMSContextBuilder:
         floc_to_cid: Optional[Dict[str, str]] = None,
         equip_to_cid: Optional[Dict[str, str]] = None,
         sister_ids: Optional[set] = None,
-    ) -> JsonDict:
+    ) -> Optional[JsonDict]:
         """
-        Add derived fields to a raw CMMS record and project it onto the
-        cmms_context schema whitelist:
+        Add derived fields to a raw CMMS record, project it onto the
+        cmms_context schema whitelist, and validate the schema-required fields.
+        Returns the enriched record, or ``None`` when it is still malformed
+        after normalization (missing/invalid required field) so the caller can
+        skip it and record the drop in provenance.
+
         - ``days_before_event``: int or None
         - ``component_id``: resolved from ``functional_location`` /
           ``equipment_id`` via the KG lookups when the adapter did not supply one
-        - ``status``: normalised to open/closed/cancelled/unknown
-        - ``is_sister_equipment``: preserved from the adapter, else derived from
-          whether the resolved ``component_id`` is a KG sister
+        - ``status``: normalized to open/closed/cancelled/unknown (every
+          documented Maximo/SAP code; unrecognized → unknown)
+        - ``is_sister_equipment``: coerced to a real bool from the adapter value
+          (a truthy string like ``"false"`` no longer survives), else derived
+          from whether the resolved ``component_id`` is a KG sister
 
         Adapter-supplied fields outside the schema whitelist (e.g. Path-A
         ``condition_assessment`` / ``failure_mode_refs``) are dropped from the
@@ -640,28 +773,64 @@ class CMMSContextBuilder:
             if component_id:
                 enriched["component_id"] = component_id
 
-        # normalise status
-        raw_status = (record.get("status") or "").lower().strip()
-        if raw_status in {"open", "wappr", "wmatl", "wpcond", "inprg", "appr"}:
-            enriched["status"] = "open"
-        elif raw_status in {"comp", "closed", "close", "completed"}:
-            enriched["status"] = "closed"
-        elif raw_status in {"can", "cancelled", "canceled"}:
-            enriched["status"] = "cancelled"
-        elif not raw_status:
-            enriched["status"] = "unknown"
-        else:
-            enriched["status"] = raw_status  # pass through unknown codes
+        # normalize status (every documented Maximo/SAP code; unknown → unknown)
+        enriched["status"] = normalize_cmms_status(record.get("status"))
 
-        # is_sister_equipment: preserve adapter value, else derive from the match
-        if "is_sister_equipment" not in enriched:
-            enriched["is_sister_equipment"] = bool(
-                component_id and sister_ids and component_id in sister_ids
-            )
+        # is_sister_equipment: coerce the adapter value to a real bool; when the
+        # adapter did not supply one (or it is uninterpretable), derive it from
+        # whether the resolved component is a KG sister.
+        coerced = self._coerce_bool(record.get("is_sister_equipment"))
+        if coerced is None:
+            coerced = bool(component_id and sister_ids and component_id in sister_ids)
+        enriched["is_sister_equipment"] = coerced
 
         # Project onto the schema whitelist (additionalProperties: false).
         allowed = _CR_SCHEMA_KEYS if is_cr else _WO_SCHEMA_KEYS
-        return {k: v for k, v in enriched.items() if k in allowed}
+        projected = {k: v for k, v in enriched.items() if k in allowed}
+
+        # Enforce the schema-required fields at the adapter boundary; a record
+        # still malformed after normalization is skipped rather than emitted.
+        id_key = "cr_id" if is_cr else "wo_id"
+        if not self._has_required_fields(projected, id_key):
+            return None
+        return projected
+
+    @staticmethod
+    def _coerce_bool(value: Any) -> Optional[bool]:
+        """
+        Coerce a raw ``is_sister_equipment`` value to a real bool.  Returns
+        ``None`` for an absent or uninterpretable value so the caller can derive
+        it from KG topology instead (a truthy string like ``"false"`` must not
+        read as True).
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            v = value.strip().lower()
+            if v in {"true", "1", "yes", "y", "t"}:
+                return True
+            if v in {"false", "0", "no", "n", "f", ""}:
+                return False
+        return None
+
+    @staticmethod
+    def _has_required_fields(record: JsonDict, id_key: str) -> bool:
+        """
+        True if ``record`` carries the cmms_context-required fields with valid
+        types: a non-empty string id, a string ``short_description``, and a
+        parseable ``created_date`` (``is_sister_equipment`` is always set to a
+        bool upstream; ``status`` is always a valid enum value).
+        """
+        rid = record.get(id_key)
+        if not isinstance(rid, str) or not rid.strip():
+            return False
+        if not isinstance(record.get("short_description"), str):
+            return False
+        if _parse_iso(record.get("created_date")) is None:
+            return False
+        return True
 
     def _build_recurrence_summary(
         self,
