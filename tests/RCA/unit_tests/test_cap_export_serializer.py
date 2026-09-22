@@ -62,7 +62,7 @@ def _make_action(
     }
 
 
-def _make_kg_context(components=None):
+def _make_kg_context(components=None, asset_id="ASSET-A"):
     if components is None:
         components = [
             {
@@ -72,7 +72,31 @@ def _make_kg_context(components=None):
                 "sap_equipment_id": None,
             }
         ]
-    return {"components": components}
+    return {"asset_id": asset_id, "components": components}
+
+
+def _make_override(
+    override_id="OVR-001",
+    writeback_decision="accept",
+    event_id=None,
+    asset_id=None,
+):
+    """
+    Minimal AnalystOverride record accepted by ``serialize()``.
+
+    ``event_id`` / ``asset_id`` are omitted by default so the cross-artifact
+    consistency checks (I3) are not triggered; pass them to exercise the
+    mismatch guards.
+    """
+    rec = {
+        "override_id": override_id,
+        "writeback_decision": writeback_decision,
+    }
+    if event_id is not None:
+        rec["event_id"] = event_id
+    if asset_id is not None:
+        rec["asset_id"] = asset_id
+    return rec
 
 
 # ---------------------------------------------------------------------------
@@ -91,12 +115,14 @@ class TestCAPExportConfig:
         m = cfg.resolved_action_type_map()
         assert m["immediate_corrective"] == "CAL"
         assert m["preventive"] == "PM"
+        assert m["pm_corrective"] == "CM"
 
     def test_resolved_action_type_map_sap(self):
         cfg = CAPExportConfig(target_system="sap_pm")
         m = cfg.resolved_action_type_map()
         assert m["immediate_corrective"] == "M1"
         assert m["preventive"] == "M3"
+        assert m["pm_corrective"] == "M2"
 
     def test_resolved_action_type_map_generic(self):
         cfg = CAPExportConfig(target_system="generic")
@@ -136,6 +162,10 @@ class TestCAPExportConfig:
     def test_floc_kg_property_sap(self):
         assert CAPExportConfig(target_system="sap_pm").floc_kg_property() == "sap_equipment_id"
 
+    def test_unsupported_target_raises(self):
+        with pytest.raises(ValueError, match="Unsupported target_system"):
+            CAPExportConfig(target_system="oracle_eam")
+
 
 # ---------------------------------------------------------------------------
 # CAPExportSerializer — package structure
@@ -148,55 +178,73 @@ class TestSerializerPackageStructure:
 
     def test_required_top_level_keys(self):
         card = _make_rca_card()
-        pkg = self.serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = self.serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         for key in ("export_id", "run_id", "event_id", "asset_id", "generated_at",
                     "target_system", "cr_records", "unresolved_locations", "provenance"):
             assert key in pkg, f"Missing key: {key}"
 
     def test_export_id_format(self):
-        card = _make_rca_card(event_id="EVT-42")
-        pkg = self.serializer.serialize(card, _make_kg_context(), run_id="run-001")
-        assert pkg["export_id"].startswith("CAPEXP::EVT-42::")
+        card = _make_rca_card()
+        pkg = self.serializer.serialize(
+            card, _make_kg_context(), run_id="run-001",
+            override_record=_make_override(override_id="OVR-XYZ"),
+        )
+        # A1: export_id is derived from run_id + override_id (not event_id).
+        assert pkg["export_id"] == "CAPEXP::run-001::OVR-XYZ"
 
     def test_run_id_preserved(self):
         card = _make_rca_card()
-        pkg = self.serializer.serialize(card, _make_kg_context(), run_id="run-999")
+        pkg = self.serializer.serialize(
+            card, _make_kg_context(), run_id="run-999", override_record=_make_override()
+        )
         assert pkg["run_id"] == "run-999"
 
     def test_event_id_preserved(self):
         card = _make_rca_card(event_id="EVT-007")
-        pkg = self.serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = self.serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         assert pkg["event_id"] == "EVT-007"
 
-    def test_asset_id_preserved(self):
-        card = _make_rca_card(asset_id="PUMP-42")
-        pkg = self.serializer.serialize(card, _make_kg_context(), run_id="run-001")
+    def test_asset_id_from_kg_context(self):
+        # I3: asset_id is sourced from kg_context, not the card.
+        card = _make_rca_card()
+        pkg = self.serializer.serialize(
+            card, _make_kg_context(asset_id="PUMP-42"), run_id="run-001",
+            override_record=_make_override(),
+        )
         assert pkg["asset_id"] == "PUMP-42"
 
     def test_target_system_in_package(self):
-        pkg = self.serializer.serialize(_make_rca_card(), _make_kg_context(), run_id="run-001")
+        pkg = self.serializer.serialize(
+            _make_rca_card(), _make_kg_context(), run_id="run-001",
+            override_record=_make_override(),
+        )
         assert pkg["target_system"] == "maximo"
 
     def test_cr_records_count_matches_actions(self):
         actions = [_make_action("ACT-001"), _make_action("ACT-002"), _make_action("ACT-003")]
         card = _make_rca_card(actions=actions)
-        pkg = self.serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = self.serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         assert len(pkg["cr_records"]) == 3
 
     def test_provenance_generated_by(self):
-        pkg = self.serializer.serialize(_make_rca_card(), _make_kg_context(), run_id="run-001")
+        pkg = self.serializer.serialize(
+            _make_rca_card(), _make_kg_context(), run_id="run-001",
+            override_record=_make_override(),
+        )
         assert pkg["provenance"]["generated_by"] == "CAPExportSerializer"
 
     def test_provenance_override_id(self):
         pkg = self.serializer.serialize(
             _make_rca_card(), _make_kg_context(), run_id="run-001",
-            override_id="OVRD::EVT-001::2026-01-01"
+            override_record=_make_override(override_id="OVRD::EVT-001::2026-01-01"),
         )
         assert pkg["provenance"]["override_id"] == "OVRD::EVT-001::2026-01-01"
-
-    def test_provenance_override_id_none_by_default(self):
-        pkg = self.serializer.serialize(_make_rca_card(), _make_kg_context(), run_id="run-001")
-        assert pkg["provenance"]["override_id"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +260,9 @@ class TestSerializerCRRecord:
         action = action or _make_action()
         kg_context = kg_context or _make_kg_context()
         card = _make_rca_card(actions=[action])
-        pkg = self.serializer.serialize(card, kg_context, run_id="run-001")
+        pkg = self.serializer.serialize(
+            card, kg_context, run_id="run-001", override_record=_make_override()
+        )
         return pkg["cr_records"][0]
 
     def test_required_cr_record_keys(self):
@@ -241,6 +291,20 @@ class TestSerializerCRRecord:
         rec = self._get_record(_make_action(action_type="preventive"))
         assert rec["cr_type"] == "PM"
 
+    def test_cr_type_mapped_pm_corrective(self):
+        # I2: pm_corrective is a recognised action_type (was previously
+        # silently upper-cased); maximo maps it to "CM".
+        rec = self._get_record(_make_action(action_type="pm_corrective"))
+        assert rec["cr_type"] == "CM"
+
+    def test_unmapped_action_type_raises(self):
+        # I2: an unknown action_type must raise, not pass through silently.
+        card = _make_rca_card(actions=[_make_action(action_type="bogus_type")])
+        with pytest.raises(ValueError, match="no mapping"):
+            self.serializer.serialize(
+                card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+            )
+
     def test_priority_preserved(self):
         rec = self._get_record(_make_action(priority="critical"))
         assert rec["priority"] == "critical"
@@ -266,7 +330,9 @@ class TestSerializerCRRecord:
             CAPExportConfig(target_system="maximo", default_work_group="MECH")
         )
         card = _make_rca_card(actions=[_make_action()])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         assert pkg["cr_records"][0]["maximo_ext"]["work_group"] == "MECH"
 
     def test_sap_ext_empty_for_maximo(self):
@@ -286,7 +352,7 @@ class TestFLOCResolution:
             {"component_id": "COMP-001", "maximo_floc": "PLANT/SYS/BEARING-01"}
         ])
         card = _make_rca_card(actions=[_make_action(target_component_id="COMP-001")])
-        pkg = serializer.serialize(card, kg, run_id="run-001")
+        pkg = serializer.serialize(card, kg, run_id="run-001", override_record=_make_override())
         rec = pkg["cr_records"][0]
         assert rec["functional_location"] == "PLANT/SYS/BEARING-01"
         assert rec["equipment_id"] is None
@@ -299,7 +365,7 @@ class TestFLOCResolution:
             {"component_id": "COMP-001", "sap_equipment_id": "EQ-4500012345"}
         ])
         card = _make_rca_card(actions=[_make_action(target_component_id="COMP-001")])
-        pkg = serializer.serialize(card, kg, run_id="run-001")
+        pkg = serializer.serialize(card, kg, run_id="run-001", override_record=_make_override())
         rec = pkg["cr_records"][0]
         assert rec["equipment_id"] == "EQ-4500012345"
         assert rec["functional_location"] is None
@@ -309,7 +375,7 @@ class TestFLOCResolution:
         serializer = CAPExportSerializer(CAPExportConfig(target_system="maximo"))
         kg = _make_kg_context([])  # empty components
         card = _make_rca_card(actions=[_make_action(target_component_id="COMP-MISSING")])
-        pkg = serializer.serialize(card, kg, run_id="run-001")
+        pkg = serializer.serialize(card, kg, run_id="run-001", override_record=_make_override())
         rec = pkg["cr_records"][0]
         assert rec["functional_location"] is None
         assert rec["mapping_status"] == "unresolved"
@@ -321,7 +387,7 @@ class TestFLOCResolution:
             {"component_id": "COMP-001", "maximo_floc": None}
         ])
         card = _make_rca_card(actions=[_make_action(target_component_id="COMP-001")])
-        pkg = serializer.serialize(card, kg, run_id="run-001")
+        pkg = serializer.serialize(card, kg, run_id="run-001", override_record=_make_override())
         rec = pkg["cr_records"][0]
         assert rec["functional_location"] is None
         assert rec["mapping_status"] == "unresolved"
@@ -331,10 +397,14 @@ class TestFLOCResolution:
         serializer = CAPExportSerializer(CAPExportConfig(target_system="maximo"))
         action = _make_action(target_component_id=None)
         card = _make_rca_card(actions=[action])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         rec = pkg["cr_records"][0]
         assert rec["functional_location"] is None
         assert rec["mapping_status"] == "unresolved"
+        # I10: a targetless action is still surfaced in unresolved_locations.
+        assert any("ACT-001" in loc for loc in pkg["unresolved_locations"])
 
     def test_multiple_unresolved_deduplicated(self):
         serializer = CAPExportSerializer(CAPExportConfig(target_system="maximo"))
@@ -344,7 +414,7 @@ class TestFLOCResolution:
             _make_action("ACT-002", target_component_id="COMP-X"),
         ]
         card = _make_rca_card(actions=actions)
-        pkg = serializer.serialize(card, kg, run_id="run-001")
+        pkg = serializer.serialize(card, kg, run_id="run-001", override_record=_make_override())
         assert pkg["unresolved_locations"].count("COMP-X") == 1
 
 
@@ -358,7 +428,9 @@ class TestShortDescription:
         cfg = CAPExportConfig(target_system="maximo", include_rca_run_id_in_description=True)
         serializer = CAPExportSerializer(cfg)
         card = _make_rca_card(actions=[_make_action(description="Fix the pump")])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-MYRUN")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-MYRUN", override_record=_make_override()
+        )
         sd = pkg["cr_records"][0]["short_description"]
         assert sd.startswith("[RCA:run-MYRUN]")
 
@@ -366,7 +438,9 @@ class TestShortDescription:
         cfg = CAPExportConfig(target_system="maximo", include_rca_run_id_in_description=False)
         serializer = CAPExportSerializer(cfg)
         card = _make_rca_card(actions=[_make_action(description="Fix the pump")])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-MYRUN")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-MYRUN", override_record=_make_override()
+        )
         sd = pkg["cr_records"][0]["short_description"]
         assert not sd.startswith("[RCA:")
 
@@ -375,7 +449,9 @@ class TestShortDescription:
         serializer = CAPExportSerializer(cfg)
         long_desc = "A" * 100
         card = _make_rca_card(actions=[_make_action(description=long_desc)])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         sd = pkg["cr_records"][0]["short_description"]
         assert len(sd) <= 40
 
@@ -384,9 +460,21 @@ class TestShortDescription:
         serializer = CAPExportSerializer(cfg)
         long_desc = "B" * 200
         card = _make_rca_card(actions=[_make_action(description=long_desc)])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         sd = pkg["cr_records"][0]["short_description"]
         assert len(sd) <= 100
+
+    def test_sap_limit_respected_with_long_run_id(self):
+        # I6: the [RCA:{run_id}] token must never push the field over the limit.
+        cfg = CAPExportConfig(target_system="sap_pm", include_rca_run_id_in_description=True)
+        serializer = CAPExportSerializer(cfg)
+        card = _make_rca_card(actions=[_make_action(description="D" * 80)])
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="R" * 60, override_record=_make_override()
+        )
+        assert len(pkg["cr_records"][0]["short_description"]) <= 40
 
 
 # ---------------------------------------------------------------------------
@@ -398,28 +486,36 @@ class TestLongText:
     def test_long_text_contains_run_id(self):
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card()
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-LONGTEXT")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-LONGTEXT", override_record=_make_override()
+        )
         lt = pkg["cr_records"][0]["long_text"]
         assert "run-LONGTEXT" in lt
 
     def test_long_text_contains_description(self):
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card(actions=[_make_action(description="Replace worn seal")])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         lt = pkg["cr_records"][0]["long_text"]
         assert "Replace worn seal" in lt
 
     def test_long_text_contains_rationale(self):
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card(actions=[_make_action(rationale="Seal is beyond tolerance")])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         lt = pkg["cr_records"][0]["long_text"]
         assert "Seal is beyond tolerance" in lt
 
     def test_long_text_contains_dackar_footer(self):
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card()
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         lt = pkg["cr_records"][0]["long_text"]
         assert "DACKAR RCA" in lt
 
@@ -427,13 +523,17 @@ class TestLongText:
         cfg = CAPExportConfig(long_text_header="CUSTOM HEADER\n")
         serializer = CAPExportSerializer(cfg)
         card = _make_rca_card()
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         lt = pkg["cr_records"][0]["long_text"]
+        # I8: the custom header is prepended to (not a replacement for) the block.
         assert lt.startswith("CUSTOM HEADER")
+        assert "[RCA Run: run-001]" in lt
 
 
 # ---------------------------------------------------------------------------
-# Approval guard
+# Approval guard — card-level (secondary) gate
 # ---------------------------------------------------------------------------
 
 class TestApprovalGuard:
@@ -442,20 +542,114 @@ class TestApprovalGuard:
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card(writeback_recommendation="hold_until_review")
         with pytest.raises(ValueError, match="ready_if_accepted"):
-            serializer.serialize(card, _make_kg_context(), run_id="run-001")
+            serializer.serialize(
+                card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+            )
 
     def test_raises_if_recommendation_missing(self):
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card()
         card["analyst_review"] = {}
         with pytest.raises(ValueError):
-            serializer.serialize(card, _make_kg_context(), run_id="run-001")
+            serializer.serialize(
+                card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+            )
 
     def test_passes_when_approved(self):
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card(writeback_recommendation="ready_if_accepted")
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         assert "export_id" in pkg
+
+
+# ---------------------------------------------------------------------------
+# Override-record gate (B1) — authoritative acceptance gate
+# ---------------------------------------------------------------------------
+
+class TestOverrideGate:
+
+    def setup_method(self):
+        self.serializer = CAPExportSerializer(CAPExportConfig())
+
+    def test_export_id_derived_from_override(self):
+        pkg = self.serializer.serialize(
+            _make_rca_card(), _make_kg_context(), run_id="run-77",
+            override_record=_make_override(override_id="OVR-STABLE"),
+        )
+        assert pkg["export_id"] == "CAPEXP::run-77::OVR-STABLE"
+
+    def test_export_id_is_idempotent(self):
+        override = _make_override(override_id="OVR-STABLE")
+        a = self.serializer.serialize(
+            _make_rca_card(), _make_kg_context(), run_id="run-77", override_record=override
+        )
+        b = self.serializer.serialize(
+            _make_rca_card(), _make_kg_context(), run_id="run-77", override_record=override
+        )
+        assert a["export_id"] == b["export_id"]
+
+    def test_rejects_reject_decision(self):
+        with pytest.raises(ValueError, match="accept"):
+            self.serializer.serialize(
+                _make_rca_card(), _make_kg_context(), run_id="run-001",
+                override_record=_make_override(writeback_decision="reject"),
+            )
+
+    def test_rejects_defer_decision(self):
+        with pytest.raises(ValueError, match="accept"):
+            self.serializer.serialize(
+                _make_rca_card(), _make_kg_context(), run_id="run-001",
+                override_record=_make_override(writeback_decision="defer"),
+            )
+
+    def test_rejects_non_dict_override(self):
+        with pytest.raises(ValueError):
+            self.serializer.serialize(
+                _make_rca_card(), _make_kg_context(), run_id="run-001", override_record=None
+            )
+
+    def test_requires_override_id(self):
+        override = _make_override()
+        del override["override_id"]
+        with pytest.raises(ValueError, match="override_id"):
+            self.serializer.serialize(
+                _make_rca_card(), _make_kg_context(), run_id="run-001", override_record=override
+            )
+
+
+# ---------------------------------------------------------------------------
+# Cross-artifact identifier checks (I3)
+# ---------------------------------------------------------------------------
+
+class TestCrossArtifactIdentifiers:
+
+    def setup_method(self):
+        self.serializer = CAPExportSerializer(CAPExportConfig())
+
+    def test_missing_kg_asset_id_raises(self):
+        kg = _make_kg_context()
+        del kg["asset_id"]
+        with pytest.raises(ValueError, match="asset_id"):
+            self.serializer.serialize(
+                _make_rca_card(), kg, run_id="run-001", override_record=_make_override()
+            )
+
+    def test_event_id_mismatch_raises(self):
+        card = _make_rca_card(event_id="EVT-CARD")
+        with pytest.raises(ValueError, match="event_id mismatch"):
+            self.serializer.serialize(
+                card, _make_kg_context(), run_id="run-001",
+                override_record=_make_override(event_id="EVT-OTHER"),
+            )
+
+    def test_asset_id_mismatch_raises(self):
+        with pytest.raises(ValueError, match="asset_id mismatch"):
+            self.serializer.serialize(
+                _make_rca_card(), _make_kg_context(asset_id="ASSET-A"), run_id="run-001",
+                override_record=_make_override(asset_id="ASSET-OTHER"),
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +661,9 @@ class TestEmptyActions:
     def test_no_actions_produces_empty_cr_records(self):
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card(actions=[])
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         assert pkg["cr_records"] == []
         assert pkg["unresolved_locations"] == []
 
@@ -475,5 +671,7 @@ class TestEmptyActions:
         serializer = CAPExportSerializer(CAPExportConfig())
         card = _make_rca_card(actions=[])
         card["recommended_actions"] = None
-        pkg = serializer.serialize(card, _make_kg_context(), run_id="run-001")
+        pkg = serializer.serialize(
+            card, _make_kg_context(), run_id="run-001", override_record=_make_override()
+        )
         assert pkg["cr_records"] == []
