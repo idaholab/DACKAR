@@ -151,11 +151,10 @@ class SAPPMCMMSAdapter:
 
     @staticmethod
     def _map_status(sap_status: str) -> str:
-        """Map SAP user status codes to cmms_context schema values."""
-        mapping = {
-            "OSNO": "open", "OSMA": "open", "OSTS": "open",
-            "NOCO": "open",   # not completed
-            "CLSD": "closed", "TECO": "closed",
-            "DLFL": "cancelled",
-        }
-        return mapping.get((sap_status or "").upper(), "unknown")
+        """Map SAP user status codes to cmms_context schema values.
+
+        Delegates to the shared :func:`normalize_cmms_status` so Maximo, SAP,
+        and generic codes normalize identically wherever a status enters.
+        """
+        from .cmms_adapter import normalize_cmms_status
+        return normalize_cmms_status(sap_status)
