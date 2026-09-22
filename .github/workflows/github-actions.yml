@@ -166,3 +166,53 @@ jobs:
       - name: Test
         working-directory: tests
         run: pytest
+
+  # Builds the wheel + sdist and asserts the RCA JSON data files (CAP field maps
+  # and JSON schemas) are packaged and readable from an installed copy. Guards the
+  # [tool.setuptools.package-data] config so the CAP serializer can always resolve
+  # its field maps / schema when DACKAR is pip-installed (not just from a checkout).
+  Package-Data-Check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and Branch
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Assert data files are present in the wheel
+        run: |
+          python3 - <<'PY'
+          import glob, sys, zipfile
+          whl = sorted(glob.glob("dist/*.whl"))[-1]
+          names = set(zipfile.ZipFile(whl).namelist())
+          required = [
+              "dackar/RCA/cap_integration/field_maps/maximo_default.json",
+              "dackar/RCA/cap_integration/field_maps/sap_pm_default.json",
+              "dackar/RCA/schemas/cap_export_package.json",
+          ]
+          missing = [r for r in required if r not in names]
+          if missing:
+              print("MISSING from", whl, "->", missing)
+              print("packaged .json files:", sorted(n for n in names if n.endswith(".json")))
+              sys.exit(1)
+          print("OK: required data files present in", whl)
+          PY
+
+      - name: Install the built wheel and read packaged data
+        run: |
+          uv venv /tmp/wheelcheck
+          uv pip install --python /tmp/wheelcheck --no-deps dist/*.whl
+          /tmp/wheelcheck/bin/python - <<'PY'
+          import glob, json
+          base = glob.glob("/tmp/wheelcheck/lib/python*/site-packages/dackar/RCA")[0]
+          fm = json.load(open(base + "/cap_integration/field_maps/maximo_default.json"))
+          assert "pm_corrective" in fm["action_type_map"], fm["action_type_map"]
+          json.load(open(base + "/schemas/cap_export_package.json"))
+          print("OK: packaged data readable from installed wheel")
+          PY
