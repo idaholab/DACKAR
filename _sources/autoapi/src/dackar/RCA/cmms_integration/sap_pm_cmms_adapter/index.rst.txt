@@ -1,0 +1,154 @@
+src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter
+===================================================
+
+.. py:module:: src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter
+
+.. autoapi-nested-parse::
+
+   sap_pm_cmms_adapter — SAPPMCMMSAdapter skeleton.
+
+   Implements CMMSContextAdapter for SAP Plant Maintenance using the
+   SAP OData API (PM Maintenance Notifications / Orders).
+   Plant teams fill in the connection details and field mappings.
+   See CMMS_INTEGRATION_GUIDE.md §4 for the full implementation guide.
+
+   Dependencies (not installed by default):
+       pip install requests
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.logger
+   src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.JsonDict
+   src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter._DEFAULT_NOTIFICATION_ENDPOINT
+   src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter._DEFAULT_ORDER_ENDPOINT
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: JsonDict
+
+.. py:data:: _DEFAULT_NOTIFICATION_ENDPOINT
+   :value: '/sap/opu/odata/sap/PMMAINTNOTIF_ODATA/MaintenanceNotificationSet'
+
+
+.. py:data:: _DEFAULT_ORDER_ENDPOINT
+   :value: '/sap/opu/odata/sap/API_MAINTORDER/MaintenanceOrderSet'
+
+
+.. py:class:: SAPPMCMMSAdapter(base_url, username, password, plant = None, notification_endpoint = _DEFAULT_NOTIFICATION_ENDPOINT, order_endpoint = _DEFAULT_ORDER_ENDPOINT, timeout = 30)
+
+   Live SAP PM adapter — fetches Maintenance Notifications (CRs) and
+   Maintenance Orders (WOs) via the SAP OData API.
+
+   :param base_url: SAP system base URL, e.g. ``"https://sap.plant.corp"``.
+   :param username: SAP user name (basic auth).
+   :param password: SAP password (basic auth).  Consider using a service account with
+                    read-only PM authorisations.
+   :param plant: SAP plant code (e.g. ``"1000"``).
+   :param notification_endpoint: OData path for maintenance notifications.
+   :param order_endpoint: OData path for maintenance orders.
+   :param timeout: HTTP request timeout in seconds.
+
+
+   .. py:attribute:: base_url
+
+
+   .. py:attribute:: username
+
+
+   .. py:attribute:: password
+
+
+   .. py:attribute:: plant
+      :value: None
+
+
+
+   .. py:attribute:: notification_endpoint
+      :value: '/sap/opu/odata/sap/PMMAINTNOTIF_ODATA/MaintenanceNotificationSet'
+
+
+
+   .. py:attribute:: order_endpoint
+      :value: '/sap/opu/odata/sap/API_MAINTORDER/MaintenanceOrderSet'
+
+
+
+   .. py:attribute:: timeout
+      :value: 30
+
+
+
+   .. py:method:: fetch(primary_asset_id, sister_component_ids, lookback_from, lookback_to, event)
+      :abstractmethod:
+
+
+      Fetch Maintenance Notifications and Orders from SAP PM.
+
+      TODO — plant teams implement:
+      1. Map sister_component_ids to SAP equipment IDs using the KG
+         sap_equipment_id property (same property used for CAP export).
+      2. Build OData $filter (see ``_build_odata_filter``):
+           Equipment in ('EQ-001','EQ-002')
+           and MaintNotifCreationDate ge datetime'{lookback_from}'
+           and MaintNotifCreationDate le datetime'{lookback_to}'
+      3. GET {notification_endpoint}?$filter=...&$format=json
+      4. GET {order_endpoint}?$filter=...&$format=json
+      5. Map SAP field names to the cmms_context schema:
+           NotifNo         → cr_id
+           MaintNotifType  → cr_type  (e.g. M1, M2, M3, M4)
+           UserStatus      → status   (see _map_status)
+           Priority        → priority
+           ShortText       → short_description
+           LongText        → long_text
+           FunctLoc        → functional_location
+           Equipment       → equipment_id
+           MaintNotifCreationDate → created_date
+      6. Set is_sister_equipment=True for records on sister equipment IDs.
+      7. Return {"cr_records": [...], "wo_records": [...]}
+
+
+
+   .. py:method:: _auth()
+
+      Return (username, password) tuple for requests basic auth.
+
+
+
+   .. py:method:: _build_odata_filter(equipment_ids, lookback_from, lookback_to)
+
+      Build an OData $filter string for SAP PM notifications.
+
+      Note: SAP OData datetime literals use the format
+      ``datetime'2025-10-01T00:00:00'`` (no timezone — SAP uses plant
+      local time by default).
+
+
+
+   .. py:method:: _map_status(sap_status)
+      :staticmethod:
+
+
+      Map SAP user status codes to cmms_context schema values.
+
+      Delegates to the shared :func:`normalize_cmms_status` so Maximo, SAP,
+      and generic codes normalize identically wherever a status enters.
+
+
+

@@ -1,0 +1,1071 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.cmms_integration.cmms_context_builder &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.cmms_integration.cmms_context_builder</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.cmms_integration.cmms_context_builder</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">cmms_context_builder — CMMSContextBuilder.</span>
+
+<span class="sd">Orchestrates live CMMS data retrieval for a single RCA run:</span>
+<span class="sd">  1. Derives the lookback window from kg_context.past_events[] (last PM)</span>
+<span class="sd">     or falls back to event_time − fallback_lookback_days.</span>
+<span class="sd">  2. Identifies sister component IDs from kg_context.components[].</span>
+<span class="sd">  3. Calls the CMMSContextAdapter.fetch() method.</span>
+<span class="sd">  4. Enriches raw records: days_before_event, FLOC→KG component match.</span>
+<span class="sd">  5. Builds the recurrence_summary aggregate.</span>
+<span class="sd">  6. Returns a dict conforming to schemas/cmms_context.json.</span>
+
+<span class="sd">Chroma injection (narrative text → run-scoped embeddings) is handled</span>
+<span class="sd">separately by the orchestrator, which has access to the evidence store.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.cmms_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">normalize_cmms_status</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Event-type tokens that mark a past_event as preventive maintenance.  Matched</span>
+<span class="c1"># as whole normalized tokens (not substrings) so "equipment_failure" — which</span>
+<span class="c1"># contains the adjacent letters "pm" — is not mistaken for a PM.</span>
+<div class="viewcode-block" id="_PM_EVENT_TOKENS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder._PM_EVENT_TOKENS">[docs]</a>
+<span class="n">_PM_EVENT_TOKENS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"pm"</span><span class="p">,</span> <span class="s2">"preventive"</span><span class="p">,</span> <span class="s2">"preventative"</span><span class="p">})</span></div>
+
+
+<span class="c1"># cmms_context.json sister_components[] item whitelist (additionalProperties:</span>
+<span class="c1"># false; required: component_id, match_type).  Similarity-resolver results are</span>
+<span class="c1"># projected onto this before entering the artifact so an arbitrary resolver's</span>
+<span class="c1"># extra fields never break schema validation.</span>
+<div class="viewcode-block" id="_SISTER_SCHEMA_KEYS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder._SISTER_SCHEMA_KEYS">[docs]</a>
+<span class="n">_SISTER_SCHEMA_KEYS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="s2">"component_id"</span><span class="p">,</span> <span class="s2">"component_label"</span><span class="p">,</span> <span class="s2">"match_type"</span><span class="p">,</span>
+    <span class="s2">"shared_fm_count"</span><span class="p">,</span> <span class="s2">"embedding_score"</span><span class="p">,</span>
+<span class="p">})</span></div>
+
+
+<span class="c1"># cmms_context.json cr_records / wo_records item whitelists (additionalProperties:</span>
+<span class="c1"># false).  Enriched records are projected onto these before entering the artifact</span>
+<span class="c1"># so a Path-A-rich adapter's extra fields never break schema validation.</span>
+<div class="viewcode-block" id="_CR_SCHEMA_KEYS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder._CR_SCHEMA_KEYS">[docs]</a>
+<span class="n">_CR_SCHEMA_KEYS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="s2">"cr_id"</span><span class="p">,</span> <span class="s2">"cr_type"</span><span class="p">,</span> <span class="s2">"status"</span><span class="p">,</span> <span class="s2">"priority"</span><span class="p">,</span> <span class="s2">"short_description"</span><span class="p">,</span> <span class="s2">"long_text"</span><span class="p">,</span>
+    <span class="s2">"functional_location"</span><span class="p">,</span> <span class="s2">"equipment_id"</span><span class="p">,</span> <span class="s2">"component_id"</span><span class="p">,</span> <span class="s2">"created_date"</span><span class="p">,</span>
+    <span class="s2">"closed_date"</span><span class="p">,</span> <span class="s2">"days_before_event"</span><span class="p">,</span> <span class="s2">"is_sister_equipment"</span><span class="p">,</span>
+<span class="p">})</span></div>
+
+<div class="viewcode-block" id="_WO_SCHEMA_KEYS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder._WO_SCHEMA_KEYS">[docs]</a>
+<span class="n">_WO_SCHEMA_KEYS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span>
+    <span class="s2">"wo_id"</span><span class="p">,</span> <span class="s2">"wo_type"</span><span class="p">,</span> <span class="s2">"status"</span><span class="p">,</span> <span class="s2">"priority"</span><span class="p">,</span> <span class="s2">"short_description"</span><span class="p">,</span> <span class="s2">"long_text"</span><span class="p">,</span>
+    <span class="s2">"functional_location"</span><span class="p">,</span> <span class="s2">"equipment_id"</span><span class="p">,</span> <span class="s2">"component_id"</span><span class="p">,</span> <span class="s2">"created_date"</span><span class="p">,</span>
+    <span class="s2">"closed_date"</span><span class="p">,</span> <span class="s2">"days_before_event"</span><span class="p">,</span> <span class="s2">"is_sister_equipment"</span><span class="p">,</span>
+<span class="p">})</span></div>
+
+
+
+<div class="viewcode-block" id="_utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder._utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_parse_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder._parse_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_iso</span><span class="p">(</span><span class="n">ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">ts</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">dt</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">dt</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">dt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">dt</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_days_between">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder._days_between">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_days_between</span><span class="p">(</span><span class="n">earlier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">],</span> <span class="n">later</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">earlier</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">later</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">delta</span> <span class="o">=</span> <span class="n">later</span> <span class="o">-</span> <span class="n">earlier</span>
+    <span class="c1"># Round toward zero so a record a few hours after the event reads 0, not -1</span>
+    <span class="c1"># (schema semantics: negative days_before_event = after the event).</span>
+    <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">delta</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mi">86400</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Config</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="CMMSContextBuilderConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CMMSContextBuilderConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Configuration for CMMSContextBuilder.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    fallback_lookback_days:</span>
+<span class="sd">        Days to look back when no PM date is found in kg_context.past_events[].</span>
+<span class="sd">        Default: 90.</span>
+<span class="sd">    sister_relation_types:</span>
+<span class="sd">        KG ``relation_to_asset`` values that qualify a component as sister</span>
+<span class="sd">        equipment.  Default: ``["same_train", "adjacent"]``.</span>
+<span class="sd">    include_sister_equipment:</span>
+<span class="sd">        Whether to include sister equipment in the CMMS query scope.</span>
+<span class="sd">        Default: True.</span>
+<span class="sd">    max_cr_records:</span>
+<span class="sd">        Cap on how many CR records to retain in the artifact (adapter may</span>
+<span class="sd">        return more; the most recent are kept).  0 = no cap.</span>
+<span class="sd">    max_wo_records:</span>
+<span class="sd">        Cap on WO records.  0 = no cap.</span>
+<span class="sd">    similarity_resolver:</span>
+<span class="sd">        Optional ``EquipmentSimilarityResolver`` instance.  When provided,</span>
+<span class="sd">        Tier 2 (failure mode overlap) and Tier 3 (spec embedding) sisters are</span>
+<span class="sd">        added to the topology-based sisters already derived from KG topology.</span>
+<span class="sd">        Set to ``None`` (default) to use topology-only sister resolution.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="CMMSContextBuilderConfig.fallback_lookback_days">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig.fallback_lookback_days">[docs]</a>
+    <span class="n">fallback_lookback_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">90</span></div>
+
+<div class="viewcode-block" id="CMMSContextBuilderConfig.sister_relation_types">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig.sister_relation_types">[docs]</a>
+    <span class="n">sister_relation_types</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
+        <span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">[</span><span class="s2">"same_train"</span><span class="p">,</span> <span class="s2">"adjacent"</span><span class="p">]</span>
+    <span class="p">)</span></div>
+
+<div class="viewcode-block" id="CMMSContextBuilderConfig.include_sister_equipment">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig.include_sister_equipment">[docs]</a>
+    <span class="n">include_sister_equipment</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="CMMSContextBuilderConfig.max_cr_records">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig.max_cr_records">[docs]</a>
+    <span class="n">max_cr_records</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span></div>
+
+<div class="viewcode-block" id="CMMSContextBuilderConfig.max_wo_records">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig.max_wo_records">[docs]</a>
+    <span class="n">max_wo_records</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span></div>
+
+<div class="viewcode-block" id="CMMSContextBuilderConfig.similarity_resolver">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig.similarity_resolver">[docs]</a>
+    <span class="n">similarity_resolver</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Builder</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="CMMSContextBuilder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CMMSContextBuilder</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Builds a ``cmms_context`` artifact from live CMMS data.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    adapter:</span>
+<span class="sd">        Any object implementing the ``CMMSContextAdapter`` Protocol.</span>
+<span class="sd">    config:</span>
+<span class="sd">        ``CMMSContextBuilderConfig`` — defaults to 90-day fallback,</span>
+<span class="sd">        same_train + adjacent sister scope.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">adapter</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CMMSContextBuilderConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="CMMSContextBuilder.adapter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder.adapter">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">adapter</span> <span class="o">=</span> <span class="n">adapter</span></div>
+
+<div class="viewcode-block" id="CMMSContextBuilder.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">CMMSContextBuilderConfig</span><span class="p">()</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public API</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="CMMSContextBuilder.build">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder.build">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build and return a ``cmms_context`` dict.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        event:</span>
+<span class="sd">            Raw event dict (used for event_time and asset_id).</span>
+<span class="sd">        kg_context:</span>
+<span class="sd">            KG context artifact from Stage 5A of the same run.</span>
+<span class="sd">            Used to derive the lookback anchor and sister component IDs.</span>
+<span class="sd">        run_id:</span>
+<span class="sd">            RCA run identifier.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Conforms to ``schemas/cmms_context.json``.</span>
+<span class="sd">        """</span>
+        <span class="n">event_id</span>  <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+        <span class="n">asset_id</span>  <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span>
+        <span class="n">event_ts</span>  <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_time"</span><span class="p">)</span>
+            <span class="ow">or</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="c1"># timestamp_start is required by schemas/event.json.  Without a parseable</span>
+        <span class="c1"># one the lookback window would silently anchor to the current wall-clock</span>
+        <span class="c1"># time, turning a historical RCA into a now-relative query (and</span>
+        <span class="c1"># days_before_event would be computed against now) — a visible contract</span>
+        <span class="c1"># error is safer than plausible-but-wrong evidence.</span>
+        <span class="k">if</span> <span class="n">event_ts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"CMMSContextBuilder.build(): event </span><span class="si">{</span><span class="n">event_id</span><span class="si">!r}</span><span class="s2"> has a missing or "</span>
+                <span class="sa">f</span><span class="s2">"unparseable timestamp (expected an ISO-8601 'timestamp_start'). "</span>
+                <span class="sa">f</span><span class="s2">"The CMMS lookback window cannot be anchored to wall-clock time."</span>
+            <span class="p">)</span>
+        <span class="n">generated_at</span> <span class="o">=</span> <span class="n">_utcnow_iso</span><span class="p">()</span>
+        <span class="n">cmms_context_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"CMMSCTX::</span><span class="si">{</span><span class="n">event_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">generated_at</span><span class="si">}</span><span class="s2">"</span>
+
+        <span class="c1"># 1. Derive lookback window</span>
+        <span class="n">lookback_to</span> <span class="o">=</span> <span class="n">event_ts</span>
+        <span class="n">lookback_from</span><span class="p">,</span> <span class="n">lookback_anchor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_lookback</span><span class="p">(</span>
+            <span class="n">kg_context</span><span class="o">=</span><span class="n">kg_context</span><span class="p">,</span>
+            <span class="n">event_ts</span><span class="o">=</span><span class="n">event_ts</span><span class="p">,</span>
+            <span class="n">primary_asset_id</span><span class="o">=</span><span class="n">asset_id</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Never hand adapters a backward window: a last PM after the event, a</span>
+        <span class="c1"># sister PM, or clock skew can otherwise invert from/to.</span>
+        <span class="k">if</span> <span class="n">lookback_from</span> <span class="o">&gt;</span> <span class="n">lookback_to</span><span class="p">:</span>
+            <span class="n">lookback_from</span> <span class="o">=</span> <span class="n">lookback_to</span>
+        <span class="n">lookback_from_iso</span> <span class="o">=</span> <span class="n">lookback_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+        <span class="n">lookback_to_iso</span>   <span class="o">=</span> <span class="n">lookback_to</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+
+        <span class="c1"># 2. Identify sister components</span>
+        <span class="n">sister_records</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_sisters</span><span class="p">(</span><span class="n">kg_context</span><span class="p">)</span>
+        <span class="n">sister_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">sister_records</span><span class="p">]</span>
+
+        <span class="c1"># 3. Fetch from CMMS</span>
+        <span class="n">primary_asset_id</span> <span class="o">=</span> <span class="n">asset_id</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">adapter</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span>
+            <span class="n">primary_asset_id</span><span class="o">=</span><span class="n">primary_asset_id</span><span class="p">,</span>
+            <span class="n">sister_component_ids</span><span class="o">=</span><span class="n">sister_ids</span><span class="p">,</span>
+            <span class="n">lookback_from</span><span class="o">=</span><span class="n">lookback_from_iso</span><span class="p">,</span>
+            <span class="n">lookback_to</span><span class="o">=</span><span class="n">lookback_to_iso</span><span class="p">,</span>
+            <span class="n">event</span><span class="o">=</span><span class="n">event</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">raw_crs</span> <span class="o">=</span> <span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cr_records"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">raw_wos</span> <span class="o">=</span> <span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"wo_records"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+
+        <span class="c1"># 4. Enrich records (resolve component_id via the KG FLOC/equipment maps),</span>
+        <span class="c1"># skipping any record still malformed after normalization.</span>
+        <span class="n">floc_to_cid</span><span class="p">,</span> <span class="n">equip_to_cid</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_component_lookups</span><span class="p">(</span><span class="n">kg_context</span><span class="p">)</span>
+        <span class="n">sister_id_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">sister_ids</span><span class="p">)</span>
+        <span class="n">cr_records</span><span class="p">,</span> <span class="n">dropped_cr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_enrich_all</span><span class="p">(</span>
+            <span class="n">raw_crs</span><span class="p">,</span> <span class="n">lookback_to</span><span class="p">,</span> <span class="n">is_cr</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">floc_to_cid</span><span class="o">=</span><span class="n">floc_to_cid</span><span class="p">,</span> <span class="n">equip_to_cid</span><span class="o">=</span><span class="n">equip_to_cid</span><span class="p">,</span> <span class="n">sister_ids</span><span class="o">=</span><span class="n">sister_id_set</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">wo_records</span><span class="p">,</span> <span class="n">dropped_wo</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_enrich_all</span><span class="p">(</span>
+            <span class="n">raw_wos</span><span class="p">,</span> <span class="n">lookback_to</span><span class="p">,</span> <span class="n">is_cr</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">floc_to_cid</span><span class="o">=</span><span class="n">floc_to_cid</span><span class="p">,</span> <span class="n">equip_to_cid</span><span class="o">=</span><span class="n">equip_to_cid</span><span class="p">,</span> <span class="n">sister_ids</span><span class="o">=</span><span class="n">sister_id_set</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># 5. Recurrence summary — computed from the FULL enriched lists, before</span>
+        <span class="c1"># capping, so the aggregate reflects every record in the window.  The</span>
+        <span class="c1"># caps below bound only the detail arrays retained in the artifact.</span>
+        <span class="n">recurrence_summary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_recurrence_summary</span><span class="p">(</span><span class="n">cr_records</span><span class="p">,</span> <span class="n">wo_records</span><span class="p">)</span>
+
+        <span class="c1"># 6. Cap the detail arrays — sort on the parsed datetime, not the raw</span>
+        <span class="c1"># string, so records with mixed offsets (+00:00 / Z / naive) aren't</span>
+        <span class="c1"># dropped out of order.</span>
+        <span class="n">_epoch</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">min</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_cr_records</span><span class="p">:</span>
+            <span class="n">cr_records</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+                <span class="n">cr_records</span><span class="p">,</span>
+                <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"created_date"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">_epoch</span><span class="p">,</span>
+                <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_cr_records</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_wo_records</span><span class="p">:</span>
+            <span class="n">wo_records</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+                <span class="n">wo_records</span><span class="p">,</span>
+                <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"created_date"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">_epoch</span><span class="p">,</span>
+                <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">)[:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">max_wo_records</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"cmms_context_id"</span><span class="p">:</span> <span class="n">cmms_context_id</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span>          <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"event_id"</span><span class="p">:</span>        <span class="n">event_id</span><span class="p">,</span>
+            <span class="s2">"asset_id"</span><span class="p">:</span>        <span class="n">asset_id</span><span class="p">,</span>
+            <span class="s2">"generated_at"</span><span class="p">:</span>    <span class="n">generated_at</span><span class="p">,</span>
+            <span class="s2">"adapter"</span><span class="p">:</span>         <span class="bp">self</span><span class="o">.</span><span class="n">adapter</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+            <span class="s2">"lookback_anchor"</span><span class="p">:</span> <span class="n">lookback_anchor</span><span class="p">,</span>
+            <span class="s2">"lookback_from"</span><span class="p">:</span>   <span class="n">lookback_from_iso</span><span class="p">,</span>
+            <span class="s2">"lookback_to"</span><span class="p">:</span>     <span class="n">lookback_to_iso</span><span class="p">,</span>
+            <span class="s2">"sister_component_ids"</span><span class="p">:</span> <span class="n">sister_ids</span><span class="p">,</span>
+            <span class="s2">"sister_components"</span><span class="p">:</span>    <span class="n">sister_records</span><span class="p">,</span>
+            <span class="s2">"cr_records"</span><span class="p">:</span>      <span class="n">cr_records</span><span class="p">,</span>
+            <span class="s2">"wo_records"</span><span class="p">:</span>      <span class="n">wo_records</span><span class="p">,</span>
+            <span class="s2">"recurrence_summary"</span><span class="p">:</span> <span class="n">recurrence_summary</span><span class="p">,</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="s2">"CMMSContextBuilder"</span><span class="p">,</span>
+                <span class="s2">"kg_context_id"</span><span class="p">:</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"subgraph_id"</span><span class="p">),</span>
+                <span class="s2">"dropped_records"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"cr"</span><span class="p">:</span> <span class="n">dropped_cr</span><span class="p">,</span> <span class="s2">"wo"</span><span class="p">:</span> <span class="n">dropped_wo</span><span class="p">},</span>
+                <span class="s2">"query_params"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"primary_asset_id"</span><span class="p">:</span> <span class="n">primary_asset_id</span><span class="p">,</span>
+                    <span class="s2">"sister_component_ids"</span><span class="p">:</span> <span class="n">sister_ids</span><span class="p">,</span>
+                    <span class="s2">"lookback_from"</span><span class="p">:</span> <span class="n">lookback_from_iso</span><span class="p">,</span>
+                    <span class="s2">"lookback_to"</span><span class="p">:</span> <span class="n">lookback_to_iso</span><span class="p">,</span>
+                    <span class="s2">"fallback_lookback_days"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fallback_lookback_days</span><span class="p">,</span>
+                    <span class="s2">"sister_relation_types"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">sister_relation_types</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="CMMSContextBuilder.get_chroma_documents">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder.get_chroma_documents">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_chroma_documents</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmms_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Extract narrative documents suitable for Chroma injection.</span>
+
+<span class="sd">        Returns a list of dicts, each with:</span>
+<span class="sd">        - ``text``: the narrative to embed (``long_text`` field)</span>
+<span class="sd">        - ``metadata``: source, run_id, record ID, is_sister_equipment</span>
+
+<span class="sd">        Metadata is emitted Chroma-clean (``None`` and empty values dropped,</span>
+<span class="sd">        list/dict values JSON-encoded via ``_chroma_clean_metadata``) so the</span>
+<span class="sd">        orchestrator can inject it without a separate sanitizer.  Path-A</span>
+<span class="sd">        structured extras (``condition_assessment`` etc.) are still read off the</span>
+<span class="sd">        record when present, but ``build()`` projects them out of the artifact</span>
+<span class="sd">        records, so the default artifact-driven flow carries none — routing</span>
+<span class="sd">        those extras to Chroma is left to the injection MR (pass un-projected</span>
+<span class="sd">        records here).</span>
+
+<span class="sd">        The orchestrator passes these to ``evidence_store.add_documents()``</span>
+<span class="sd">        (or equivalent) after calling ``build()``.</span>
+<span class="sd">        """</span>
+        <span class="n">docs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">run_id</span>    <span class="o">=</span> <span class="n">cmms_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">event_id</span>  <span class="o">=</span> <span class="n">cmms_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">asset_id</span>  <span class="o">=</span> <span class="n">cmms_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">cmms_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cr_records"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"long_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"short_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="k">continue</span>
+            <span class="n">cr_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cr_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">doc_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"CMMS::CR::</span><span class="si">{</span><span class="n">cr_id</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">cr_id</span> <span class="k">else</span> <span class="s2">""</span>
+            <span class="n">structured</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_structured_fields</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+            <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"text"</span><span class="p">:</span> <span class="n">text</span><span class="p">,</span>
+                <span class="s2">"metadata"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_clean_metadata</span><span class="p">({</span>
+                    <span class="s2">"ingestion_path"</span><span class="p">:</span>      <span class="s2">"path_a_structured"</span><span class="p">,</span>
+                    <span class="s2">"source"</span><span class="p">:</span>              <span class="s2">"cmms_live"</span><span class="p">,</span>
+                    <span class="s2">"source_tier"</span><span class="p">:</span>         <span class="s2">"plant_instance"</span><span class="p">,</span>
+                    <span class="s2">"record_type"</span><span class="p">:</span>         <span class="s2">"cr"</span><span class="p">,</span>
+                    <span class="s2">"doc_type"</span><span class="p">:</span>            <span class="s2">"CR"</span><span class="p">,</span>
+                    <span class="s2">"run_id"</span><span class="p">:</span>              <span class="n">run_id</span><span class="p">,</span>
+                    <span class="s2">"event_id"</span><span class="p">:</span>            <span class="n">event_id</span><span class="p">,</span>
+                    <span class="s2">"asset_id"</span><span class="p">:</span>            <span class="n">asset_id</span><span class="p">,</span>
+                    <span class="s2">"doc_id"</span><span class="p">:</span>              <span class="n">doc_id</span><span class="p">,</span>
+                    <span class="s2">"cr_id"</span><span class="p">:</span>               <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cr_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+                    <span class="s2">"component_id"</span><span class="p">:</span>        <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">),</span>
+                    <span class="s2">"component_ids"</span><span class="p">:</span>       <span class="p">[</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)]</span> <span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="k">else</span> <span class="p">[],</span>
+                    <span class="s2">"is_sister_equipment"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_sister_equipment"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+                    <span class="s2">"days_before_event"</span><span class="p">:</span>   <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"days_before_event"</span><span class="p">),</span>
+                    <span class="s2">"status"</span><span class="p">:</span>              <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+                    <span class="o">**</span><span class="n">structured</span><span class="p">,</span>
+                <span class="p">}),</span>
+            <span class="p">})</span>
+
+        <span class="k">for</span> <span class="n">rec</span> <span class="ow">in</span> <span class="n">cmms_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"wo_records"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">text</span> <span class="o">=</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"long_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"short_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="k">continue</span>
+            <span class="n">wo_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"wo_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">doc_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"CMMS::WO::</span><span class="si">{</span><span class="n">wo_id</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">wo_id</span> <span class="k">else</span> <span class="s2">""</span>
+            <span class="n">structured</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extract_structured_fields</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+            <span class="n">docs</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"text"</span><span class="p">:</span> <span class="n">text</span><span class="p">,</span>
+                <span class="s2">"metadata"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_chroma_clean_metadata</span><span class="p">({</span>
+                    <span class="s2">"ingestion_path"</span><span class="p">:</span>      <span class="s2">"path_a_structured"</span><span class="p">,</span>
+                    <span class="s2">"source"</span><span class="p">:</span>              <span class="s2">"cmms_live"</span><span class="p">,</span>
+                    <span class="s2">"source_tier"</span><span class="p">:</span>         <span class="s2">"plant_instance"</span><span class="p">,</span>
+                    <span class="s2">"record_type"</span><span class="p">:</span>         <span class="s2">"wo"</span><span class="p">,</span>
+                    <span class="s2">"doc_type"</span><span class="p">:</span>            <span class="s2">"WO"</span><span class="p">,</span>
+                    <span class="s2">"run_id"</span><span class="p">:</span>              <span class="n">run_id</span><span class="p">,</span>
+                    <span class="s2">"event_id"</span><span class="p">:</span>            <span class="n">event_id</span><span class="p">,</span>
+                    <span class="s2">"asset_id"</span><span class="p">:</span>            <span class="n">asset_id</span><span class="p">,</span>
+                    <span class="s2">"doc_id"</span><span class="p">:</span>              <span class="n">doc_id</span><span class="p">,</span>
+                    <span class="s2">"wo_id"</span><span class="p">:</span>               <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"wo_id"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+                    <span class="s2">"component_id"</span><span class="p">:</span>        <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">),</span>
+                    <span class="s2">"component_ids"</span><span class="p">:</span>       <span class="p">[</span><span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)]</span> <span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="k">else</span> <span class="p">[],</span>
+                    <span class="s2">"is_sister_equipment"</span><span class="p">:</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_sister_equipment"</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+                    <span class="s2">"days_before_event"</span><span class="p">:</span>   <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"days_before_event"</span><span class="p">),</span>
+                    <span class="s2">"status"</span><span class="p">:</span>              <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+                    <span class="o">**</span><span class="n">structured</span><span class="p">,</span>
+                <span class="p">}),</span>
+            <span class="p">})</span>
+
+        <span class="k">return</span> <span class="n">docs</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CMMSContextBuilder._chroma_clean_metadata">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._chroma_clean_metadata">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_chroma_clean_metadata</span><span class="p">(</span><span class="n">meta</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Coerce a metadata dict to Chroma-native scalar values.</span>
+
+<span class="sd">        Native Chroma metadata values must be non-null ``str``/``int``/``float``/</span>
+<span class="sd">        ``bool``.  This drops ``None``-valued keys and empty containers, and</span>
+<span class="sd">        JSON-encodes any remaining list/dict values, so ``get_chroma_documents``</span>
+<span class="sd">        emits Chroma-clean metadata itself rather than relying on the</span>
+<span class="sd">        orchestrator's storage sanitizer.</span>
+<span class="sd">        """</span>
+        <span class="n">clean</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">meta</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">list</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)):</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="n">clean</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">ensure_ascii</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">bool</span><span class="p">)):</span>
+                <span class="n">clean</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">clean</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">clean</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CMMSContextBuilder._normalize_token">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._normalize_token">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_token</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">""</span>
+        <span class="k">return</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"_"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"-"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">())</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="CMMSContextBuilder._extract_structured_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._extract_structured_fields">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_extract_structured_fields</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">record</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Extract and flatten Path-A structured CMMS fields for retrieval metadata.</span>
+<span class="sd">        """</span>
+        <span class="n">out</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">condition</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"condition_assessment"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">condition</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">as_found</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">condition</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_found_condition"</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">condition</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_found"</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">condition</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_found_text"</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">as_left</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">condition</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_left_condition"</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">condition</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_left"</span><span class="p">)</span>
+                <span class="ow">or</span> <span class="n">condition</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_left_text"</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">as_found</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">out</span><span class="p">[</span><span class="s2">"ca_as_found_condition"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_normalize_token</span><span class="p">(</span><span class="n">as_found</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">as_left</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">out</span><span class="p">[</span><span class="s2">"ca_as_left_condition"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_normalize_token</span><span class="p">(</span><span class="n">as_left</span><span class="p">)</span>
+
+        <span class="n">refs</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_refs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">ref_tokens</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">refs</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">refs</span><span class="p">:</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="n">token</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"label"</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">token</span><span class="p">:</span>
+                        <span class="n">ref_tokens</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">token</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+                <span class="k">elif</span> <span class="n">row</span><span class="p">:</span>
+                    <span class="n">ref_tokens</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">ref_tokens</span><span class="p">:</span>
+            <span class="n">deduped</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">ref_tokens</span> <span class="k">if</span> <span class="n">x</span><span class="p">})</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"failure_mode_refs"</span><span class="p">]</span> <span class="o">=</span> <span class="n">deduped</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"failure_mode_refs_text"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">deduped</span><span class="p">)</span>
+
+        <span class="n">statements</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"extracted_causal_statements"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">structured_lines</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">statements</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">statements</span><span class="p">[:</span><span class="mi">8</span><span class="p">]:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">cause</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">connector</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"connector"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">effect</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"effect_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">sentence</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sentence_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sentence"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="n">text</span> <span class="o">=</span> <span class="n">sentence</span> <span class="ow">or</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span><span class="n">cause</span><span class="p">,</span> <span class="n">connector</span><span class="p">,</span> <span class="n">effect</span><span class="p">]</span> <span class="k">if</span> <span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">text</span><span class="p">:</span>
+                    <span class="n">structured_lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\s+"</span><span class="p">,</span> <span class="s2">" "</span><span class="p">,</span> <span class="n">text</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">structured_lines</span><span class="p">:</span>
+            <span class="n">out</span><span class="p">[</span><span class="s2">"causal_statements_text"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">" | "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">structured_lines</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CMMSContextBuilder._build_component_lookups">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._build_component_lookups">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_component_lookups</span><span class="p">(</span><span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build ``functional_location`` → ``component_id`` and</span>
+<span class="sd">        ``equipment_id`` → ``component_id`` maps from ``kg_context.components[]``.</span>
+
+<span class="sd">        Uses the ``maximo_floc`` / ``sap_equipment_id`` KG properties (the same</span>
+<span class="sd">        properties the adapters map sister components through).  First writer</span>
+<span class="sd">        wins on duplicate keys.</span>
+<span class="sd">        """</span>
+        <span class="n">floc_to_cid</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">equip_to_cid</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">floc</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"maximo_floc"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">floc</span><span class="p">:</span>
+                <span class="n">floc_to_cid</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">floc</span><span class="p">),</span> <span class="n">cid</span><span class="p">)</span>
+            <span class="n">equip</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sap_equipment_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">equip</span><span class="p">:</span>
+                <span class="n">equip_to_cid</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">equip</span><span class="p">),</span> <span class="n">cid</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">floc_to_cid</span><span class="p">,</span> <span class="n">equip_to_cid</span></div>
+
+
+<div class="viewcode-block" id="CMMSContextBuilder._resolve_lookback">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._resolve_lookback">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_lookback</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">event_ts</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">],</span>
+        <span class="n">primary_asset_id</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">""</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Returns (lookback_from: datetime, anchor_label: str).</span>
+
+<span class="sd">        Searches kg_context.past_events[] for the most recent PM</span>
+<span class="sd">        ("PM" / "preventive_maintenance") on the primary asset that precedes the</span>
+<span class="sd">        event, and anchors the window there.  Falls back to</span>
+<span class="sd">        event_ts − fallback_lookback_days.</span>
+
+<span class="sd">        past_events[] can span sister components, so entries are filtered to the</span>
+<span class="sd">        primary ``asset_id``; and a PM must precede ``event_ts`` to bound a valid</span>
+<span class="sd">        (non-inverted) window.</span>
+<span class="sd">        """</span>
+        <span class="n">past_events</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"past_events"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">pm_dates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">ev</span> <span class="ow">in</span> <span class="n">past_events</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ev</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="c1"># Restrict to the primary asset — past_events can include sisters.</span>
+            <span class="k">if</span> <span class="n">primary_asset_id</span> <span class="ow">and</span> <span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="o">!=</span> <span class="n">primary_asset_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># Whole-token match — a substring test would treat unrelated types</span>
+            <span class="c1"># like "equipment_failure" (contains "pm") as preventive maintenance.</span>
+            <span class="n">ev_tokens</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_normalize_token</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">))</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+            <span class="k">if</span> <span class="n">ev_tokens</span> <span class="o">&amp;</span> <span class="n">_PM_EVENT_TOKENS</span><span class="p">:</span>
+                <span class="c1"># kg_context schema dates are timestamp_start / timestamp_end.</span>
+                <span class="n">dt</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">ev</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">))</span>
+                <span class="c1"># A PM after the event cannot anchor a backward lookback window.</span>
+                <span class="k">if</span> <span class="n">dt</span> <span class="ow">and</span> <span class="p">(</span><span class="n">event_ts</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">dt</span> <span class="o">&lt;=</span> <span class="n">event_ts</span><span class="p">):</span>
+                    <span class="n">pm_dates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">dt</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">pm_dates</span><span class="p">:</span>
+            <span class="n">last_pm</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">pm_dates</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"Lookback anchor: last PM at </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">last_pm</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+            <span class="k">return</span> <span class="n">last_pm</span><span class="p">,</span> <span class="s2">"last_pm"</span>
+
+        <span class="c1"># Fallback: event_time − fallback_lookback_days.  The schema enum names</span>
+        <span class="c1"># only the 90-day case literally, so any other window is reported as the</span>
+        <span class="c1"># generic "custom" anchor (the actual day count lives in</span>
+        <span class="c1"># provenance.query_params.fallback_lookback_days).</span>
+        <span class="n">anchor_dt</span> <span class="o">=</span> <span class="n">event_ts</span> <span class="ow">or</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="n">lookback_from</span> <span class="o">=</span> <span class="n">anchor_dt</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fallback_lookback_days</span><span class="p">)</span>
+        <span class="n">anchor_label</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">"event_time_minus_90d"</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fallback_lookback_days</span> <span class="o">==</span> <span class="mi">90</span>
+            <span class="k">else</span> <span class="s2">"custom"</span>
+        <span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+            <span class="s2">"Lookback anchor: event_time − </span><span class="si">%d</span><span class="s2"> days = </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%s</span><span class="s2">)"</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fallback_lookback_days</span><span class="p">,</span>
+            <span class="n">lookback_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+            <span class="n">anchor_label</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">lookback_from</span><span class="p">,</span> <span class="n">anchor_label</span></div>
+
+
+<div class="viewcode-block" id="CMMSContextBuilder._resolve_sisters">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._resolve_sisters">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_sisters</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build the sister component list from topology + optional similarity tiers.</span>
+
+<span class="sd">        Returns a list of dicts with keys:</span>
+<span class="sd">        ``component_id``, ``component_label``, ``match_type``,</span>
+<span class="sd">        ``shared_fm_count``, ``embedding_score``.</span>
+
+<span class="sd">        Tier 1 (topology) is always included when ``include_sister_equipment``</span>
+<span class="sd">        is True — these are components with ``relation_to_asset`` in the</span>
+<span class="sd">        configured ``sister_relation_types``.</span>
+
+<span class="sd">        Tier 2/3 (FM overlap + spec embedding) are added when</span>
+<span class="sd">        ``config.similarity_resolver`` is set.  Results from both sources are</span>
+<span class="sd">        merged; a component found in both topology and similarity tiers gets a</span>
+<span class="sd">        combined ``match_type`` (e.g. ``"topology+failure_mode_overlap"``).</span>
+<span class="sd">        """</span>
+        <span class="n">sisters</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># component_id → record dict</span>
+
+        <span class="c1"># Tier 1: topology (relation_to_asset in sister_relation_types)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_sister_equipment</span><span class="p">:</span>
+            <span class="n">allowed</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">sister_relation_types</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="k">continue</span>
+                <span class="n">relation</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation_to_asset"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+                <span class="k">if</span> <span class="n">relation</span> <span class="ow">in</span> <span class="n">allowed</span><span class="p">:</span>
+                    <span class="n">cid</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">cid</span><span class="p">:</span>
+                        <span class="n">sisters</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                            <span class="s2">"component_id"</span><span class="p">:</span>    <span class="n">cid</span><span class="p">,</span>
+                            <span class="s2">"component_label"</span><span class="p">:</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_label"</span><span class="p">),</span>
+                            <span class="s2">"match_type"</span><span class="p">:</span>      <span class="s2">"topology"</span><span class="p">,</span>
+                            <span class="s2">"shared_fm_count"</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                            <span class="c1"># Schema: embedding_score is a Chroma distance, 0.0</span>
+                            <span class="c1"># for topology-only matches (no embedding compared);</span>
+                            <span class="c1"># lower = more similar.</span>
+                            <span class="s2">"embedding_score"</span><span class="p">:</span> <span class="mf">0.0</span><span class="p">,</span>
+                        <span class="p">}</span>
+
+        <span class="c1"># Tier 2/3: failure mode overlap + spec embedding</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">similarity_resolver</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">sister_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">sisters</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+            <span class="c1"># Target = non-topology components (primary asset's parts)</span>
+            <span class="n">target_ids</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="p">(</span><span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+                <span class="ow">and</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">sister_set</span>
+            <span class="p">]</span>
+            <span class="c1"># Confine the broad except to the resolver call itself, so a genuine</span>
+            <span class="c1"># resolver defect surfaces as a warning (not silently as "no</span>
+            <span class="c1"># sisters") and never masks a bug in our own projection below.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">emb_sisters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">similarity_resolver</span><span class="o">.</span><span class="n">resolve_similar</span><span class="p">(</span>
+                    <span class="n">target_component_ids</span><span class="o">=</span><span class="n">target_ids</span><span class="p">,</span>
+                    <span class="n">kg_context</span><span class="o">=</span><span class="n">kg_context</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"CMMSContextBuilder: similarity_resolver.resolve_similar() "</span>
+                    <span class="s2">"failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span>
+                <span class="p">)</span>
+                <span class="n">emb_sisters</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="c1"># similarity_resolver is typed Any — project every result onto the</span>
+            <span class="c1"># sister_components[] schema whitelist before it enters the artifact.</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">emb_sisters</span> <span class="ow">or</span> <span class="p">[]:</span>
+                <span class="n">projected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_project_sister</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">projected</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">continue</span>  <span class="c1"># missing required field — already logged</span>
+                <span class="n">cid</span> <span class="o">=</span> <span class="n">projected</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">sisters</span><span class="p">:</span>
+                    <span class="n">existing</span> <span class="o">=</span> <span class="n">sisters</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span>
+                    <span class="n">existing</span><span class="p">[</span><span class="s2">"match_type"</span><span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"topology+</span><span class="si">{</span><span class="n">projected</span><span class="p">[</span><span class="s1">'match_type'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+                    <span class="k">if</span> <span class="s2">"shared_fm_count"</span> <span class="ow">in</span> <span class="n">projected</span><span class="p">:</span>
+                        <span class="n">existing</span><span class="p">[</span><span class="s2">"shared_fm_count"</span><span class="p">]</span> <span class="o">=</span> <span class="n">projected</span><span class="p">[</span><span class="s2">"shared_fm_count"</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="s2">"embedding_score"</span> <span class="ow">in</span> <span class="n">projected</span><span class="p">:</span>
+                        <span class="n">existing</span><span class="p">[</span><span class="s2">"embedding_score"</span><span class="p">]</span> <span class="o">=</span> <span class="n">projected</span><span class="p">[</span><span class="s2">"embedding_score"</span><span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">sisters</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span> <span class="o">=</span> <span class="n">projected</span>
+
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">sisters</span><span class="o">.</span><span class="n">values</span><span class="p">())</span></div>
+
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="CMMSContextBuilder._project_sister">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._project_sister">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_project_sister</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Project one similarity-resolver result onto the sister_components[]</span>
+<span class="sd">        schema whitelist.</span>
+
+<span class="sd">        ``config.similarity_resolver`` is typed ``Any``, so a result may carry</span>
+<span class="sd">        extra keys, a missing ``match_type``, or wrongly-typed numerics that</span>
+<span class="sd">        would fail strict ``sister_components[]`` validation.  Drops non-schema</span>
+<span class="sd">        keys, coerces ``shared_fm_count`` / ``embedding_score`` to the schema's</span>
+<span class="sd">        numeric types, and returns ``None`` (logging a warning) when a required</span>
+<span class="sd">        field (``component_id`` / ``match_type``) is absent.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">"to_dict"</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">raw</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"CMMSContextBuilder: sister result to_dict() failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">result</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"CMMSContextBuilder: unusable sister result type </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span>
+                <span class="nb">type</span><span class="p">(</span><span class="n">result</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">raw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"match_type"</span><span class="p">):</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">"CMMSContextBuilder: skipping sister result missing "</span>
+                <span class="s2">"component_id/match_type: </span><span class="si">%r</span><span class="s2">"</span><span class="p">,</span> <span class="n">raw</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="n">rec</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">raw</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">_SISTER_SCHEMA_KEYS</span><span class="p">}</span>
+        <span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"shared_fm_count"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">rec</span><span class="p">[</span><span class="s2">"shared_fm_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">rec</span><span class="p">[</span><span class="s2">"shared_fm_count"</span><span class="p">])</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="n">rec</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"shared_fm_count"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"embedding_score"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">rec</span><span class="p">[</span><span class="s2">"embedding_score"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">rec</span><span class="p">[</span><span class="s2">"embedding_score"</span><span class="p">])</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+                <span class="n">rec</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">"embedding_score"</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rec</span></div>
+
+
+<div class="viewcode-block" id="CMMSContextBuilder._enrich_all">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._enrich_all">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_enrich_all</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">raw_records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span>
+        <span class="n">event_dt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">],</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">is_cr</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">floc_to_cid</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+        <span class="n">equip_to_cid</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">],</span>
+        <span class="n">sister_ids</span><span class="p">:</span> <span class="nb">set</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Enrich a list of raw CMMS records, skipping any that are still malformed</span>
+<span class="sd">        after normalization.  Returns ``(valid_records, dropped_count)``.</span>
+<span class="sd">        """</span>
+        <span class="n">id_key</span> <span class="o">=</span> <span class="s2">"cr_id"</span> <span class="k">if</span> <span class="n">is_cr</span> <span class="k">else</span> <span class="s2">"wo_id"</span>
+        <span class="n">valid</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">dropped</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">r</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">raw_records</span><span class="p">):</span>
+            <span class="n">rec</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_enrich_record</span><span class="p">(</span>
+                <span class="n">r</span><span class="p">,</span> <span class="n">event_dt</span><span class="p">,</span> <span class="n">is_cr</span><span class="o">=</span><span class="n">is_cr</span><span class="p">,</span>
+                <span class="n">floc_to_cid</span><span class="o">=</span><span class="n">floc_to_cid</span><span class="p">,</span> <span class="n">equip_to_cid</span><span class="o">=</span><span class="n">equip_to_cid</span><span class="p">,</span>
+                <span class="n">sister_ids</span><span class="o">=</span><span class="n">sister_ids</span><span class="p">,</span>
+            <span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">rec</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">dropped</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">ident</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">id_key</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"&lt;index </span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&gt;"</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">"&lt;index </span><span class="si">{</span><span class="n">idx</span><span class="si">}</span><span class="s2">&gt;"</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                    <span class="s2">"CMMSContextBuilder: skipping malformed </span><span class="si">%s</span><span class="s2"> record </span><span class="si">%r</span><span class="s2"> "</span>
+                    <span class="s2">"(missing/invalid required field)"</span><span class="p">,</span> <span class="n">id_key</span><span class="p">,</span> <span class="n">ident</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="n">valid</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">valid</span><span class="p">,</span> <span class="n">dropped</span></div>
+
+
+<div class="viewcode-block" id="CMMSContextBuilder._enrich_record">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._enrich_record">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_enrich_record</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">record</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">event_dt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">],</span>
+        <span class="n">is_cr</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">floc_to_cid</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">equip_to_cid</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">sister_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">set</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Add derived fields to a raw CMMS record, project it onto the</span>
+<span class="sd">        cmms_context schema whitelist, and validate the schema-required fields.</span>
+<span class="sd">        Returns the enriched record, or ``None`` when it is still malformed</span>
+<span class="sd">        after normalization (missing/invalid required field) so the caller can</span>
+<span class="sd">        skip it and record the drop in provenance.</span>
+
+<span class="sd">        - ``days_before_event``: int or None</span>
+<span class="sd">        - ``component_id``: resolved from ``functional_location`` /</span>
+<span class="sd">          ``equipment_id`` via the KG lookups when the adapter did not supply one</span>
+<span class="sd">        - ``status``: normalized to open/closed/cancelled/unknown (every</span>
+<span class="sd">          documented Maximo/SAP code; unrecognized → unknown)</span>
+<span class="sd">        - ``is_sister_equipment``: coerced to a real bool from the adapter value</span>
+<span class="sd">          (a truthy string like ``"false"`` no longer survives), else derived</span>
+<span class="sd">          from whether the resolved ``component_id`` is a KG sister</span>
+
+<span class="sd">        Adapter-supplied fields outside the schema whitelist (e.g. Path-A</span>
+<span class="sd">        ``condition_assessment`` / ``failure_mode_refs``) are dropped from the</span>
+<span class="sd">        returned record so the artifact validates against ``cmms_context.json``</span>
+<span class="sd">        (``additionalProperties: false``).</span>
+<span class="sd">        """</span>
+        <span class="n">enriched</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+
+        <span class="c1"># days_before_event</span>
+        <span class="n">created_dt</span> <span class="o">=</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"created_date"</span><span class="p">))</span>
+        <span class="n">enriched</span><span class="p">[</span><span class="s2">"days_before_event"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_days_between</span><span class="p">(</span><span class="n">created_dt</span><span class="p">,</span> <span class="n">event_dt</span><span class="p">)</span>
+
+        <span class="c1"># component_id: FLOC / equipment-ID → KG component match (adapter wins)</span>
+        <span class="n">component_id</span> <span class="o">=</span> <span class="n">enriched</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">component_id</span><span class="p">:</span>
+            <span class="n">floc</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"functional_location"</span><span class="p">)</span>
+            <span class="n">equip</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"equipment_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">floc</span> <span class="ow">and</span> <span class="n">floc_to_cid</span><span class="p">:</span>
+                <span class="n">component_id</span> <span class="o">=</span> <span class="n">floc_to_cid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">floc</span><span class="p">))</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">component_id</span> <span class="ow">and</span> <span class="n">equip</span> <span class="ow">and</span> <span class="n">equip_to_cid</span><span class="p">:</span>
+                <span class="n">component_id</span> <span class="o">=</span> <span class="n">equip_to_cid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">equip</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">component_id</span><span class="p">:</span>
+                <span class="n">enriched</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">component_id</span>
+
+        <span class="c1"># normalize status (every documented Maximo/SAP code; unknown → unknown)</span>
+        <span class="n">enriched</span><span class="p">[</span><span class="s2">"status"</span><span class="p">]</span> <span class="o">=</span> <span class="n">normalize_cmms_status</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">))</span>
+
+        <span class="c1"># is_sister_equipment: coerce the adapter value to a real bool; when the</span>
+        <span class="c1"># adapter did not supply one (or it is uninterpretable), derive it from</span>
+        <span class="c1"># whether the resolved component is a KG sister.</span>
+        <span class="n">coerced</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_bool</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_sister_equipment"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">coerced</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">coerced</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">component_id</span> <span class="ow">and</span> <span class="n">sister_ids</span> <span class="ow">and</span> <span class="n">component_id</span> <span class="ow">in</span> <span class="n">sister_ids</span><span class="p">)</span>
+        <span class="n">enriched</span><span class="p">[</span><span class="s2">"is_sister_equipment"</span><span class="p">]</span> <span class="o">=</span> <span class="n">coerced</span>
+
+        <span class="c1"># Project onto the schema whitelist (additionalProperties: false).</span>
+        <span class="n">allowed</span> <span class="o">=</span> <span class="n">_CR_SCHEMA_KEYS</span> <span class="k">if</span> <span class="n">is_cr</span> <span class="k">else</span> <span class="n">_WO_SCHEMA_KEYS</span>
+        <span class="n">projected</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">enriched</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">allowed</span><span class="p">}</span>
+
+        <span class="c1"># Enforce the schema-required fields at the adapter boundary; a record</span>
+        <span class="c1"># still malformed after normalization is skipped rather than emitted.</span>
+        <span class="n">id_key</span> <span class="o">=</span> <span class="s2">"cr_id"</span> <span class="k">if</span> <span class="n">is_cr</span> <span class="k">else</span> <span class="s2">"wo_id"</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_required_fields</span><span class="p">(</span><span class="n">projected</span><span class="p">,</span> <span class="n">id_key</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">projected</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CMMSContextBuilder._coerce_bool">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._coerce_bool">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_coerce_bool</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Coerce a raw ``is_sister_equipment`` value to a real bool.  Returns</span>
+<span class="sd">        ``None`` for an absent or uninterpretable value so the caller can derive</span>
+<span class="sd">        it from KG topology instead (a truthy string like ``"false"`` must not</span>
+<span class="sd">        read as True).</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">value</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"true"</span><span class="p">,</span> <span class="s2">"1"</span><span class="p">,</span> <span class="s2">"yes"</span><span class="p">,</span> <span class="s2">"y"</span><span class="p">,</span> <span class="s2">"t"</span><span class="p">}:</span>
+                <span class="k">return</span> <span class="kc">True</span>
+            <span class="k">if</span> <span class="n">v</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"false"</span><span class="p">,</span> <span class="s2">"0"</span><span class="p">,</span> <span class="s2">"no"</span><span class="p">,</span> <span class="s2">"n"</span><span class="p">,</span> <span class="s2">"f"</span><span class="p">,</span> <span class="s2">""</span><span class="p">}:</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="CMMSContextBuilder._has_required_fields">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._has_required_fields">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_has_required_fields</span><span class="p">(</span><span class="n">record</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">id_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        True if ``record`` carries the cmms_context-required fields with valid</span>
+<span class="sd">        types: a non-empty string id, a string ``short_description``, and a</span>
+<span class="sd">        parseable ``created_date`` (``is_sister_equipment`` is always set to a</span>
+<span class="sd">        bool upstream; ``status`` is always a valid enum value).</span>
+<span class="sd">        """</span>
+        <span class="n">rid</span> <span class="o">=</span> <span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">id_key</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rid</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">rid</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"short_description"</span><span class="p">),</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">if</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"created_date"</span><span class="p">))</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="CMMSContextBuilder._build_recurrence_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/cmms_context_builder/index.html#src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder._build_recurrence_summary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_recurrence_summary</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">cr_records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">wo_records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="n">cr_primary</span> <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">cr_records</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_sister_equipment"</span><span class="p">)]</span>
+        <span class="n">cr_sister</span>  <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">cr_records</span> <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"is_sister_equipment"</span><span class="p">)]</span>
+        <span class="n">open_wos</span>   <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">wo_records</span> <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"open"</span><span class="p">]</span>
+        <span class="n">open_crs</span>   <span class="o">=</span> <span class="p">[</span><span class="n">r</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">cr_records</span> <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"open"</span><span class="p">]</span>
+
+        <span class="c1"># Order by parsed datetime (raw strings with mixed offsets sort wrong),</span>
+        <span class="c1"># but report the original date strings.</span>
+        <span class="n">_epoch</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">min</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+        <span class="n">all_cr_dates</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"created_date"</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">cr_records</span> <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"created_date"</span><span class="p">)),</span>
+            <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="n">_parse_iso</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="ow">or</span> <span class="n">_epoch</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"cr_count_primary"</span><span class="p">:</span>         <span class="nb">len</span><span class="p">(</span><span class="n">cr_primary</span><span class="p">),</span>
+            <span class="s2">"cr_count_sister"</span><span class="p">:</span>          <span class="nb">len</span><span class="p">(</span><span class="n">cr_sister</span><span class="p">),</span>
+            <span class="s2">"open_wo_count"</span><span class="p">:</span>            <span class="nb">len</span><span class="p">(</span><span class="n">open_wos</span><span class="p">),</span>
+            <span class="s2">"open_cr_count"</span><span class="p">:</span>            <span class="nb">len</span><span class="p">(</span><span class="n">open_crs</span><span class="p">),</span>
+            <span class="s2">"earliest_related_cr_date"</span><span class="p">:</span> <span class="n">all_cr_dates</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>  <span class="k">if</span> <span class="n">all_cr_dates</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">"most_recent_cr_date"</span><span class="p">:</span>      <span class="n">all_cr_dates</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">all_cr_dates</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,143 @@
+src.dackar.RCA.cmms_integration.maximo_cmms_adapter
+===================================================
+
+.. py:module:: src.dackar.RCA.cmms_integration.maximo_cmms_adapter
+
+.. autoapi-nested-parse::
+
+   maximo_cmms_adapter — MaximoCMMSAdapter skeleton.
+
+   Implements CMMSContextAdapter for IBM Maximo using the Maximo REST API
+   (OSLC / JSON API).  Plant teams fill in the connection details and any
+   site-specific field mappings.  See CMMS_INTEGRATION_GUIDE.md §4 for the
+   full implementation guide.
+
+   Dependencies (not installed by default — add to your environment):
+       pip install requests
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cmms_integration.maximo_cmms_adapter.logger
+   src.dackar.RCA.cmms_integration.maximo_cmms_adapter.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cmms_integration.maximo_cmms_adapter.MaximoCMMSAdapter
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: JsonDict
+
+.. py:class:: MaximoCMMSAdapter(base_url, api_key, site_id = None, cr_object_name = 'SR', wo_object_name = 'WOTRACK', floc_field = 'LOCATION', timeout = 30)
+
+   Live Maximo adapter — fetches CRs (Service Requests / Work Orders)
+   via the Maximo REST API.
+
+   :param base_url: Maximo base URL, e.g. ``"https://maximo.plant.corp/maximo"``.
+   :param api_key: Maximo API key or session token.
+   :param site_id: Maximo site identifier (e.g. ``"PLANT1"``).
+   :param cr_object_name: Maximo object name for corrective actions (default ``"SR"``).
+   :param wo_object_name: Maximo object name for work orders (default ``"WOTRACK"``).
+   :param floc_field: Maximo field containing the Functional Location (default
+                      ``"LOCATION"`` — override per plant convention, e.g. ``"SITEID"``).
+   :param timeout: HTTP request timeout in seconds.
+
+
+   .. py:attribute:: base_url
+
+
+   .. py:attribute:: api_key
+
+
+   .. py:attribute:: site_id
+      :value: None
+
+
+
+   .. py:attribute:: cr_object_name
+      :value: 'SR'
+
+
+
+   .. py:attribute:: wo_object_name
+      :value: 'WOTRACK'
+
+
+
+   .. py:attribute:: floc_field
+      :value: 'LOCATION'
+
+
+
+   .. py:attribute:: timeout
+      :value: 30
+
+
+
+   .. py:method:: fetch(primary_asset_id, sister_component_ids, lookback_from, lookback_to, event)
+      :abstractmethod:
+
+
+      Fetch CR and WO records from Maximo for the given asset and window.
+
+      TODO — plant teams implement:
+      1. Build OSLC WHERE clause: LOCATION in {primary_floc, sister_flocs}
+         AND REPORTDATE >= lookback_from AND REPORTDATE <= lookback_to
+      2. GET /maximo/oslc/os/{cr_object_name}?oslc.where=...
+      3. GET /maximo/oslc/os/{wo_object_name}?oslc.where=...
+      4. Map Maximo field names to the cmms_context schema:
+           TICKETID  → cr_id
+           CLASS     → cr_type
+           STATUS    → status  (see _map_status)
+           PRIORITY  → priority
+           DESCRIPTION → short_description
+           LDTEXT    → long_text
+           LOCATION  → functional_location
+           REPORTDATE → created_date
+           SITEID    → (use to filter if multi-site)
+      5. Set is_sister_equipment=True for records whose LOCATION matches
+         a sister FLOC, False for the primary asset.
+      6. Return {"cr_records": [...], "wo_records": [...]}
+
+
+
+   .. py:method:: _headers()
+
+
+   .. py:method:: _build_oslc_where(flocs, lookback_from, lookback_to)
+
+      Build an OSLC WHERE clause string for Maximo.  The functional-location
+      field name is taken from ``self.floc_field`` so overriding it (e.g. to
+      ``"SITEID"``) actually changes the query.
+
+      Example output (with the default ``floc_field="LOCATION"``):
+          LOCATION in ["PLANT/SYS/BEARING-01","PLANT/SYS/PUMP-02"]
+          and REPORTDATE>="2025-10-01T00:00:00+00:00"
+          and REPORTDATE<="2026-01-01T12:00:00+00:00"
+
+
+
+   .. py:method:: _map_status(maximo_status)
+      :staticmethod:
+
+
+      Map Maximo status codes to cmms_context schema values.
+
+      Delegates to the shared :func:`normalize_cmms_status` so Maximo, SAP,
+      and generic codes normalize identically wherever a status enters.
+
+
+

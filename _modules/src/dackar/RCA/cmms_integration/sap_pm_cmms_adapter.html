@@ -1,0 +1,320 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">sap_pm_cmms_adapter — SAPPMCMMSAdapter skeleton.</span>
+
+<span class="sd">Implements CMMSContextAdapter for SAP Plant Maintenance using the</span>
+<span class="sd">SAP OData API (PM Maintenance Notifications / Orders).</span>
+<span class="sd">Plant teams fill in the connection details and field mappings.</span>
+<span class="sd">See CMMS_INTEGRATION_GUIDE.md §4 for the full implementation guide.</span>
+
+<span class="sd">Dependencies (not installed by default):</span>
+<span class="sd">    pip install requests</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># SAP PM OData endpoints (override per installation)</span>
+<div class="viewcode-block" id="_DEFAULT_NOTIFICATION_ENDPOINT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter._DEFAULT_NOTIFICATION_ENDPOINT">[docs]</a>
+<span class="n">_DEFAULT_NOTIFICATION_ENDPOINT</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"/sap/opu/odata/sap/PMMAINTNOTIF_ODATA/MaintenanceNotificationSet"</span>
+<span class="p">)</span></div>
+
+<div class="viewcode-block" id="_DEFAULT_ORDER_ENDPOINT">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter._DEFAULT_ORDER_ENDPOINT">[docs]</a>
+<span class="n">_DEFAULT_ORDER_ENDPOINT</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="s2">"/sap/opu/odata/sap/API_MAINTORDER/MaintenanceOrderSet"</span>
+<span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SAPPMCMMSAdapter</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Live SAP PM adapter — fetches Maintenance Notifications (CRs) and</span>
+<span class="sd">    Maintenance Orders (WOs) via the SAP OData API.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    base_url:</span>
+<span class="sd">        SAP system base URL, e.g. ``"https://sap.plant.corp"``.</span>
+<span class="sd">    username:</span>
+<span class="sd">        SAP user name (basic auth).</span>
+<span class="sd">    password:</span>
+<span class="sd">        SAP password (basic auth).  Consider using a service account with</span>
+<span class="sd">        read-only PM authorisations.</span>
+<span class="sd">    plant:</span>
+<span class="sd">        SAP plant code (e.g. ``"1000"``).</span>
+<span class="sd">    notification_endpoint:</span>
+<span class="sd">        OData path for maintenance notifications.</span>
+<span class="sd">    order_endpoint:</span>
+<span class="sd">        OData path for maintenance orders.</span>
+<span class="sd">    timeout:</span>
+<span class="sd">        HTTP request timeout in seconds.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">username</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">password</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">plant</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">notification_endpoint</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">_DEFAULT_NOTIFICATION_ENDPOINT</span><span class="p">,</span>
+        <span class="n">order_endpoint</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">_DEFAULT_ORDER_ENDPOINT</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="SAPPMCMMSAdapter.base_url">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.base_url">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_url</span>               <span class="o">=</span> <span class="n">base_url</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter.username">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.username">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">username</span>               <span class="o">=</span> <span class="n">username</span></div>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter.password">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.password">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">password</span>               <span class="o">=</span> <span class="n">password</span></div>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter.plant">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.plant">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">plant</span>                  <span class="o">=</span> <span class="n">plant</span></div>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter.notification_endpoint">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.notification_endpoint">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">notification_endpoint</span>  <span class="o">=</span> <span class="n">notification_endpoint</span></div>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter.order_endpoint">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.order_endpoint">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">order_endpoint</span>         <span class="o">=</span> <span class="n">order_endpoint</span></div>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter.timeout">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.timeout">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>                <span class="o">=</span> <span class="n">timeout</span></div>
+
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>  <span class="c1"># noqa: F401</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+                <span class="s2">"SAPPMCMMSAdapter requires the 'requests' package. "</span>
+                <span class="s2">"Install it with: pip install requests"</span>
+            <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public API</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter.fetch">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter.fetch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">primary_asset_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">sister_component_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">lookback_from</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">lookback_to</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Fetch Maintenance Notifications and Orders from SAP PM.</span>
+
+<span class="sd">        TODO — plant teams implement:</span>
+<span class="sd">        1. Map sister_component_ids to SAP equipment IDs using the KG</span>
+<span class="sd">           sap_equipment_id property (same property used for CAP export).</span>
+<span class="sd">        2. Build OData $filter (see ``_build_odata_filter``):</span>
+<span class="sd">             Equipment in ('EQ-001','EQ-002')</span>
+<span class="sd">             and MaintNotifCreationDate ge datetime'{lookback_from}'</span>
+<span class="sd">             and MaintNotifCreationDate le datetime'{lookback_to}'</span>
+<span class="sd">        3. GET {notification_endpoint}?$filter=...&amp;$format=json</span>
+<span class="sd">        4. GET {order_endpoint}?$filter=...&amp;$format=json</span>
+<span class="sd">        5. Map SAP field names to the cmms_context schema:</span>
+<span class="sd">             NotifNo         → cr_id</span>
+<span class="sd">             MaintNotifType  → cr_type  (e.g. M1, M2, M3, M4)</span>
+<span class="sd">             UserStatus      → status   (see _map_status)</span>
+<span class="sd">             Priority        → priority</span>
+<span class="sd">             ShortText       → short_description</span>
+<span class="sd">             LongText        → long_text</span>
+<span class="sd">             FunctLoc        → functional_location</span>
+<span class="sd">             Equipment       → equipment_id</span>
+<span class="sd">             MaintNotifCreationDate → created_date</span>
+<span class="sd">        6. Set is_sister_equipment=True for records on sister equipment IDs.</span>
+<span class="sd">        7. Return {"cr_records": [...], "wo_records": [...]}</span>
+<span class="sd">        """</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+            <span class="s2">"SAPPMCMMSAdapter.fetch() is not yet implemented. "</span>
+            <span class="s2">"See CMMS_INTEGRATION_GUIDE.md §4 for the implementation guide."</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter._auth">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter._auth">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_auth</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Return (username, password) tuple for requests basic auth."""</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">username</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">password</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="SAPPMCMMSAdapter._build_odata_filter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter._build_odata_filter">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_odata_filter</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">equipment_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">lookback_from</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">lookback_to</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build an OData $filter string for SAP PM notifications.</span>
+
+<span class="sd">        Note: SAP OData datetime literals use the format</span>
+<span class="sd">        ``datetime'2025-10-01T00:00:00'`` (no timezone — SAP uses plant</span>
+<span class="sd">        local time by default).</span>
+<span class="sd">        """</span>
+        <span class="n">from_ts</span> <span class="o">=</span> <span class="n">lookback_from</span><span class="p">[:</span><span class="mi">19</span><span class="p">]</span>  <span class="c1"># strip timezone for SAP literal</span>
+        <span class="n">to_ts</span>   <span class="o">=</span> <span class="n">lookback_to</span><span class="p">[:</span><span class="mi">19</span><span class="p">]</span>
+        <span class="n">eq_list</span> <span class="o">=</span> <span class="s2">","</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">"'</span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">'"</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">equipment_ids</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Equipment in (</span><span class="si">{</span><span class="n">eq_list</span><span class="si">}</span><span class="s2">)"</span>
+            <span class="sa">f</span><span class="s2">" and MaintNotifCreationDate ge datetime'</span><span class="si">{</span><span class="n">from_ts</span><span class="si">}</span><span class="s2">'"</span>
+            <span class="sa">f</span><span class="s2">" and MaintNotifCreationDate le datetime'</span><span class="si">{</span><span class="n">to_ts</span><span class="si">}</span><span class="s2">'"</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="SAPPMCMMSAdapter._map_status">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cmms_integration/sap_pm_cmms_adapter/index.html#src.dackar.RCA.cmms_integration.sap_pm_cmms_adapter.SAPPMCMMSAdapter._map_status">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_map_status</span><span class="p">(</span><span class="n">sap_status</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Map SAP user status codes to cmms_context schema values.</span>
+
+<span class="sd">        Delegates to the shared :func:`normalize_cmms_status` so Maximo, SAP,</span>
+<span class="sd">        and generic codes normalize identically wherever a status enters.</span>
+<span class="sd">        """</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.cmms_adapter</span><span class="w"> </span><span class="kn">import</span> <span class="n">normalize_cmms_status</span>
+        <span class="k">return</span> <span class="n">normalize_cmms_status</span><span class="p">(</span><span class="n">sap_status</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

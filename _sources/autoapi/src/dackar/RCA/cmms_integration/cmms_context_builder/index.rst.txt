@@ -1,0 +1,328 @@
+src.dackar.RCA.cmms_integration.cmms_context_builder
+====================================================
+
+.. py:module:: src.dackar.RCA.cmms_integration.cmms_context_builder
+
+.. autoapi-nested-parse::
+
+   cmms_context_builder — CMMSContextBuilder.
+
+   Orchestrates live CMMS data retrieval for a single RCA run:
+     1. Derives the lookback window from kg_context.past_events[] (last PM)
+        or falls back to event_time − fallback_lookback_days.
+     2. Identifies sister component IDs from kg_context.components[].
+     3. Calls the CMMSContextAdapter.fetch() method.
+     4. Enriches raw records: days_before_event, FLOC→KG component match.
+     5. Builds the recurrence_summary aggregate.
+     6. Returns a dict conforming to schemas/cmms_context.json.
+
+   Chroma injection (narrative text → run-scoped embeddings) is handled
+   separately by the orchestrator, which has access to the evidence store.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cmms_integration.cmms_context_builder.logger
+   src.dackar.RCA.cmms_integration.cmms_context_builder.JsonDict
+   src.dackar.RCA.cmms_integration.cmms_context_builder._PM_EVENT_TOKENS
+   src.dackar.RCA.cmms_integration.cmms_context_builder._SISTER_SCHEMA_KEYS
+   src.dackar.RCA.cmms_integration.cmms_context_builder._CR_SCHEMA_KEYS
+   src.dackar.RCA.cmms_integration.cmms_context_builder._WO_SCHEMA_KEYS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilderConfig
+   src.dackar.RCA.cmms_integration.cmms_context_builder.CMMSContextBuilder
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cmms_integration.cmms_context_builder._utcnow_iso
+   src.dackar.RCA.cmms_integration.cmms_context_builder._parse_iso
+   src.dackar.RCA.cmms_integration.cmms_context_builder._days_between
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: JsonDict
+
+.. py:data:: _PM_EVENT_TOKENS
+
+.. py:data:: _SISTER_SCHEMA_KEYS
+
+.. py:data:: _CR_SCHEMA_KEYS
+
+.. py:data:: _WO_SCHEMA_KEYS
+
+.. py:function:: _utcnow_iso()
+
+.. py:function:: _parse_iso(ts)
+
+.. py:function:: _days_between(earlier, later)
+
+.. py:class:: CMMSContextBuilderConfig
+
+   Configuration for CMMSContextBuilder.
+
+   :param fallback_lookback_days: Days to look back when no PM date is found in kg_context.past_events[].
+                                  Default: 90.
+   :param sister_relation_types: KG ``relation_to_asset`` values that qualify a component as sister
+                                 equipment.  Default: ``["same_train", "adjacent"]``.
+   :param include_sister_equipment: Whether to include sister equipment in the CMMS query scope.
+                                    Default: True.
+   :param max_cr_records: Cap on how many CR records to retain in the artifact (adapter may
+                          return more; the most recent are kept).  0 = no cap.
+   :param max_wo_records: Cap on WO records.  0 = no cap.
+   :param similarity_resolver: Optional ``EquipmentSimilarityResolver`` instance.  When provided,
+                               Tier 2 (failure mode overlap) and Tier 3 (spec embedding) sisters are
+                               added to the topology-based sisters already derived from KG topology.
+                               Set to ``None`` (default) to use topology-only sister resolution.
+
+
+   .. py:attribute:: fallback_lookback_days
+      :type:  int
+      :value: 90
+
+
+
+   .. py:attribute:: sister_relation_types
+      :type:  List[str]
+      :value: ['same_train', 'adjacent']
+
+
+
+   .. py:attribute:: include_sister_equipment
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: max_cr_records
+      :type:  int
+      :value: 100
+
+
+
+   .. py:attribute:: max_wo_records
+      :type:  int
+      :value: 100
+
+
+
+   .. py:attribute:: similarity_resolver
+      :type:  Optional[Any]
+      :value: None
+
+
+
+.. py:class:: CMMSContextBuilder(adapter, config = None)
+
+   Builds a ``cmms_context`` artifact from live CMMS data.
+
+   :param adapter: Any object implementing the ``CMMSContextAdapter`` Protocol.
+   :param config: ``CMMSContextBuilderConfig`` — defaults to 90-day fallback,
+                  same_train + adjacent sister scope.
+
+
+   .. py:attribute:: adapter
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: build(event, kg_context, run_id)
+
+      Build and return a ``cmms_context`` dict.
+
+      :param event: Raw event dict (used for event_time and asset_id).
+      :param kg_context: KG context artifact from Stage 5A of the same run.
+                         Used to derive the lookback anchor and sister component IDs.
+      :param run_id: RCA run identifier.
+
+      :returns: Conforms to ``schemas/cmms_context.json``.
+      :rtype: dict
+
+
+
+   .. py:method:: get_chroma_documents(cmms_context)
+
+      Extract narrative documents suitable for Chroma injection.
+
+      Returns a list of dicts, each with:
+      - ``text``: the narrative to embed (``long_text`` field)
+      - ``metadata``: source, run_id, record ID, is_sister_equipment
+
+      Metadata is emitted Chroma-clean (``None`` and empty values dropped,
+      list/dict values JSON-encoded via ``_chroma_clean_metadata``) so the
+      orchestrator can inject it without a separate sanitizer.  Path-A
+      structured extras (``condition_assessment`` etc.) are still read off the
+      record when present, but ``build()`` projects them out of the artifact
+      records, so the default artifact-driven flow carries none — routing
+      those extras to Chroma is left to the injection MR (pass un-projected
+      records here).
+
+      The orchestrator passes these to ``evidence_store.add_documents()``
+      (or equivalent) after calling ``build()``.
+
+
+
+   .. py:method:: _chroma_clean_metadata(meta)
+      :staticmethod:
+
+
+      Coerce a metadata dict to Chroma-native scalar values.
+
+      Native Chroma metadata values must be non-null ``str``/``int``/``float``/
+      ``bool``.  This drops ``None``-valued keys and empty containers, and
+      JSON-encodes any remaining list/dict values, so ``get_chroma_documents``
+      emits Chroma-clean metadata itself rather than relying on the
+      orchestrator's storage sanitizer.
+
+
+
+   .. py:method:: _normalize_token(value)
+      :staticmethod:
+
+
+
+   .. py:method:: _extract_structured_fields(record)
+      :classmethod:
+
+
+      Extract and flatten Path-A structured CMMS fields for retrieval metadata.
+
+
+
+   .. py:method:: _build_component_lookups(kg_context)
+      :staticmethod:
+
+
+      Build ``functional_location`` → ``component_id`` and
+      ``equipment_id`` → ``component_id`` maps from ``kg_context.components[]``.
+
+      Uses the ``maximo_floc`` / ``sap_equipment_id`` KG properties (the same
+      properties the adapters map sister components through).  First writer
+      wins on duplicate keys.
+
+
+
+   .. py:method:: _resolve_lookback(kg_context, event_ts, primary_asset_id = '')
+
+      Returns (lookback_from: datetime, anchor_label: str).
+
+      Searches kg_context.past_events[] for the most recent PM
+      ("PM" / "preventive_maintenance") on the primary asset that precedes the
+      event, and anchors the window there.  Falls back to
+      event_ts − fallback_lookback_days.
+
+      past_events[] can span sister components, so entries are filtered to the
+      primary ``asset_id``; and a PM must precede ``event_ts`` to bound a valid
+      (non-inverted) window.
+
+
+
+   .. py:method:: _resolve_sisters(kg_context)
+
+      Build the sister component list from topology + optional similarity tiers.
+
+      Returns a list of dicts with keys:
+      ``component_id``, ``component_label``, ``match_type``,
+      ``shared_fm_count``, ``embedding_score``.
+
+      Tier 1 (topology) is always included when ``include_sister_equipment``
+      is True — these are components with ``relation_to_asset`` in the
+      configured ``sister_relation_types``.
+
+      Tier 2/3 (FM overlap + spec embedding) are added when
+      ``config.similarity_resolver`` is set.  Results from both sources are
+      merged; a component found in both topology and similarity tiers gets a
+      combined ``match_type`` (e.g. ``"topology+failure_mode_overlap"``).
+
+
+
+   .. py:method:: _project_sister(result)
+      :classmethod:
+
+
+      Project one similarity-resolver result onto the sister_components[]
+      schema whitelist.
+
+      ``config.similarity_resolver`` is typed ``Any``, so a result may carry
+      extra keys, a missing ``match_type``, or wrongly-typed numerics that
+      would fail strict ``sister_components[]`` validation.  Drops non-schema
+      keys, coerces ``shared_fm_count`` / ``embedding_score`` to the schema's
+      numeric types, and returns ``None`` (logging a warning) when a required
+      field (``component_id`` / ``match_type``) is absent.
+
+
+
+   .. py:method:: _enrich_all(raw_records, event_dt, *, is_cr, floc_to_cid, equip_to_cid, sister_ids)
+
+      Enrich a list of raw CMMS records, skipping any that are still malformed
+      after normalization.  Returns ``(valid_records, dropped_count)``.
+
+
+
+   .. py:method:: _enrich_record(record, event_dt, is_cr, *, floc_to_cid = None, equip_to_cid = None, sister_ids = None)
+
+      Add derived fields to a raw CMMS record, project it onto the
+      cmms_context schema whitelist, and validate the schema-required fields.
+      Returns the enriched record, or ``None`` when it is still malformed
+      after normalization (missing/invalid required field) so the caller can
+      skip it and record the drop in provenance.
+
+      - ``days_before_event``: int or None
+      - ``component_id``: resolved from ``functional_location`` /
+        ``equipment_id`` via the KG lookups when the adapter did not supply one
+      - ``status``: normalized to open/closed/cancelled/unknown (every
+        documented Maximo/SAP code; unrecognized → unknown)
+      - ``is_sister_equipment``: coerced to a real bool from the adapter value
+        (a truthy string like ``"false"`` no longer survives), else derived
+        from whether the resolved ``component_id`` is a KG sister
+
+      Adapter-supplied fields outside the schema whitelist (e.g. Path-A
+      ``condition_assessment`` / ``failure_mode_refs``) are dropped from the
+      returned record so the artifact validates against ``cmms_context.json``
+      (``additionalProperties: false``).
+
+
+
+   .. py:method:: _coerce_bool(value)
+      :staticmethod:
+
+
+      Coerce a raw ``is_sister_equipment`` value to a real bool.  Returns
+      ``None`` for an absent or uninterpretable value so the caller can derive
+      it from KG topology instead (a truthy string like ``"false"`` must not
+      read as True).
+
+
+
+   .. py:method:: _has_required_fields(record, id_key)
+      :staticmethod:
+
+
+      True if ``record`` carries the cmms_context-required fields with valid
+      types: a non-empty string id, a string ``short_description``, and a
+      parseable ``created_date`` (``is_sister_equipment`` is always set to a
+      bool upstream; ``status`` is always a valid enum value).
+
+
+
+   .. py:method:: _build_recurrence_summary(cr_records, wo_records)
+
+
