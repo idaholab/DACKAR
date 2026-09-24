@@ -26,17 +26,26 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from equipment_similarity.equipment_spec_builder import EquipmentSpecBuilder
-from equipment_similarity.equipment_spec_store import EquipmentSpecStore
+from .equipment_spec_builder import EquipmentSpecBuilder
+from .equipment_spec_store import EquipmentSpecStore
 
 logger = logging.getLogger(__name__)
 
 JsonDict = Dict[str, Any]
 
 # Cypher query: one row per element_usage node, with aggregated failure mode data.
+#
+# Failure modes attach to element_usage via the canonical FMEA relationships.
+# The schema declares ``(element_usage)-[:subject_to]->(failure_mode)``
+# (see schemas/fmeaSchema.toml), while the FMEA ingestion workflow emits the
+# reverse ``(failure_mode)-[:applies_to]->(element_usage)``.  We match both
+# reltypes undirected so the poller is robust to whichever shape a given KG
+# build produced.  (Repo inconsistency between the schema and the ingestion
+# code is flagged separately; matching both here keeps this offline populator
+# working against either.)
 _SPEC_QUERY = """
 MATCH (c:element_usage)-[:instance_of]->(def:element_definition)
-OPTIONAL MATCH (c)-[:has_failure_mode]->(fm:failure_mode)
+OPTIONAL MATCH (c)-[:subject_to|applies_to]-(fm:failure_mode)
 RETURN
     c.id                    AS component_id,
     c.name                  AS component_name,
@@ -98,6 +107,16 @@ class KGEquipmentPoller:
         -------
         int
             Total number of component specs upserted.
+
+        Notes
+        -----
+        This is **upsert-only**.  Each component's spec is written by a stable
+        ``record_id`` (``equip_spec::{component_id}``), so re-running refreshes
+        existing components and adds new ones, but specs for components that
+        were *removed* from the KG are **not** deleted from the Chroma
+        collection — they linger as stale vectors.  A full refresh that drops
+        removed components requires rebuilding the ``equipment_specs``
+        collection from scratch (delete the collection, then re-poll).
         """
         logger.info("KGEquipmentPoller: starting poll...")
 
