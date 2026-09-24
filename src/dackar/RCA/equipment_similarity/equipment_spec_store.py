@@ -160,12 +160,19 @@ class EquipmentSpecStore:
         -------
         List[langchain_core.documents.Document]
             Each Document has ``page_content`` (spec text) and ``metadata``
-            including ``component_id``, ``_score``, and other stored properties.
+            including ``component_id``, the fused RRF ``_score``, the raw dense
+            distance ``_vector_score``, and other stored properties.
             Returns ``[]`` if the collection has not been populated yet.
         """
         exclude = set(exclude_ids or [])
 
         try:
+            # Open the persisted collection first.  A disk-backed store queried
+            # from a fresh process has performed no upsert, so the collection is
+            # absent from ChromaRecordStore._states and query_doc_type() would
+            # raise ValueError — silently losing Tier 3.  load_collection()
+            # registers the on-disk (dense) collection so the query resolves.
+            self.chroma_store.load_collection(self.doc_type)
             fetch_k = top_k + len(exclude) + 5  # over-fetch to absorb exclusions
             hits = self.chroma_store.query_doc_type(
                 self.doc_type,
@@ -173,7 +180,7 @@ class EquipmentSpecStore:
                 top_k=fetch_k,
             )
         except ValueError:
-            # Collection not yet initialized (no specs populated)
+            # Collection not present on disk yet (no specs ever populated)
             logger.debug("EquipmentSpecStore: collection not initialised — returning empty.")
             return []
         except Exception as exc:
