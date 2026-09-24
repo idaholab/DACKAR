@@ -12,6 +12,10 @@ Identifies sister equipment using two complementary tiers:
       Queries the EquipmentSpecStore (Chroma ``equipment_specs`` collection).
       Query text is built from kg_context fields — no additional KG call.
       Skipped silently if spec_store is None or unpopulated.
+      Ranked and thresholded on the raw dense-vector distance
+      (``_vector_score``), not the fused RRF ``_score`` that
+      ChromaRecordStore's hybrid query overwrites onto each hit — the RRF rank
+      score is not a distance and would break the ``embedding_min_score`` gate.
 
 Results from both tiers are merged, deduplicated (same component_id in
 multiple tiers → combined match_type), and returned as a ranked list of
@@ -63,6 +67,24 @@ class SisterComponent:
     embedding_score: float = NON_EMBEDDING_DISTANCE
 
     def to_dict(self) -> JsonDict:
+        """
+        Serialize this candidate to a plain dict for the CMMSContextBuilder boundary.
+
+        Returns
+        -------
+        dict
+            Mapping with keys ``component_id``, ``component_label``,
+            ``match_type``, ``shared_fm_count`` and ``embedding_score``.
+
+        Notes
+        -----
+        For ``failure_mode_overlap`` matches (Tier 2 — no embedding distance was
+        ever computed) ``embedding_score`` is forced to ``NON_EMBEDDING_DISTANCE``
+        (1.0) rather than left at the dataclass default, so a Tier-2-only sister
+        is never ranked as more similar than a genuine embedding hit downstream.
+        For ``spec_embedding`` and combined matches it carries the raw Chroma
+        vector distance (lower = closer).
+        """
         embedding_score = self.embedding_score
         if self.match_type == "failure_mode_overlap":
             embedding_score = NON_EMBEDDING_DISTANCE
@@ -219,12 +241,18 @@ class EquipmentSimilarityResolver:
             if comp_id and fm_id:
                 comp_to_fms.setdefault(comp_id, set()).add(fm_id)
 
-        # Target FM set (union across all target components)
-        target_fms: Set[str] = set()
-        for tid in target_set:
-            target_fms |= comp_to_fms.get(tid, set())
-
-        if not target_fms:
+        # Per-target FM sets.  A candidate must share ≥ fm_overlap_min_shared
+        # failure modes with at least ONE individual target component — not with
+        # the union across all targets.  CMMSContextBuilder passes every
+        # non-topology component as a target, and a union over-broadens: a
+        # candidate sharing a single (different) FM with each of two unrelated
+        # targets would spuriously clear a threshold of 2.
+        target_fm_sets = {
+            tid: comp_to_fms.get(tid, set())
+            for tid in target_set
+            if comp_to_fms.get(tid)
+        }
+        if not target_fm_sets:
             return []
 
         # Label lookup
@@ -234,13 +262,17 @@ class EquipmentSimilarityResolver:
         for comp_id, fm_ids in comp_to_fms.items():
             if comp_id in target_set:
                 continue
-            shared = fm_ids & target_fms
-            if len(shared) >= self.config.fm_overlap_min_shared:
+            # Best overlap against any single target component.
+            best_shared = max(
+                (len(fm_ids & tfms) for tfms in target_fm_sets.values()),
+                default=0,
+            )
+            if best_shared >= self.config.fm_overlap_min_shared:
                 sisters.append(SisterComponent(
                     component_id=comp_id,
                     component_label=label_map.get(comp_id),
                     match_type="failure_mode_overlap",
-                    shared_fm_count=len(shared),
+                    shared_fm_count=best_shared,
                     embedding_score=NON_EMBEDDING_DISTANCE,
                 ))
 
@@ -271,7 +303,16 @@ class EquipmentSimilarityResolver:
         sisters: List[SisterComponent] = []
         for doc in hits:
             meta  = doc.metadata or {}
-            score = float(meta.get("_score") or meta.get("_vector_score") or 1.0)
+            # Gate on the raw dense-vector distance.  ChromaRecordStore runs a
+            # hybrid dense+BM25 query and overwrites ``_score`` with the fused RRF
+            # rank score, but preserves the raw distance in ``_vector_score``.
+            # Read it by key presence (not a truthiness ``or`` chain) so a
+            # legitimate 0.0 — an exact match, the closest possible hit — is not
+            # discarded, and a missing key is not silently treated as distance 1.0.
+            if "_vector_score" not in meta:
+                # No comparable dense distance on this hit — cannot apply the gate.
+                continue
+            score = float(meta["_vector_score"])
             if score > self.config.embedding_min_score:
                 continue  # too dissimilar
             comp_id = meta.get("component_id") or meta.get("doc_id") or ""
