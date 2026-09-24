@@ -115,9 +115,11 @@ Only non-null properties are emitted. No NLP, no LLM — pure deterministic stri
 The Cypher query (`kg_equipment_poller._SPEC_QUERY`) expects:
 - Nodes: `element_usage` (with `.id`, `.name`) linked via `[:instance_of]` to `element_definition`
 - `element_definition` properties: `domain_category`, `structural_kind`, `nominal_size`, `design_pressure`, `design_temperature`, `material_spec`, `manufacturer`, `model_number`
-- Optional: `element_usage` linked via `[:has_failure_mode]` to `failure_mode` (with `.name`, `.failure_mechanism`)
+- Optional: `element_usage` linked to `failure_mode` (with `.name`, `.failure_mechanism`) via the canonical FMEA relationship. The query matches `[:subject_to|applies_to]` **undirected**, covering both the schema-declared `(element_usage)-[:subject_to]->(failure_mode)` and the ingestion-emitted `(failure_mode)-[:applies_to]->(element_usage)` shapes.
 
 The query is forgiving — all `OPTIONAL MATCH` clauses; missing nodes produce null fields that are silently omitted from spec text.
+
+> **Refresh semantics:** `poll_and_upsert` is upsert-only (stable `record_id` per component). Re-running refreshes and adds components, but specs for components deleted from the KG are not removed — a full refresh that drops them means rebuilding the `equipment_specs` collection from scratch.
 
 ### Chroma Collection
 
