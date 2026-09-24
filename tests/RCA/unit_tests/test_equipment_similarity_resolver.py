@@ -28,11 +28,19 @@ from equipment_similarity.equipment_similarity_resolver import (
 # ---------------------------------------------------------------------------
 
 def _make_doc(component_id: str, score: float = 0.3, label: Optional[str] = None) -> Any:
-    """Build a minimal Document-like object returned by Chroma."""
+    """Build a minimal Document-like object returned by Chroma.
+
+    Mirrors the real ChromaRecordStore metadata contract: hybrid retrieval
+    overwrites ``_score`` with the fused RRF rank score and preserves the raw
+    dense distance in ``_vector_score``.  The resolver gates Tier 3 on
+    ``_vector_score`` (raw distance), so the fixture ``score`` lives there;
+    ``_score`` carries a decoy the resolver must ignore.
+    """
     doc = MagicMock()
     doc.metadata = {
         "component_id": component_id,
-        "_score": score,
+        "_score": 0.001,          # decoy fused RRF score — resolver must ignore this
+        "_vector_score": score,   # raw dense distance — what the Tier 3 gate reads
         "component_label": label,
     }
     return doc
@@ -223,21 +231,32 @@ class TestFMOverlapTier:
         result = self._make_resolver(min_shared=1).resolve_similar(["C-001"], kg)
         assert len(result) == 1
 
-    def test_multiple_targets_union_of_fms(self):
-        """Sister should qualify if it shares FMs with ANY target component."""
+    def test_multiple_targets_overlap_is_per_target_not_union(self):
+        """I3: a candidate must meet the threshold against at least ONE individual
+        target component, not against the union of all targets' failure modes.
+
+        With multiple primary targets, unioning over-broadens: a candidate that
+        shares a single (different) FM with each of two unrelated targets would
+        spuriously clear a threshold of 2.
+        """
         kg = _minimal_kg_context(
             failure_modes=[
                 _fm("C-001", "fm-1"),
-                _fm("C-002", "fm-2"),
+                _fm("C-001", "fm-2"),
+                _fm("C-002", "fm-3"),
+                # C-003 shares fm-1 with C-001 and fm-3 with C-002:
+                #   union overlap = 2 (would spuriously pass), per-target max = 1.
                 _fm("C-003", "fm-1"),
-                _fm("C-003", "fm-2"),
+                _fm("C-003", "fm-3"),
+                # C-004 shares fm-1 AND fm-2 with the single target C-001:
+                #   per-target overlap = 2 -> legitimately qualifies.
+                _fm("C-004", "fm-1"),
+                _fm("C-004", "fm-2"),
             ]
         )
-        # Targets are C-001 and C-002; C-003 shares 1 FM with each = 2 total
         result = self._make_resolver(min_shared=2).resolve_similar(["C-001", "C-002"], kg)
-        assert len(result) == 1
-        assert result[0].component_id == "C-003"
-        assert result[0].shared_fm_count == 2
+        ids = {s.component_id: s.shared_fm_count for s in result}
+        assert ids == {"C-004": 2}  # C-003 excluded (no spurious union match)
 
     def test_sorted_by_shared_count_descending(self):
         kg = _minimal_kg_context(
@@ -676,3 +695,58 @@ class TestBuildQueryText:
         text = self._resolver()._build_query_text(["C-001"], kg)
         # Should not have duplicated "bearing_wear, bearing_wear"
         assert text.count("bearing_wear") == 1
+
+
+# ---------------------------------------------------------------------------
+# Tier 3 distance gate — I1 lock
+# ---------------------------------------------------------------------------
+
+class TestVectorScoreGate:
+    """I1: Tier 3 gates on the raw dense distance ``_vector_score`` (lower =
+    closer), not the fused RRF ``_score`` that ChromaRecordStore overwrites onto
+    each hit, and treats an exact-match 0.0 as a real (kept) distance."""
+
+    def _kg(self) -> Dict:
+        return _minimal_kg_context(
+            components=[{"component_id": "C-001", "component_label": "Target pump", "component_type": "pump"}],
+        )
+
+    def _resolver_for(self, docs: List[Any]) -> EquipmentSimilarityResolver:
+        class _Store:
+            def find_similar(self, query_text, top_k=10, exclude_ids=None):
+                return list(docs)
+        return EquipmentSimilarityResolver(
+            spec_store=_Store(),
+            config=EquipmentSimilarityConfig(
+                include_fm_overlap=False,
+                include_spec_embedding=True,
+                embedding_min_score=0.8,
+            ),
+        )
+
+    @staticmethod
+    def _doc(component_id: str, **meta: Any) -> Any:
+        doc = MagicMock()
+        doc.metadata = {"component_id": component_id, **meta}
+        return doc
+
+    def test_gates_on_vector_score_not_rrf_score(self):
+        # _score (RRF) is 0.01 — would INCLUDE if misread as a distance — but the
+        # raw distance _vector_score is 0.95 (> 0.8), so the hit must be EXCLUDED.
+        docs = [self._doc("C-FAR", _score=0.01, _vector_score=0.95)]
+        result = self._resolver_for(docs).resolve_similar(["C-001"], self._kg())
+        assert result == []
+
+    def test_exact_match_zero_distance_is_kept(self):
+        # _vector_score 0.0 is the closest possible hit; a truthiness `or` chain
+        # would have discarded it.  _score decoy is high (would exclude if misread).
+        docs = [self._doc("C-EXACT", _score=0.99, _vector_score=0.0)]
+        result = self._resolver_for(docs).resolve_similar(["C-001"], self._kg())
+        assert [s.component_id for s in result] == ["C-EXACT"]
+        assert result[0].embedding_score == 0.0
+
+    def test_missing_vector_score_is_dropped(self):
+        # No raw distance on the hit -> the gate cannot be applied -> dropped.
+        docs = [self._doc("C-NORAW", _score=0.1)]
+        result = self._resolver_for(docs).resolve_similar(["C-001"], self._kg())
+        assert result == []
