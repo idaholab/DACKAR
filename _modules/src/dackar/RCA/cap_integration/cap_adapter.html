@@ -1,0 +1,418 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.cap_integration.cap_adapter &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.cap_integration.cap_adapter</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.cap_integration.cap_adapter</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">cap_adapter — CAPAdapter Protocol, FileDropCAPAdapter, NoOpCAPAdapter.</span>
+
+<span class="sd">Concrete live adapters (MaximoCAPAdapter, SAPPMCAPAdapter) live in separate</span>
+<span class="sd">files and implement the same Protocol.  See CAP_INTEGRATION_GUIDE.md for the</span>
+<span class="sd">implementation skeleton.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Protocol</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="_utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter._utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_safe_export_filename">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter._safe_export_filename">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_safe_export_filename</span><span class="p">(</span><span class="n">export_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return a filesystem-safe stem for CAP export files."""</span>
+    <span class="n">normalized</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">export_id</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"::"</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">" "</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">)</span>
+    <span class="c1"># Windows-invalid chars: &lt;&gt;:"/\|?* ; keep output deterministic across OSes.</span>
+    <span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s1">'[&lt;&gt;:"/</span><span class="se">\\</span><span class="s1">|?*]'</span><span class="p">,</span> <span class="s2">"_"</span><span class="p">,</span> <span class="n">normalized</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Submission receipt</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="CAPSubmissionReceipt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CAPSubmissionReceipt</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Returned by every CAPAdapter.submit() call.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    receipt_id:</span>
+<span class="sd">        Unique ID for this submission attempt.</span>
+<span class="sd">    submitted_at:</span>
+<span class="sd">        ISO-8601 UTC timestamp.</span>
+<span class="sd">    adapter:</span>
+<span class="sd">        Class name of the adapter that produced this receipt.</span>
+<span class="sd">    export_id:</span>
+<span class="sd">        ``export_id`` from the CAPExportPackage that was submitted.</span>
+<span class="sd">    cr_numbers:</span>
+<span class="sd">        CMMS-assigned corrective action / work order numbers.</span>
+<span class="sd">        Empty list for adapters that do not receive synchronous confirmation</span>
+<span class="sd">        (e.g. ``FileDropCAPAdapter``).</span>
+<span class="sd">    status:</span>
+<span class="sd">        ``"submitted"`` — accepted by CMMS synchronously.</span>
+<span class="sd">        ``"pending"``   — written to drop zone; CMMS import job pending.</span>
+<span class="sd">        ``"partial"``   — some records submitted, some failed.</span>
+<span class="sd">        ``"failed"``    — no records submitted.</span>
+<span class="sd">        ``"noop"``      — NoOpCAPAdapter; nothing was done.</span>
+<span class="sd">    errors:</span>
+<span class="sd">        List of per-record error dicts when status is partial or failed.</span>
+<span class="sd">    notes:</span>
+<span class="sd">        Free-text adapter notes (e.g. path of the written file).</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.receipt_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.receipt_id">[docs]</a>
+    <span class="n">receipt_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.submitted_at">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.submitted_at">[docs]</a>
+    <span class="n">submitted_at</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.adapter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.adapter">[docs]</a>
+    <span class="n">adapter</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.export_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.export_id">[docs]</a>
+    <span class="n">export_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.cr_numbers">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.cr_numbers">[docs]</a>
+    <span class="n">cr_numbers</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.status">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.status">[docs]</a>
+    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"pending"</span></div>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.errors">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.errors">[docs]</a>
+    <span class="n">errors</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.notes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.notes">[docs]</a>
+    <span class="n">notes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="CAPSubmissionReceipt.to_dict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt.to_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Return the receipt as a plain JSON-serializable dict.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Keys mirror the dataclass attributes; suitable for persisting</span>
+<span class="sd">            alongside the CAPExportPackage as the ``cap_submission_receipt``</span>
+<span class="sd">            artifact.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"receipt_id"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">receipt_id</span><span class="p">,</span>
+            <span class="s2">"submitted_at"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">submitted_at</span><span class="p">,</span>
+            <span class="s2">"adapter"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">adapter</span><span class="p">,</span>
+            <span class="s2">"export_id"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">export_id</span><span class="p">,</span>
+            <span class="s2">"cr_numbers"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">cr_numbers</span><span class="p">,</span>
+            <span class="s2">"status"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">status</span><span class="p">,</span>
+            <span class="s2">"errors"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span>
+            <span class="s2">"notes"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">notes</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Protocol</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="CAPAdapter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPAdapter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CAPAdapter</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Protocol for CAP submission adapters.</span>
+
+<span class="sd">    All implementations must be idempotent with respect to</span>
+<span class="sd">    ``package["export_id"]``: submitting the same package twice must not</span>
+<span class="sd">    create duplicate CMMS records.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="CAPAdapter.submit">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.CAPAdapter.submit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">submit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CAPSubmissionReceipt</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Submit a CAPExportPackage to the target CMMS (or file drop zone).</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package:</span>
+<span class="sd">            Dict conforming to ``schemas/cap_export_package.json``.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        CAPSubmissionReceipt</span>
+<span class="sd">        """</span>
+        <span class="o">...</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># FileDropCAPAdapter</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="FileDropCAPAdapter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.FileDropCAPAdapter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FileDropCAPAdapter</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Writes the CAPExportPackage as a JSON file to a watched directory.</span>
+
+<span class="sd">    This is the default adapter for dev and pre-live deployments.  The plant's</span>
+<span class="sd">    CMMS import job polls the directory and ingests the file asynchronously.</span>
+<span class="sd">    Returns a receipt with ``status="pending"`` and an empty ``cr_numbers``</span>
+<span class="sd">    list — CMMS record numbers are not available at submission time.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    drop_dir:</span>
+<span class="sd">        Directory where export files are written.  Created if absent.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">drop_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="FileDropCAPAdapter.drop_dir">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.FileDropCAPAdapter.drop_dir">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drop_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">drop_dir</span><span class="p">)</span></div>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">drop_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<div class="viewcode-block" id="FileDropCAPAdapter.submit">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.FileDropCAPAdapter.submit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">submit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CAPSubmissionReceipt</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Write the package to the drop zone as JSON and return a receipt.</span>
+
+<span class="sd">        The file is written atomically (to a hidden ``*.tmp`` sibling, then</span>
+<span class="sd">        ``os.replace``d into place) so a CMMS import job polling the directory</span>
+<span class="sd">        never observes a partially written ``cap_export_*.json`` file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package:</span>
+<span class="sd">            Dict conforming to ``schemas/cap_export_package.json``.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        CAPSubmissionReceipt</span>
+<span class="sd">            ``status="pending"`` with an empty ``cr_numbers`` list; ``notes``</span>
+<span class="sd">            holds the written file path.</span>
+<span class="sd">        """</span>
+        <span class="n">export_id</span> <span class="o">=</span> <span class="n">package</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"export_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+        <span class="n">submitted_at</span> <span class="o">=</span> <span class="n">_utcnow_iso</span><span class="p">()</span>
+        <span class="n">receipt_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"RCPT::</span><span class="si">{</span><span class="n">export_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">submitted_at</span><span class="si">}</span><span class="s2">"</span>
+
+        <span class="n">safe_name</span> <span class="o">=</span> <span class="n">_safe_export_filename</span><span class="p">(</span><span class="n">export_id</span><span class="p">)</span>
+        <span class="n">file_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">drop_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"cap_export_</span><span class="si">{</span><span class="n">safe_name</span><span class="si">}</span><span class="s2">.json"</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_atomic_write_json</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="n">package</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">CAPSubmissionReceipt</span><span class="p">(</span>
+            <span class="n">receipt_id</span><span class="o">=</span><span class="n">receipt_id</span><span class="p">,</span>
+            <span class="n">submitted_at</span><span class="o">=</span><span class="n">submitted_at</span><span class="p">,</span>
+            <span class="n">adapter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+            <span class="n">export_id</span><span class="o">=</span><span class="n">export_id</span><span class="p">,</span>
+            <span class="n">cr_numbers</span><span class="o">=</span><span class="p">[],</span>
+            <span class="n">status</span><span class="o">=</span><span class="s2">"pending"</span><span class="p">,</span>
+            <span class="n">notes</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">file_path</span><span class="p">),</span>
+        <span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="FileDropCAPAdapter._atomic_write_json">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.FileDropCAPAdapter._atomic_write_json">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_atomic_write_json</span><span class="p">(</span><span class="n">file_path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Write ``package`` as JSON to ``file_path`` via a temp file + os.replace."""</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">package</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+        <span class="n">fd</span><span class="p">,</span> <span class="n">tmp</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkstemp</span><span class="p">(</span>
+            <span class="nb">dir</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">file_path</span><span class="o">.</span><span class="n">parent</span><span class="p">),</span> <span class="n">prefix</span><span class="o">=</span><span class="sa">f</span><span class="s2">".</span><span class="si">{</span><span class="n">file_path</span><span class="o">.</span><span class="n">stem</span><span class="si">}</span><span class="s2">."</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">".tmp"</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">os</span><span class="o">.</span><span class="n">fdopen</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+                <span class="n">fh</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tmp</span><span class="p">,</span> <span class="n">file_path</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">tmp</span><span class="p">):</span>
+                <span class="n">os</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">tmp</span><span class="p">)</span>
+            <span class="k">raise</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># NoOpCAPAdapter</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="NoOpCAPAdapter">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.NoOpCAPAdapter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NoOpCAPAdapter</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Silently discards the package.  Used in unit tests and CI.</span>
+
+<span class="sd">    Returns a receipt with ``status="noop"`` and an empty ``cr_numbers`` list.</span>
+<span class="sd">    Makes no file I/O and has no external dependencies.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="NoOpCAPAdapter.submit">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_adapter/index.html#src.dackar.RCA.cap_integration.cap_adapter.NoOpCAPAdapter.submit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">submit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CAPSubmissionReceipt</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Discard the package and return a ``status="noop"`` receipt.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        package:</span>
+<span class="sd">            Dict conforming to ``schemas/cap_export_package.json``.  Only</span>
+<span class="sd">            ``export_id`` is read; nothing is written.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        CAPSubmissionReceipt</span>
+<span class="sd">            ``status="noop"`` with an empty ``cr_numbers`` list.</span>
+<span class="sd">        """</span>
+        <span class="n">export_id</span> <span class="o">=</span> <span class="n">package</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"export_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+        <span class="n">submitted_at</span> <span class="o">=</span> <span class="n">_utcnow_iso</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">CAPSubmissionReceipt</span><span class="p">(</span>
+            <span class="n">receipt_id</span><span class="o">=</span><span class="sa">f</span><span class="s2">"RCPT::NOOP::</span><span class="si">{</span><span class="n">submitted_at</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="n">submitted_at</span><span class="o">=</span><span class="n">submitted_at</span><span class="p">,</span>
+            <span class="n">adapter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">,</span>
+            <span class="n">export_id</span><span class="o">=</span><span class="n">export_id</span><span class="p">,</span>
+            <span class="n">cr_numbers</span><span class="o">=</span><span class="p">[],</span>
+            <span class="n">status</span><span class="o">=</span><span class="s2">"noop"</span><span class="p">,</span>
+            <span class="n">notes</span><span class="o">=</span><span class="s2">"NoOpCAPAdapter — package discarded."</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

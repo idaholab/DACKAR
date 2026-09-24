@@ -1,0 +1,441 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.cap_integration.cap_config &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.cap_integration.cap_config</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.cap_integration.cap_config</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">cap_config — CAPExportConfig dataclass.</span>
+
+<span class="sd">Holds all field-mapping and target-system configuration for the CAP export</span>
+<span class="sd">serializer.  The bundled ``field_maps/{target_system}_default.json`` file is</span>
+<span class="sd">the authoritative source for every mapping key (action_type_map, priority_map,</span>
+<span class="sd">record_endpoint, floc_property, short_description_max_chars, long_text_field);</span>
+<span class="sd">the module-level Python constants are used only as a fallback when a key (or</span>
+<span class="sd">the whole file) is missing.  Individual keys can still be overridden per plant</span>
+<span class="sd">via constructor keyword arguments.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="_FIELD_MAPS_DIR">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config._FIELD_MAPS_DIR">[docs]</a>
+<span class="n">_FIELD_MAPS_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"field_maps"</span></div>
+
+
+<div class="viewcode-block" id="_SUPPORTED_TARGETS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config._SUPPORTED_TARGETS">[docs]</a>
+<span class="n">_SUPPORTED_TARGETS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"maximo"</span><span class="p">,</span> <span class="s2">"sap_pm"</span><span class="p">,</span> <span class="s2">"generic"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_DEFAULT_ACTION_TYPE_MAP_MAXIMO">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config._DEFAULT_ACTION_TYPE_MAP_MAXIMO">[docs]</a>
+<span class="n">_DEFAULT_ACTION_TYPE_MAP_MAXIMO</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"immediate_corrective"</span><span class="p">:</span>   <span class="s2">"CAL"</span><span class="p">,</span>
+    <span class="s2">"long_term_corrective"</span><span class="p">:</span>   <span class="s2">"CAP"</span><span class="p">,</span>
+    <span class="s2">"preventive"</span><span class="p">:</span>             <span class="s2">"PM"</span><span class="p">,</span>
+    <span class="s2">"monitoring"</span><span class="p">:</span>             <span class="s2">"SR"</span><span class="p">,</span>
+    <span class="s2">"procedure_update"</span><span class="p">:</span>       <span class="s2">"TQ"</span><span class="p">,</span>
+    <span class="s2">"engineering_evaluation"</span><span class="p">:</span> <span class="s2">"ECR"</span><span class="p">,</span>
+    <span class="s2">"pm_corrective"</span><span class="p">:</span>          <span class="s2">"CM"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_DEFAULT_ACTION_TYPE_MAP_SAP">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config._DEFAULT_ACTION_TYPE_MAP_SAP">[docs]</a>
+<span class="n">_DEFAULT_ACTION_TYPE_MAP_SAP</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"immediate_corrective"</span><span class="p">:</span>   <span class="s2">"M1"</span><span class="p">,</span>
+    <span class="s2">"long_term_corrective"</span><span class="p">:</span>   <span class="s2">"M2"</span><span class="p">,</span>
+    <span class="s2">"preventive"</span><span class="p">:</span>             <span class="s2">"M3"</span><span class="p">,</span>
+    <span class="s2">"monitoring"</span><span class="p">:</span>             <span class="s2">"M4"</span><span class="p">,</span>
+    <span class="s2">"procedure_update"</span><span class="p">:</span>       <span class="s2">"Q3"</span><span class="p">,</span>
+    <span class="s2">"engineering_evaluation"</span><span class="p">:</span> <span class="s2">"Q1"</span><span class="p">,</span>
+    <span class="s2">"pm_corrective"</span><span class="p">:</span>          <span class="s2">"M2"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_DEFAULT_ACTION_TYPE_MAP_GENERIC">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config._DEFAULT_ACTION_TYPE_MAP_GENERIC">[docs]</a>
+<span class="n">_DEFAULT_ACTION_TYPE_MAP_GENERIC</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"immediate_corrective"</span><span class="p">:</span>   <span class="s2">"CORRECTIVE"</span><span class="p">,</span>
+    <span class="s2">"long_term_corrective"</span><span class="p">:</span>   <span class="s2">"CORRECTIVE_LT"</span><span class="p">,</span>
+    <span class="s2">"preventive"</span><span class="p">:</span>             <span class="s2">"PREVENTIVE"</span><span class="p">,</span>
+    <span class="s2">"monitoring"</span><span class="p">:</span>             <span class="s2">"MONITORING"</span><span class="p">,</span>
+    <span class="s2">"procedure_update"</span><span class="p">:</span>       <span class="s2">"PROCEDURE"</span><span class="p">,</span>
+    <span class="s2">"engineering_evaluation"</span><span class="p">:</span> <span class="s2">"ENGINEERING"</span><span class="p">,</span>
+    <span class="s2">"pm_corrective"</span><span class="p">:</span>          <span class="s2">"CORRECTIVE_PM"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_DEFAULT_PRIORITY_MAP">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config._DEFAULT_PRIORITY_MAP">[docs]</a>
+<span class="n">_DEFAULT_PRIORITY_MAP</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"critical"</span><span class="p">:</span> <span class="s2">"1"</span><span class="p">,</span>
+    <span class="s2">"high"</span><span class="p">:</span>     <span class="s2">"2"</span><span class="p">,</span>
+    <span class="s2">"medium"</span><span class="p">:</span>   <span class="s2">"3"</span><span class="p">,</span>
+    <span class="s2">"low"</span><span class="p">:</span>      <span class="s2">"4"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_SHORT_DESC_LIMITS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config._SHORT_DESC_LIMITS">[docs]</a>
+<span class="n">_SHORT_DESC_LIMITS</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"maximo"</span><span class="p">:</span> <span class="mi">100</span><span class="p">,</span>
+    <span class="s2">"sap_pm"</span><span class="p">:</span> <span class="mi">40</span><span class="p">,</span>
+    <span class="s2">"generic"</span><span class="p">:</span> <span class="mi">200</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="CAPExportConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CAPExportConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Configuration for CAPExportSerializer.</span>
+
+<span class="sd">    On construction the bundled ``field_maps/{target_system}_default.json``</span>
+<span class="sd">    (or ``field_map_path`` when given) is parsed as the authoritative source</span>
+<span class="sd">    for the mapping keys; any key absent from the JSON falls back to the</span>
+<span class="sd">    module-level Python constant, and any value passed explicitly to the</span>
+<span class="sd">    constructor overrides both.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    target_system:</span>
+<span class="sd">        ``"maximo"`` | ``"sap_pm"`` | ``"generic"``.  Controls which</span>
+<span class="sd">        field-map defaults are loaded and which system-specific extension</span>
+<span class="sd">        block (``maximo_ext`` / ``sap_ext``) is populated.  Any other value</span>
+<span class="sd">        raises ``ValueError``.</span>
+<span class="sd">    action_type_map:</span>
+<span class="sd">        Overrides merged *over* the JSON/default map for ``target_system``.</span>
+<span class="sd">        Example: ``{"monitoring": "PM"}`` to treat monitoring actions as</span>
+<span class="sd">        PM work orders in a plant with that convention.</span>
+<span class="sd">    priority_map:</span>
+<span class="sd">        Overrides merged over the JSON/default ``{"critical": "1", ...}`` map.</span>
+<span class="sd">    default_work_group:</span>
+<span class="sd">        Maximo: stamped on every CRRecord as ``maximo_ext.work_group``.</span>
+<span class="sd">    default_plant_section:</span>
+<span class="sd">        SAP PM: stamped on every CRRecord as ``sap_ext.plant_section``.</span>
+<span class="sd">    default_planner_group:</span>
+<span class="sd">        SAP PM: stamped on every CRRecord as ``sap_ext.planner_group``.</span>
+<span class="sd">    long_text_header:</span>
+<span class="sd">        Custom prefix *prepended* to the standard DACKAR long-text header.</span>
+<span class="sd">        If ``None``, only the standard header is emitted.</span>
+<span class="sd">    include_rca_run_id_in_description:</span>
+<span class="sd">        If ``True`` (default), prepends ``"[RCA:{run_id}]"`` to the</span>
+<span class="sd">        short description, creating a searchable token in the CMMS.</span>
+<span class="sd">    field_map_path:</span>
+<span class="sd">        Path to a custom field-map JSON file.  If ``None`` (default) the</span>
+<span class="sd">        bundled ``field_maps/{target_system}_default.json`` is used.</span>
+<span class="sd">    record_endpoint, floc_property, short_description_max_chars,</span>
+<span class="sd">    long_text_field:</span>
+<span class="sd">        Parsed from the field-map JSON when not passed explicitly.  Exposed</span>
+<span class="sd">        for adapters (``record_endpoint``, ``long_text_field``) and the</span>
+<span class="sd">        serializer (``floc_property``, ``short_description_max_chars``).</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    field_map_source:</span>
+<span class="sd">        Provenance string identifying the field-map source and a content</span>
+<span class="sd">        hash, e.g. ``"field_maps/maximo_default.json#sha256:ab12cd34ef56"``.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="CAPExportConfig.target_system">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.target_system">[docs]</a>
+    <span class="n">target_system</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"maximo"</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.action_type_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.action_type_map">[docs]</a>
+    <span class="n">action_type_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.priority_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.priority_map">[docs]</a>
+    <span class="n">priority_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.default_work_group">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.default_work_group">[docs]</a>
+    <span class="n">default_work_group</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.default_plant_section">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.default_plant_section">[docs]</a>
+    <span class="n">default_plant_section</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.default_planner_group">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.default_planner_group">[docs]</a>
+    <span class="n">default_planner_group</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.long_text_header">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.long_text_header">[docs]</a>
+    <span class="n">long_text_header</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.include_rca_run_id_in_description">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.include_rca_run_id_in_description">[docs]</a>
+    <span class="n">include_rca_run_id_in_description</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.field_map_path">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.field_map_path">[docs]</a>
+    <span class="n">field_map_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.record_endpoint">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.record_endpoint">[docs]</a>
+    <span class="n">record_endpoint</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.floc_property">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.floc_property">[docs]</a>
+    <span class="n">floc_property</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.short_description_max_chars">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.short_description_max_chars">[docs]</a>
+    <span class="n">short_description_max_chars</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.long_text_field">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.long_text_field">[docs]</a>
+    <span class="n">long_text_field</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CAPExportConfig.field_map_source">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.field_map_source">[docs]</a>
+    <span class="n">field_map_source</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CAPExportConfig.__post_init__">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.__post_init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_system</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SUPPORTED_TARGETS</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"Unsupported target_system </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target_system</span><span class="si">!r}</span><span class="s2">; "</span>
+                <span class="sa">f</span><span class="s2">"expected one of </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">_SUPPORTED_TARGETS</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_field_map_data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_map_source</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_field_map</span><span class="p">()</span>
+
+        <span class="n">fm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_field_map_data</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">record_endpoint</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">record_endpoint</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"record_endpoint"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">floc_property</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">floc_property</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"floc_property"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+                <span class="s2">"sap_equipment_id"</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_system</span> <span class="o">==</span> <span class="s2">"sap_pm"</span> <span class="k">else</span> <span class="s2">"maximo_floc"</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">short_description_max_chars</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"short_description_max_chars"</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">short_description_max_chars</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="nb">int</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span> <span class="k">if</span> <span class="n">raw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_SHORT_DESC_LIMITS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">target_system</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">long_text_field</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">long_text_field</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"long_text_field"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"description"</span></div>
+
+
+<div class="viewcode-block" id="CAPExportConfig._load_field_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig._load_field_map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_field_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Return ``(field_map_data, field_map_source)``.</span>
+
+<span class="sd">        ``field_map_data`` is the parsed JSON dict (empty when no file is</span>
+<span class="sd">        found for ``generic``); ``field_map_source`` is a provenance string</span>
+<span class="sd">        with a content hash.  An explicitly supplied ``field_map_path`` that</span>
+<span class="sd">        does not exist raises ``FileNotFoundError``.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">field_map_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">field_map_path</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"field_map_path does not exist: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">_FIELD_MAPS_DIR</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target_system</span><span class="si">}</span><span class="s2">_default.json"</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+                <span class="c1"># generic has no bundled file — constants-only fallback.</span>
+                <span class="k">return</span> <span class="p">{},</span> <span class="sa">f</span><span class="s2">"builtin_defaults:</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target_system</span><span class="si">}</span><span class="s2">"</span>
+
+        <span class="n">raw</span> <span class="o">=</span> <span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+        <span class="n">digest</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">raw</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="s2">"utf-8"</span><span class="p">))</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()[:</span><span class="mi">12</span><span class="p">]</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">loc</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"field_maps/</span><span class="si">{</span><span class="n">path</span><span class="o">.</span><span class="n">relative_to</span><span class="p">(</span><span class="n">_FIELD_MAPS_DIR</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="n">loc</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">data</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">loc</span><span class="si">}</span><span class="s2">#sha256:</span><span class="si">{</span><span class="n">digest</span><span class="si">}</span><span class="s2">"</span></div>
+
+
+<div class="viewcode-block" id="CAPExportConfig._constant_action_type_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig._constant_action_type_map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_constant_action_type_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_system</span> <span class="o">==</span> <span class="s2">"maximo"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_DEFAULT_ACTION_TYPE_MAP_MAXIMO</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_system</span> <span class="o">==</span> <span class="s2">"sap_pm"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_DEFAULT_ACTION_TYPE_MAP_SAP</span>
+        <span class="k">return</span> <span class="n">_DEFAULT_ACTION_TYPE_MAP_GENERIC</span></div>
+
+
+<div class="viewcode-block" id="CAPExportConfig.resolved_action_type_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.resolved_action_type_map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolved_action_type_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return the effective action_type map (constants &lt; JSON &lt; overrides)."""</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_constant_action_type_map</span><span class="p">())</span>
+        <span class="n">base</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_field_map_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"action_type_map"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="n">base</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">action_type_map</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="k">return</span> <span class="n">base</span></div>
+
+
+<div class="viewcode-block" id="CAPExportConfig.resolved_priority_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.resolved_priority_map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolved_priority_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return the effective priority map (constants &lt; JSON &lt; overrides)."""</span>
+        <span class="n">base</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_DEFAULT_PRIORITY_MAP</span><span class="p">)</span>
+        <span class="n">base</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_field_map_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"priority_map"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="n">base</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">priority_map</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="k">return</span> <span class="n">base</span></div>
+
+
+<div class="viewcode-block" id="CAPExportConfig.short_description_limit">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.short_description_limit">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">short_description_limit</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Return the character limit for the CMMS short description field."""</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">short_description_max_chars</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CAPExportConfig.floc_kg_property">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.floc_kg_property">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">floc_kg_property</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""KG property name to read for location resolution."""</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">floc_property</span></div>
+
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="CAPExportConfig.from_field_map_file">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_config/index.html#src.dackar.RCA.cap_integration.cap_config.CAPExportConfig.from_field_map_file">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_field_map_file</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">target_system</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">field_map_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">overrides</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">"CAPExportConfig"</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Construct a config whose field-map source is a JSON file.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        target_system:</span>
+<span class="sd">            ``"maximo"`` | ``"sap_pm"`` | ``"generic"``</span>
+<span class="sd">        field_map_path:</span>
+<span class="sd">            Path to a custom JSON file.  If ``None``, the bundled</span>
+<span class="sd">            ``field_maps/{target_system}_default.json`` is used.</span>
+<span class="sd">        **overrides:</span>
+<span class="sd">            Additional keyword arguments passed to ``CAPExportConfig()``.</span>
+<span class="sd">            May include ``action_type_map`` / ``priority_map`` (merged over</span>
+<span class="sd">            the JSON) and any scalar field without collision, because the</span>
+<span class="sd">            JSON is loaded in ``__post_init__`` rather than through the</span>
+<span class="sd">            constructor signature.</span>
+<span class="sd">        """</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">target_system</span><span class="o">=</span><span class="n">target_system</span><span class="p">,</span> <span class="n">field_map_path</span><span class="o">=</span><span class="n">field_map_path</span><span class="p">,</span> <span class="o">**</span><span class="n">overrides</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,244 @@
+src.dackar.RCA.cap_integration.cap_config
+=========================================
+
+.. py:module:: src.dackar.RCA.cap_integration.cap_config
+
+.. autoapi-nested-parse::
+
+   cap_config — CAPExportConfig dataclass.
+
+   Holds all field-mapping and target-system configuration for the CAP export
+   serializer.  The bundled ``field_maps/{target_system}_default.json`` file is
+   the authoritative source for every mapping key (action_type_map, priority_map,
+   record_endpoint, floc_property, short_description_max_chars, long_text_field);
+   the module-level Python constants are used only as a fallback when a key (or
+   the whole file) is missing.  Individual keys can still be overridden per plant
+   via constructor keyword arguments.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_config._FIELD_MAPS_DIR
+   src.dackar.RCA.cap_integration.cap_config._SUPPORTED_TARGETS
+   src.dackar.RCA.cap_integration.cap_config._DEFAULT_ACTION_TYPE_MAP_MAXIMO
+   src.dackar.RCA.cap_integration.cap_config._DEFAULT_ACTION_TYPE_MAP_SAP
+   src.dackar.RCA.cap_integration.cap_config._DEFAULT_ACTION_TYPE_MAP_GENERIC
+   src.dackar.RCA.cap_integration.cap_config._DEFAULT_PRIORITY_MAP
+   src.dackar.RCA.cap_integration.cap_config._SHORT_DESC_LIMITS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_config.CAPExportConfig
+
+
+Module Contents
+---------------
+
+.. py:data:: _FIELD_MAPS_DIR
+
+.. py:data:: _SUPPORTED_TARGETS
+   :value: ('maximo', 'sap_pm', 'generic')
+
+
+.. py:data:: _DEFAULT_ACTION_TYPE_MAP_MAXIMO
+   :type:  Dict[str, str]
+
+.. py:data:: _DEFAULT_ACTION_TYPE_MAP_SAP
+   :type:  Dict[str, str]
+
+.. py:data:: _DEFAULT_ACTION_TYPE_MAP_GENERIC
+   :type:  Dict[str, str]
+
+.. py:data:: _DEFAULT_PRIORITY_MAP
+   :type:  Dict[str, str]
+
+.. py:data:: _SHORT_DESC_LIMITS
+   :type:  Dict[str, int]
+
+.. py:class:: CAPExportConfig
+
+   Configuration for CAPExportSerializer.
+
+   On construction the bundled ``field_maps/{target_system}_default.json``
+   (or ``field_map_path`` when given) is parsed as the authoritative source
+   for the mapping keys; any key absent from the JSON falls back to the
+   module-level Python constant, and any value passed explicitly to the
+   constructor overrides both.
+
+   :param target_system: ``"maximo"`` | ``"sap_pm"`` | ``"generic"``.  Controls which
+                         field-map defaults are loaded and which system-specific extension
+                         block (``maximo_ext`` / ``sap_ext``) is populated.  Any other value
+                         raises ``ValueError``.
+   :param action_type_map: Overrides merged *over* the JSON/default map for ``target_system``.
+                           Example: ``{"monitoring": "PM"}`` to treat monitoring actions as
+                           PM work orders in a plant with that convention.
+   :param priority_map: Overrides merged over the JSON/default ``{"critical": "1", ...}`` map.
+   :param default_work_group: Maximo: stamped on every CRRecord as ``maximo_ext.work_group``.
+   :param default_plant_section: SAP PM: stamped on every CRRecord as ``sap_ext.plant_section``.
+   :param default_planner_group: SAP PM: stamped on every CRRecord as ``sap_ext.planner_group``.
+   :param long_text_header: Custom prefix *prepended* to the standard DACKAR long-text header.
+                            If ``None``, only the standard header is emitted.
+   :param include_rca_run_id_in_description: If ``True`` (default), prepends ``"[RCA:{run_id}]"`` to the
+                                             short description, creating a searchable token in the CMMS.
+   :param field_map_path: Path to a custom field-map JSON file.  If ``None`` (default) the
+                          bundled ``field_maps/{target_system}_default.json`` is used.
+   :param record_endpoint:
+   :param floc_property:
+   :param short_description_max_chars:
+   :param :
+   :param long_text_field: Parsed from the field-map JSON when not passed explicitly.  Exposed
+                           for adapters (``record_endpoint``, ``long_text_field``) and the
+                           serializer (``floc_property``, ``short_description_max_chars``).
+
+   .. attribute:: field_map_source
+
+      Provenance string identifying the field-map source and a content
+      hash, e.g. ``"field_maps/maximo_default.json#sha256:ab12cd34ef56"``.
+
+
+   .. py:attribute:: target_system
+      :type:  str
+      :value: 'maximo'
+
+
+
+   .. py:attribute:: action_type_map
+      :type:  Dict[str, str]
+
+
+   .. py:attribute:: priority_map
+      :type:  Dict[str, str]
+
+
+   .. py:attribute:: default_work_group
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: default_plant_section
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: default_planner_group
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: long_text_header
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: include_rca_run_id_in_description
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: field_map_path
+      :type:  Optional[pathlib.Path]
+      :value: None
+
+
+
+   .. py:attribute:: record_endpoint
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: floc_property
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: short_description_max_chars
+      :type:  Optional[int]
+      :value: None
+
+
+
+   .. py:attribute:: long_text_field
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: field_map_source
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:method:: __post_init__()
+
+
+   .. py:method:: _load_field_map()
+
+      Return ``(field_map_data, field_map_source)``.
+
+      ``field_map_data`` is the parsed JSON dict (empty when no file is
+      found for ``generic``); ``field_map_source`` is a provenance string
+      with a content hash.  An explicitly supplied ``field_map_path`` that
+      does not exist raises ``FileNotFoundError``.
+
+
+
+   .. py:method:: _constant_action_type_map()
+
+
+   .. py:method:: resolved_action_type_map()
+
+      Return the effective action_type map (constants < JSON < overrides).
+
+
+
+   .. py:method:: resolved_priority_map()
+
+      Return the effective priority map (constants < JSON < overrides).
+
+
+
+   .. py:method:: short_description_limit()
+
+      Return the character limit for the CMMS short description field.
+
+
+
+   .. py:method:: floc_kg_property()
+
+      KG property name to read for location resolution.
+
+
+
+   .. py:method:: from_field_map_file(target_system, field_map_path = None, **overrides)
+      :classmethod:
+
+
+      Construct a config whose field-map source is a JSON file.
+
+      :param target_system: ``"maximo"`` | ``"sap_pm"`` | ``"generic"``
+      :param field_map_path: Path to a custom JSON file.  If ``None``, the bundled
+                             ``field_maps/{target_system}_default.json`` is used.
+      :param \*\*overrides: Additional keyword arguments passed to ``CAPExportConfig()``.
+                            May include ``action_type_map`` / ``priority_map`` (merged over
+                            the JSON) and any scalar field without collision, because the
+                            JSON is loaded in ``__post_init__`` rather than through the
+                            constructor signature.
+
+
+

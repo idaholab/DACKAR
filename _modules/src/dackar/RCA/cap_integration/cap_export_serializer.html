@@ -1,0 +1,586 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.cap_integration.cap_export_serializer &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.cap_integration.cap_export_serializer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.cap_integration.cap_export_serializer</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">cap_export_serializer — CAPExportSerializer.</span>
+
+<span class="sd">Maps a completed (and analyst-accepted) rca_card + kg_context into a</span>
+<span class="sd">CAPExportPackage conforming to schemas/cap_export_package.json.</span>
+
+<span class="sd">Export is gated on an ``AnalystOverride`` record (see schemas/analyst_override.json)</span>
+<span class="sd">whose ``writeback_decision == "accept"`` — the recommendation flag on the card</span>
+<span class="sd">alone is not treated as proof of acceptance.  The resulting ``export_id`` is</span>
+<span class="sd">derived from ``run_id`` + the override's ``override_id`` so regenerating the</span>
+<span class="sd">package for the same accepted decision is idempotent.</span>
+
+<span class="sd">FLOC resolution uses Option B (KG-augmented): component CMMS IDs are stored</span>
+<span class="sd">as optional properties on KG element_usage nodes (maximo_floc /</span>
+<span class="sd">sap_equipment_id) and are returned in kg_context.components[].  No additional</span>
+<span class="sd">KG query is required at export time.</span>
+
+<span class="sd">The serializer self-validates its output against schemas/cap_export_package.json</span>
+<span class="sd">and raises on any schema violation (fail-closed); deep validation of the input</span>
+<span class="sd">rca_card / kg_context remains the orchestrator's responsibility.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.cap_config</span><span class="w"> </span><span class="kn">import</span> <span class="n">CAPExportConfig</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="_OUTPUT_SCHEMA_PATH">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer._OUTPUT_SCHEMA_PATH">[docs]</a>
+<span class="n">_OUTPUT_SCHEMA_PATH</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"schemas"</span> <span class="o">/</span> <span class="s2">"cap_export_package.json"</span></div>
+
+
+
+<div class="viewcode-block" id="_utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer._utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<div class="viewcode-block" id="_output_validator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer._output_validator">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_output_validator</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Return a cached jsonschema validator for the CAPExportPackage schema."""</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">jsonschema</span>
+
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">_OUTPUT_SCHEMA_PATH</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+    <span class="n">validator_cls</span> <span class="o">=</span> <span class="n">jsonschema</span><span class="o">.</span><span class="n">validators</span><span class="o">.</span><span class="n">validator_for</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+    <span class="n">validator_cls</span><span class="o">.</span><span class="n">check_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">validator_cls</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="CAPExportSerializer">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CAPExportSerializer</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Serializes an analyst-accepted RCA card into a CAPExportPackage.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    config:</span>
+<span class="sd">        ``CAPExportConfig`` controlling target system, field maps, and</span>
+<span class="sd">        formatting options.  Defaults to Maximo with standard mappings.</span>
+
+<span class="sd">    Usage::</span>
+
+<span class="sd">        serializer = CAPExportSerializer(CAPExportConfig(target_system="maximo"))</span>
+<span class="sd">        modified_card, override_record = orchestrator.apply_override(...)</span>
+<span class="sd">        package = serializer.serialize(</span>
+<span class="sd">            rca_card=modified_card,</span>
+<span class="sd">            kg_context=kg_context,</span>
+<span class="sd">            run_id="run-001",</span>
+<span class="sd">            override_record=override_record,</span>
+<span class="sd">        )</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CAPExportConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="CAPExportSerializer.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">CAPExportConfig</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="CAPExportSerializer._action_type_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._action_type_map">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_action_type_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">resolved_action_type_map</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="CAPExportSerializer._priority_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._priority_map">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_priority_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">resolved_priority_map</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="CAPExportSerializer._floc_property">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._floc_property">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_floc_property</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">floc_kg_property</span><span class="p">()</span></div>
+
+<div class="viewcode-block" id="CAPExportSerializer._short_desc_limit">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._short_desc_limit">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_short_desc_limit</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">short_description_limit</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer.serialize">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer.serialize">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">serialize</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">override_record</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build and return a CAPExportPackage dict.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        rca_card:</span>
+<span class="sd">            The analyst-accepted RCA card (post ``apply_override()``).</span>
+<span class="sd">        kg_context:</span>
+<span class="sd">            The kg_context artifact from the same RCA run.  Its ``asset_id``</span>
+<span class="sd">            is required, and ``components[]`` are used for FLOC/equipment_id</span>
+<span class="sd">            resolution via ``maximo_floc`` / ``sap_equipment_id``.</span>
+<span class="sd">        run_id:</span>
+<span class="sd">            RCA run identifier.</span>
+<span class="sd">        override_record:</span>
+<span class="sd">            The ``AnalystOverride`` record returned by ``apply_override()``.</span>
+<span class="sd">            Must carry ``writeback_decision == "accept"`` and an</span>
+<span class="sd">            ``override_id``; both gate the export and seed the stable</span>
+<span class="sd">            ``export_id``.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Conforms to ``schemas/cap_export_package.json``.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If the override record does not represent an accepted writeback,</span>
+<span class="sd">            if required identifiers (asset_id / event_id / override_id) are</span>
+<span class="sd">            missing or inconsistent across artifacts, if an ``action_type``</span>
+<span class="sd">            has no configured mapping, or if the built package fails schema</span>
+<span class="sd">            validation.</span>
+<span class="sd">        """</span>
+        <span class="n">override_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_assert_override_accepted</span><span class="p">(</span><span class="n">override_record</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_assert_card_approved</span><span class="p">(</span><span class="n">rca_card</span><span class="p">)</span>
+
+        <span class="n">asset_id</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">asset_id</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"kg_context.asset_id is required to build a CAP export package "</span>
+                <span class="s2">"(Option B FLOC resolution reads asset/component IDs from kg_context)."</span>
+            <span class="p">)</span>
+
+        <span class="n">card_event_id</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span>
+        <span class="n">ovr_event_id</span> <span class="o">=</span> <span class="n">override_record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span>
+        <span class="n">event_id</span> <span class="o">=</span> <span class="n">card_event_id</span> <span class="ow">or</span> <span class="n">ovr_event_id</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">event_id</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"event_id missing from both rca_card and override_record."</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">card_event_id</span> <span class="ow">and</span> <span class="n">ovr_event_id</span> <span class="ow">and</span> <span class="n">card_event_id</span> <span class="o">!=</span> <span class="n">ovr_event_id</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"event_id mismatch: rca_card=</span><span class="si">{</span><span class="n">card_event_id</span><span class="si">!r}</span><span class="s2"> vs "</span>
+                <span class="sa">f</span><span class="s2">"override_record=</span><span class="si">{</span><span class="n">ovr_event_id</span><span class="si">!r}</span><span class="s2">; artifacts are from different runs."</span>
+            <span class="p">)</span>
+        <span class="n">ovr_asset_id</span> <span class="o">=</span> <span class="n">override_record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">ovr_asset_id</span> <span class="ow">and</span> <span class="n">ovr_asset_id</span> <span class="o">!=</span> <span class="n">asset_id</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"asset_id mismatch: kg_context=</span><span class="si">{</span><span class="n">asset_id</span><span class="si">!r}</span><span class="s2"> vs "</span>
+                <span class="sa">f</span><span class="s2">"override_record=</span><span class="si">{</span><span class="n">ovr_asset_id</span><span class="si">!r}</span><span class="s2">."</span>
+            <span class="p">)</span>
+
+        <span class="n">generated_at</span> <span class="o">=</span> <span class="n">_utcnow_iso</span><span class="p">()</span>
+        <span class="n">export_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"CAPEXP::</span><span class="si">{</span><span class="n">run_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">override_id</span><span class="si">}</span><span class="s2">"</span>
+
+        <span class="n">floc_index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_floc_index</span><span class="p">(</span><span class="n">kg_context</span><span class="p">)</span>
+
+        <span class="n">cr_records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">unresolved_locations</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">action</span> <span class="ow">in</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recommended_actions"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">record</span><span class="p">,</span> <span class="n">unresolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_serialize_action</span><span class="p">(</span>
+                <span class="n">action</span><span class="o">=</span><span class="n">action</span><span class="p">,</span>
+                <span class="n">export_id</span><span class="o">=</span><span class="n">export_id</span><span class="p">,</span>
+                <span class="n">rca_card</span><span class="o">=</span><span class="n">rca_card</span><span class="p">,</span>
+                <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+                <span class="n">floc_index</span><span class="o">=</span><span class="n">floc_index</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">cr_records</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">unresolved</span><span class="p">:</span>
+                <span class="n">unresolved_locations</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">unresolved</span><span class="p">)</span>
+
+        <span class="n">package</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"export_id"</span><span class="p">:</span> <span class="n">export_id</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"event_id"</span><span class="p">:</span> <span class="n">event_id</span><span class="p">,</span>
+            <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">asset_id</span><span class="p">,</span>
+            <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">generated_at</span><span class="p">,</span>
+            <span class="s2">"target_system"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">target_system</span><span class="p">,</span>
+            <span class="s2">"cr_records"</span><span class="p">:</span> <span class="n">cr_records</span><span class="p">,</span>
+            <span class="s2">"unresolved_locations"</span><span class="p">:</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">unresolved_locations</span><span class="p">)),</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="s2">"CAPExportSerializer"</span><span class="p">,</span>
+                <span class="s2">"rca_card_id"</span><span class="p">:</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rca_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">,</span>
+                <span class="s2">"override_id"</span><span class="p">:</span> <span class="n">override_id</span><span class="p">,</span>
+                <span class="s2">"pipeline_version"</span><span class="p">:</span> <span class="p">(</span><span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pipeline_version"</span><span class="p">),</span>
+                <span class="s2">"field_map_source"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">field_map_source</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_output</span><span class="p">(</span><span class="n">package</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">package</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="CAPExportSerializer._assert_override_accepted">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._assert_override_accepted">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assert_override_accepted</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">override_record</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Verify the override record represents an accepted writeback and return</span>
+<span class="sd">        its ``override_id``.  This is the authoritative acceptance gate.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">override_record</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"override_record must be an AnalystOverride dict, got "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">override_record</span><span class="p">)</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">."</span>
+            <span class="p">)</span>
+        <span class="n">decision</span> <span class="o">=</span> <span class="n">override_record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"writeback_decision"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">decision</span> <span class="o">!=</span> <span class="s2">"accept"</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"CAP export requires an override_record with "</span>
+                <span class="sa">f</span><span class="s2">"writeback_decision == 'accept', got </span><span class="si">{</span><span class="n">decision</span><span class="si">!r}</span><span class="s2">. "</span>
+                <span class="sa">f</span><span class="s2">"Call apply_override() with writeback_decision='accept' first."</span>
+            <span class="p">)</span>
+        <span class="n">override_id</span> <span class="o">=</span> <span class="n">override_record</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"override_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">override_id</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"override_record.override_id is required to build a stable export_id."</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">override_id</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._assert_card_approved">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._assert_card_approved">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_assert_card_approved</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Secondary guard: the pipeline must have flagged the card ready."""</span>
+        <span class="n">rec</span> <span class="o">=</span> <span class="p">(</span><span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"writeback_recommendation"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">rec</span> <span class="o">!=</span> <span class="s2">"ready_if_accepted"</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"CAP export requires writeback_recommendation == 'ready_if_accepted', "</span>
+                <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="n">rec</span><span class="si">!r}</span><span class="s2">."</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._build_floc_index">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._build_floc_index">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_floc_index</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build component_id → FLOC/equipment_id lookup from kg_context.components[].</span>
+
+<span class="sd">        Returns a dict where a value of None means the KG property was absent.</span>
+<span class="sd">        """</span>
+        <span class="n">index</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="n">index</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_floc_property</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="n">index</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._serialize_action">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._serialize_action">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_serialize_action</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">action</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">export_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">floc_index</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Returns ``(cr_record_dict, unresolved_location_token_or_None)``.</span>
+<span class="sd">        """</span>
+        <span class="n">action_id</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"action_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"ACT-UNKNOWN"</span>
+        <span class="n">action_type</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"action_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">priority</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"priority"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"low"</span>
+        <span class="n">description</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">target_comp</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"target_component_id"</span><span class="p">)</span>
+        <span class="n">owner</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"owner"</span><span class="p">)</span>
+        <span class="n">linked_candidate</span> <span class="o">=</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"linked_candidate_id"</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">action_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_action_type_map</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"action_type </span><span class="si">{</span><span class="n">action_type</span><span class="si">!r}</span><span class="s2"> (action </span><span class="si">{</span><span class="n">action_id</span><span class="si">}</span><span class="s2">) has no mapping for "</span>
+                <span class="sa">f</span><span class="s2">"target_system </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">target_system</span><span class="si">!r}</span><span class="s2">. Add it to the field map "</span>
+                <span class="sa">f</span><span class="s2">"(field_maps/</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">target_system</span><span class="si">}</span><span class="s2">_default.json) or "</span>
+                <span class="sa">f</span><span class="s2">"CAPExportConfig.action_type_map."</span>
+            <span class="p">)</span>
+        <span class="n">cr_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_action_type_map</span><span class="p">[</span><span class="n">action_type</span><span class="p">]</span>
+        <span class="n">priority_code</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_priority_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">priority</span><span class="p">,</span> <span class="n">priority</span><span class="p">)</span>
+
+        <span class="n">short_desc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_short_description</span><span class="p">(</span>
+            <span class="n">description</span><span class="o">=</span><span class="n">description</span><span class="p">,</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">action_id</span><span class="o">=</span><span class="n">action_id</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">long_text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_long_text</span><span class="p">(</span>
+            <span class="n">rca_card</span><span class="o">=</span><span class="n">rca_card</span><span class="p">,</span>
+            <span class="n">run_id</span><span class="o">=</span><span class="n">run_id</span><span class="p">,</span>
+            <span class="n">action</span><span class="o">=</span><span class="n">action</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="c1"># FLOC resolution (Option B — KG-augmented)</span>
+        <span class="n">floc_value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">mapping_status</span> <span class="o">=</span> <span class="s2">"unresolved"</span>
+        <span class="n">unresolved</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">target_comp</span><span class="p">:</span>
+            <span class="n">floc_value</span> <span class="o">=</span> <span class="n">floc_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">target_comp</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">floc_value</span><span class="p">:</span>
+                <span class="n">mapping_status</span> <span class="o">=</span> <span class="s2">"resolved"</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># target component either absent from kg_context or has no FLOC.</span>
+                <span class="n">unresolved</span> <span class="o">=</span> <span class="n">target_comp</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># I10: an action with no target_component_id must still be surfaced.</span>
+            <span class="n">unresolved</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"(no target_component_id for action </span><span class="si">{</span><span class="n">action_id</span><span class="si">}</span><span class="s2">)"</span>
+
+        <span class="c1"># Build system-specific location fields</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">target_system</span> <span class="o">==</span> <span class="s2">"sap_pm"</span><span class="p">:</span>
+            <span class="n">functional_location</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">equipment_id</span> <span class="o">=</span> <span class="n">floc_value</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">functional_location</span> <span class="o">=</span> <span class="n">floc_value</span>
+            <span class="n">equipment_id</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="n">record</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"export_record_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">export_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">action_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"source_action_id"</span><span class="p">:</span> <span class="n">action_id</span><span class="p">,</span>
+            <span class="s2">"action_type"</span><span class="p">:</span> <span class="n">action_type</span><span class="p">,</span>
+            <span class="s2">"cr_type"</span><span class="p">:</span> <span class="n">cr_type</span><span class="p">,</span>
+            <span class="s2">"short_description"</span><span class="p">:</span> <span class="n">short_desc</span><span class="p">,</span>
+            <span class="s2">"long_text"</span><span class="p">:</span> <span class="n">long_text</span><span class="p">,</span>
+            <span class="s2">"priority"</span><span class="p">:</span> <span class="n">priority</span><span class="p">,</span>
+            <span class="s2">"priority_code"</span><span class="p">:</span> <span class="n">priority_code</span><span class="p">,</span>
+            <span class="s2">"functional_location"</span><span class="p">:</span> <span class="n">functional_location</span><span class="p">,</span>
+            <span class="s2">"equipment_id"</span><span class="p">:</span> <span class="n">equipment_id</span><span class="p">,</span>
+            <span class="s2">"target_component_id"</span><span class="p">:</span> <span class="n">target_comp</span><span class="p">,</span>
+            <span class="s2">"mapping_status"</span><span class="p">:</span> <span class="n">mapping_status</span><span class="p">,</span>
+            <span class="s2">"owner"</span><span class="p">:</span> <span class="n">owner</span><span class="p">,</span>
+            <span class="s2">"linked_candidate_id"</span><span class="p">:</span> <span class="n">linked_candidate</span><span class="p">,</span>
+            <span class="s2">"maximo_ext"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_maximo_ext</span><span class="p">(),</span>
+            <span class="s2">"sap_ext"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_sap_ext</span><span class="p">(),</span>
+        <span class="p">}</span>
+
+        <span class="k">return</span> <span class="n">record</span><span class="p">,</span> <span class="n">unresolved</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._build_short_description">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._build_short_description">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_short_description</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">description</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">action_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build a short description guaranteed to be ``&lt;= short_description_limit``.</span>
+
+<span class="sd">        When enabled, a stable ``"[RCA:{run_id}] "`` trace token is prepended;</span>
+<span class="sd">        if the token alone would exceed the limit it is truncated so the return</span>
+<span class="sd">        value never overflows the CMMS field.</span>
+<span class="sd">        """</span>
+        <span class="n">limit</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_short_desc_limit</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_rca_run_id_in_description</span><span class="p">:</span>
+            <span class="n">token</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"[RCA:</span><span class="si">{</span><span class="n">run_id</span><span class="si">}</span><span class="s2">] "</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">token</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">limit</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">token</span><span class="p">[:</span><span class="n">limit</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">body</span> <span class="o">=</span> <span class="n">description</span><span class="p">[:</span> <span class="n">limit</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">token</span><span class="p">)]</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">token</span> <span class="o">+</span> <span class="n">body</span><span class="p">)[:</span><span class="n">limit</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">description</span><span class="p">[:</span><span class="n">limit</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._build_long_text">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._build_long_text">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_long_text</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">run_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">action</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">event_id</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">asset_id</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">primary</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">primary_label</span> <span class="o">=</span> <span class="n">primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+        <span class="n">pipeline_version</span> <span class="o">=</span> <span class="p">(</span><span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pipeline_version"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+
+        <span class="n">standard_header</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"[RCA Run: </span><span class="si">{</span><span class="n">run_id</span><span class="si">}</span><span class="s2">]</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="sa">f</span><span class="s2">"[Event: </span><span class="si">{</span><span class="n">event_id</span><span class="si">}</span><span class="s2">] [Asset: </span><span class="si">{</span><span class="n">asset_id</span><span class="si">}</span><span class="s2">]</span><span class="se">\n</span><span class="s2">"</span>
+            <span class="sa">f</span><span class="s2">"[Primary Cause: </span><span class="si">{</span><span class="n">primary_label</span><span class="si">}</span><span class="s2">]</span><span class="se">\n</span><span class="s2">"</span>
+        <span class="p">)</span>
+        <span class="c1"># I8: a custom header is *prepended* to (not a replacement for) the block.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">long_text_header</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">long_text_header</span><span class="si">}</span><span class="se">\n</span><span class="si">{</span><span class="n">standard_header</span><span class="si">}</span><span class="s2">"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">header</span> <span class="o">=</span> <span class="n">standard_header</span>
+
+        <span class="n">parts</span> <span class="o">=</span> <span class="p">[</span><span class="n">header</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description"</span><span class="p">):</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Action: </span><span class="si">{</span><span class="n">action</span><span class="p">[</span><span class="s1">'description'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rationale"</span><span class="p">):</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Rationale: </span><span class="si">{</span><span class="n">action</span><span class="p">[</span><span class="s1">'rationale'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">action</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_observation_if_true"</span><span class="p">):</span>
+            <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">Expected observation if true: </span><span class="si">{</span><span class="n">action</span><span class="p">[</span><span class="s1">'expected_observation_if_true'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">)</span>
+        <span class="n">parts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">--- Generated by DACKAR RCA </span><span class="si">{</span><span class="n">pipeline_version</span><span class="si">}</span><span class="s2"> ---"</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._build_maximo_ext">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._build_maximo_ext">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_maximo_ext</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">target_system</span> <span class="o">!=</span> <span class="s2">"maximo"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+        <span class="n">ext</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_work_group</span><span class="p">:</span>
+            <span class="n">ext</span><span class="p">[</span><span class="s2">"work_group"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_work_group</span>
+        <span class="k">return</span> <span class="n">ext</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._build_sap_ext">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._build_sap_ext">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_sap_ext</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">target_system</span> <span class="o">!=</span> <span class="s2">"sap_pm"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+        <span class="n">ext</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_plant_section</span><span class="p">:</span>
+            <span class="n">ext</span><span class="p">[</span><span class="s2">"plant_section"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_plant_section</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_planner_group</span><span class="p">:</span>
+            <span class="n">ext</span><span class="p">[</span><span class="s2">"planner_group"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">default_planner_group</span>
+        <span class="k">return</span> <span class="n">ext</span></div>
+
+
+<div class="viewcode-block" id="CAPExportSerializer._validate_output">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/cap_integration/cap_export_serializer/index.html#src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer._validate_output">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_output</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">package</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Validate ``package`` against schemas/cap_export_package.json (fail-closed).</span>
+
+<span class="sd">        Raises ``ValueError`` with the first offending JSON path and message</span>
+<span class="sd">        when the built package does not conform.</span>
+<span class="sd">        """</span>
+        <span class="n">validator</span> <span class="o">=</span> <span class="n">_output_validator</span><span class="p">()</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">validator</span><span class="o">.</span><span class="n">iter_errors</span><span class="p">(</span><span class="n">package</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">e</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">path</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+            <span class="n">first</span> <span class="o">=</span> <span class="n">errors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">loc</span> <span class="o">=</span> <span class="s2">"/"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">first</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"&lt;root&gt;"</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"CAPExportPackage failed schema validation at </span><span class="si">{</span><span class="n">loc</span><span class="si">}</span><span class="s2">: "</span>
+                <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">first</span><span class="o">.</span><span class="n">message</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">errors</span><span class="p">)</span><span class="si">}</span><span class="s2"> error(s) total)."</span>
+            <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,230 @@
+src.dackar.RCA.cap_integration.cap_adapter
+==========================================
+
+.. py:module:: src.dackar.RCA.cap_integration.cap_adapter
+
+.. autoapi-nested-parse::
+
+   cap_adapter — CAPAdapter Protocol, FileDropCAPAdapter, NoOpCAPAdapter.
+
+   Concrete live adapters (MaximoCAPAdapter, SAPPMCAPAdapter) live in separate
+   files and implement the same Protocol.  See CAP_INTEGRATION_GUIDE.md for the
+   implementation skeleton.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_adapter.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_adapter.CAPSubmissionReceipt
+   src.dackar.RCA.cap_integration.cap_adapter.CAPAdapter
+   src.dackar.RCA.cap_integration.cap_adapter.FileDropCAPAdapter
+   src.dackar.RCA.cap_integration.cap_adapter.NoOpCAPAdapter
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_adapter._utcnow_iso
+   src.dackar.RCA.cap_integration.cap_adapter._safe_export_filename
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:function:: _utcnow_iso()
+
+.. py:function:: _safe_export_filename(export_id)
+
+   Return a filesystem-safe stem for CAP export files.
+
+
+.. py:class:: CAPSubmissionReceipt
+
+   Returned by every CAPAdapter.submit() call.
+
+   .. attribute:: receipt_id
+
+      Unique ID for this submission attempt.
+
+   .. attribute:: submitted_at
+
+      ISO-8601 UTC timestamp.
+
+   .. attribute:: adapter
+
+      Class name of the adapter that produced this receipt.
+
+   .. attribute:: export_id
+
+      ``export_id`` from the CAPExportPackage that was submitted.
+
+   .. attribute:: cr_numbers
+
+      CMMS-assigned corrective action / work order numbers.
+      Empty list for adapters that do not receive synchronous confirmation
+      (e.g. ``FileDropCAPAdapter``).
+
+   .. attribute:: status
+
+      ``"submitted"`` — accepted by CMMS synchronously.
+      ``"pending"``   — written to drop zone; CMMS import job pending.
+      ``"partial"``   — some records submitted, some failed.
+      ``"failed"``    — no records submitted.
+      ``"noop"``      — NoOpCAPAdapter; nothing was done.
+
+   .. attribute:: errors
+
+      List of per-record error dicts when status is partial or failed.
+
+   .. attribute:: notes
+
+      Free-text adapter notes (e.g. path of the written file).
+
+
+   .. py:attribute:: receipt_id
+      :type:  str
+
+
+   .. py:attribute:: submitted_at
+      :type:  str
+
+
+   .. py:attribute:: adapter
+      :type:  str
+
+
+   .. py:attribute:: export_id
+      :type:  str
+
+
+   .. py:attribute:: cr_numbers
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: status
+      :type:  str
+      :value: 'pending'
+
+
+
+   .. py:attribute:: errors
+      :type:  List[JsonDict]
+      :value: []
+
+
+
+   .. py:attribute:: notes
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:method:: to_dict()
+
+      Return the receipt as a plain JSON-serializable dict.
+
+      :returns: Keys mirror the dataclass attributes; suitable for persisting
+                alongside the CAPExportPackage as the ``cap_submission_receipt``
+                artifact.
+      :rtype: dict
+
+
+
+.. py:class:: CAPAdapter
+
+   Bases: :py:obj:`Protocol`
+
+
+   Protocol for CAP submission adapters.
+
+   All implementations must be idempotent with respect to
+   ``package["export_id"]``: submitting the same package twice must not
+   create duplicate CMMS records.
+
+
+   .. py:method:: submit(package)
+
+      Submit a CAPExportPackage to the target CMMS (or file drop zone).
+
+      :param package: Dict conforming to ``schemas/cap_export_package.json``.
+
+      :rtype: CAPSubmissionReceipt
+
+
+
+.. py:class:: FileDropCAPAdapter(drop_dir)
+
+   Writes the CAPExportPackage as a JSON file to a watched directory.
+
+   This is the default adapter for dev and pre-live deployments.  The plant's
+   CMMS import job polls the directory and ingests the file asynchronously.
+   Returns a receipt with ``status="pending"`` and an empty ``cr_numbers``
+   list — CMMS record numbers are not available at submission time.
+
+   :param drop_dir: Directory where export files are written.  Created if absent.
+
+
+   .. py:attribute:: drop_dir
+
+
+   .. py:method:: submit(package)
+
+      Write the package to the drop zone as JSON and return a receipt.
+
+      The file is written atomically (to a hidden ``*.tmp`` sibling, then
+      ``os.replace``d into place) so a CMMS import job polling the directory
+      never observes a partially written ``cap_export_*.json`` file.
+
+      :param package: Dict conforming to ``schemas/cap_export_package.json``.
+
+      :returns: ``status="pending"`` with an empty ``cr_numbers`` list; ``notes``
+                holds the written file path.
+      :rtype: CAPSubmissionReceipt
+
+
+
+   .. py:method:: _atomic_write_json(file_path, package)
+      :staticmethod:
+
+
+      Write ``package`` as JSON to ``file_path`` via a temp file + os.replace.
+
+
+
+.. py:class:: NoOpCAPAdapter
+
+   Silently discards the package.  Used in unit tests and CI.
+
+   Returns a receipt with ``status="noop"`` and an empty ``cr_numbers`` list.
+   Makes no file I/O and has no external dependencies.
+
+
+   .. py:method:: submit(package)
+
+      Discard the package and return a ``status="noop"`` receipt.
+
+      :param package: Dict conforming to ``schemas/cap_export_package.json``.  Only
+                      ``export_id`` is read; nothing is written.
+
+      :returns: ``status="noop"`` with an empty ``cr_numbers`` list.
+      :rtype: CAPSubmissionReceipt
+
+
+

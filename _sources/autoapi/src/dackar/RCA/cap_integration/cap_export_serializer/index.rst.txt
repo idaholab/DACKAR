@@ -1,0 +1,184 @@
+src.dackar.RCA.cap_integration.cap_export_serializer
+====================================================
+
+.. py:module:: src.dackar.RCA.cap_integration.cap_export_serializer
+
+.. autoapi-nested-parse::
+
+   cap_export_serializer — CAPExportSerializer.
+
+   Maps a completed (and analyst-accepted) rca_card + kg_context into a
+   CAPExportPackage conforming to schemas/cap_export_package.json.
+
+   Export is gated on an ``AnalystOverride`` record (see schemas/analyst_override.json)
+   whose ``writeback_decision == "accept"`` — the recommendation flag on the card
+   alone is not treated as proof of acceptance.  The resulting ``export_id`` is
+   derived from ``run_id`` + the override's ``override_id`` so regenerating the
+   package for the same accepted decision is idempotent.
+
+   FLOC resolution uses Option B (KG-augmented): component CMMS IDs are stored
+   as optional properties on KG element_usage nodes (maximo_floc /
+   sap_equipment_id) and are returned in kg_context.components[].  No additional
+   KG query is required at export time.
+
+   The serializer self-validates its output against schemas/cap_export_package.json
+   and raises on any schema violation (fail-closed); deep validation of the input
+   rca_card / kg_context remains the orchestrator's responsibility.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_export_serializer.JsonDict
+   src.dackar.RCA.cap_integration.cap_export_serializer._OUTPUT_SCHEMA_PATH
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_export_serializer.CAPExportSerializer
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.cap_integration.cap_export_serializer._utcnow_iso
+   src.dackar.RCA.cap_integration.cap_export_serializer._output_validator
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: _OUTPUT_SCHEMA_PATH
+
+.. py:function:: _utcnow_iso()
+
+.. py:function:: _output_validator()
+
+   Return a cached jsonschema validator for the CAPExportPackage schema.
+
+
+.. py:class:: CAPExportSerializer(config = None)
+
+   Serializes an analyst-accepted RCA card into a CAPExportPackage.
+
+   :param config: ``CAPExportConfig`` controlling target system, field maps, and
+                  formatting options.  Defaults to Maximo with standard mappings.
+   :param Usage::: serializer = CAPExportSerializer(CAPExportConfig(target_system="maximo"))
+                   modified_card, override_record = orchestrator.apply_override(...)
+                   package = serializer.serialize(
+                       rca_card=modified_card,
+                       kg_context=kg_context,
+                       run_id="run-001",
+                       override_record=override_record,
+                   )
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: _action_type_map
+
+
+   .. py:attribute:: _priority_map
+
+
+   .. py:attribute:: _floc_property
+      :value: None
+
+
+
+   .. py:attribute:: _short_desc_limit
+      :value: 0
+
+
+
+   .. py:method:: serialize(rca_card, kg_context, run_id, override_record)
+
+      Build and return a CAPExportPackage dict.
+
+      :param rca_card: The analyst-accepted RCA card (post ``apply_override()``).
+      :param kg_context: The kg_context artifact from the same RCA run.  Its ``asset_id``
+                         is required, and ``components[]`` are used for FLOC/equipment_id
+                         resolution via ``maximo_floc`` / ``sap_equipment_id``.
+      :param run_id: RCA run identifier.
+      :param override_record: The ``AnalystOverride`` record returned by ``apply_override()``.
+                              Must carry ``writeback_decision == "accept"`` and an
+                              ``override_id``; both gate the export and seed the stable
+                              ``export_id``.
+
+      :returns: Conforms to ``schemas/cap_export_package.json``.
+      :rtype: dict
+
+      :raises ValueError: If the override record does not represent an accepted writeback,
+          if required identifiers (asset_id / event_id / override_id) are
+          missing or inconsistent across artifacts, if an ``action_type``
+          has no configured mapping, or if the built package fails schema
+          validation.
+
+
+
+   .. py:method:: _assert_override_accepted(override_record)
+
+      Verify the override record represents an accepted writeback and return
+      its ``override_id``.  This is the authoritative acceptance gate.
+
+
+
+   .. py:method:: _assert_card_approved(rca_card)
+
+      Secondary guard: the pipeline must have flagged the card ready.
+
+
+
+   .. py:method:: _build_floc_index(kg_context)
+
+      Build component_id → FLOC/equipment_id lookup from kg_context.components[].
+
+      Returns a dict where a value of None means the KG property was absent.
+
+
+
+   .. py:method:: _serialize_action(action, export_id, rca_card, run_id, floc_index)
+
+      Returns ``(cr_record_dict, unresolved_location_token_or_None)``.
+
+
+
+   .. py:method:: _build_short_description(description, run_id, action_id)
+
+      Build a short description guaranteed to be ``<= short_description_limit``.
+
+      When enabled, a stable ``"[RCA:{run_id}] "`` trace token is prepended;
+      if the token alone would exceed the limit it is truncated so the return
+      value never overflows the CMMS field.
+
+
+
+   .. py:method:: _build_long_text(rca_card, run_id, action)
+
+
+   .. py:method:: _build_maximo_ext()
+
+
+   .. py:method:: _build_sap_ext()
+
+
+   .. py:method:: _validate_output(package)
+
+      Validate ``package`` against schemas/cap_export_package.json (fail-closed).
+
+      Raises ``ValueError`` with the first offending JSON path and message
+      when the built package does not conform.
+
+
+
