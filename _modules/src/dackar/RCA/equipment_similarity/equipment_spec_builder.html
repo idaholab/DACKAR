@@ -1,0 +1,229 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.equipment_similarity.equipment_spec_builder &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.equipment_similarity.equipment_spec_builder</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.equipment_similarity.equipment_spec_builder</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">equipment_spec_builder — EquipmentSpecBuilder.</span>
+
+<span class="sd">Converts KG element_definition properties + failure mode data into a</span>
+<span class="sd">natural-language spec string suitable for embedding.  No NLP, no LLM —</span>
+<span class="sd">pure deterministic string assembly.  Missing properties are silently omitted.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_builder/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_builder.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Properties from element_definition nodes to include in spec text, in order.</span>
+<span class="c1"># Keys match what KGEquipmentPoller returns from the Cypher query.</span>
+<div class="viewcode-block" id="_DEFINITION_PROPS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_builder/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_builder._DEFINITION_PROPS">[docs]</a>
+<span class="n">_DEFINITION_PROPS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s2">"domain_category"</span><span class="p">,</span>    <span class="s2">"Type"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"structural_kind"</span><span class="p">,</span>    <span class="s2">"Structural kind"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"nominal_size"</span><span class="p">,</span>       <span class="s2">"Nominal size"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"design_pressure"</span><span class="p">,</span>    <span class="s2">"Design pressure"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"design_temperature"</span><span class="p">,</span> <span class="s2">"Design temperature"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"material_spec"</span><span class="p">,</span>      <span class="s2">"Material"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"manufacturer"</span><span class="p">,</span>       <span class="s2">"Manufacturer"</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">"model_number"</span><span class="p">,</span>       <span class="s2">"Model"</span><span class="p">),</span>
+<span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="EquipmentSpecBuilder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_builder/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_builder.EquipmentSpecBuilder">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EquipmentSpecBuilder</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Builds a natural-language equipment spec string for embedding.</span>
+
+<span class="sd">    The output is intentionally verbose — more context helps the embedding</span>
+<span class="sd">    model place the component accurately in semantic space.  Downstream</span>
+<span class="sd">    similarity is purely cosine distance between these representations.</span>
+
+<span class="sd">    Example output::</span>
+
+<span class="sd">        Equipment: Main coolant pump (MCP-A)</span>
+<span class="sd">        Type: centrifugal pump</span>
+<span class="sd">        Structural kind: horizontal split-case, 4-stage</span>
+<span class="sd">        Nominal size: 500 GPM</span>
+<span class="sd">        Design pressure: 150 psig</span>
+<span class="sd">        Design temperature: 300°F</span>
+<span class="sd">        Material: 316 stainless steel</span>
+<span class="sd">        Manufacturer: Flowserve</span>
+<span class="sd">        Model: VPC-4-150</span>
+<span class="sd">        Failure modes: bearing wear, seal degradation, impeller erosion</span>
+<span class="sd">        Failure mechanisms: fatigue, abrasion, corrosion</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="EquipmentSpecBuilder.build_spec_text">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_builder/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_builder.EquipmentSpecBuilder.build_spec_text">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_spec_text</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">component_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">definition_props</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">failure_mode_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">failure_mechanisms</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build and return the spec text for one component.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        component_id:</span>
+<span class="sd">            KG element_usage node ID.</span>
+<span class="sd">        component_name:</span>
+<span class="sd">            Human-readable name of the component instance.</span>
+<span class="sd">        definition_props:</span>
+<span class="sd">            Dict of element_definition node properties.  Keys expected:</span>
+<span class="sd">            ``domain_category``, ``structural_kind``, ``nominal_size``,</span>
+<span class="sd">            ``design_pressure``, ``design_temperature``, ``material_spec``,</span>
+<span class="sd">            ``manufacturer``, ``model_number``.  Missing keys are skipped.</span>
+<span class="sd">        failure_mode_names:</span>
+<span class="sd">            List of failure mode names linked to this component.</span>
+<span class="sd">        failure_mechanisms:</span>
+<span class="sd">            List of failure mechanism labels (e.g. "fatigue", "corrosion").</span>
+<span class="sd">        """</span>
+        <span class="n">lines</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Equipment identity line</span>
+        <span class="k">if</span> <span class="n">component_name</span> <span class="ow">and</span> <span class="n">component_name</span> <span class="o">!=</span> <span class="n">component_id</span><span class="p">:</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">component_name</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">component_id</span><span class="si">}</span><span class="s2">)"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="n">component_name</span> <span class="ow">or</span> <span class="n">component_id</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Equipment: </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="c1"># Structured definition properties</span>
+        <span class="k">for</span> <span class="n">prop_key</span><span class="p">,</span> <span class="n">label</span> <span class="ow">in</span> <span class="n">_DEFINITION_PROPS</span><span class="p">:</span>
+            <span class="n">val</span> <span class="o">=</span> <span class="n">definition_props</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">prop_key</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">val</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">val</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="c1"># Failure modes</span>
+        <span class="n">fm_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">n</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="n">failure_mode_names</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">n</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()]</span>
+        <span class="k">if</span> <span class="n">fm_names</span><span class="p">:</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failure modes: </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">fm_names</span><span class="p">[:</span><span class="mi">10</span><span class="p">])</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="c1"># Failure mechanisms (deduplicated)</span>
+        <span class="n">mechanisms</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span>
+            <span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="p">(</span><span class="n">failure_mechanisms</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">m</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">m</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="p">))</span>
+        <span class="k">if</span> <span class="n">mechanisms</span><span class="p">:</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failure mechanisms: </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">mechanisms</span><span class="p">[:</span><span class="mi">8</span><span class="p">])</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

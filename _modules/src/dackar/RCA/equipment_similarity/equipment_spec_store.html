@@ -1,0 +1,347 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.equipment_similarity.equipment_spec_store &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.equipment_similarity.equipment_spec_store</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.equipment_similarity.equipment_spec_store</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">equipment_spec_store — EquipmentSpecStore.</span>
+
+<span class="sd">Thin wrapper around ChromaRecordStore for the ``equipment_specs`` doc_type.</span>
+<span class="sd">One document per plant component; ``embedding_text`` is the natural-language</span>
+<span class="sd">spec string produced by EquipmentSpecBuilder.</span>
+
+<span class="sd">The full Stage 1-6 enrichment pipeline (NLP, NER, summarization) is not used</span>
+<span class="sd">here — equipment specs are structured, not unstructured prose, so a minimal</span>
+<span class="sd">record with just the spec text and identity metadata is sufficient.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Sentinel doc_type — must be consistent with collection naming</span>
+<div class="viewcode-block" id="EQUIPMENT_SPECS_DOC_TYPE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EQUIPMENT_SPECS_DOC_TYPE">[docs]</a>
+<span class="n">EQUIPMENT_SPECS_DOC_TYPE</span> <span class="o">=</span> <span class="s2">"EQUIPMENT_SPECS"</span></div>
+
+
+
+<div class="viewcode-block" id="EquipmentSpecStore">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EquipmentSpecStore</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Manages the ``equipment_specs`` Chroma collection.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    chroma_store:</span>
+<span class="sd">        A ``ChromaRecordStore`` instance (from ``storage/chroma_store.py``).</span>
+<span class="sd">        The store is used as-is; no modifications are made to its configuration.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chroma_store</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="EquipmentSpecStore.chroma_store">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore.chroma_store">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chroma_store</span> <span class="o">=</span> <span class="n">chroma_store</span></div>
+
+<div class="viewcode-block" id="EquipmentSpecStore.doc_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore.doc_type">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span> <span class="o">=</span> <span class="n">EQUIPMENT_SPECS_DOC_TYPE</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Write</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EquipmentSpecStore.upsert_component">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore.upsert_component">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert_component</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">spec_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">metadata</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Upsert one component spec into the Chroma collection.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        component_id:</span>
+<span class="sd">            KG element_usage node ID.  Used as ``doc_id`` and for stable</span>
+<span class="sd">            deduplication (same component_id → same Chroma record_id).</span>
+<span class="sd">        spec_text:</span>
+<span class="sd">            Natural-language spec string from ``EquipmentSpecBuilder``.</span>
+<span class="sd">        metadata:</span>
+<span class="sd">            Optional extra metadata (component_label, component_type, etc.)</span>
+<span class="sd">            stored alongside the embedding for retrieval context.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">spec_text</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">spec_text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"EquipmentSpecStore: skipping empty spec_text for component_id=</span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">component_id</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">record_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"equip_spec::</span><span class="si">{</span><span class="n">component_id</span><span class="si">}</span><span class="s2">"</span>
+        <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{})</span>
+        <span class="n">meta</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">component_id</span>
+
+        <span class="n">record</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"record_id"</span><span class="p">:</span>      <span class="n">record_id</span><span class="p">,</span>
+            <span class="s2">"doc_id"</span><span class="p">:</span>         <span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"doc_type"</span><span class="p">:</span>       <span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span><span class="p">,</span>
+            <span class="s2">"chunk_index"</span><span class="p">:</span>    <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">"embedding_text"</span><span class="p">:</span> <span class="n">spec_text</span><span class="p">,</span>
+            <span class="s2">"metadata"</span><span class="p">:</span>       <span class="n">meta</span><span class="p">,</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"chunk_id"</span><span class="p">:</span>           <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">record_id</span><span class="si">}</span><span class="s2">::0"</span><span class="p">,</span>
+                <span class="s2">"authority_level"</span><span class="p">:</span>    <span class="s2">"informational"</span><span class="p">,</span>
+                <span class="s2">"section_role"</span><span class="p">:</span>       <span class="s2">"equipment_specification"</span><span class="p">,</span>
+                <span class="s2">"index_in_vector_store"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">"page_start"</span><span class="p">:</span>         <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"page_end"</span><span class="p">:</span>           <span class="kc">None</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">"enrichment"</span><span class="p">:</span> <span class="p">{},</span>
+        <span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">chroma_store</span><span class="o">.</span><span class="n">upsert_records</span><span class="p">([</span><span class="n">record</span><span class="p">],</span> <span class="n">doc_type</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="EquipmentSpecStore.upsert_batch">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore.upsert_batch">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">upsert_batch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">components</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Upsert a batch of component spec dicts.</span>
+
+<span class="sd">        Each dict must have keys: ``component_id``, ``spec_text``, and</span>
+<span class="sd">        optionally ``metadata``.</span>
+
+<span class="sd">        Returns the number of records upserted.</span>
+<span class="sd">        """</span>
+        <span class="n">records</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">components</span><span class="p">:</span>
+            <span class="n">component_id</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">spec_text</span>    <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"spec_text"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">metadata</span>     <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">component_id</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">spec_text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="k">continue</span>
+
+            <span class="n">record_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"equip_spec::</span><span class="si">{</span><span class="n">component_id</span><span class="si">}</span><span class="s2">"</span>
+            <span class="n">meta</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">metadata</span><span class="p">)</span>
+            <span class="n">meta</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">component_id</span>
+
+            <span class="n">records</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"record_id"</span><span class="p">:</span>      <span class="n">record_id</span><span class="p">,</span>
+                <span class="s2">"doc_id"</span><span class="p">:</span>         <span class="n">component_id</span><span class="p">,</span>
+                <span class="s2">"doc_type"</span><span class="p">:</span>       <span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span><span class="p">,</span>
+                <span class="s2">"chunk_index"</span><span class="p">:</span>    <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">"embedding_text"</span><span class="p">:</span> <span class="n">spec_text</span><span class="p">,</span>
+                <span class="s2">"metadata"</span><span class="p">:</span>       <span class="n">meta</span><span class="p">,</span>
+                <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"chunk_id"</span><span class="p">:</span>              <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">record_id</span><span class="si">}</span><span class="s2">::0"</span><span class="p">,</span>
+                    <span class="s2">"authority_level"</span><span class="p">:</span>       <span class="s2">"informational"</span><span class="p">,</span>
+                    <span class="s2">"section_role"</span><span class="p">:</span>          <span class="s2">"equipment_specification"</span><span class="p">,</span>
+                    <span class="s2">"index_in_vector_store"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s2">"page_start"</span><span class="p">:</span>            <span class="kc">None</span><span class="p">,</span>
+                    <span class="s2">"page_end"</span><span class="p">:</span>              <span class="kc">None</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="s2">"enrichment"</span><span class="p">:</span> <span class="p">{},</span>
+            <span class="p">})</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">records</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">chroma_store</span><span class="o">.</span><span class="n">upsert_records</span><span class="p">(</span><span class="n">records</span><span class="p">,</span> <span class="n">doc_type</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Read</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EquipmentSpecStore.find_similar">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore.find_similar">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">find_similar</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">,</span>
+        <span class="n">exclude_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Find components with specs most similar to ``query_text``.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        query_text:</span>
+<span class="sd">            Natural-language description of the target equipment (built from</span>
+<span class="sd">            kg_context by ``EquipmentSimilarityResolver._build_query_text()``).</span>
+<span class="sd">        top_k:</span>
+<span class="sd">            Maximum number of results to return (after exclude_ids filtering).</span>
+<span class="sd">        exclude_ids:</span>
+<span class="sd">            component_ids to exclude from results (the target component itself).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        List[langchain_core.documents.Document]</span>
+<span class="sd">            Each Document has ``page_content`` (spec text) and ``metadata``</span>
+<span class="sd">            including ``component_id``, the fused RRF ``_score``, the raw dense</span>
+<span class="sd">            distance ``_vector_score``, and other stored properties.</span>
+<span class="sd">            Returns ``[]`` if the collection has not been populated yet.</span>
+<span class="sd">        """</span>
+        <span class="n">exclude</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">exclude_ids</span> <span class="ow">or</span> <span class="p">[])</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># Open the persisted collection first.  A disk-backed store queried</span>
+            <span class="c1"># from a fresh process has performed no upsert, so the collection is</span>
+            <span class="c1"># absent from ChromaRecordStore._states and query_doc_type() would</span>
+            <span class="c1"># raise ValueError — silently losing Tier 3.  load_collection()</span>
+            <span class="c1"># registers the on-disk (dense) collection so the query resolves.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">chroma_store</span><span class="o">.</span><span class="n">load_collection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span><span class="p">)</span>
+            <span class="n">fetch_k</span> <span class="o">=</span> <span class="n">top_k</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">exclude</span><span class="p">)</span> <span class="o">+</span> <span class="mi">5</span>  <span class="c1"># over-fetch to absorb exclusions</span>
+            <span class="n">hits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">chroma_store</span><span class="o">.</span><span class="n">query_doc_type</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span><span class="p">,</span>
+                <span class="n">query_text</span><span class="p">,</span>
+                <span class="n">top_k</span><span class="o">=</span><span class="n">fetch_k</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="c1"># Collection not present on disk yet (no specs ever populated)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"EquipmentSpecStore: collection not initialised — returning empty."</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"EquipmentSpecStore.find_similar() failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">filtered</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">doc</span> <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">hits</span>
+            <span class="k">if</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">exclude</span>
+        <span class="p">]</span>
+        <span class="k">return</span> <span class="n">filtered</span><span class="p">[:</span><span class="n">top_k</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="EquipmentSpecStore.component_count">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_spec_store/index.html#src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore.component_count">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">component_count</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Return the number of component specs currently in the collection.</span>
+<span class="sd">        Returns 0 if the collection has not been populated.</span>
+<span class="sd">        """</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">chroma_store</span><span class="o">.</span><span class="n">get_or_create_collection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">doc_type</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">state</span><span class="o">.</span><span class="n">vectorstore</span><span class="o">.</span><span class="n">_collection</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mi">0</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,111 @@
+src.dackar.RCA.equipment_similarity.equipment_spec_store
+========================================================
+
+.. py:module:: src.dackar.RCA.equipment_similarity.equipment_spec_store
+
+.. autoapi-nested-parse::
+
+   equipment_spec_store — EquipmentSpecStore.
+
+   Thin wrapper around ChromaRecordStore for the ``equipment_specs`` doc_type.
+   One document per plant component; ``embedding_text`` is the natural-language
+   spec string produced by EquipmentSpecBuilder.
+
+   The full Stage 1-6 enrichment pipeline (NLP, NER, summarization) is not used
+   here — equipment specs are structured, not unstructured prose, so a minimal
+   record with just the spec text and identity metadata is sufficient.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.equipment_similarity.equipment_spec_store.logger
+   src.dackar.RCA.equipment_similarity.equipment_spec_store.JsonDict
+   src.dackar.RCA.equipment_similarity.equipment_spec_store.EQUIPMENT_SPECS_DOC_TYPE
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.equipment_similarity.equipment_spec_store.EquipmentSpecStore
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: JsonDict
+
+.. py:data:: EQUIPMENT_SPECS_DOC_TYPE
+   :value: 'EQUIPMENT_SPECS'
+
+
+.. py:class:: EquipmentSpecStore(chroma_store)
+
+   Manages the ``equipment_specs`` Chroma collection.
+
+   :param chroma_store: A ``ChromaRecordStore`` instance (from ``storage/chroma_store.py``).
+                        The store is used as-is; no modifications are made to its configuration.
+
+
+   .. py:attribute:: chroma_store
+
+
+   .. py:attribute:: doc_type
+      :value: 'EQUIPMENT_SPECS'
+
+
+
+   .. py:method:: upsert_component(component_id, spec_text, metadata = None)
+
+      Upsert one component spec into the Chroma collection.
+
+      :param component_id: KG element_usage node ID.  Used as ``doc_id`` and for stable
+                           deduplication (same component_id → same Chroma record_id).
+      :param spec_text: Natural-language spec string from ``EquipmentSpecBuilder``.
+      :param metadata: Optional extra metadata (component_label, component_type, etc.)
+                       stored alongside the embedding for retrieval context.
+
+
+
+   .. py:method:: upsert_batch(components)
+
+      Upsert a batch of component spec dicts.
+
+      Each dict must have keys: ``component_id``, ``spec_text``, and
+      optionally ``metadata``.
+
+      Returns the number of records upserted.
+
+
+
+   .. py:method:: find_similar(query_text, top_k = 10, exclude_ids = None)
+
+      Find components with specs most similar to ``query_text``.
+
+      :param query_text: Natural-language description of the target equipment (built from
+                         kg_context by ``EquipmentSimilarityResolver._build_query_text()``).
+      :param top_k: Maximum number of results to return (after exclude_ids filtering).
+      :param exclude_ids: component_ids to exclude from results (the target component itself).
+
+      :returns: Each Document has ``page_content`` (spec text) and ``metadata``
+                including ``component_id``, the fused RRF ``_score``, the raw dense
+                distance ``_vector_score``, and other stored properties.
+                Returns ``[]`` if the collection has not been populated yet.
+      :rtype: List[langchain_core.documents.Document]
+
+
+
+   .. py:method:: component_count()
+
+      Return the number of component specs currently in the collection.
+      Returns 0 if the collection has not been populated.
+
+
+

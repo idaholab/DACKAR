@@ -1,0 +1,576 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.equipment_similarity.equipment_similarity_resolver &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.equipment_similarity.equipment_similarity_resolver</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.equipment_similarity.equipment_similarity_resolver</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">equipment_similarity_resolver — EquipmentSimilarityResolver.</span>
+
+<span class="sd">Identifies sister equipment using two complementary tiers:</span>
+
+<span class="sd">  Tier 2 — Failure mode overlap</span>
+<span class="sd">      Derived from kg_context.failure_modes[].  Components that share</span>
+<span class="sd">      ≥ fm_overlap_min_shared failure modes with the target are flagged.</span>
+<span class="sd">      No Chroma, no KG re-query — purely from the already-built artifact.</span>
+
+<span class="sd">  Tier 3 — Spec embedding similarity</span>
+<span class="sd">      Queries the EquipmentSpecStore (Chroma ``equipment_specs`` collection).</span>
+<span class="sd">      Query text is built from kg_context fields — no additional KG call.</span>
+<span class="sd">      Skipped silently if spec_store is None or unpopulated.</span>
+<span class="sd">      Ranked and thresholded on the raw dense-vector distance</span>
+<span class="sd">      (``_vector_score``), not the fused RRF ``_score`` that</span>
+<span class="sd">      ChromaRecordStore's hybrid query overwrites onto each hit — the RRF rank</span>
+<span class="sd">      score is not a distance and would break the ``embedding_min_score`` gate.</span>
+
+<span class="sd">Results from both tiers are merged, deduplicated (same component_id in</span>
+<span class="sd">multiple tiers → combined match_type), and returned as a ranked list of</span>
+<span class="sd">SisterComponent objects.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="NON_EMBEDDING_DISTANCE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.NON_EMBEDDING_DISTANCE">[docs]</a>
+<span class="n">NON_EMBEDDING_DISTANCE</span> <span class="o">=</span> <span class="mf">1.0</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Output type</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="SisterComponent">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">SisterComponent</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    A single sister equipment candidate.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    component_id:</span>
+<span class="sd">        KG element_usage node ID.</span>
+<span class="sd">    component_label:</span>
+<span class="sd">        Human-readable name, if available from kg_context.</span>
+<span class="sd">    match_type:</span>
+<span class="sd">        How this component was identified.  Possible values:</span>
+<span class="sd">        ``"failure_mode_overlap"``, ``"spec_embedding"``,</span>
+<span class="sd">        ``"fm_overlap+spec_embedding"``.</span>
+<span class="sd">    shared_fm_count:</span>
+<span class="sd">        Number of shared failure modes (Tier 2).  0 for Tier 3-only matches.</span>
+<span class="sd">    embedding_score:</span>
+<span class="sd">        Chroma similarity score (Tier 3). ``NON_EMBEDDING_DISTANCE`` for</span>
+<span class="sd">        Tier 2-only matches.</span>
+<span class="sd">        Lower score = more similar (Chroma uses distance by default).</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="SisterComponent.component_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent.component_id">[docs]</a>
+    <span class="n">component_id</span><span class="p">:</span> <span class="nb">str</span></div>
+
+<div class="viewcode-block" id="SisterComponent.component_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent.component_label">[docs]</a>
+    <span class="n">component_label</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="SisterComponent.match_type">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent.match_type">[docs]</a>
+    <span class="n">match_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"spec_embedding"</span></div>
+
+<div class="viewcode-block" id="SisterComponent.shared_fm_count">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent.shared_fm_count">[docs]</a>
+    <span class="n">shared_fm_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span></div>
+
+<div class="viewcode-block" id="SisterComponent.embedding_score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent.embedding_score">[docs]</a>
+    <span class="n">embedding_score</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">NON_EMBEDDING_DISTANCE</span></div>
+
+
+<div class="viewcode-block" id="SisterComponent.to_dict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent.to_dict">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to_dict</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Serialize this candidate to a plain dict for the CMMSContextBuilder boundary.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">            Mapping with keys ``component_id``, ``component_label``,</span>
+<span class="sd">            ``match_type``, ``shared_fm_count`` and ``embedding_score``.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        For ``failure_mode_overlap`` matches (Tier 2 — no embedding distance was</span>
+<span class="sd">        ever computed) ``embedding_score`` is forced to ``NON_EMBEDDING_DISTANCE``</span>
+<span class="sd">        (1.0) rather than left at the dataclass default, so a Tier-2-only sister</span>
+<span class="sd">        is never ranked as more similar than a genuine embedding hit downstream.</span>
+<span class="sd">        For ``spec_embedding`` and combined matches it carries the raw Chroma</span>
+<span class="sd">        vector distance (lower = closer).</span>
+<span class="sd">        """</span>
+        <span class="n">embedding_score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedding_score</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">match_type</span> <span class="o">==</span> <span class="s2">"failure_mode_overlap"</span><span class="p">:</span>
+            <span class="n">embedding_score</span> <span class="o">=</span> <span class="n">NON_EMBEDDING_DISTANCE</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"component_id"</span><span class="p">:</span>    <span class="bp">self</span><span class="o">.</span><span class="n">component_id</span><span class="p">,</span>
+            <span class="s2">"component_label"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">component_label</span><span class="p">,</span>
+            <span class="s2">"match_type"</span><span class="p">:</span>      <span class="bp">self</span><span class="o">.</span><span class="n">match_type</span><span class="p">,</span>
+            <span class="s2">"shared_fm_count"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">shared_fm_count</span><span class="p">,</span>
+            <span class="s2">"embedding_score"</span><span class="p">:</span> <span class="n">embedding_score</span><span class="p">,</span>
+        <span class="p">}</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Config</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="EquipmentSimilarityConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EquipmentSimilarityConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Configuration for EquipmentSimilarityResolver.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    fm_overlap_min_shared:</span>
+<span class="sd">        Minimum number of shared failure modes for Tier 2 inclusion.</span>
+<span class="sd">        Default: 2.  Set to 1 for more inclusive matching.</span>
+<span class="sd">    embedding_top_k:</span>
+<span class="sd">        Number of candidates to request from Chroma (Tier 3).</span>
+<span class="sd">        After exclude_ids filtering, up to this many are returned.</span>
+<span class="sd">    embedding_min_score:</span>
+<span class="sd">        Maximum acceptable Chroma distance score.  Chroma returns</span>
+<span class="sd">        L2 distances (lower = more similar); results above this</span>
+<span class="sd">        threshold are filtered out.  Default: 0.8 (fairly permissive).</span>
+<span class="sd">        Reduce to 0.4–0.6 for stricter matching.</span>
+<span class="sd">    include_fm_overlap:</span>
+<span class="sd">        Enable Tier 2 (failure mode overlap).</span>
+<span class="sd">    include_spec_embedding:</span>
+<span class="sd">        Enable Tier 3 (spec embedding).  Has no effect if spec_store is None.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="EquipmentSimilarityConfig.fm_overlap_min_shared">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityConfig.fm_overlap_min_shared">[docs]</a>
+    <span class="n">fm_overlap_min_shared</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">2</span></div>
+
+<div class="viewcode-block" id="EquipmentSimilarityConfig.embedding_top_k">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityConfig.embedding_top_k">[docs]</a>
+    <span class="n">embedding_top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span></div>
+
+<div class="viewcode-block" id="EquipmentSimilarityConfig.embedding_min_score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityConfig.embedding_min_score">[docs]</a>
+    <span class="n">embedding_min_score</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.8</span></div>
+
+<div class="viewcode-block" id="EquipmentSimilarityConfig.include_fm_overlap">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityConfig.include_fm_overlap">[docs]</a>
+    <span class="n">include_fm_overlap</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="EquipmentSimilarityConfig.include_spec_embedding">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityConfig.include_spec_embedding">[docs]</a>
+    <span class="n">include_spec_embedding</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+</div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Resolver</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EquipmentSimilarityResolver">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EquipmentSimilarityResolver</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Resolves sister equipment using failure mode overlap and spec embeddings.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    spec_store:</span>
+<span class="sd">        ``EquipmentSpecStore`` instance (or ``None`` to disable Tier 3).</span>
+<span class="sd">    config:</span>
+<span class="sd">        ``EquipmentSimilarityConfig`` — defaults are conservative.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">spec_store</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EquipmentSimilarityConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="EquipmentSimilarityResolver.spec_store">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver.spec_store">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">spec_store</span> <span class="o">=</span> <span class="n">spec_store</span></div>
+
+<div class="viewcode-block" id="EquipmentSimilarityResolver.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">EquipmentSimilarityConfig</span><span class="p">()</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public API</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EquipmentSimilarityResolver.resolve_similar">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver.resolve_similar">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve_similar</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">target_component_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">SisterComponent</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Return sister equipment candidates for the given target components.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        target_component_ids:</span>
+<span class="sd">            KG component IDs of the primary asset's components.</span>
+<span class="sd">            These are excluded from results.</span>
+<span class="sd">        kg_context:</span>
+<span class="sd">            KG context artifact from Stage 5A.  Provides failure modes and</span>
+<span class="sd">            component labels for query text construction.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        List[SisterComponent]</span>
+<span class="sd">            Ranked by (embedding_score ASC, shared_fm_count DESC).</span>
+<span class="sd">            Empty list if no sisters found or both tiers are disabled.</span>
+<span class="sd">        """</span>
+        <span class="n">target_set</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">target_component_ids</span><span class="p">)</span>
+        <span class="n">candidates</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">SisterComponent</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="c1"># Tier 2: failure mode overlap</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_fm_overlap</span><span class="p">:</span>
+            <span class="n">fm_sisters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_by_fm_overlap</span><span class="p">(</span><span class="n">target_set</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">fm_sisters</span><span class="p">:</span>
+                <span class="n">candidates</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">component_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">s</span>
+
+        <span class="c1"># Tier 3: spec embedding</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_spec_embedding</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec_store</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">query_text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_query_text</span><span class="p">(</span><span class="n">target_component_ids</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">query_text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="n">emb_sisters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_by_embedding</span><span class="p">(</span><span class="n">query_text</span><span class="p">,</span> <span class="n">target_set</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">emb_sisters</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">component_id</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+                        <span class="c1"># Promote match_type to combined</span>
+                        <span class="n">existing</span> <span class="o">=</span> <span class="n">candidates</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">component_id</span><span class="p">]</span>
+                        <span class="n">existing</span><span class="o">.</span><span class="n">match_type</span> <span class="o">=</span> <span class="s2">"fm_overlap+spec_embedding"</span>
+                        <span class="n">existing</span><span class="o">.</span><span class="n">embedding_score</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">embedding_score</span>
+                    <span class="k">else</span><span class="p">:</span>
+                        <span class="n">candidates</span><span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">component_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">s</span>
+
+        <span class="c1"># Sort: lower embedding_score (closer) first; break ties by shared FM count desc</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="n">candidates</span><span class="o">.</span><span class="n">values</span><span class="p">(),</span>
+            <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">embedding_score</span><span class="p">,</span> <span class="o">-</span><span class="n">s</span><span class="o">.</span><span class="n">shared_fm_count</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Tier 2 — failure mode overlap</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EquipmentSimilarityResolver._resolve_by_fm_overlap">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver._resolve_by_fm_overlap">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_by_fm_overlap</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">target_set</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">SisterComponent</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Find components that share ≥ fm_overlap_min_shared failure modes</span>
+<span class="sd">        with any target component.</span>
+<span class="sd">        """</span>
+        <span class="n">failure_modes</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">failure_modes</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># Build: component_id → set of fm_ids</span>
+        <span class="n">comp_to_fms</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">failure_modes</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fm</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="c1"># Support both field name variants</span>
+            <span class="n">comp_id</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applies_to_component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">fm_id</span>   <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="n">comp_id</span> <span class="ow">and</span> <span class="n">fm_id</span><span class="p">:</span>
+                <span class="n">comp_to_fms</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">comp_id</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">fm_id</span><span class="p">)</span>
+
+        <span class="c1"># Per-target FM sets.  A candidate must share ≥ fm_overlap_min_shared</span>
+        <span class="c1"># failure modes with at least ONE individual target component — not with</span>
+        <span class="c1"># the union across all targets.  CMMSContextBuilder passes every</span>
+        <span class="c1"># non-topology component as a target, and a union over-broadens: a</span>
+        <span class="c1"># candidate sharing a single (different) FM with each of two unrelated</span>
+        <span class="c1"># targets would spuriously clear a threshold of 2.</span>
+        <span class="n">target_fm_sets</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">tid</span><span class="p">:</span> <span class="n">comp_to_fms</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
+            <span class="k">for</span> <span class="n">tid</span> <span class="ow">in</span> <span class="n">target_set</span>
+            <span class="k">if</span> <span class="n">comp_to_fms</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">target_fm_sets</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="c1"># Label lookup</span>
+        <span class="n">label_map</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_label_map</span><span class="p">(</span><span class="n">kg_context</span><span class="p">)</span>
+
+        <span class="n">sisters</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SisterComponent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">comp_id</span><span class="p">,</span> <span class="n">fm_ids</span> <span class="ow">in</span> <span class="n">comp_to_fms</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">comp_id</span> <span class="ow">in</span> <span class="n">target_set</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># Best overlap against any single target component.</span>
+            <span class="n">best_shared</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">fm_ids</span> <span class="o">&amp;</span> <span class="n">tfms</span><span class="p">)</span> <span class="k">for</span> <span class="n">tfms</span> <span class="ow">in</span> <span class="n">target_fm_sets</span><span class="o">.</span><span class="n">values</span><span class="p">()),</span>
+                <span class="n">default</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">best_shared</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">fm_overlap_min_shared</span><span class="p">:</span>
+                <span class="n">sisters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">SisterComponent</span><span class="p">(</span>
+                    <span class="n">component_id</span><span class="o">=</span><span class="n">comp_id</span><span class="p">,</span>
+                    <span class="n">component_label</span><span class="o">=</span><span class="n">label_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">comp_id</span><span class="p">),</span>
+                    <span class="n">match_type</span><span class="o">=</span><span class="s2">"failure_mode_overlap"</span><span class="p">,</span>
+                    <span class="n">shared_fm_count</span><span class="o">=</span><span class="n">best_shared</span><span class="p">,</span>
+                    <span class="n">embedding_score</span><span class="o">=</span><span class="n">NON_EMBEDDING_DISTANCE</span><span class="p">,</span>
+                <span class="p">))</span>
+
+        <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">sisters</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">s</span><span class="p">:</span> <span class="o">-</span><span class="n">s</span><span class="o">.</span><span class="n">shared_fm_count</span><span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Tier 3 — spec embedding</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EquipmentSimilarityResolver._resolve_by_embedding">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver._resolve_by_embedding">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_by_embedding</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">query_text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">target_set</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">SisterComponent</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Query EquipmentSpecStore and return candidates above the score threshold.</span>
+<span class="sd">        """</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">hits</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">spec_store</span><span class="o">.</span><span class="n">find_similar</span><span class="p">(</span>
+                <span class="n">query_text</span><span class="o">=</span><span class="n">query_text</span><span class="p">,</span>
+                <span class="n">top_k</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">embedding_top_k</span><span class="p">,</span>
+                <span class="n">exclude_ids</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">target_set</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">"EquipmentSimilarityResolver: spec_store query failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">[]</span>
+
+        <span class="n">sisters</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SisterComponent</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">hits</span><span class="p">:</span>
+            <span class="n">meta</span>  <span class="o">=</span> <span class="n">doc</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="c1"># Gate on the raw dense-vector distance.  ChromaRecordStore runs a</span>
+            <span class="c1"># hybrid dense+BM25 query and overwrites ``_score`` with the fused RRF</span>
+            <span class="c1"># rank score, but preserves the raw distance in ``_vector_score``.</span>
+            <span class="c1"># Read it by key presence (not a truthiness ``or`` chain) so a</span>
+            <span class="c1"># legitimate 0.0 — an exact match, the closest possible hit — is not</span>
+            <span class="c1"># discarded, and a missing key is not silently treated as distance 1.0.</span>
+            <span class="k">if</span> <span class="s2">"_vector_score"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">meta</span><span class="p">:</span>
+                <span class="c1"># No comparable dense distance on this hit — cannot apply the gate.</span>
+                <span class="k">continue</span>
+            <span class="n">score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">meta</span><span class="p">[</span><span class="s2">"_vector_score"</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">embedding_min_score</span><span class="p">:</span>
+                <span class="k">continue</span>  <span class="c1"># too dissimilar</span>
+            <span class="n">comp_id</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">comp_id</span> <span class="ow">or</span> <span class="n">comp_id</span> <span class="ow">in</span> <span class="n">target_set</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">sisters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">SisterComponent</span><span class="p">(</span>
+                <span class="n">component_id</span><span class="o">=</span><span class="n">comp_id</span><span class="p">,</span>
+                <span class="n">component_label</span><span class="o">=</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_label"</span><span class="p">),</span>
+                <span class="n">match_type</span><span class="o">=</span><span class="s2">"spec_embedding"</span><span class="p">,</span>
+                <span class="n">shared_fm_count</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                <span class="n">embedding_score</span><span class="o">=</span><span class="n">score</span><span class="p">,</span>
+            <span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">sisters</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="EquipmentSimilarityResolver._build_query_text">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver._build_query_text">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_query_text</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">target_component_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Build a query string from kg_context for the target components.</span>
+
+<span class="sd">        Uses component label/type from ``kg_context.components[]`` and</span>
+<span class="sd">        failure mode names from ``kg_context.failure_modes[]``.</span>
+<span class="sd">        No KG re-query required.</span>
+<span class="sd">        """</span>
+        <span class="n">target_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">target_component_ids</span><span class="p">)</span>
+        <span class="n">lines</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Component labels and types</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">target_set</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">label</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">ctype</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="n">label</span><span class="p">:</span>
+                <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Equipment: </span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ctype</span><span class="p">:</span>
+                <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Type: </span><span class="si">{</span><span class="n">ctype</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="c1"># Failure mode names for the target components</span>
+        <span class="n">fm_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">mechanisms</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">fm</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">comp_id</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applies_to_component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="n">comp_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">target_set</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">name</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">mech</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mechanism"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="k">if</span> <span class="n">name</span><span class="p">:</span>
+                <span class="n">fm_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">mech</span><span class="p">:</span>
+                <span class="n">mechanisms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">mech</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">fm_names</span><span class="p">:</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failure modes: </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">fm_names</span><span class="p">))[:</span><span class="mi">8</span><span class="p">])</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">mechanisms</span><span class="p">:</span>
+            <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Failure mechanisms: </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">mechanisms</span><span class="p">))[:</span><span class="mi">6</span><span class="p">])</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="EquipmentSimilarityResolver._build_label_map">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/equipment_similarity_resolver/index.html#src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver._build_label_map">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_label_map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Build component_id → component_label from kg_context.components[]."""</span>
+        <span class="n">label_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">):</span>
+                <span class="n">label_map</span><span class="p">[</span><span class="n">comp</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]]</span> <span class="o">=</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_label"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">label_map</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

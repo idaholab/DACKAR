@@ -1,0 +1,244 @@
+src.dackar.RCA.equipment_similarity.equipment_similarity_resolver
+=================================================================
+
+.. py:module:: src.dackar.RCA.equipment_similarity.equipment_similarity_resolver
+
+.. autoapi-nested-parse::
+
+   equipment_similarity_resolver — EquipmentSimilarityResolver.
+
+   Identifies sister equipment using two complementary tiers:
+
+     Tier 2 — Failure mode overlap
+         Derived from kg_context.failure_modes[].  Components that share
+         ≥ fm_overlap_min_shared failure modes with the target are flagged.
+         No Chroma, no KG re-query — purely from the already-built artifact.
+
+     Tier 3 — Spec embedding similarity
+         Queries the EquipmentSpecStore (Chroma ``equipment_specs`` collection).
+         Query text is built from kg_context fields — no additional KG call.
+         Skipped silently if spec_store is None or unpopulated.
+         Ranked and thresholded on the raw dense-vector distance
+         (``_vector_score``), not the fused RRF ``_score`` that
+         ChromaRecordStore's hybrid query overwrites onto each hit — the RRF rank
+         score is not a distance and would break the ``embedding_min_score`` gate.
+
+   Results from both tiers are merged, deduplicated (same component_id in
+   multiple tiers → combined match_type), and returned as a ranked list of
+   SisterComponent objects.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.logger
+   src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.JsonDict
+   src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.NON_EMBEDDING_DISTANCE
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.SisterComponent
+   src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityConfig
+   src.dackar.RCA.equipment_similarity.equipment_similarity_resolver.EquipmentSimilarityResolver
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: JsonDict
+
+.. py:data:: NON_EMBEDDING_DISTANCE
+   :value: 1.0
+
+
+.. py:class:: SisterComponent
+
+   A single sister equipment candidate.
+
+   .. attribute:: component_id
+
+      KG element_usage node ID.
+
+   .. attribute:: component_label
+
+      Human-readable name, if available from kg_context.
+
+   .. attribute:: match_type
+
+      How this component was identified.  Possible values:
+      ``"failure_mode_overlap"``, ``"spec_embedding"``,
+      ``"fm_overlap+spec_embedding"``.
+
+   .. attribute:: shared_fm_count
+
+      Number of shared failure modes (Tier 2).  0 for Tier 3-only matches.
+
+   .. attribute:: embedding_score
+
+      Chroma similarity score (Tier 3). ``NON_EMBEDDING_DISTANCE`` for
+      Tier 2-only matches.
+      Lower score = more similar (Chroma uses distance by default).
+
+
+   .. py:attribute:: component_id
+      :type:  str
+
+
+   .. py:attribute:: component_label
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: match_type
+      :type:  str
+      :value: 'spec_embedding'
+
+
+
+   .. py:attribute:: shared_fm_count
+      :type:  int
+      :value: 0
+
+
+
+   .. py:attribute:: embedding_score
+      :type:  float
+      :value: 1.0
+
+
+
+   .. py:method:: to_dict()
+
+      Serialize this candidate to a plain dict for the CMMSContextBuilder boundary.
+
+      :returns: Mapping with keys ``component_id``, ``component_label``,
+                ``match_type``, ``shared_fm_count`` and ``embedding_score``.
+      :rtype: dict
+
+      .. rubric:: Notes
+
+      For ``failure_mode_overlap`` matches (Tier 2 — no embedding distance was
+      ever computed) ``embedding_score`` is forced to ``NON_EMBEDDING_DISTANCE``
+      (1.0) rather than left at the dataclass default, so a Tier-2-only sister
+      is never ranked as more similar than a genuine embedding hit downstream.
+      For ``spec_embedding`` and combined matches it carries the raw Chroma
+      vector distance (lower = closer).
+
+
+
+.. py:class:: EquipmentSimilarityConfig
+
+   Configuration for EquipmentSimilarityResolver.
+
+   :param fm_overlap_min_shared: Minimum number of shared failure modes for Tier 2 inclusion.
+                                 Default: 2.  Set to 1 for more inclusive matching.
+   :param embedding_top_k: Number of candidates to request from Chroma (Tier 3).
+                           After exclude_ids filtering, up to this many are returned.
+   :param embedding_min_score: Maximum acceptable Chroma distance score.  Chroma returns
+                               L2 distances (lower = more similar); results above this
+                               threshold are filtered out.  Default: 0.8 (fairly permissive).
+                               Reduce to 0.4–0.6 for stricter matching.
+   :param include_fm_overlap: Enable Tier 2 (failure mode overlap).
+   :param include_spec_embedding: Enable Tier 3 (spec embedding).  Has no effect if spec_store is None.
+
+
+   .. py:attribute:: fm_overlap_min_shared
+      :type:  int
+      :value: 2
+
+
+
+   .. py:attribute:: embedding_top_k
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: embedding_min_score
+      :type:  float
+      :value: 0.8
+
+
+
+   .. py:attribute:: include_fm_overlap
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_spec_embedding
+      :type:  bool
+      :value: True
+
+
+
+.. py:class:: EquipmentSimilarityResolver(spec_store = None, config = None)
+
+   Resolves sister equipment using failure mode overlap and spec embeddings.
+
+   :param spec_store: ``EquipmentSpecStore`` instance (or ``None`` to disable Tier 3).
+   :param config: ``EquipmentSimilarityConfig`` — defaults are conservative.
+
+
+   .. py:attribute:: spec_store
+      :value: None
+
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: resolve_similar(target_component_ids, kg_context)
+
+      Return sister equipment candidates for the given target components.
+
+      :param target_component_ids: KG component IDs of the primary asset's components.
+                                   These are excluded from results.
+      :param kg_context: KG context artifact from Stage 5A.  Provides failure modes and
+                         component labels for query text construction.
+
+      :returns: Ranked by (embedding_score ASC, shared_fm_count DESC).
+                Empty list if no sisters found or both tiers are disabled.
+      :rtype: List[SisterComponent]
+
+
+
+   .. py:method:: _resolve_by_fm_overlap(target_set, kg_context)
+
+      Find components that share ≥ fm_overlap_min_shared failure modes
+      with any target component.
+
+
+
+   .. py:method:: _resolve_by_embedding(query_text, target_set)
+
+      Query EquipmentSpecStore and return candidates above the score threshold.
+
+
+
+   .. py:method:: _build_query_text(target_component_ids, kg_context)
+
+      Build a query string from kg_context for the target components.
+
+      Uses component label/type from ``kg_context.components[]`` and
+      failure mode names from ``kg_context.failure_modes[]``.
+      No KG re-query required.
+
+
+
+   .. py:method:: _build_label_map(kg_context)
+
+      Build component_id → component_label from kg_context.components[].
+
+
+

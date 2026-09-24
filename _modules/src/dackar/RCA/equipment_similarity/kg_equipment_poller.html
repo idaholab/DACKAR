@@ -1,0 +1,383 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.equipment_similarity.kg_equipment_poller &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.equipment_similarity.kg_equipment_poller</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.equipment_similarity.kg_equipment_poller</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">kg_equipment_poller — KGEquipmentPoller.</span>
+
+<span class="sd">One-time population script: queries all element_usage → element_definition</span>
+<span class="sd">nodes from Neo4j (with linked failure modes), builds spec text via</span>
+<span class="sd">EquipmentSpecBuilder, and upserts into EquipmentSpecStore.</span>
+
+<span class="sd">Run at KG setup time and re-run whenever the KG is updated.</span>
+
+<span class="sd">Usage::</span>
+
+<span class="sd">    from py2neo import Graph</span>
+<span class="sd">    from storage.chroma_store import ChromaRecordStore</span>
+<span class="sd">    from equipment_similarity.equipment_spec_store import EquipmentSpecStore</span>
+<span class="sd">    from equipment_similarity.kg_equipment_poller import KGEquipmentPoller</span>
+
+<span class="sd">    neo4j = Graph("bolt://localhost:7687", auth=("neo4j", "password"))</span>
+<span class="sd">    chroma = ChromaRecordStore(persist_directory="./chroma_store")</span>
+<span class="sd">    spec_store = EquipmentSpecStore(chroma)</span>
+<span class="sd">    poller = KGEquipmentPoller(client=neo4j)</span>
+<span class="sd">    n = poller.poll_and_upsert(spec_store, batch_size=100)</span>
+<span class="sd">    print(f"Upserted {n} component specs")</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.equipment_spec_builder</span><span class="w"> </span><span class="kn">import</span> <span class="n">EquipmentSpecBuilder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.equipment_spec_store</span><span class="w"> </span><span class="kn">import</span> <span class="n">EquipmentSpecStore</span>
+
+<div class="viewcode-block" id="logger">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.logger">[docs]</a>
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Cypher query: one row per element_usage node, with aggregated failure mode data.</span>
+<span class="c1">#</span>
+<span class="c1"># Failure modes attach to element_usage via the canonical FMEA relationships.</span>
+<span class="c1"># The schema declares ``(element_usage)-[:subject_to]-&gt;(failure_mode)``</span>
+<span class="c1"># (see schemas/fmeaSchema.toml), while the FMEA ingestion workflow emits the</span>
+<span class="c1"># reverse ``(failure_mode)-[:applies_to]-&gt;(element_usage)``.  We match both</span>
+<span class="c1"># reltypes undirected so the poller is robust to whichever shape a given KG</span>
+<span class="c1"># build produced.  (Repo inconsistency between the schema and the ingestion</span>
+<span class="c1"># code is flagged separately; matching both here keeps this offline populator</span>
+<span class="c1"># working against either.)</span>
+<div class="viewcode-block" id="_SPEC_QUERY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller._SPEC_QUERY">[docs]</a>
+<span class="n">_SPEC_QUERY</span> <span class="o">=</span> <span class="s2">"""</span>
+<span class="s2">MATCH (c:element_usage)-[:instance_of]-&gt;(def:element_definition)</span>
+<span class="s2">OPTIONAL MATCH (c)-[:subject_to|applies_to]-(fm:failure_mode)</span>
+<span class="s2">RETURN</span>
+<span class="s2">    c.id                    AS component_id,</span>
+<span class="s2">    c.name                  AS component_name,</span>
+<span class="s2">    def.domain_category     AS domain_category,</span>
+<span class="s2">    def.structural_kind     AS structural_kind,</span>
+<span class="s2">    def.nominal_size        AS nominal_size,</span>
+<span class="s2">    def.design_pressure     AS design_pressure,</span>
+<span class="s2">    def.design_temperature  AS design_temperature,</span>
+<span class="s2">    def.material_spec       AS material_spec,</span>
+<span class="s2">    def.manufacturer        AS manufacturer,</span>
+<span class="s2">    def.model_number        AS model_number,</span>
+<span class="s2">    collect(DISTINCT fm.name)             AS failure_mode_names,</span>
+<span class="s2">    collect(DISTINCT fm.failure_mechanism) AS failure_mechanisms</span>
+<span class="s2">ORDER BY component_id</span>
+<span class="s2">"""</span></div>
+
+
+
+<div class="viewcode-block" id="KGEquipmentPoller">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.KGEquipmentPoller">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">KGEquipmentPoller</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Polls Neo4j for all element_usage / element_definition pairs and</span>
+<span class="sd">    upserts their spec embeddings into EquipmentSpecStore.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    client:</span>
+<span class="sd">        A ``py2neo.Graph`` (or any object with a ``run(query, **params)``</span>
+<span class="sd">        method returning an iterable of record-like objects).</span>
+<span class="sd">    database:</span>
+<span class="sd">        Optional Neo4j database name.  If ``None``, the default database</span>
+<span class="sd">        for the connection is used.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">client</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">database</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="KGEquipmentPoller.client">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.KGEquipmentPoller.client">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">client</span>   <span class="o">=</span> <span class="n">client</span></div>
+
+<div class="viewcode-block" id="KGEquipmentPoller.database">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.KGEquipmentPoller.database">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">database</span> <span class="o">=</span> <span class="n">database</span></div>
+
+<div class="viewcode-block" id="KGEquipmentPoller._builder">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.KGEquipmentPoller._builder">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_builder</span> <span class="o">=</span> <span class="n">EquipmentSpecBuilder</span><span class="p">()</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Public API</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="KGEquipmentPoller.poll_and_upsert">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.KGEquipmentPoller.poll_and_upsert">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">poll_and_upsert</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">spec_store</span><span class="p">:</span> <span class="n">EquipmentSpecStore</span><span class="p">,</span>
+        <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Query all components from the KG and upsert their specs.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        spec_store:</span>
+<span class="sd">            ``EquipmentSpecStore`` to upsert into.</span>
+<span class="sd">        batch_size:</span>
+<span class="sd">            Number of records per Chroma upsert call.</span>
+<span class="sd">            Larger batches are faster but use more memory.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        int</span>
+<span class="sd">            Total number of component specs upserted.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        This is **upsert-only**.  Each component's spec is written by a stable</span>
+<span class="sd">        ``record_id`` (``equip_spec::{component_id}``), so re-running refreshes</span>
+<span class="sd">        existing components and adds new ones, but specs for components that</span>
+<span class="sd">        were *removed* from the KG are **not** deleted from the Chroma</span>
+<span class="sd">        collection — they linger as stale vectors.  A full refresh that drops</span>
+<span class="sd">        removed components requires rebuilding the ``equipment_specs``</span>
+<span class="sd">        collection from scratch (delete the collection, then re-poll).</span>
+<span class="sd">        """</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"KGEquipmentPoller: starting poll..."</span><span class="p">)</span>
+
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fetch_rows</span><span class="p">()</span>
+        <span class="n">total</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">batch</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">comp_id</span>   <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
+            <span class="n">comp_name</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_name"</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">comp_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="n">definition_props</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"domain_category"</span><span class="p">:</span>    <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"domain_category"</span><span class="p">),</span>
+                <span class="s2">"structural_kind"</span><span class="p">:</span>    <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"structural_kind"</span><span class="p">),</span>
+                <span class="s2">"nominal_size"</span><span class="p">:</span>       <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"nominal_size"</span><span class="p">),</span>
+                <span class="s2">"design_pressure"</span><span class="p">:</span>    <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"design_pressure"</span><span class="p">),</span>
+                <span class="s2">"design_temperature"</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"design_temperature"</span><span class="p">),</span>
+                <span class="s2">"material_spec"</span><span class="p">:</span>      <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"material_spec"</span><span class="p">),</span>
+                <span class="s2">"manufacturer"</span><span class="p">:</span>       <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"manufacturer"</span><span class="p">),</span>
+                <span class="s2">"model_number"</span><span class="p">:</span>       <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model_number"</span><span class="p">),</span>
+            <span class="p">}</span>
+
+            <span class="n">fm_names</span>   <span class="o">=</span> <span class="p">[</span><span class="n">n</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_names"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">n</span><span class="p">]</span>
+            <span class="n">mechanisms</span> <span class="o">=</span> <span class="p">[</span><span class="n">m</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mechanisms"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">m</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_substantive_spec_data</span><span class="p">(</span><span class="n">definition_props</span><span class="p">,</span> <span class="n">fm_names</span><span class="p">,</span> <span class="n">mechanisms</span><span class="p">):</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                    <span class="s2">"KGEquipmentPoller: skipping </span><span class="si">%s</span><span class="s2"> — no definition/failure-mode data for embedding."</span><span class="p">,</span>
+                    <span class="n">comp_id</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">spec_text</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_builder</span><span class="o">.</span><span class="n">build_spec_text</span><span class="p">(</span>
+                <span class="n">component_id</span><span class="o">=</span><span class="n">comp_id</span><span class="p">,</span>
+                <span class="n">component_name</span><span class="o">=</span><span class="n">comp_name</span><span class="p">,</span>
+                <span class="n">definition_props</span><span class="o">=</span><span class="n">definition_props</span><span class="p">,</span>
+                <span class="n">failure_mode_names</span><span class="o">=</span><span class="n">fm_names</span><span class="p">,</span>
+                <span class="n">failure_mechanisms</span><span class="o">=</span><span class="n">mechanisms</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">spec_text</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">"KGEquipmentPoller: skipping </span><span class="si">%s</span><span class="s2"> — empty spec text."</span><span class="p">,</span> <span class="n">comp_id</span><span class="p">)</span>
+                <span class="k">continue</span>
+
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"component_label"</span><span class="p">:</span>   <span class="n">comp_name</span><span class="p">,</span>
+                <span class="s2">"component_type"</span><span class="p">:</span>    <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"domain_category"</span><span class="p">),</span>
+                <span class="s2">"domain_category"</span><span class="p">:</span>   <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"domain_category"</span><span class="p">),</span>
+                <span class="s2">"structural_kind"</span><span class="p">:</span>   <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"structural_kind"</span><span class="p">),</span>
+                <span class="s2">"manufacturer"</span><span class="p">:</span>      <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"manufacturer"</span><span class="p">),</span>
+                <span class="s2">"model_number"</span><span class="p">:</span>      <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"model_number"</span><span class="p">),</span>
+            <span class="p">}</span>
+            <span class="c1"># Strip None values so Chroma metadata stays clean</span>
+            <span class="n">metadata</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">metadata</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">}</span>
+
+            <span class="n">batch</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">comp_id</span><span class="p">,</span>
+                <span class="s2">"spec_text"</span><span class="p">:</span>    <span class="n">spec_text</span><span class="p">,</span>
+                <span class="s2">"metadata"</span><span class="p">:</span>     <span class="n">metadata</span><span class="p">,</span>
+            <span class="p">})</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">batch_size</span><span class="p">:</span>
+                <span class="n">n</span> <span class="o">=</span> <span class="n">spec_store</span><span class="o">.</span><span class="n">upsert_batch</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+                <span class="n">total</span> <span class="o">+=</span> <span class="n">n</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"KGEquipmentPoller: upserted batch of </span><span class="si">%d</span><span class="s2"> (running total: </span><span class="si">%d</span><span class="s2">)"</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="p">)</span>
+                <span class="n">batch</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="c1"># Final partial batch</span>
+        <span class="k">if</span> <span class="n">batch</span><span class="p">:</span>
+            <span class="n">n</span> <span class="o">=</span> <span class="n">spec_store</span><span class="o">.</span><span class="n">upsert_batch</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+            <span class="n">total</span> <span class="o">+=</span> <span class="n">n</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"KGEquipmentPoller: upserted final batch of </span><span class="si">%d</span><span class="s2"> (total: </span><span class="si">%d</span><span class="s2">)"</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">total</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">"KGEquipmentPoller: complete — </span><span class="si">%d</span><span class="s2"> component specs upserted."</span><span class="p">,</span> <span class="n">total</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">total</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Internal</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="KGEquipmentPoller._fetch_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.KGEquipmentPoller._fetch_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fetch_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Execute the spec query and return a list of row dicts.</span>
+
+<span class="sd">        Supports py2neo-style Graph objects (``graph.run(query)``) and any</span>
+<span class="sd">        object with a ``query(cypher, params, db=database)`` method</span>
+<span class="sd">        (matches the KGContextBuilder client interface).</span>
+<span class="sd">        """</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># py2neo Graph.run() interface</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="p">,</span> <span class="s2">"run"</span><span class="p">):</span>
+                <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">_SPEC_QUERY</span><span class="p">)</span>
+                <span class="k">return</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">cursor</span><span class="p">]</span>
+            <span class="c1"># KGContextBuilder-style query interface</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="p">,</span> <span class="s2">"query"</span><span class="p">):</span>
+                <span class="n">params</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="n">kwargs</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">database</span><span class="p">:</span>
+                    <span class="n">kwargs</span><span class="p">[</span><span class="s2">"db"</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">database</span>
+                <span class="k">return</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="n">r</span><span class="p">)</span> <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">_SPEC_QUERY</span><span class="p">,</span> <span class="n">params</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)]</span>
+            <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s2">"client has neither .run() nor .query() — unsupported Neo4j client type."</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">"KGEquipmentPoller: KG query failed: </span><span class="si">%s</span><span class="s2">"</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span>
+            <span class="k">raise</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="KGEquipmentPoller._has_substantive_spec_data">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/equipment_similarity/kg_equipment_poller/index.html#src.dackar.RCA.equipment_similarity.kg_equipment_poller.KGEquipmentPoller._has_substantive_spec_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_has_substantive_spec_data</span><span class="p">(</span>
+        <span class="n">definition_props</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">failure_mode_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">failure_mechanisms</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">definition_props</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">value</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">value</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+                <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">failure_mode_names</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">failure_mechanisms</span><span class="p">):</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
