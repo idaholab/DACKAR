@@ -122,12 +122,14 @@ def test_fmea_linkage_false_when_only_export_applicable_fm():
     assert any("applicable_fm_ids" in n for n in art["data_quality_notes"])
 
 
-def test_not_applicable_row_is_pass_for_governance():
+def test_not_applicable_is_unknown_and_non_evaluable():
+    """MR#56 A3: not_applicable is non-evaluable — governance status is 'unknown',
+    not 'pass', so it is excluded from the compliance_rate denominator."""
     v = PMExecutionVerifier(event_timestamp_iso="2024-08-01T00:00:00+00:00")
     checks, _ = v.verify_rows(
         [{"check_id": "PM-CBM", "check_type": "other", "compliance_status": "not_applicable"}]
     )
-    assert checks[0]["status"] == "pass"
+    assert checks[0]["status"] == "unknown"
 
 
 def test_governance_engine_accepts_artifact_from_builder():
@@ -197,7 +199,9 @@ def test_not_applicable_preserved_in_pm_tasks_narrative_status():
             }
         ],
     )
-    assert art["checks"][0]["status"] == "pass"
+    # MR#56 A3: governance status for not_applicable is now non-evaluable "unknown"...
+    assert art["checks"][0]["status"] == "unknown"
+    # ...while the analyst-facing narrative label still preserves "not_applicable".
     assert art["components"][0]["pm_tasks"][0]["compliance_status"] == "not_applicable"
 
 
@@ -557,6 +561,177 @@ def test_effectiveness_lookback_cycles_limits_rows_used():
     assert art_4["components"][0]["degradation_trend"] == "degrading"
 
 
+# ---------------------------------------------------------------------------
+# Wave 4 — PR#56 review-response locks
+#
+# One focused test per substantive behavior the reviewer requested, so a
+# regression re-surfaces as a failing test rather than silently reverting.
+# ---------------------------------------------------------------------------
+
+
+def test_compliance_rate_over_evaluable_checks_only():
+    """MR#56 I1/Q2: compliance_rate = passed / (passed + failed); unknown excluded."""
+    event = {"asset_id": "A", "timestamp_start": "2026-06-01T00:00:00+00:00"}
+    rows = [
+        # pass: compliant with a completed date inside the window
+        {"check_id": "PM-1", "check_type": "inspection", "compliance_status": "compliant",
+         "completed_date": "2026-05-01T00:00:00+00:00"},
+        # fail: overdue against a past scheduled date
+        {"check_id": "PM-2", "check_type": "inspection", "compliance_status": "overdue",
+         "overdue_by_days": 20, "scheduled_date": "2026-04-01T00:00:00+00:00"},
+        # unknown: no dates → non-evaluable
+        {"check_id": "PM-3", "check_type": "inspection"},
+    ]
+    art = build_pm_compliance(
+        event, export_rows=rows, config=PMComplianceConfig(look_back_window_days=365)
+    )
+    s = art["summary"]
+    assert (s["passed"], s["failed"], s["unknown"]) == (1, 1, 1)
+    assert s["compliance_rate"] == 0.5  # 1 / (1 + 1); the unknown is not in the denominator
+
+
+def test_compliance_rate_omitted_and_partial_when_no_evaluable_checks():
+    """MR#56 I1: with no pass/fail checks, rate is omitted and overall → 'partial'."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2026-06-01T00:00:00+00:00"},
+        export_rows=[{"check_id": "PM-1", "check_type": "inspection"}],  # unknown only
+    )
+    s = art["summary"]
+    assert (s["passed"], s["failed"], s["unknown"]) == (0, 0, 1)
+    assert "compliance_rate" not in s
+    assert s["overall_compliance"] == "partial"
+    assert any("non-evaluable" in n for n in art["data_quality_notes"])
+
+
+def test_schedule_window_drops_rows_before_lookback_start():
+    """MR#56 I2: rows whose last activity predates the lookback window are dropped."""
+    event = {"asset_id": "A", "timestamp_start": "2026-06-01T00:00:00+00:00"}
+    rows = [
+        {"check_id": "RECENT", "check_type": "inspection", "compliance_status": "compliant",
+         "completed_date": "2026-05-01T00:00:00+00:00"},
+        {"check_id": "ANCIENT", "check_type": "inspection", "compliance_status": "compliant",
+         "completed_date": "2020-01-01T00:00:00+00:00"},
+    ]
+    art = build_pm_compliance(
+        event, export_rows=rows, config=PMComplianceConfig(look_back_window_days=365)
+    )
+    ids = [c["check_id"] for c in art["checks"]]
+    assert "RECENT" in ids and "ANCIENT" not in ids
+    assert any("predates lookback window" in n for n in art["data_quality_notes"])
+
+
+def test_next_pm_date_is_earliest_future_scheduled():
+    """MR#56 I6: next_pm_date is the earliest scheduled date still in the future."""
+    event = {"asset_id": "A", "timestamp_start": "2026-06-01T00:00:00+00:00"}
+    rows = [
+        {"check_id": "PAST", "check_type": "inspection", "compliance_status": "compliant",
+         "completed_date": "2026-05-01T00:00:00+00:00",
+         "scheduled_date": "2026-03-01T00:00:00+00:00"},   # past → not "next"
+        {"check_id": "FUTURE", "check_type": "inspection", "compliance_status": "compliant",
+         "completed_date": "2026-05-15T00:00:00+00:00",
+         "scheduled_date": "2026-09-01T00:00:00+00:00"},   # future → the "next"
+    ]
+    art = build_pm_compliance(
+        event, export_rows=rows, config=PMComplianceConfig(look_back_window_days=365)
+    )
+    assert art["summary"]["next_pm_date"].startswith("2026-09-01")
+
+
+def test_degradation_trend_computed_per_component():
+    """MR#56 I5: each component's degradation_trend derives from its own as-found rows."""
+    event = {"asset_id": "A", "timestamp_start": "2026-06-01T00:00:00+00:00"}
+    kg = {
+        "components": [{"component_id": "C1"}, {"component_id": "C2"}],
+        "failure_modes": [],
+    }
+    rows = [
+        {"check_id": "PM-C1", "check_type": "inspection", "component_id": "C1",
+         "compliance_status": "compliant", "completed_date": "2026-05-01T00:00:00+00:00",
+         "as_found_last": "found degraded bearing with heavy wear"},
+        {"check_id": "PM-C2", "check_type": "inspection", "component_id": "C2",
+         "compliance_status": "compliant", "completed_date": "2026-05-02T00:00:00+00:00",
+         "as_found_last": "no defect found, acceptable condition"},
+    ]
+    art = build_pm_compliance(
+        event, kg_context=kg, export_rows=rows,
+        config=PMComplianceConfig(look_back_window_days=365),
+    )
+    trends = {c["component_id"]: c["degradation_trend"] for c in art["components"]}
+    assert trends["C1"] == "degrading"
+    # C2 has only a clean as-found row, so it must NOT inherit C1's asset-wide "degrading".
+    assert trends["C2"] != "degrading"
+
+
+def test_prevents_pm_tasks_field_contributes_coverage():
+    """MR#56 I3: a failure mode linked via ``prevents_pm_tasks`` counts as covered."""
+    kg = {
+        "components": [{"component_id": "C1"}],
+        "failure_modes": [{"fm_id": "FM-1", "prevents_pm_tasks": ["PM-1"]}],
+    }
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2026-06-01T00:00:00+00:00"},
+        kg_context=kg,
+        export_rows=[{"check_id": "PM-1", "check_type": "inspection", "component_id": "C1",
+                      "compliance_status": "compliant",
+                      "completed_date": "2026-05-01T00:00:00+00:00"}],
+        config=PMComplianceConfig(look_back_window_days=365),
+    )
+    assert art["fmea_pm_linkage_available"] is True
+    comp = next(c for c in art["components"] if c["component_id"] == "C1")
+    assert "FM-1" in comp["scope_covers_failure_modes"]
+    assert "FM-1" not in comp["scope_gaps"]
+
+
+def test_unparseable_event_coerces_check_type_and_validates():
+    """MR#56 B2: an unparseable event still yields a schema-valid check_type enum."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "not-a-real-date"},
+        export_rows=[{"check_id": "X1", "check_type": "TOTALLY_BOGUS", "component_id": "C9"}],
+    )
+    assert art["checks"][0]["check_type"] == "other"
+    assert art["checks"][0]["status"] == "unknown"
+    _schema_validator().validate(art)  # fail-closed shape still holds
+
+
+def test_bogus_coverage_type_coerced_and_artifact_validates():
+    """MR#56 A2: a raw export coverage_type outside the enum is coerced to 'none'."""
+    art = build_pm_compliance(
+        {"asset_id": "A", "timestamp_start": "2026-06-01T00:00:00+00:00"},
+        kg_context={"components": [], "failure_modes": []},
+        export_rows=[{"check_id": "PM-1", "check_type": "inspection",
+                      "compliance_status": "compliant", "coverage_type": "WEIRD"}],
+    )
+    task = art["components"][0]["pm_tasks"][0]
+    assert task["coverage_type"] == "none"
+    _schema_validator().validate(art)
+
+
+def test_pm_compliance_package_imports_without_orchestrators():
+    """MR#56 B1/A1: pm_compliance must import with only ``src`` on the path.
+
+    Runs in a fresh subprocess so the RCA-root entry this test module inserts on
+    import cannot mask a regression. Also asserts ``orchestrators`` is genuinely
+    unreachable, so the pm_compliance import is a real test of leaf-independence.
+    """
+    import os
+    import subprocess
+
+    src = str(Path(__file__).resolve().parents[3] / "src")
+    code = (
+        "import importlib.util as u; "
+        "import dackar.RCA.pm_compliance as m; "
+        "from dackar.RCA.pm_compliance import build_pm_compliance; "
+        "assert u.find_spec('orchestrators') is None, 'orchestrators reachable — test not meaningful'; "
+        "print('OK')"
+    )
+    env = {**os.environ, "PYTHONPATH": src}
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+    assert r.returncode == 0, r.stderr
+    assert "OK" in r.stdout
+
+
 if __name__ == "__main__":  # pragma: no cover
     test_build_minimal_compliant_artifact()
     test_build_with_overdue_inspection_fails_governance_relevance()
@@ -564,11 +739,20 @@ if __name__ == "__main__":  # pragma: no cover
     test_rollup_risk_all_clear()
     test_rollup_risk_high_primary_gap_and_overdue()
     test_fmea_linkage_false_when_only_export_applicable_fm()
-    test_not_applicable_row_is_pass_for_governance()
+    test_not_applicable_is_unknown_and_non_evaluable()
     test_governance_engine_accepts_artifact_from_builder()
     test_verifier_unknown_when_no_dates()
     test_primary_scope_gap_marks_non_compliant_when_linkage_available()
     test_not_applicable_preserved_in_pm_tasks_narrative_status()
     test_degradation_trend_uses_as_found_fields_from_rows()
     test_loader_drops_rows_missing_required_identity_or_type_with_note()
+    test_compliance_rate_over_evaluable_checks_only()
+    test_compliance_rate_omitted_and_partial_when_no_evaluable_checks()
+    test_schedule_window_drops_rows_before_lookback_start()
+    test_next_pm_date_is_earliest_future_scheduled()
+    test_degradation_trend_computed_per_component()
+    test_prevents_pm_tasks_field_contributes_coverage()
+    test_unparseable_event_coerces_check_type_and_validates()
+    test_bogus_coverage_type_coerced_and_artifact_validates()
+    test_pm_compliance_package_imports_without_orchestrators()
     print("pm_compliance tests OK")
