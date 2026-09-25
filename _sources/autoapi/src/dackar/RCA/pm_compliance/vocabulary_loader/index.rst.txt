@@ -1,0 +1,124 @@
+src.dackar.RCA.pm_compliance.vocabulary_loader
+==============================================
+
+.. py:module:: src.dackar.RCA.pm_compliance.vocabulary_loader
+
+.. autoapi-nested-parse::
+
+   PMVocabularyLoader — load health-status vocabulary from the DACKAR data directory.
+
+   Drives ``analyze_degradation`` and ``compute_pm_found_defect_rate`` in
+   ``effectiveness_analyzer``.  Falls back to hardcoded stems when *data_dir* is
+   ``None`` or the CSV files are absent, so callers without the data path are
+   unaffected.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.vocabulary_loader._COLS
+   src.dackar.RCA.pm_compliance.vocabulary_loader._NEG_FILE
+   src.dackar.RCA.pm_compliance.vocabulary_loader._POS_FILE
+   src.dackar.RCA.pm_compliance.vocabulary_loader._NEU_FILE
+   src.dackar.RCA.pm_compliance.vocabulary_loader._FALLBACK
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.vocabulary_loader.PMVocabularyLoader
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.vocabulary_loader._read_terms
+   src.dackar.RCA.pm_compliance.vocabulary_loader._term_matches
+   src.dackar.RCA.pm_compliance.vocabulary_loader.matches_any
+
+
+Module Contents
+---------------
+
+.. py:data:: _COLS
+   :type:  Sequence[str]
+   :value: ('Nouns', 'Verbs', 'Adjectives')
+
+
+.. py:data:: _NEG_FILE
+   :value: 'health_status_keywords_negative.csv'
+
+
+.. py:data:: _POS_FILE
+   :value: 'health_status_keywords_positive.csv'
+
+
+.. py:data:: _NEU_FILE
+   :value: 'health_status_keywords_neutral.csv'
+
+
+.. py:data:: _FALLBACK
+   :type:  Dict[str, FrozenSet[str]]
+
+.. py:function:: _read_terms(path, cols)
+
+   Return lowercased, stripped terms from *cols* of a keyword CSV.
+
+
+.. py:function:: _term_matches(term, blob)
+
+   Return True if *term* appears in *blob* at a leading word boundary.
+
+   Multi-word phrases (containing spaces) are matched as substrings.
+   Single-word terms use a left-side word boundary so that the vocabulary
+   term is matched as a prefix of a word — "crack" matches "crack", "cracks",
+   "cracked", "cracking" and "leak" matches "leakage", but neither matches in
+   the middle of an unrelated word (e.g., "crack" does not match "firecracker"
+   because 'c' in "cracker" has no leading word boundary).
+
+
+.. py:function:: matches_any(blob, terms)
+
+   Return True if any term in *terms* matches within *blob*.
+
+
+.. py:class:: PMVocabularyLoader
+
+   Load and cache health-status vocabulary keyed by *data_dir* path.
+
+   Usage::
+
+       vocab = PMVocabularyLoader.load(cfg.data_dir)
+       is_degrading = matches_any(blob, vocab["degrading"])
+
+
+   .. py:attribute:: _cache
+      :type:  Dict[str, Dict[str, FrozenSet[str]]]
+
+
+   .. py:method:: load(data_dir)
+      :classmethod:
+
+
+      Return ``{"degrading": ..., "improving": ...}`` vocabulary sets.
+
+      When *data_dir* is ``None``, returns the hardcoded fallback stems so
+      existing behaviour is fully preserved.
+
+
+
+   .. py:method:: clear_cache()
+      :classmethod:
+
+
+      Invalidate the vocabulary cache (useful in tests).
+
+
+

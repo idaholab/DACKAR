@@ -1,0 +1,57 @@
+src.dackar.RCA.pm_compliance.schedule_loader
+============================================
+
+.. py:module:: src.dackar.RCA.pm_compliance.schedule_loader
+
+.. autoapi-nested-parse::
+
+   PMScheduleLoader — load PM schedule / task rows for an asset scope.
+
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.schedule_loader.PMScheduleLoader
+
+
+Module Contents
+---------------
+
+.. py:class:: PMScheduleLoader(asset_id, component_ids = None)
+
+   Loads PM task definitions for *asset_id* and optional *component_ids*.
+
+   Phase 1: accepts pre-parsed export rows (CSV / JSON / adapter). Real-time CMMS
+   API integration is Phase 2 — see ``PM_Compliance_Module_Architecture.md`` §6.
+
+
+   .. py:attribute:: _asset_id
+
+
+   .. py:attribute:: _component_ids
+
+
+   .. py:method:: load_from_export_rows(rows, window_start = None)
+
+      Filter and return rows for this asset scope.
+
+
+
+   .. py:method:: load_from_export_rows_with_notes(rows, window_start = None)
+
+      Filter rows for scope and return ``(rows, data_quality_notes)``.
+
+      Rows missing ``check_id`` (or fallback ``task_code``) or ``check_type``
+      are dropped to avoid ambiguous downstream governance interpretation.
+
+      When *window_start* (ISO-8601) is given, rows whose most-recent activity
+      date (``completed_date`` / ``last_pm_date`` / ``scheduled_date`` /
+      ``next_due_date``) falls strictly before it are dropped as out-of-window
+      (MR#56 review I2). Rows with no parseable date are kept — an undated task
+      is typically a never-run / overdue candidate that still belongs in scope.
+
+
+

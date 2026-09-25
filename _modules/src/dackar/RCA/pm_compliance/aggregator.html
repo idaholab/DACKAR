@@ -1,0 +1,583 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.pm_compliance.aggregator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.pm_compliance.aggregator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.pm_compliance.aggregator</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""PMComplianceAggregator — assemble the ``pm_compliance`` artifact (JSON-serializable dict)."""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timedelta</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">lru_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA._timeutils</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_dt</span><span class="p">,</span> <span class="n">utcnow_iso</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">PMComplianceConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.currency_checker</span><span class="w"> </span><span class="kn">import</span> <span class="n">frequency_concern</span><span class="p">,</span> <span class="n">mean_interval_from_tskr</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.effectiveness_analyzer</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">analyze_degradation</span><span class="p">,</span>
+    <span class="n">collect_as_found_from_rows</span><span class="p">,</span>
+    <span class="n">compute_pm_found_defect_rate</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.execution_verifier</span><span class="w"> </span><span class="kn">import</span> <span class="n">PMExecutionVerifier</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.scope_analyzer</span><span class="w"> </span><span class="kn">import</span> <span class="n">analyze_scope</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">JsonDict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.schedule_loader</span><span class="w"> </span><span class="kn">import</span> <span class="n">PMScheduleLoader</span>
+
+<div class="viewcode-block" id="_OUTPUT_SCHEMA_PATH">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._OUTPUT_SCHEMA_PATH">[docs]</a>
+<span class="n">_OUTPUT_SCHEMA_PATH</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="s2">"schemas"</span> <span class="o">/</span> <span class="s2">"pm_compliance.json"</span></div>
+
+
+
+<span class="nd">@lru_cache</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<div class="viewcode-block" id="_output_validator">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._output_validator">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_output_validator</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">"""Return a cached jsonschema validator for the pm_compliance schema."""</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">jsonschema</span>
+
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">_OUTPUT_SCHEMA_PATH</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+    <span class="n">validator_cls</span> <span class="o">=</span> <span class="n">jsonschema</span><span class="o">.</span><span class="n">validators</span><span class="o">.</span><span class="n">validator_for</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+    <span class="n">validator_cls</span><span class="o">.</span><span class="n">check_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">validator_cls</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_validate_output">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._validate_output">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_validate_output</span><span class="p">(</span><span class="n">artifact</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Validate *artifact* against ``schemas/pm_compliance.json`` (fail-closed).</span>
+
+<span class="sd">    Raises ``ValueError`` naming the first offending JSON path when the built</span>
+<span class="sd">    artifact — including the now-formalized ``components[]`` extension — does not</span>
+<span class="sd">    conform (MR#56 review A2).</span>
+<span class="sd">    """</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">_output_validator</span><span class="p">()</span>
+    <span class="n">errors</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">validator</span><span class="o">.</span><span class="n">iter_errors</span><span class="p">(</span><span class="n">artifact</span><span class="p">),</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">e</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">path</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+        <span class="n">first</span> <span class="o">=</span> <span class="n">errors</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">loc</span> <span class="o">=</span> <span class="s2">"/"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">p</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">first</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"&lt;root&gt;"</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"pm_compliance failed schema validation at </span><span class="si">{</span><span class="n">loc</span><span class="si">}</span><span class="s2">: "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">first</span><span class="o">.</span><span class="n">message</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">errors</span><span class="p">)</span><span class="si">}</span><span class="s2"> error(s) total)."</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_window_for_event">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._window_for_event">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_window_for_event</span><span class="p">(</span><span class="n">event_ts</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">lookback_days</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+    <span class="n">end</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">event_ts</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">end</span><span class="p">:</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">end</span><span class="o">.</span><span class="n">tzinfo</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">end</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">tzinfo</span><span class="o">=</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+    <span class="n">start</span> <span class="o">=</span> <span class="n">end</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">lookback_days</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">start</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span> <span class="n">end</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="_summary_metrics">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._summary_metrics">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_summary_metrics</span><span class="p">(</span>
+    <span class="n">checks</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">reference_dt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span>
+    <span class="n">passed</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"pass"</span><span class="p">)</span>
+    <span class="n">failed</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"fail"</span><span class="p">)</span>
+    <span class="n">unknown</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"unknown"</span><span class="p">)</span>
+    <span class="n">overdue_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_by_days"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"fail"</span><span class="p">)</span>
+    <span class="n">m</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"total_checks"</span><span class="p">:</span> <span class="n">total</span><span class="p">,</span>
+        <span class="s2">"passed"</span><span class="p">:</span> <span class="n">passed</span><span class="p">,</span>
+        <span class="s2">"failed"</span><span class="p">:</span> <span class="n">failed</span><span class="p">,</span>
+        <span class="s2">"unknown"</span><span class="p">:</span> <span class="n">unknown</span><span class="p">,</span>
+        <span class="s2">"overdue_count"</span><span class="p">:</span> <span class="n">overdue_count</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="c1"># MR#56 review I1/A3: rate over evaluable (pass+fail) checks only — unknown and</span>
+    <span class="c1"># not_applicable are non-evaluable and excluded from the denominator. Omitted</span>
+    <span class="c1"># entirely when nothing is evaluable, rather than reporting a misleading 1.0 for</span>
+    <span class="c1"># an empty set or 0.0 for an all-unknown set.</span>
+    <span class="n">evaluable</span> <span class="o">=</span> <span class="n">passed</span> <span class="o">+</span> <span class="n">failed</span>
+    <span class="k">if</span> <span class="n">evaluable</span><span class="p">:</span>
+        <span class="n">m</span><span class="p">[</span><span class="s2">"compliance_rate"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">passed</span> <span class="o">/</span> <span class="n">evaluable</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+    <span class="n">comp_dates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"completed_date"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">d</span><span class="p">:</span>
+            <span class="n">comp_dates</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">comp_dates</span><span class="p">:</span>
+        <span class="n">m</span><span class="p">[</span><span class="s2">"last_pm_date"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">comp_dates</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+    <span class="c1"># MR#56 review I6: "next" PM is the earliest scheduled date still in the future</span>
+    <span class="c1"># relative to the assessment time — not the earliest scheduled date overall</span>
+    <span class="c1"># (which is usually a long-past historical PM). Omitted when none is upcoming.</span>
+    <span class="n">nexts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">datetime</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">:</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scheduled_date"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">d</span><span class="p">:</span>
+            <span class="n">nexts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+    <span class="n">future</span> <span class="o">=</span> <span class="p">[</span><span class="n">d</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">nexts</span> <span class="k">if</span> <span class="n">reference_dt</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">d</span> <span class="o">&gt;</span> <span class="n">reference_dt</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">future</span><span class="p">:</span>
+        <span class="n">m</span><span class="p">[</span><span class="s2">"next_pm_date"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">future</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">m</span></div>
+
+
+
+<div class="viewcode-block" id="_rollup_risk">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._rollup_risk">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_rollup_risk</span><span class="p">(</span>
+    <span class="n">primary_fm_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">all_gap</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">has_overdue</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">has_fail</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Architecture §3.6 — *maintenance_induced_risk* and *overall_compliance* roll-ups.</span>
+
+<span class="sd">    When *primary_fm_id* is supplied (e.g. after synthesis), risk matches the spec:</span>
+<span class="sd">    high = primary in scope gap and PM was overdue; medium = primary gap or overdue; else low.</span>
+<span class="sd">    Without *primary_fm_id*, risk falls back to gap + overdue heuristics.</span>
+<span class="sd">    """</span>
+    <span class="n">primary_in_gap</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">primary_fm_id</span><span class="p">)</span> <span class="ow">and</span> <span class="p">(</span><span class="n">primary_fm_id</span> <span class="ow">in</span> <span class="n">all_gap</span><span class="p">)</span>
+    <span class="n">has_scope_primary</span> <span class="o">=</span> <span class="n">primary_in_gap</span>
+
+    <span class="k">if</span> <span class="n">primary_fm_id</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">primary_in_gap</span> <span class="ow">and</span> <span class="n">has_overdue</span><span class="p">:</span>
+            <span class="n">risk</span> <span class="o">=</span> <span class="s2">"high"</span>
+        <span class="k">elif</span> <span class="n">primary_in_gap</span> <span class="ow">or</span> <span class="n">has_overdue</span><span class="p">:</span>
+            <span class="n">risk</span> <span class="o">=</span> <span class="s2">"medium"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">risk</span> <span class="o">=</span> <span class="s2">"low"</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">all_gap</span> <span class="ow">and</span> <span class="n">has_overdue</span> <span class="ow">and</span> <span class="n">has_fail</span><span class="p">:</span>
+            <span class="n">risk</span> <span class="o">=</span> <span class="s2">"high"</span>
+        <span class="k">elif</span> <span class="n">has_overdue</span> <span class="ow">or</span> <span class="nb">bool</span><span class="p">(</span><span class="n">all_gap</span><span class="p">):</span>
+            <span class="n">risk</span> <span class="o">=</span> <span class="s2">"medium"</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">risk</span> <span class="o">=</span> <span class="s2">"low"</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">has_fail</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">all_gap</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">has_overdue</span><span class="p">:</span>
+        <span class="n">overall</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"compliant"</span>
+    <span class="k">elif</span> <span class="n">primary_fm_id</span> <span class="ow">and</span> <span class="n">primary_in_gap</span><span class="p">:</span>
+        <span class="n">overall</span> <span class="o">=</span> <span class="s2">"non_compliant"</span>
+    <span class="k">elif</span> <span class="n">has_fail</span> <span class="ow">or</span> <span class="n">all_gap</span> <span class="ow">or</span> <span class="n">has_overdue</span><span class="p">:</span>
+        <span class="n">overall</span> <span class="o">=</span> <span class="s2">"partial"</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">overall</span> <span class="o">=</span> <span class="s2">"compliant"</span>
+
+    <span class="k">return</span> <span class="n">overall</span><span class="p">,</span> <span class="n">risk</span><span class="p">,</span> <span class="n">has_scope_primary</span></div>
+
+
+
+<div class="viewcode-block" id="_compliance_status_md">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._compliance_status_md">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_compliance_status_md</span><span class="p">(</span>
+    <span class="n">overdue_days</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">st</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">missed_cycles</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">raw_compliance_status</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Narrative labels for ``pm_tasks[].compliance_status`` (architecture §5).</span>
+
+<span class="sd">    ``"unknown"`` check status (no schedule dates in the export) returns</span>
+<span class="sd">    ``"undetermined"`` so analysts can distinguish it from a genuine pass.</span>
+<span class="sd">    The governance-scoring path (``checks[].status``) is unaffected — it still</span>
+<span class="sd">    carries ``"unknown"``; only the component narrative label changes.</span>
+<span class="sd">    """</span>
+    <span class="n">raw</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">raw_compliance_status</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">raw</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"not_applicable"</span><span class="p">,</span> <span class="s2">"n_a"</span><span class="p">}:</span>
+        <span class="k">return</span> <span class="s2">"not_applicable"</span>
+    <span class="k">if</span> <span class="n">st</span> <span class="o">==</span> <span class="s2">"pass"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"compliant"</span>
+    <span class="k">if</span> <span class="n">st</span> <span class="o">==</span> <span class="s2">"unknown"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">"undetermined"</span>  <span class="c1"># §1.4 fix: was "compliant", which was misleading</span>
+    <span class="k">if</span> <span class="n">st</span> <span class="o">==</span> <span class="s2">"fail"</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">missed_cycles</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"missed"</span>
+        <span class="k">if</span> <span class="n">overdue_days</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"overdue"</span>
+        <span class="k">return</span> <span class="s2">"missed"</span>
+    <span class="k">return</span> <span class="s2">"compliant"</span></div>
+
+
+
+<div class="viewcode-block" id="_build_pm_tasks_per_component">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._build_pm_tasks_per_component">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_build_pm_tasks_per_component</span><span class="p">(</span>
+    <span class="n">raw_rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">checks</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">check_to_coverage_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]:</span>
+<span class="w">    </span><span class="sd">"""Architecture §5 — ``components[].pm_tasks`` (narrative) alongside pipeline ``checks``.</span>
+
+<span class="sd">    *check_to_coverage_type* (from ``analyze_scope``) maps check_id →</span>
+<span class="sd">    ``"preventive"`` | ``"detective"``.  When present, it overrides the export</span>
+<span class="sd">    row's ``coverage_type`` field, which defaults to ``"none"``.</span>
+<span class="sd">    """</span>
+    <span class="n">by</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">check_by_id</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">):</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">)}</span>
+    <span class="n">cov_map</span> <span class="o">=</span> <span class="n">check_to_coverage_type</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">raw_rows</span><span class="p">:</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span><span class="p">)</span>
+        <span class="n">task_code</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"task_code"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">ck</span> <span class="o">=</span> <span class="n">check_by_id</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"task_code"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">overdue</span> <span class="o">=</span> <span class="nb">float</span><span class="p">((</span><span class="n">ck</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_by_days"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">st</span> <span class="o">=</span> <span class="p">(</span><span class="n">ck</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+        <span class="n">mcy</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"missed_cycles"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="c1"># §2.3: KG-derived coverage_type takes precedence over export row value.</span>
+        <span class="c1"># Coerce to the schema enum so a raw export value can't break validation (MR#56 A2).</span>
+        <span class="n">coverage_type</span> <span class="o">=</span> <span class="n">cov_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">task_code</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"coverage_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"none"</span>
+        <span class="k">if</span> <span class="n">coverage_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"preventive"</span><span class="p">,</span> <span class="s2">"detective"</span><span class="p">,</span> <span class="s2">"none"</span><span class="p">):</span>
+            <span class="n">coverage_type</span> <span class="o">=</span> <span class="s2">"none"</span>
+        <span class="n">task</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"task_code"</span><span class="p">:</span> <span class="n">task_code</span><span class="p">,</span>
+            <span class="s2">"description"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"task_description"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"frequency_days"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"frequency_days"</span><span class="p">),</span>
+            <span class="s2">"last_pm_date"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"last_pm_date"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"completed_date"</span><span class="p">),</span>
+            <span class="s2">"next_due_date"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"next_due_date"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"next_due"</span><span class="p">),</span>
+            <span class="s2">"overdue_days"</span><span class="p">:</span> <span class="n">overdue</span><span class="p">,</span>
+            <span class="s2">"compliance_status"</span><span class="p">:</span> <span class="n">_compliance_status_md</span><span class="p">(</span>
+                <span class="n">overdue</span><span class="p">,</span>
+                <span class="n">st</span><span class="p">,</span>
+                <span class="n">mcy</span><span class="p">,</span>
+                <span class="n">raw_compliance_status</span><span class="o">=</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"compliance_status"</span><span class="p">),</span>
+            <span class="p">),</span>
+            <span class="s2">"missed_cycles"</span><span class="p">:</span> <span class="n">mcy</span><span class="p">,</span>
+            <span class="s2">"last_as_found"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_found_last"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_found_condition"</span><span class="p">),</span>
+            <span class="s2">"coverage_type"</span><span class="p">:</span> <span class="n">coverage_type</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">by</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">cid</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">by</span></div>
+
+
+
+<div class="viewcode-block" id="_apply_frequency_flags">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/aggregator/index.html#src.dackar.RCA.pm_compliance.aggregator._apply_frequency_flags">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_apply_frequency_flags</span><span class="p">(</span>
+    <span class="n">comp_views</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span>
+    <span class="n">raw_rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">ratio</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Set ``pm_frequency_concern`` on each component (architecture §3.5)."""</span>
+    <span class="k">for</span> <span class="n">view</span> <span class="ow">in</span> <span class="n">comp_views</span><span class="p">:</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span><span class="p">)</span>
+        <span class="n">concern</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">raw_rows</span><span class="p">:</span>
+            <span class="n">r_cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">r_cid</span> <span class="o">!=</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">f_days</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"frequency_days"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">f_days</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">fm_list</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applicable_fm_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">for</span> <span class="n">fm_id</span> <span class="ow">in</span> <span class="n">fm_list</span><span class="p">:</span>
+                <span class="n">mean_inter</span> <span class="o">=</span> <span class="n">mean_interval_from_tskr</span><span class="p">(</span><span class="n">kg_context</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">fm_id</span><span class="p">))</span> <span class="k">if</span> <span class="n">kg_context</span> <span class="k">else</span> <span class="kc">None</span>
+                <span class="k">if</span> <span class="n">frequency_concern</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">f_days</span><span class="p">),</span> <span class="n">mean_inter</span><span class="p">,</span> <span class="n">ratio</span><span class="o">=</span><span class="n">ratio</span><span class="p">):</span>
+                    <span class="n">concern</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">break</span>
+            <span class="k">if</span> <span class="n">concern</span><span class="p">:</span>
+                <span class="k">break</span>
+        <span class="n">view</span><span class="p">[</span><span class="s2">"pm_frequency_concern"</span><span class="p">]</span> <span class="o">=</span> <span class="n">concern</span></div>
+
+
+
+<div class="viewcode-block" id="build_pm_compliance">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/index.html#src.dackar.RCA.pm_compliance.aggregator.build_pm_compliance">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_pm_compliance</span><span class="p">(</span>
+    <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">export_rows</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PMComplianceConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">primary_fm_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Assemble a ``pm_compliance`` object validated by ``schemas/pm_compliance.json``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    event</span>
+<span class="sd">        Must include ``asset_id`` and ``timestamp_start`` (ISO). ``event_id`` is optional.</span>
+<span class="sd">    kg_context</span>
+<span class="sd">        Optional; supplies failure modes for scope analysis.</span>
+<span class="sd">    export_rows</span>
+<span class="sd">        Pre-parsed PM tasks from a CMMS export or adapter (see *PMExportTaskRow*).</span>
+<span class="sd">    config</span>
+<span class="sd">        Lookback and thresholds.</span>
+<span class="sd">    primary_fm_id</span>
+<span class="sd">        Optional failure mode id (e.g. from the eventual primary hypothesis) to evaluate</span>
+<span class="sd">        ``has_scope_gaps_for_primary_fm`` and *maintenance_induced_risk* per</span>
+<span class="sd">        ``PM_Compliance_Module_Architecture.md`` §3.5–3.6.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    JsonDict</span>
+<span class="sd">        A ``pm_compliance`` artifact conforming to ``schemas/pm_compliance.json``:</span>
+<span class="sd">        ``asset_id``, ``window`` (start/end), ``checks[]`` (per-PM pass/fail/unknown</span>
+<span class="sd">        rows for governance scoring), and ``summary`` (aggregate counts,</span>
+<span class="sd">        ``compliance_rate`` over evaluable checks, ``overall_compliance``,</span>
+<span class="sd">        ``maintenance_induced_risk``, ``data_quality_confidence``). Optional keys —</span>
+<span class="sd">        ``event_id``, ``assessment_date``, ``look_back_window_days``,</span>
+<span class="sd">        ``fmea_pm_linkage_available``, ``data_quality_notes``, ``components[]``</span>
+<span class="sd">        (per-component detail) and ``overdue_items[]`` — appear when applicable.</span>
+<span class="sd">        The artifact is schema-validated before return, raising ``ValueError`` on a</span>
+<span class="sd">        non-conforming build.</span>
+<span class="sd">    """</span>
+    <span class="n">cfg</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">PMComplianceConfig</span><span class="p">()</span>
+    <span class="n">asset</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">asset</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"event.json must include asset_id for PM compliance build"</span><span class="p">)</span>
+
+    <span class="n">event_ts</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+    <span class="n">w_start</span><span class="p">,</span> <span class="n">w_end</span> <span class="o">=</span> <span class="n">_window_for_event</span><span class="p">(</span><span class="n">event_ts</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">look_back_window_days</span><span class="p">)</span>
+    <span class="n">reference_dt</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">event_ts</span><span class="p">)</span> <span class="ow">or</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span>
+    <span class="n">comp_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="n">kg_context</span><span class="p">:</span>
+        <span class="n">comp_ids</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">))</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)]</span>
+
+    <span class="n">loader</span> <span class="o">=</span> <span class="n">PMScheduleLoader</span><span class="p">(</span><span class="n">asset</span><span class="p">,</span> <span class="n">component_ids</span><span class="o">=</span><span class="n">comp_ids</span><span class="p">)</span>
+    <span class="n">raw_rows</span><span class="p">,</span> <span class="n">loader_notes</span> <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">load_from_export_rows_with_notes</span><span class="p">(</span>
+        <span class="n">export_rows</span> <span class="ow">or</span> <span class="p">(),</span> <span class="n">window_start</span><span class="o">=</span><span class="n">w_start</span>
+    <span class="p">)</span>
+    <span class="n">extra_notes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">raw_rows</span><span class="p">:</span>
+        <span class="n">ft</span> <span class="o">=</span> <span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"frequency_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">ft</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"operating_hours"</span><span class="p">,</span> <span class="s2">"operating"</span><span class="p">,</span> <span class="s2">"hours"</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"operating_hours_at_event"</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"compliance_status"</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span>
+                <span class="s2">"not_applicable"</span><span class="p">,</span>
+                <span class="s2">"n_a"</span><span class="p">,</span>
+            <span class="p">):</span>
+                <span class="n">extra_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Task </span><span class="si">{</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'check_id'</span><span class="p">)</span><span class="si">!r}</span><span class="s2">: operating-hour-based PM without runtime hours — "</span>
+                    <span class="sa">f</span><span class="s2">"using calendar fallback per architecture §3.1"</span>
+                <span class="p">)</span>
+
+    <span class="n">verifier</span> <span class="o">=</span> <span class="n">PMExecutionVerifier</span><span class="p">(</span><span class="n">event_timestamp_iso</span><span class="o">=</span><span class="n">event_ts</span><span class="p">)</span>
+    <span class="n">checks</span><span class="p">,</span> <span class="n">dq_notes</span> <span class="o">=</span> <span class="n">verifier</span><span class="o">.</span><span class="n">verify_rows</span><span class="p">(</span><span class="n">raw_rows</span><span class="p">)</span>
+    <span class="n">dq_notes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">loader_notes</span><span class="p">)</span> <span class="o">+</span> <span class="nb">list</span><span class="p">(</span><span class="n">dq_notes</span><span class="p">)</span> <span class="o">+</span> <span class="n">extra_notes</span>
+
+    <span class="n">comp_views</span><span class="p">,</span> <span class="n">fmea_kg</span><span class="p">,</span> <span class="n">covered_fms</span><span class="p">,</span> <span class="n">all_fms</span><span class="p">,</span> <span class="n">check_to_coverage_type</span> <span class="o">=</span> <span class="n">analyze_scope</span><span class="p">(</span><span class="n">kg_context</span><span class="p">,</span> <span class="n">checks</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">raw_rows</span> <span class="ow">and</span> <span class="n">kg_context</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">fmea_kg</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applicable_fm_ids"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">):</span>
+            <span class="n">dq_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">"PM-to-FM coverage from export `applicable_fm_ids` only; no KG FMEA/PM task linkage (advisory, §3.3)"</span>
+            <span class="p">)</span>
+
+    <span class="c1"># Asset-wide as-found presence still informs data_quality_confidence below.</span>
+    <span class="n">asf</span> <span class="o">=</span> <span class="n">collect_as_found_from_rows</span><span class="p">(</span><span class="n">raw_rows</span><span class="p">,</span> <span class="n">max_cycles</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">effectiveness_lookback_cycles</span><span class="p">)</span>
+    <span class="c1"># MR#56 review I5: compute degradation_trend per component from that component's</span>
+    <span class="c1"># own as-found rows, instead of copying one asset-wide trend onto every component.</span>
+    <span class="n">rows_by_comp</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">raw_rows</span><span class="p">:</span>
+        <span class="n">rows_by_comp</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span><span class="p">),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">r</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">view</span> <span class="ow">in</span> <span class="n">comp_views</span><span class="p">:</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span><span class="p">)</span>
+        <span class="n">comp_asf</span> <span class="o">=</span> <span class="n">collect_as_found_from_rows</span><span class="p">(</span>
+            <span class="n">rows_by_comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">,</span> <span class="p">[]),</span> <span class="n">max_cycles</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">effectiveness_lookback_cycles</span>
+        <span class="p">)</span>
+        <span class="n">view</span><span class="p">[</span><span class="s2">"degradation_trend"</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">analyze_degradation</span><span class="p">(</span><span class="n">comp_asf</span><span class="p">,</span> <span class="n">data_dir</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">data_dir</span><span class="p">)</span> <span class="k">if</span> <span class="n">comp_asf</span> <span class="k">else</span> <span class="s2">"unknown"</span>
+        <span class="p">)</span>
+        <span class="n">view</span><span class="p">[</span><span class="s2">"pm_overdue_at_failure"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_by_days"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
+            <span class="ow">and</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"fail"</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span><span class="p">)</span> <span class="o">==</span> <span class="n">cid</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span>
+        <span class="p">)</span>
+        <span class="n">view</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"pm_frequency_concern"</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">pm_by_comp</span> <span class="o">=</span> <span class="n">_build_pm_tasks_per_component</span><span class="p">(</span><span class="n">raw_rows</span><span class="p">,</span> <span class="n">checks</span><span class="p">,</span> <span class="n">check_to_coverage_type</span><span class="o">=</span><span class="n">check_to_coverage_type</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">comp_views</span><span class="p">:</span>
+        <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">v</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span><span class="p">)</span>
+        <span class="n">v</span><span class="p">[</span><span class="s2">"pm_tasks"</span><span class="p">]</span> <span class="o">=</span> <span class="n">pm_by_comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="p">[])</span>
+
+    <span class="k">if</span> <span class="n">kg_context</span><span class="p">:</span>
+        <span class="n">_apply_frequency_flags</span><span class="p">(</span><span class="n">comp_views</span><span class="p">,</span> <span class="n">raw_rows</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">,</span> <span class="n">cfg</span><span class="o">.</span><span class="n">pm_frequency_concern_ratio</span><span class="p">)</span>
+
+    <span class="n">m</span> <span class="o">=</span> <span class="n">_summary_metrics</span><span class="p">(</span><span class="n">checks</span><span class="p">,</span> <span class="n">reference_dt</span><span class="o">=</span><span class="n">reference_dt</span><span class="p">)</span>
+    <span class="n">has_overdue</span> <span class="o">=</span> <span class="nb">any</span><span class="p">((</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_by_days"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">)</span>
+    <span class="n">has_fail</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"fail"</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">)</span>
+    <span class="n">all_gap</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">all_fms</span> <span class="ow">and</span> <span class="p">(</span><span class="n">fmea_kg</span> <span class="ow">or</span> <span class="n">covered_fms</span><span class="p">):</span>
+        <span class="n">all_gap</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">all_fms</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">covered_fms</span><span class="p">)</span>
+
+    <span class="n">overall</span><span class="p">,</span> <span class="n">risk</span><span class="p">,</span> <span class="n">has_scope_gaps</span> <span class="o">=</span> <span class="n">_rollup_risk</span><span class="p">(</span>
+        <span class="n">primary_fm_id</span><span class="p">,</span> <span class="n">all_gap</span><span class="p">,</span> <span class="n">has_overdue</span><span class="p">,</span> <span class="n">has_fail</span>
+    <span class="p">)</span>
+    <span class="c1"># MR#56 review I1: with no evaluable (pass/fail) checks there is no basis to call</span>
+    <span class="c1"># the asset "compliant"; downgrade only that vacuous case to "partial" (a genuine</span>
+    <span class="c1"># scope-gap "non_compliant" verdict is left intact).</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">m</span><span class="p">[</span><span class="s2">"passed"</span><span class="p">]</span> <span class="o">+</span> <span class="n">m</span><span class="p">[</span><span class="s2">"failed"</span><span class="p">])</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">overall</span> <span class="o">==</span> <span class="s2">"compliant"</span><span class="p">:</span>
+            <span class="n">overall</span> <span class="o">=</span> <span class="s2">"partial"</span>
+        <span class="n">dq_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">"no pass/fail checks in window — compliance_rate omitted and "</span>
+            <span class="s2">"overall_compliance set to 'partial' (non-evaluable)"</span>
+        <span class="p">)</span>
+    <span class="n">m</span><span class="p">[</span><span class="s2">"overall_compliance"</span><span class="p">]</span> <span class="o">=</span> <span class="n">overall</span>
+    <span class="n">m</span><span class="p">[</span><span class="s2">"maintenance_induced_risk"</span><span class="p">]</span> <span class="o">=</span> <span class="n">risk</span>
+    <span class="n">m</span><span class="p">[</span><span class="s2">"has_scope_gaps_for_primary_fm"</span><span class="p">]</span> <span class="o">=</span> <span class="n">has_scope_gaps</span>
+    <span class="n">defect_rate</span> <span class="o">=</span> <span class="n">compute_pm_found_defect_rate</span><span class="p">(</span><span class="n">raw_rows</span><span class="p">,</span> <span class="n">data_dir</span><span class="o">=</span><span class="n">cfg</span><span class="o">.</span><span class="n">data_dir</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">defect_rate</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">m</span><span class="p">[</span><span class="s2">"pm_found_defect_rate"</span><span class="p">]</span> <span class="o">=</span> <span class="n">defect_rate</span>
+    <span class="c1"># MR#56 review I7: append the primary-FM caveat BEFORE deriving confidence so it</span>
+    <span class="c1"># actually lowers data_quality_confidence (it was previously appended afterwards).</span>
+    <span class="k">if</span> <span class="n">primary_fm_id</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">bool</span><span class="p">(</span><span class="n">fmea_kg</span><span class="p">):</span>
+        <span class="n">dq_notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"primary_fm_id '</span><span class="si">{</span><span class="n">primary_fm_id</span><span class="si">}</span><span class="s2">' provided but KG PM↔FM linkage absent — "</span>
+            <span class="sa">f</span><span class="s2">"scope gap for this FM is not evaluable; maintenance_induced_risk may be underestimated (architecture §3.3)"</span>
+        <span class="p">)</span>
+    <span class="n">dq_conf</span> <span class="o">=</span> <span class="s2">"high"</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">dq_notes</span> <span class="ow">and</span> <span class="n">checks</span> <span class="k">else</span> <span class="s2">"medium"</span> <span class="k">if</span> <span class="n">checks</span> <span class="k">else</span> <span class="s2">"low"</span>
+    <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"unknown"</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">):</span>
+        <span class="n">dq_conf</span> <span class="o">=</span> <span class="s2">"medium"</span> <span class="k">if</span> <span class="n">dq_conf</span> <span class="o">==</span> <span class="s2">"high"</span> <span class="k">else</span> <span class="s2">"low"</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">asf</span> <span class="ow">and</span> <span class="n">checks</span><span class="p">:</span>
+        <span class="n">dq_conf</span> <span class="o">=</span> <span class="s2">"medium"</span> <span class="k">if</span> <span class="n">dq_conf</span> <span class="o">==</span> <span class="s2">"high"</span> <span class="k">else</span> <span class="n">dq_conf</span>
+    <span class="n">m</span><span class="p">[</span><span class="s2">"data_quality_confidence"</span><span class="p">]</span> <span class="o">=</span> <span class="n">dq_conf</span>
+
+    <span class="n">out</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">asset</span><span class="p">,</span>
+        <span class="s2">"window"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"start"</span><span class="p">:</span> <span class="n">w_start</span><span class="p">,</span> <span class="s2">"end"</span><span class="p">:</span> <span class="n">w_end</span><span class="p">},</span>
+        <span class="s2">"checks"</span><span class="p">:</span> <span class="n">checks</span><span class="p">,</span>
+        <span class="s2">"summary"</span><span class="p">:</span> <span class="n">m</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">eid</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">eid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"event_id"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">eid</span><span class="p">)</span>
+    <span class="c1"># assessment_date records when this artifact was built, not the event time.</span>
+    <span class="c1"># The event reference time is already captured in window.end.</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"assessment_date"</span><span class="p">]</span> <span class="o">=</span> <span class="n">utcnow_iso</span><span class="p">()</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"look_back_window_days"</span><span class="p">]</span> <span class="o">=</span> <span class="n">cfg</span><span class="o">.</span><span class="n">look_back_window_days</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"fmea_pm_linkage_available"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">fmea_kg</span><span class="p">)</span>
+    <span class="n">out</span><span class="p">[</span><span class="s2">"data_quality_notes"</span><span class="p">]</span> <span class="o">=</span> <span class="n">dq_notes</span>
+    <span class="k">if</span> <span class="n">comp_views</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"components"</span><span class="p">]</span> <span class="o">=</span> <span class="n">comp_views</span>
+
+    <span class="n">overdues</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">:</span>
+        <span class="n">o</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_by_days"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span>
+        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"fail"</span> <span class="ow">and</span> <span class="n">o</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">overdues</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">{</span>
+                    <span class="s2">"check_id"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">),</span>
+                    <span class="s2">"check_type"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_type"</span><span class="p">,</span> <span class="s2">"other"</span><span class="p">),</span>
+                    <span class="s2">"scheduled_date"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scheduled_date"</span><span class="p">,</span> <span class="n">w_start</span><span class="p">),</span>
+                    <span class="s2">"overdue_by_days"</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">o</span><span class="p">),</span>
+                    <span class="s2">"source_ref"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_ref"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+                <span class="p">}</span>
+            <span class="p">)</span>
+    <span class="k">if</span> <span class="n">overdues</span><span class="p">:</span>
+        <span class="n">out</span><span class="p">[</span><span class="s2">"overdue_items"</span><span class="p">]</span> <span class="o">=</span> <span class="n">overdues</span>
+
+    <span class="n">_validate_output</span><span class="p">(</span><span class="n">out</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

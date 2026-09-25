@@ -1,0 +1,271 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.pm_compliance.scope_analyzer &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.pm_compliance.scope_analyzer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.pm_compliance.scope_analyzer</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""PMScopeAnalyzer — FMEA/KG ↔ PM task coverage and scope gaps."""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">JsonDict</span>
+
+<span class="c1"># Priority order when a check appears in multiple KG fields:</span>
+<span class="c1"># "preventive" outranks "detective" — a task that prevents a failure mode is the</span>
+<span class="c1"># stronger claim; we never downgrade a "preventive" assignment to "detective".</span>
+<div class="viewcode-block" id="_FIELD_COVERAGE_TYPE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/scope_analyzer/index.html#src.dackar.RCA.pm_compliance.scope_analyzer._FIELD_COVERAGE_TYPE">[docs]</a>
+<span class="n">_FIELD_COVERAGE_TYPE</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"detecting_pm_task_ids"</span><span class="p">:</span>  <span class="s2">"detective"</span><span class="p">,</span>   <span class="c1"># processed first (lowest priority)</span>
+    <span class="s2">"pm_task_ids"</span><span class="p">:</span>            <span class="s2">"preventive"</span><span class="p">,</span>  <span class="c1"># generic linkage; treated as preventive</span>
+    <span class="s2">"preventing_pm_task_ids"</span><span class="p">:</span> <span class="s2">"preventive"</span><span class="p">,</span>  <span class="c1"># highest priority</span>
+    <span class="c1"># MR#56 review I3: prevents_pm_tasks also advertises PM↔FM linkage (recognized</span>
+    <span class="c1"># by _explicit_pm_fm_links), so it must contribute coverage too — otherwise an</span>
+    <span class="c1"># FM linked only via this field flips linkage on but shows every FM as a gap.</span>
+    <span class="s2">"prevents_pm_tasks"</span><span class="p">:</span>      <span class="s2">"preventive"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_fm_ids_from_kg">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/scope_analyzer/index.html#src.dackar.RCA.pm_compliance.scope_analyzer._fm_ids_from_kg">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_fm_ids_from_kg</span><span class="p">(</span><span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="n">fms</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">return</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">))</span> <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">fms</span> <span class="k">if</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)}</span></div>
+
+
+
+<div class="viewcode-block" id="_explicit_pm_fm_links">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/scope_analyzer/index.html#src.dackar.RCA.pm_compliance.scope_analyzer._explicit_pm_fm_links">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_explicit_pm_fm_links</span><span class="p">(</span><span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return True if any failure mode advertises PM linkage fields."""</span>
+    <span class="n">fms</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">fms</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span>
+            <span class="s2">"preventing_pm_task_ids"</span><span class="p">,</span>
+            <span class="s2">"detecting_pm_task_ids"</span><span class="p">,</span>
+            <span class="s2">"pm_task_ids"</span><span class="p">,</span>
+            <span class="s2">"prevents_pm_tasks"</span><span class="p">,</span>
+        <span class="p">):</span>
+            <span class="k">if</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">key</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">return</span> <span class="kc">False</span></div>
+
+
+
+<div class="viewcode-block" id="analyze_scope">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/scope_analyzer/index.html#src.dackar.RCA.pm_compliance.scope_analyzer.analyze_scope">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">analyze_scope</span><span class="p">(</span>
+    <span class="n">kg_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">checks</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]],</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">"""Build per-component scope view.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    components_out</span>
+<span class="sd">        Per-component list with ``scope_covers_failure_modes``, ``scope_gaps``.</span>
+<span class="sd">    linkage_flag</span>
+<span class="sd">        True when the KG carries explicit PM↔FM tags.</span>
+<span class="sd">    covered_fms</span>
+<span class="sd">        FM IDs covered by at least one passing check.</span>
+<span class="sd">    all_fms</span>
+<span class="sd">        All FM IDs present in the KG.</span>
+<span class="sd">    check_to_coverage_type</span>
+<span class="sd">        Maps check_id → ``"preventive"`` | ``"detective"`` for every check whose</span>
+<span class="sd">        task ID appears in a KG FM linkage field.  Empty when linkage is absent.</span>
+<span class="sd">        Used by the aggregator to set ``pm_tasks[].coverage_type``.</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">kg_context</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[],</span> <span class="kc">False</span><span class="p">,</span> <span class="nb">set</span><span class="p">(),</span> <span class="nb">set</span><span class="p">(),</span> <span class="p">{}</span>
+
+    <span class="n">all_fms</span> <span class="o">=</span> <span class="n">_fm_ids_from_kg</span><span class="p">(</span><span class="n">kg_context</span><span class="p">)</span>
+    <span class="n">explicit</span> <span class="o">=</span> <span class="n">_explicit_pm_fm_links</span><span class="p">(</span><span class="n">kg_context</span><span class="p">)</span>
+
+    <span class="n">covered</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"pass"</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">for</span> <span class="n">fid</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applicable_fm_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">all_fms</span> <span class="ow">or</span> <span class="n">fid</span> <span class="ow">in</span> <span class="n">all_fms</span><span class="p">:</span>
+                <span class="n">covered</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">fid</span><span class="p">))</span>
+
+    <span class="c1"># Build check_to_coverage_type while also updating covered.</span>
+    <span class="c1"># Iterate fields in ascending priority order so "preventive" always wins.</span>
+    <span class="n">check_to_coverage_type</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="c1"># fm_id -&gt; set of KG-linked PM task IDs, reused for per-component coverage below.</span>
+    <span class="n">fm_task_ids</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">if</span> <span class="n">explicit</span> <span class="ow">and</span> <span class="n">all_fms</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="n">fm_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">fm_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">cov_type</span> <span class="ow">in</span> <span class="n">_FIELD_COVERAGE_TYPE</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">task_id</span> <span class="ow">in</span> <span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+                    <span class="n">tid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">task_id</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">tid</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="c1"># Assign coverage_type; "preventive" is never downgraded to "detective"</span>
+                    <span class="k">if</span> <span class="n">check_to_coverage_type</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tid</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"preventive"</span><span class="p">:</span>
+                        <span class="n">check_to_coverage_type</span><span class="p">[</span><span class="n">tid</span><span class="p">]</span> <span class="o">=</span> <span class="n">cov_type</span>
+            <span class="c1"># Mark FM as covered if any passing check matches a linked task ID</span>
+            <span class="n">all_task_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">_FIELD_COVERAGE_TYPE</span><span class="p">:</span>
+                <span class="n">all_task_ids</span> <span class="o">|=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">x</span><span class="p">}</span>
+            <span class="n">fm_task_ids</span><span class="p">[</span><span class="n">fm_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">all_task_ids</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"pass"</span><span class="p">:</span>
+                    <span class="k">continue</span>
+                <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span> <span class="ow">in</span> <span class="n">all_task_ids</span><span class="p">:</span>
+                    <span class="n">covered</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">fm_id</span><span class="p">)</span>
+
+    <span class="n">scope_gaps</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">all_fms</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">explicit</span> <span class="ow">or</span> <span class="n">covered</span><span class="p">:</span>
+            <span class="n">scope_gaps</span> <span class="o">=</span> <span class="n">all_fms</span> <span class="o">-</span> <span class="n">covered</span>
+
+    <span class="n">by_comp</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span><span class="p">:</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"_asset"</span>
+        <span class="n">by_comp</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">cid</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+
+    <span class="n">comp_out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">cid</span><span class="p">,</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">by_comp</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">local_cov</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">passing_check_ids</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">ch</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"pass"</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">passing_check_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">fid</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"applicable_fm_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+                <span class="n">local_cov</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">fid</span><span class="p">))</span>
+        <span class="c1"># MR#56 review I4: honor KG PM↔FM task-ID linkage per component too, so a</span>
+        <span class="c1"># component's scope_gaps stay consistent with the global covered set (which</span>
+        <span class="c1"># already credits KG linkage) instead of relying on export applicable_fm_ids only.</span>
+        <span class="k">for</span> <span class="n">fm_id</span><span class="p">,</span> <span class="n">tids</span> <span class="ow">in</span> <span class="n">fm_task_ids</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">passing_check_ids</span> <span class="o">&amp;</span> <span class="n">tids</span><span class="p">:</span>
+                <span class="n">local_cov</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">fm_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">explicit</span> <span class="ow">and</span> <span class="n">all_fms</span><span class="p">:</span>
+            <span class="n">sgap</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">fm</span> <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">all_fms</span> <span class="k">if</span> <span class="n">fm</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">local_cov</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">sgap</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">comp_out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">cid</span><span class="p">,</span>
+                <span class="s2">"scope_covers_failure_modes"</span><span class="p">:</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">local_cov</span><span class="p">)</span> <span class="k">if</span> <span class="n">local_cov</span> <span class="k">else</span> <span class="p">[],</span>
+                <span class="s2">"scope_gaps"</span><span class="p">:</span> <span class="n">sgap</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Per architecture §3.3: only *KG* PM↔FM tags count as "FMEA/PM linkage available".</span>
+    <span class="n">fmea_kg_linkage_available</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">explicit</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">comp_out</span><span class="p">,</span> <span class="n">fmea_kg_linkage_available</span><span class="p">,</span> <span class="n">covered</span><span class="p">,</span> <span class="n">all_fms</span><span class="p">,</span> <span class="n">check_to_coverage_type</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

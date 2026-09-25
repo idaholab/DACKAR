@@ -1,0 +1,120 @@
+src.dackar.RCA.pm_compliance
+============================
+
+.. py:module:: src.dackar.RCA.pm_compliance
+
+.. autoapi-nested-parse::
+
+   PM Compliance Verification — build ``pm_compliance.json`` for the RCA pipeline.
+
+   The artifact matches ``RCA/schemas/pm_compliance.json`` and feeds Stage D governance
+   (``causality_engine_v32`` ``checks`` array) and analyst-facing summaries.
+
+   Phase 1: export-row ingestion and deterministic verification. See
+   ``diagrams/april_20/PM_Compliance_Module_Architecture.md`` for design notes and
+   integration points (orchestrator wiring to follow).
+
+
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   /autoapi/src/dackar/RCA/pm_compliance/aggregator/index
+   /autoapi/src/dackar/RCA/pm_compliance/config/index
+   /autoapi/src/dackar/RCA/pm_compliance/currency_checker/index
+   /autoapi/src/dackar/RCA/pm_compliance/effectiveness_analyzer/index
+   /autoapi/src/dackar/RCA/pm_compliance/execution_verifier/index
+   /autoapi/src/dackar/RCA/pm_compliance/schedule_loader/index
+   /autoapi/src/dackar/RCA/pm_compliance/scope_analyzer/index
+   /autoapi/src/dackar/RCA/pm_compliance/types/index
+   /autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.PMComplianceConfig
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.build_pm_compliance
+
+
+Package Contents
+----------------
+
+.. py:function:: build_pm_compliance(event, kg_context = None, export_rows = None, config = None, primary_fm_id = None)
+
+   Assemble a ``pm_compliance`` object validated by ``schemas/pm_compliance.json``.
+
+   :param event: Must include ``asset_id`` and ``timestamp_start`` (ISO). ``event_id`` is optional.
+   :param kg_context: Optional; supplies failure modes for scope analysis.
+   :param export_rows: Pre-parsed PM tasks from a CMMS export or adapter (see *PMExportTaskRow*).
+   :param config: Lookback and thresholds.
+   :param primary_fm_id: Optional failure mode id (e.g. from the eventual primary hypothesis) to evaluate
+                         ``has_scope_gaps_for_primary_fm`` and *maintenance_induced_risk* per
+                         ``PM_Compliance_Module_Architecture.md`` §3.5–3.6.
+
+   :returns: A ``pm_compliance`` artifact conforming to ``schemas/pm_compliance.json``:
+             ``asset_id``, ``window`` (start/end), ``checks[]`` (per-PM pass/fail/unknown
+             rows for governance scoring), and ``summary`` (aggregate counts,
+             ``compliance_rate`` over evaluable checks, ``overall_compliance``,
+             ``maintenance_induced_risk``, ``data_quality_confidence``). Optional keys —
+             ``event_id``, ``assessment_date``, ``look_back_window_days``,
+             ``fmea_pm_linkage_available``, ``data_quality_notes``, ``components[]``
+             (per-component detail) and ``overdue_items[]`` — appear when applicable.
+             The artifact is schema-validated before return, raising ``ValueError`` on a
+             non-conforming build.
+   :rtype: JsonDict
+
+
+.. py:class:: PMComplianceConfig
+
+   Tuning parameters for schedule vs. execution analysis and reporting.
+
+
+   .. py:attribute:: look_back_window_days
+      :type:  int
+      :value: 730
+
+
+      Window [event - N days, event] for CMMS PM / WO history (export / API phase).
+
+
+   .. py:attribute:: effectiveness_lookback_cycles
+      :type:  int
+      :value: 3
+
+
+      How many past PM cycles to read for as-found / degradation trend.
+
+
+   .. py:attribute:: pm_frequency_concern_ratio
+      :type:  float
+      :value: 0.5
+
+
+      Flag PM frequency concern when pm_interval > ratio * mean_failure_interval (advisory).
+
+
+   .. py:attribute:: data_dir
+      :type:  Optional[pathlib.Path]
+      :value: None
+
+
+      Path to the DACKAR data directory containing health-status keyword CSVs.
+
+      When set, ``analyze_degradation`` and ``compute_pm_found_defect_rate`` use the
+      curated vocabulary files (``health_status_keywords_negative/positive.csv``).
+      When ``None``, the original hardcoded stem fallback is used.
+
+

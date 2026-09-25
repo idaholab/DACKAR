@@ -1,0 +1,253 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.pm_compliance.vocabulary_loader &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.pm_compliance.vocabulary_loader</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.pm_compliance.vocabulary_loader</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""PMVocabularyLoader — load health-status vocabulary from the DACKAR data directory.</span>
+
+<span class="sd">Drives ``analyze_degradation`` and ``compute_pm_found_defect_rate`` in</span>
+<span class="sd">``effectiveness_analyzer``.  Falls back to hardcoded stems when *data_dir* is</span>
+<span class="sd">``None`` or the CSV files are absent, so callers without the data path are</span>
+<span class="sd">unaffected.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">csv</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">FrozenSet</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span>
+
+
+<span class="c1"># Columns to load from each CSV (Adverbs excluded — not informative for as-found text)</span>
+<div class="viewcode-block" id="_COLS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader._COLS">[docs]</a>
+<span class="n">_COLS</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"Nouns"</span><span class="p">,</span> <span class="s2">"Verbs"</span><span class="p">,</span> <span class="s2">"Adjectives"</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="_NEG_FILE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader._NEG_FILE">[docs]</a>
+<span class="n">_NEG_FILE</span> <span class="o">=</span> <span class="s2">"health_status_keywords_negative.csv"</span></div>
+
+<div class="viewcode-block" id="_POS_FILE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader._POS_FILE">[docs]</a>
+<span class="n">_POS_FILE</span> <span class="o">=</span> <span class="s2">"health_status_keywords_positive.csv"</span></div>
+
+<div class="viewcode-block" id="_NEU_FILE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader._NEU_FILE">[docs]</a>
+<span class="n">_NEU_FILE</span> <span class="o">=</span> <span class="s2">"health_status_keywords_neutral.csv"</span></div>
+
+
+<span class="c1"># Fallback hardcoded stems (original behaviour before Wave 2).</span>
+<span class="c1"># Kept as a safety net when data_dir is unavailable.</span>
+<div class="viewcode-block" id="_FALLBACK">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader._FALLBACK">[docs]</a>
+<span class="n">_FALLBACK</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">FrozenSet</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"degrading"</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"degrad"</span><span class="p">,</span> <span class="s2">"worse"</span><span class="p">,</span> <span class="s2">"increas"</span><span class="p">,</span> <span class="s2">"severity"</span><span class="p">,</span> <span class="s2">"wear"</span><span class="p">}),</span>
+    <span class="s2">"improving"</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"improv"</span><span class="p">,</span> <span class="s2">"normal"</span><span class="p">,</span> <span class="s2">"no defect"</span><span class="p">,</span> <span class="s2">"acceptable"</span><span class="p">}),</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_read_terms">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader._read_terms">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_read_terms</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">cols</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">FrozenSet</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Return lowercased, stripped terms from *cols* of a keyword CSV."""</span>
+    <span class="n">terms</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="k">return</span> <span class="nb">frozenset</span><span class="p">()</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8-sig"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">reader</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">DictReader</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">reader</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cols</span><span class="p">:</span>
+                <span class="n">val</span> <span class="o">=</span> <span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">col</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">val</span><span class="p">:</span>
+                    <span class="n">terms</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+    <span class="k">return</span> <span class="nb">frozenset</span><span class="p">(</span><span class="n">terms</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="_term_matches">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader._term_matches">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_term_matches</span><span class="p">(</span><span class="n">term</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">blob</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return True if *term* appears in *blob* at a leading word boundary.</span>
+
+<span class="sd">    Multi-word phrases (containing spaces) are matched as substrings.</span>
+<span class="sd">    Single-word terms use a left-side word boundary so that the vocabulary</span>
+<span class="sd">    term is matched as a prefix of a word — "crack" matches "crack", "cracks",</span>
+<span class="sd">    "cracked", "cracking" and "leak" matches "leakage", but neither matches in</span>
+<span class="sd">    the middle of an unrelated word (e.g., "crack" does not match "firecracker"</span>
+<span class="sd">    because 'c' in "cracker" has no leading word boundary).</span>
+<span class="sd">    """</span>
+    <span class="k">if</span> <span class="s2">" "</span> <span class="ow">in</span> <span class="n">term</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">term</span> <span class="ow">in</span> <span class="n">blob</span>
+    <span class="k">return</span> <span class="nb">bool</span><span class="p">(</span><span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\b"</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="n">term</span><span class="p">),</span> <span class="n">blob</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="matches_any">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader.matches_any">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">matches_any</span><span class="p">(</span><span class="n">blob</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">terms</span><span class="p">:</span> <span class="n">FrozenSet</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return True if any term in *terms* matches within *blob*."""</span>
+    <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">_term_matches</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">blob</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">terms</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="PMVocabularyLoader">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader.PMVocabularyLoader">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PMVocabularyLoader</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Load and cache health-status vocabulary keyed by *data_dir* path.</span>
+
+<span class="sd">    Usage::</span>
+
+<span class="sd">        vocab = PMVocabularyLoader.load(cfg.data_dir)</span>
+<span class="sd">        is_degrading = matches_any(blob, vocab["degrading"])</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="PMVocabularyLoader._cache">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader.PMVocabularyLoader._cache">[docs]</a>
+    <span class="n">_cache</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">FrozenSet</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="p">{}</span></div>
+
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="PMVocabularyLoader.load">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader.PMVocabularyLoader.load">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">data_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">FrozenSet</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Return ``{"degrading": ..., "improving": ...}`` vocabulary sets.</span>
+
+<span class="sd">        When *data_dir* is ``None``, returns the hardcoded fallback stems so</span>
+<span class="sd">        existing behaviour is fully preserved.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">data_dir</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="n">_FALLBACK</span><span class="p">)</span>
+
+        <span class="n">key</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">data_dir</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_cache</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
+
+        <span class="n">neg</span> <span class="o">=</span> <span class="n">_read_terms</span><span class="p">(</span><span class="n">data_dir</span> <span class="o">/</span> <span class="n">_NEG_FILE</span><span class="p">,</span> <span class="n">_COLS</span><span class="p">)</span>
+        <span class="n">pos</span> <span class="o">=</span> <span class="n">_read_terms</span><span class="p">(</span><span class="n">data_dir</span> <span class="o">/</span> <span class="n">_POS_FILE</span><span class="p">,</span> <span class="n">_COLS</span><span class="p">)</span>
+
+        <span class="n">vocab</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">FrozenSet</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"degrading"</span><span class="p">:</span> <span class="n">neg</span> <span class="k">if</span> <span class="n">neg</span> <span class="k">else</span> <span class="n">_FALLBACK</span><span class="p">[</span><span class="s2">"degrading"</span><span class="p">],</span>
+            <span class="s2">"improving"</span><span class="p">:</span> <span class="n">pos</span> <span class="k">if</span> <span class="n">pos</span> <span class="k">else</span> <span class="n">_FALLBACK</span><span class="p">[</span><span class="s2">"improving"</span><span class="p">],</span>
+        <span class="p">}</span>
+        <span class="bp">cls</span><span class="o">.</span><span class="n">_cache</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">vocab</span>
+        <span class="k">return</span> <span class="n">vocab</span></div>
+
+
+    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="PMVocabularyLoader.clear_cache">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/vocabulary_loader/index.html#src.dackar.RCA.pm_compliance.vocabulary_loader.PMVocabularyLoader.clear_cache">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">clear_cache</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Invalidate the vocabulary cache (useful in tests)."""</span>
+        <span class="bp">cls</span><span class="o">.</span><span class="n">_cache</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

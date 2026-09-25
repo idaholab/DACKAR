@@ -1,0 +1,65 @@
+src.dackar.RCA.pm_compliance.effectiveness_analyzer
+===================================================
+
+.. py:module:: src.dackar.RCA.pm_compliance.effectiveness_analyzer
+
+.. autoapi-nested-parse::
+
+   PMEffectivenessAnalyzer — as-found trend signals (advisory, data-quality limited).
+
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.effectiveness_analyzer.analyze_degradation
+   src.dackar.RCA.pm_compliance.effectiveness_analyzer.compute_pm_found_defect_rate
+   src.dackar.RCA.pm_compliance.effectiveness_analyzer.collect_as_found_from_checks
+   src.dackar.RCA.pm_compliance.effectiveness_analyzer.collect_as_found_from_rows
+
+
+Module Contents
+---------------
+
+.. py:function:: analyze_degradation(as_found_texts, data_dir = None)
+
+   Return *degradation_trend* label based on as-found text.
+
+   When *data_dir* points to the DACKAR data directory, uses the curated
+   ``health_status_keywords_negative/positive.csv`` vocabulary.  Falls back to
+   hardcoded stems when *data_dir* is ``None`` or the files are absent.
+
+   Classification logic (in priority order):
+   1. No non-empty texts → ``"unknown"``
+   2. Improving terms match AND no degrading terms match → ``"improving"``
+   3. Degrading terms match → ``"degrading"``
+   4. Otherwise → ``"stable"``
+
+
+.. py:function:: compute_pm_found_defect_rate(rows, data_dir = None)
+
+   Return fraction of PM executions with as-found data that recorded a defect.
+
+   Iterates *all* export rows (not cycle-limited) to give a statistical signal
+   over the full lookback history.  Returns ``None`` when no rows carry as-found
+   data (avoids a misleading 0.0 rate).
+
+   A row is counted as a defect when its as-found text classifies as
+   ``"degrading"`` per ``analyze_degradation``.
+
+
+.. py:function:: collect_as_found_from_checks(checks)
+
+   Use ``details`` (as-found) from checks when available.
+
+
+.. py:function:: collect_as_found_from_rows(rows, max_cycles = None)
+
+   Prefer structured as-found columns from export rows.
+
+   When *max_cycles* is set, only the most-recent N rows (by ``completed_date``)
+   are considered — honouring ``PMComplianceConfig.effectiveness_lookback_cycles``.
+
+

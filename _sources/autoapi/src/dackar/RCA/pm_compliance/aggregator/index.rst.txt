@@ -1,0 +1,116 @@
+src.dackar.RCA.pm_compliance.aggregator
+=======================================
+
+.. py:module:: src.dackar.RCA.pm_compliance.aggregator
+
+.. autoapi-nested-parse::
+
+   PMComplianceAggregator — assemble the ``pm_compliance`` artifact (JSON-serializable dict).
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.aggregator._OUTPUT_SCHEMA_PATH
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.pm_compliance.aggregator._output_validator
+   src.dackar.RCA.pm_compliance.aggregator._validate_output
+   src.dackar.RCA.pm_compliance.aggregator._window_for_event
+   src.dackar.RCA.pm_compliance.aggregator._summary_metrics
+   src.dackar.RCA.pm_compliance.aggregator._rollup_risk
+   src.dackar.RCA.pm_compliance.aggregator._compliance_status_md
+   src.dackar.RCA.pm_compliance.aggregator._build_pm_tasks_per_component
+   src.dackar.RCA.pm_compliance.aggregator._apply_frequency_flags
+   src.dackar.RCA.pm_compliance.aggregator.build_pm_compliance
+
+
+Module Contents
+---------------
+
+.. py:data:: _OUTPUT_SCHEMA_PATH
+
+.. py:function:: _output_validator()
+
+   Return a cached jsonschema validator for the pm_compliance schema.
+
+
+.. py:function:: _validate_output(artifact)
+
+   Validate *artifact* against ``schemas/pm_compliance.json`` (fail-closed).
+
+   Raises ``ValueError`` naming the first offending JSON path when the built
+   artifact — including the now-formalized ``components[]`` extension — does not
+   conform (MR#56 review A2).
+
+
+.. py:function:: _window_for_event(event_ts, lookback_days)
+
+.. py:function:: _summary_metrics(checks, reference_dt = None)
+
+.. py:function:: _rollup_risk(primary_fm_id, all_gap, has_overdue, has_fail)
+
+   Architecture §3.6 — *maintenance_induced_risk* and *overall_compliance* roll-ups.
+
+   When *primary_fm_id* is supplied (e.g. after synthesis), risk matches the spec:
+   high = primary in scope gap and PM was overdue; medium = primary gap or overdue; else low.
+   Without *primary_fm_id*, risk falls back to gap + overdue heuristics.
+
+
+.. py:function:: _compliance_status_md(overdue_days, st, missed_cycles, raw_compliance_status = None)
+
+   Narrative labels for ``pm_tasks[].compliance_status`` (architecture §5).
+
+   ``"unknown"`` check status (no schedule dates in the export) returns
+   ``"undetermined"`` so analysts can distinguish it from a genuine pass.
+   The governance-scoring path (``checks[].status``) is unaffected — it still
+   carries ``"unknown"``; only the component narrative label changes.
+
+
+.. py:function:: _build_pm_tasks_per_component(raw_rows, checks, check_to_coverage_type = None)
+
+   Architecture §5 — ``components[].pm_tasks`` (narrative) alongside pipeline ``checks``.
+
+   *check_to_coverage_type* (from ``analyze_scope``) maps check_id →
+   ``"preventive"`` | ``"detective"``.  When present, it overrides the export
+   row's ``coverage_type`` field, which defaults to ``"none"``.
+
+
+.. py:function:: _apply_frequency_flags(comp_views, raw_rows, kg_context, ratio)
+
+   Set ``pm_frequency_concern`` on each component (architecture §3.5).
+
+
+.. py:function:: build_pm_compliance(event, kg_context = None, export_rows = None, config = None, primary_fm_id = None)
+
+   Assemble a ``pm_compliance`` object validated by ``schemas/pm_compliance.json``.
+
+   :param event: Must include ``asset_id`` and ``timestamp_start`` (ISO). ``event_id`` is optional.
+   :param kg_context: Optional; supplies failure modes for scope analysis.
+   :param export_rows: Pre-parsed PM tasks from a CMMS export or adapter (see *PMExportTaskRow*).
+   :param config: Lookback and thresholds.
+   :param primary_fm_id: Optional failure mode id (e.g. from the eventual primary hypothesis) to evaluate
+                         ``has_scope_gaps_for_primary_fm`` and *maintenance_induced_risk* per
+                         ``PM_Compliance_Module_Architecture.md`` §3.5–3.6.
+
+   :returns: A ``pm_compliance`` artifact conforming to ``schemas/pm_compliance.json``:
+             ``asset_id``, ``window`` (start/end), ``checks[]`` (per-PM pass/fail/unknown
+             rows for governance scoring), and ``summary`` (aggregate counts,
+             ``compliance_rate`` over evaluable checks, ``overall_compliance``,
+             ``maintenance_induced_risk``, ``data_quality_confidence``). Optional keys —
+             ``event_id``, ``assessment_date``, ``look_back_window_days``,
+             ``fmea_pm_linkage_available``, ``data_quality_notes``, ``components[]``
+             (per-component detail) and ``overdue_items[]`` — appear when applicable.
+             The artifact is schema-validated before return, raising ``ValueError`` on a
+             non-conforming build.
+   :rtype: JsonDict
+
+

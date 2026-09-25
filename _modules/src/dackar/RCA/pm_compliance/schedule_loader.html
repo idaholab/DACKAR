@@ -1,0 +1,207 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.pm_compliance.schedule_loader &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.pm_compliance.schedule_loader</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.pm_compliance.schedule_loader</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""PMScheduleLoader — load PM schedule / task rows for an asset scope."""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dackar.RCA._timeutils</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_dt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">JsonDict</span>
+
+
+<div class="viewcode-block" id="PMScheduleLoader">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/schedule_loader/index.html#src.dackar.RCA.pm_compliance.schedule_loader.PMScheduleLoader">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PMScheduleLoader</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Loads PM task definitions for *asset_id* and optional *component_ids*.</span>
+
+<span class="sd">    Phase 1: accepts pre-parsed export rows (CSV / JSON / adapter). Real-time CMMS</span>
+<span class="sd">    API integration is Phase 2 — see ``PM_Compliance_Module_Architecture.md`` §6.</span>
+<span class="sd">    """</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">asset_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">component_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="PMScheduleLoader._asset_id">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/schedule_loader/index.html#src.dackar.RCA.pm_compliance.schedule_loader.PMScheduleLoader._asset_id">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_asset_id</span> <span class="o">=</span> <span class="n">asset_id</span></div>
+
+<div class="viewcode-block" id="PMScheduleLoader._component_ids">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/schedule_loader/index.html#src.dackar.RCA.pm_compliance.schedule_loader.PMScheduleLoader._component_ids">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_component_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">component_ids</span><span class="p">)</span> <span class="k">if</span> <span class="n">component_ids</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="PMScheduleLoader.load_from_export_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/schedule_loader/index.html#src.dackar.RCA.pm_compliance.schedule_loader.PMScheduleLoader.load_from_export_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_from_export_rows</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]],</span>
+        <span class="n">window_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Filter and return rows for this asset scope."""</span>
+        <span class="n">loaded</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_from_export_rows_with_notes</span><span class="p">(</span><span class="n">rows</span><span class="p">,</span> <span class="n">window_start</span><span class="o">=</span><span class="n">window_start</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">loaded</span></div>
+
+
+<div class="viewcode-block" id="PMScheduleLoader.load_from_export_rows_with_notes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/pm_compliance/schedule_loader/index.html#src.dackar.RCA.pm_compliance.schedule_loader.PMScheduleLoader.load_from_export_rows_with_notes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_from_export_rows_with_notes</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]],</span>
+        <span class="n">window_start</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Filter rows for scope and return ``(rows, data_quality_notes)``.</span>
+
+<span class="sd">        Rows missing ``check_id`` (or fallback ``task_code``) or ``check_type``</span>
+<span class="sd">        are dropped to avoid ambiguous downstream governance interpretation.</span>
+
+<span class="sd">        When *window_start* (ISO-8601) is given, rows whose most-recent activity</span>
+<span class="sd">        date (``completed_date`` / ``last_pm_date`` / ``scheduled_date`` /</span>
+<span class="sd">        ``next_due_date``) falls strictly before it are dropped as out-of-window</span>
+<span class="sd">        (MR#56 review I2). Rows with no parseable date are kept — an undated task</span>
+<span class="sd">        is typically a never-run / overdue candidate that still belongs in scope.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[],</span> <span class="p">[]</span>
+        <span class="n">ws</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">window_start</span><span class="p">)</span> <span class="k">if</span> <span class="n">window_start</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">out</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">notes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">aid</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">aid</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">aid</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_asset_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_component_ids</span> <span class="ow">and</span> <span class="n">cid</span> <span class="ow">and</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_component_ids</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">check_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"task_code"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="n">check_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">check_id</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">check_type</span><span class="p">:</span>
+                <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="s2">"Dropped PM export row missing required check_id/task_code or check_type."</span>
+                <span class="p">)</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">ws</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">activity</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span>
+                    <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"completed_date"</span><span class="p">)</span>
+                    <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"last_pm_date"</span><span class="p">)</span>
+                    <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"scheduled_date"</span><span class="p">)</span>
+                    <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"next_due_date"</span><span class="p">)</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">activity</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">activity</span> <span class="o">&lt;</span> <span class="n">ws</span><span class="p">:</span>
+                    <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"Dropped PM row </span><span class="si">{</span><span class="n">check_id</span><span class="si">!r}</span><span class="s2">: last activity </span><span class="si">{</span><span class="n">activity</span><span class="o">.</span><span class="n">date</span><span class="p">()</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span><span class="si">}</span><span class="s2"> "</span>
+                        <span class="sa">f</span><span class="s2">"predates lookback window start </span><span class="si">{</span><span class="n">ws</span><span class="o">.</span><span class="n">date</span><span class="p">()</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span><span class="si">}</span><span class="s2">."</span>
+                    <span class="p">)</span>
+                    <span class="k">continue</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span><span class="n">r</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">notes</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
