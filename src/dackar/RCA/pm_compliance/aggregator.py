@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from orchestrators.causality_engine_v32 import parse_dt, utcnow_iso
+from dackar.RCA._timeutils import parse_dt, utcnow_iso
 from .config import PMComplianceConfig
 from .currency_checker import frequency_concern, mean_interval_from_tskr
 from .effectiveness_analyzer import (
@@ -18,6 +21,37 @@ from .scope_analyzer import analyze_scope
 from .types import JsonDict
 from .schedule_loader import PMScheduleLoader
 
+_OUTPUT_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "pm_compliance.json"
+
+
+@lru_cache(maxsize=1)
+def _output_validator():
+    """Return a cached jsonschema validator for the pm_compliance schema."""
+    import jsonschema
+
+    schema = json.loads(_OUTPUT_SCHEMA_PATH.read_text())
+    validator_cls = jsonschema.validators.validator_for(schema)
+    validator_cls.check_schema(schema)
+    return validator_cls(schema)
+
+
+def _validate_output(artifact: JsonDict) -> None:
+    """Validate *artifact* against ``schemas/pm_compliance.json`` (fail-closed).
+
+    Raises ``ValueError`` naming the first offending JSON path when the built
+    artifact — including the now-formalized ``components[]`` extension — does not
+    conform (MR#56 review A2).
+    """
+    validator = _output_validator()
+    errors = sorted(validator.iter_errors(artifact), key=lambda e: list(e.path))
+    if errors:
+        first = errors[0]
+        loc = "/".join(str(p) for p in first.path) or "<root>"
+        raise ValueError(
+            f"pm_compliance failed schema validation at {loc}: "
+            f"{first.message} ({len(errors)} error(s) total)."
+        )
+
 
 def _window_for_event(event_ts: str, lookback_days: int) -> tuple[str, str]:
     end = parse_dt(event_ts)
@@ -29,21 +63,29 @@ def _window_for_event(event_ts: str, lookback_days: int) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
-def _summary_metrics(checks: List[JsonDict]) -> Dict[str, Any]:
+def _summary_metrics(
+    checks: List[JsonDict],
+    reference_dt: Optional[datetime] = None,
+) -> Dict[str, Any]:
     total = len(checks)
     passed = sum(1 for c in checks if c.get("status") == "pass")
     failed = sum(1 for c in checks if c.get("status") == "fail")
     unknown = sum(1 for c in checks if c.get("status") == "unknown")
     overdue_count = sum(1 for c in checks if (c.get("overdue_by_days") or 0) > 0.0 and c.get("status") == "fail")
-    compliance_rate = (passed / total) if total else 1.0
     m: Dict[str, Any] = {
         "total_checks": total,
         "passed": passed,
         "failed": failed,
         "unknown": unknown,
         "overdue_count": overdue_count,
-        "compliance_rate": round(compliance_rate, 6),
     }
+    # MR#56 review I1/A3: rate over evaluable (pass+fail) checks only — unknown and
+    # not_applicable are non-evaluable and excluded from the denominator. Omitted
+    # entirely when nothing is evaluable, rather than reporting a misleading 1.0 for
+    # an empty set or 0.0 for an all-unknown set.
+    evaluable = passed + failed
+    if evaluable:
+        m["compliance_rate"] = round(passed / evaluable, 6)
     comp_dates: List[datetime] = []
     for c in checks:
         d = parse_dt(c.get("completed_date"))
@@ -51,13 +93,17 @@ def _summary_metrics(checks: List[JsonDict]) -> Dict[str, Any]:
             comp_dates.append(d)
     if comp_dates:
         m["last_pm_date"] = max(comp_dates).isoformat()
+    # MR#56 review I6: "next" PM is the earliest scheduled date still in the future
+    # relative to the assessment time — not the earliest scheduled date overall
+    # (which is usually a long-past historical PM). Omitted when none is upcoming.
     nexts: List[datetime] = []
     for c in checks:
         d = parse_dt(c.get("scheduled_date"))
         if d:
             nexts.append(d)
-    if nexts:
-        m["next_pm_date"] = min(nexts).isoformat()
+    future = [d for d in nexts if reference_dt is None or d > reference_dt]
+    if future:
+        m["next_pm_date"] = min(future).isoformat()
     return m
 
 
@@ -153,8 +199,11 @@ def _build_pm_tasks_per_component(
         overdue = float((ck or {}).get("overdue_by_days") or 0.0)
         st = (ck or {}).get("status") or "unknown"
         mcy = int(r.get("missed_cycles") or 0)
-        # §2.3: KG-derived coverage_type takes precedence over export row value
+        # §2.3: KG-derived coverage_type takes precedence over export row value.
+        # Coerce to the schema enum so a raw export value can't break validation (MR#56 A2).
         coverage_type = cov_map.get(task_code) or r.get("coverage_type") or "none"
+        if coverage_type not in ("preventive", "detective", "none"):
+            coverage_type = "none"
         task: Dict[str, Any] = {
             "task_code": task_code,
             "description": str(r.get("description") or r.get("task_description") or ""),
@@ -227,6 +276,20 @@ def build_pm_compliance(
         Optional failure mode id (e.g. from the eventual primary hypothesis) to evaluate
         ``has_scope_gaps_for_primary_fm`` and *maintenance_induced_risk* per
         ``PM_Compliance_Module_Architecture.md`` §3.5–3.6.
+
+    Returns
+    -------
+    JsonDict
+        A ``pm_compliance`` artifact conforming to ``schemas/pm_compliance.json``:
+        ``asset_id``, ``window`` (start/end), ``checks[]`` (per-PM pass/fail/unknown
+        rows for governance scoring), and ``summary`` (aggregate counts,
+        ``compliance_rate`` over evaluable checks, ``overall_compliance``,
+        ``maintenance_induced_risk``, ``data_quality_confidence``). Optional keys —
+        ``event_id``, ``assessment_date``, ``look_back_window_days``,
+        ``fmea_pm_linkage_available``, ``data_quality_notes``, ``components[]``
+        (per-component detail) and ``overdue_items[]`` — appear when applicable.
+        The artifact is schema-validated before return, raising ``ValueError`` on a
+        non-conforming build.
     """
     cfg = config or PMComplianceConfig()
     asset = str(event.get("asset_id") or "")
@@ -234,12 +297,16 @@ def build_pm_compliance(
         raise ValueError("event.json must include asset_id for PM compliance build")
 
     event_ts = str(event.get("timestamp_start") or event.get("timestamp") or "")
+    w_start, w_end = _window_for_event(event_ts, cfg.look_back_window_days)
+    reference_dt = parse_dt(event_ts) or datetime.now(timezone.utc)
     comp_ids: Optional[List[str]] = None
     if kg_context:
         comp_ids = [str(c.get("component_id")) for c in (kg_context.get("components") or []) if c.get("component_id")]
 
     loader = PMScheduleLoader(asset, component_ids=comp_ids)
-    raw_rows, loader_notes = loader.load_from_export_rows_with_notes(export_rows or ())
+    raw_rows, loader_notes = loader.load_from_export_rows_with_notes(
+        export_rows or (), window_start=w_start
+    )
     extra_notes: List[str] = []
     for r in raw_rows:
         ft = (r.get("frequency_type") or "").lower()
@@ -264,11 +331,21 @@ def build_pm_compliance(
                 "PM-to-FM coverage from export `applicable_fm_ids` only; no KG FMEA/PM task linkage (advisory, §3.3)"
             )
 
+    # Asset-wide as-found presence still informs data_quality_confidence below.
     asf = collect_as_found_from_rows(raw_rows, max_cycles=cfg.effectiveness_lookback_cycles)
-    dqtrend = analyze_degradation(asf, data_dir=cfg.data_dir) if asf else "unknown"
+    # MR#56 review I5: compute degradation_trend per component from that component's
+    # own as-found rows, instead of copying one asset-wide trend onto every component.
+    rows_by_comp: Dict[str, List[JsonDict]] = {}
+    for r in raw_rows:
+        rows_by_comp.setdefault(str(r.get("component_id") or "_asset"), []).append(r)
     for view in comp_views:
-        view.setdefault("degradation_trend", dqtrend)
-        cid = view.get("component_id")
+        cid = str(view.get("component_id") or "_asset")
+        comp_asf = collect_as_found_from_rows(
+            rows_by_comp.get(cid, []), max_cycles=cfg.effectiveness_lookback_cycles
+        )
+        view["degradation_trend"] = (
+            analyze_degradation(comp_asf, data_dir=cfg.data_dir) if comp_asf else "unknown"
+        )
         view["pm_overdue_at_failure"] = any(
             (c.get("overdue_by_days") or 0) > 0
             and c.get("status") == "fail"
@@ -284,9 +361,8 @@ def build_pm_compliance(
 
     if kg_context:
         _apply_frequency_flags(comp_views, raw_rows, kg_context, cfg.pm_frequency_concern_ratio)
-    w_start, w_end = _window_for_event(event_ts, cfg.look_back_window_days)
 
-    m = _summary_metrics(checks)
+    m = _summary_metrics(checks, reference_dt=reference_dt)
     has_overdue = any((c.get("overdue_by_days") or 0) > 0.0 for c in checks)
     has_fail = any(c.get("status") == "fail" for c in checks)
     all_gap: Set[str] = set()
@@ -296,12 +372,29 @@ def build_pm_compliance(
     overall, risk, has_scope_gaps = _rollup_risk(
         primary_fm_id, all_gap, has_overdue, has_fail
     )
+    # MR#56 review I1: with no evaluable (pass/fail) checks there is no basis to call
+    # the asset "compliant"; downgrade only that vacuous case to "partial" (a genuine
+    # scope-gap "non_compliant" verdict is left intact).
+    if (m["passed"] + m["failed"]) == 0:
+        if overall == "compliant":
+            overall = "partial"
+        dq_notes.append(
+            "no pass/fail checks in window — compliance_rate omitted and "
+            "overall_compliance set to 'partial' (non-evaluable)"
+        )
     m["overall_compliance"] = overall
     m["maintenance_induced_risk"] = risk
     m["has_scope_gaps_for_primary_fm"] = has_scope_gaps
     defect_rate = compute_pm_found_defect_rate(raw_rows, data_dir=cfg.data_dir)
     if defect_rate is not None:
         m["pm_found_defect_rate"] = defect_rate
+    # MR#56 review I7: append the primary-FM caveat BEFORE deriving confidence so it
+    # actually lowers data_quality_confidence (it was previously appended afterwards).
+    if primary_fm_id and not bool(fmea_kg):
+        dq_notes.append(
+            f"primary_fm_id '{primary_fm_id}' provided but KG PM↔FM linkage absent — "
+            f"scope gap for this FM is not evaluable; maintenance_induced_risk may be underestimated (architecture §3.3)"
+        )
     dq_conf = "high" if not dq_notes and checks else "medium" if checks else "low"
     if any(c.get("status") == "unknown" for c in checks):
         dq_conf = "medium" if dq_conf == "high" else "low"
@@ -324,11 +417,6 @@ def build_pm_compliance(
     out["assessment_date"] = utcnow_iso()
     out["look_back_window_days"] = cfg.look_back_window_days
     out["fmea_pm_linkage_available"] = bool(fmea_kg)
-    if primary_fm_id and not bool(fmea_kg):
-        dq_notes.append(
-            f"primary_fm_id '{primary_fm_id}' provided but KG PM↔FM linkage absent — "
-            f"scope gap for this FM is not evaluable; maintenance_induced_risk may be underestimated (architecture §3.3)"
-        )
     out["data_quality_notes"] = dq_notes
     if comp_views:
         out["components"] = comp_views
@@ -349,4 +437,5 @@ def build_pm_compliance(
     if overdues:
         out["overdue_items"] = overdues
 
+    _validate_output(out)
     return out
