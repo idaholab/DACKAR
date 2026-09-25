@@ -12,7 +12,11 @@ from .types import JsonDict
 _FIELD_COVERAGE_TYPE: Dict[str, str] = {
     "detecting_pm_task_ids":  "detective",   # processed first (lowest priority)
     "pm_task_ids":            "preventive",  # generic linkage; treated as preventive
-    "preventing_pm_task_ids": "preventive",  # processed last (highest priority)
+    "preventing_pm_task_ids": "preventive",  # highest priority
+    # MR#56 review I3: prevents_pm_tasks also advertises PM↔FM linkage (recognized
+    # by _explicit_pm_fm_links), so it must contribute coverage too — otherwise an
+    # FM linked only via this field flips linkage on but shows every FM as a gap.
+    "prevents_pm_tasks":      "preventive",
 }
 
 
@@ -74,6 +78,8 @@ def analyze_scope(
     # Build check_to_coverage_type while also updating covered.
     # Iterate fields in ascending priority order so "preventive" always wins.
     check_to_coverage_type: Dict[str, str] = {}
+    # fm_id -> set of KG-linked PM task IDs, reused for per-component coverage below.
+    fm_task_ids: Dict[str, Set[str]] = {}
     if explicit and all_fms:
         for fm in kg_context.get("failure_modes") or []:
             fm_id = str(fm.get("fm_id") or "")
@@ -91,6 +97,7 @@ def analyze_scope(
             all_task_ids: Set[str] = set()
             for k in _FIELD_COVERAGE_TYPE:
                 all_task_ids |= {str(x) for x in (fm.get(k) or []) if x}
+            fm_task_ids[fm_id] = all_task_ids
             for c in checks:
                 if c.get("status") != "pass":
                     continue
@@ -110,11 +117,19 @@ def analyze_scope(
     comp_out: List[Dict[str, Any]] = []
     for cid, ch in by_comp.items():
         local_cov: Set[str] = set()
+        passing_check_ids: Set[str] = set()
         for c in ch:
             if c.get("status") != "pass":
                 continue
+            passing_check_ids.add(str(c.get("check_id") or ""))
             for fid in c.get("applicable_fm_ids") or []:
                 local_cov.add(str(fid))
+        # MR#56 review I4: honor KG PM↔FM task-ID linkage per component too, so a
+        # component's scope_gaps stay consistent with the global covered set (which
+        # already credits KG linkage) instead of relying on export applicable_fm_ids only.
+        for fm_id, tids in fm_task_ids.items():
+            if passing_check_ids & tids:
+                local_cov.add(fm_id)
         if explicit and all_fms:
             sgap = sorted(fm for fm in all_fms if fm not in local_cov)
         else:
