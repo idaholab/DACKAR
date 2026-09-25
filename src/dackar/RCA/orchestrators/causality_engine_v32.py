@@ -31,10 +31,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from ner.entity_normalizer import EntityNormalizer
+from dackar.RCA._timeutils import parse_dt, utcnow_iso
 
 JsonDict = Dict[str, Any]
 
@@ -75,17 +75,10 @@ _CRITICAL_RISK_KEYWORDS = _CRITICAL_BARRIER_KEYWORDS
 _HIGH_RISK_KEYWORDS = _HIGH_BARRIER_KEYWORDS
 
 
-def utcnow_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def parse_dt(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
-        return None
+# parse_dt / utcnow_iso are imported from dackar.RCA._timeutils (MR#56 B1/A1):
+# leaf RCA packages must not import this orchestrator module just for them.
+# Note: the shared parse_dt is UTC-aware; here both operands of every datetime
+# comparison come from parse_dt, so the naive→aware change is comparison-safe.
 
 
 # Phase 4c Step 1 — SE-assessed default weight profiles, one per causal category.
