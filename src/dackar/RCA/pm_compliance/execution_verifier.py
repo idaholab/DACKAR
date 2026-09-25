@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from orchestrators.causality_engine_v32 import parse_dt
+from dackar.RCA._timeutils import parse_dt
 from .types import JsonDict
 
 _VALID_CHECK_TYPES = frozenset({
@@ -51,11 +51,16 @@ class PMExecutionVerifier:
                 "not_applicable",
                 "n_a",
             ):
-                st = "pass"
+                # not_applicable is non-evaluable for compliance (e.g. CBM /
+                # operating-hour PM without runtime input): mark "unknown" so it
+                # is excluded from the pass/fail compliance rate rather than
+                # counted as a pass (MR#56 review A3). The narrative label still
+                # reports "not_applicable" via _compliance_status_md.
+                st = "unknown"
                 overdue = 0.0
                 notes.append(
                     f"check_id {cid}: not_applicable (e.g. CBM/operating-hour PM without runtime "
-                    f"input — per architecture treat as non-schedule signal)"
+                    f"input) — excluded from compliance rate (non-evaluable) per architecture"
                 )
             elif r.get("compliance_status") in ("compliant", "pass"):
                 st = "pass"
@@ -86,7 +91,7 @@ class PMExecutionVerifier:
             dtl = r.get("details")
             if dtl is not None:
                 check["details"] = dtl
-            elif st == "pass" and r.get("compliance_status") in ("not_applicable", "n_a"):
+            elif r.get("compliance_status") in ("not_applicable", "n_a"):
                 check["details"] = "compliance_status=not_applicable (architecture §6 / §7)"
             if r.get("wo_id"):
                 check["wo_id"] = r["wo_id"]
@@ -133,9 +138,15 @@ class PMExecutionVerifier:
         return "pass", 0.0
 
     def _make_unknown_check(self, r: JsonDict, fallback_id: str) -> JsonDict:
+        # Coerce check_type to the schema enum here too (MR#56 review B2): the
+        # unparseable-event path must not emit a check_type outside
+        # _VALID_CHECK_TYPES or the artifact fails schema validation.
+        ctype = (r.get("check_type") or "other").strip()
+        if ctype not in _VALID_CHECK_TYPES:
+            ctype = "other"
         return {
             "check_id": (r.get("check_id") or r.get("task_code") or fallback_id).strip(),
-            "check_type": (r.get("check_type") or "other").strip(),
+            "check_type": ctype,
             "status": "unknown",
             "overdue_by_days": 0.0,
         }
