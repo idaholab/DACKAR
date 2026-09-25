@@ -35,8 +35,65 @@
     },
     "components": {
       "type": "array",
-      "description": "Per-component PM detail (module extension). When absent, use checks[] + summary only.",
-      "items": { "type": "object" }
+      "description": "Per-component PM detail (module extension). When absent, use checks[] + summary only. Governance scoring reads checks[] + summary; this array is analyst-facing detail, now validated for shape.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["component_id"],
+        "properties": {
+          "component_id": { "type": "string", "description": "KG Component node ID." },
+          "scope_covers_failure_modes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "FM IDs this component's passing PM checks cover."
+          },
+          "scope_gaps": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "FM IDs present in the KG but not covered for this component."
+          },
+          "degradation_trend": {
+            "type": "string",
+            "enum": ["unknown", "improving", "degrading", "stable"],
+            "description": "As-found degradation signal for this component (advisory, data-quality limited)."
+          },
+          "pm_overdue_at_failure": {
+            "type": "boolean",
+            "description": "True when a failed PM check for this component was overdue at event time."
+          },
+          "pm_frequency_concern": {
+            "type": "boolean",
+            "description": "True when a PM interval is long relative to the mean failure interval (advisory)."
+          },
+          "pm_tasks": {
+            "type": "array",
+            "description": "Per-task narrative detail (architecture §5).",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["task_code"],
+              "properties": {
+                "task_code": { "type": "string" },
+                "description": { "type": "string" },
+                "frequency_days": { "type": ["number", "null"] },
+                "last_pm_date": { "type": ["string", "null"] },
+                "next_due_date": { "type": ["string", "null"] },
+                "overdue_days": { "type": "number", "minimum": 0 },
+                "compliance_status": {
+                  "type": "string",
+                  "enum": ["compliant", "undetermined", "missed", "overdue", "not_applicable"]
+                },
+                "missed_cycles": { "type": "integer", "minimum": 0 },
+                "last_as_found": { "type": ["string", "null"] },
+                "coverage_type": {
+                  "type": "string",
+                  "enum": ["preventive", "detective", "none"]
+                }
+              }
+            }
+          }
+        }
+      }
     },
 
     "window": {
@@ -135,7 +192,7 @@
           "type": "number",
           "minimum": 0.0,
           "maximum": 1.0,
-          "description": "Fraction of checks passed: passed / total_checks. Used as a normalized compliance signal in Step 5 evidence scoring."
+          "description": "Fraction of *evaluable* checks passed: passed / (passed + failed). Unknown and not_applicable checks are non-evaluable and excluded from the denominator; the field is omitted when there are no evaluable checks. Used as a normalized compliance signal in Step 5 evidence scoring."
         },
         "notes": { "type": "string" },
         "overall_compliance": {
