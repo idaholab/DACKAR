@@ -1,0 +1,71 @@
+src.dackar.RCA.adapters.similar_event_adapter
+=============================================
+
+.. py:module:: src.dackar.RCA.adapters.similar_event_adapter
+
+.. autoapi-nested-parse::
+
+   similar_event_adapter.py — Protocol definition for Step 2d similar-event adapters.
+
+   The orchestrator accepts any object satisfying SimilarEventAdapter to query
+   fleet and industry OE databases.  The concrete production implementation is
+   LLMOEAdapter (llm_oe_adapter.py).  Tests may supply any mock that satisfies
+   the protocol.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.adapters.similar_event_adapter.JsonDict
+   src.dackar.RCA.adapters.similar_event_adapter.TIER_CONFIDENCE_MULTIPLIERS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.adapters.similar_event_adapter.SimilarEventAdapter
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: TIER_CONFIDENCE_MULTIPLIERS
+   :type:  Dict[str, float]
+
+.. py:class:: SimilarEventAdapter
+
+   Bases: :py:obj:`Protocol`
+
+
+   Pluggable interface for fleet and industry OE similar-event queries.
+
+   The orchestrator calls ``query()`` once for fleet and once for industry
+   when an adapter is injected.  Each call must return a list of dicts
+   compatible with the ``similar_event_list.json`` event item schema.
+
+   Contract:
+   - Never raise on network/timeout/parse errors; return ``[]`` instead.
+   - Set ``degraded`` to ``True`` on the adapter instance when a call fails
+     so the orchestrator can record the degraded tier.
+   - ``confidence_weight`` on returned records should be the *raw* match
+     score (0–1) before tier discount; the orchestrator applies the
+     multiplier defined in ``TIER_CONFIDENCE_MULTIPLIERS``.
+
+
+   .. py:attribute:: degraded
+      :type:  bool
+
+
+   .. py:method:: query(*, level, asset_id, component_ids, failure_mode_ids, event_type = None, actuation_type = None, max_results = 5, timeout_seconds = 10.0)
+
+      Return a list of similar-event dicts for the given tier.
+
+
+

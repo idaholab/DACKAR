@@ -1,0 +1,227 @@
+src.dackar.RCA.adapters.llm_oe_adapter
+======================================
+
+.. py:module:: src.dackar.RCA.adapters.llm_oe_adapter
+
+.. autoapi-nested-parse::
+
+   llm_oe_adapter.py — LLM-backed adapter for fleet and industry OE similar-event queries.
+
+   Calls a fine-tuned LLM API that has been trained on INPO SOER, EPRI reports,
+   and NRC LERs (fleet endpoint) or the broader industry database (industry endpoint).
+
+   Usage
+   -----
+       adapter = LLMOEAdapter(
+           fleet_url="https://oe-api.example.com/fleet",
+           industry_url="https://oe-api.example.com/industry",
+           api_key=os.environ["OE_API_KEY"],
+           timeout_seconds=10.0,
+       )
+       orchestrator = RCAReasoningOrchestrator(...)
+       orchestrator.set_similar_event_adapter(adapter)
+       result = orchestrator.run(event=..., ...)
+
+   Error contract
+   --------------
+   - ``query()`` never raises: any transport, decode, or parse failure returns
+     ``[]`` and records the reason on the instance.
+   - ``degraded`` and ``last_error`` are reset at the start of every ``query()``
+     call, so they always reflect that one call.  ``degraded`` is set to True when
+     the tier is skipped (no URL configured), the request fails, the response body
+     cannot be decoded, or the response is unusable (wrong shape, or every record
+     malformed).  The orchestrator reads ``degraded`` after each per-tier call.
+   - ``last_error`` carries the stringified reason for the last degraded call.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.adapters.llm_oe_adapter.logger
+   src.dackar.RCA.adapters.llm_oe_adapter.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.adapters.llm_oe_adapter.LLMOEAdapter
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.adapters.llm_oe_adapter._opt_str
+   src.dackar.RCA.adapters.llm_oe_adapter._str_list
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: JsonDict
+
+.. py:function:: _opt_str(value)
+
+   Return ``str(value)`` when *value* is not None, otherwise None.
+
+
+.. py:function:: _str_list(value)
+
+   Coerce *value* to a list of strings; return ``[]`` when it is not a list.
+
+
+.. py:class:: LLMOEAdapter(*, fleet_url = '', industry_url = '', api_key = '', timeout_seconds = 10.0, max_results = 5, model_name = 'oe-finetuned-v1')
+
+   Concrete SimilarEventAdapter backed by a fine-tuned LLM REST API.
+
+   The API is expected to accept a POST with a JSON body containing a
+   structured ``prompt`` field and return a JSON array of event records (or a
+   dict wrapping that array under ``events``, ``results``, or ``data``).
+
+   :param fleet_url: Endpoint for the utility-fleet OE database.  An empty string means the
+                     fleet tier is not configured; querying it marks the tier degraded.
+   :type fleet_url: str, optional
+   :param industry_url: Endpoint for the broad industry OE database (INPO SOER, EPRI, NRC LERs).
+                        An empty string means the industry tier is not configured.
+   :type industry_url: str, optional
+   :param api_key: Bearer token sent as an ``Authorization`` header when non-empty.
+   :type api_key: str, optional
+   :param timeout_seconds: Default per-request timeout, used when ``query()`` is not given an
+                           explicit ``timeout_seconds``.  Defaults to 10.0.
+   :type timeout_seconds: float, optional
+   :param max_results: Default maximum number of records to request, used when ``query()`` is
+                       not given an explicit ``max_results``.  Defaults to 5.
+   :type max_results: int, optional
+   :param model_name: Fine-tuned model identifier sent in the request payload.
+   :type model_name: str, optional
+
+   .. attribute:: degraded
+
+      Whether the most recent ``query()`` call failed or was skipped.  Reset
+      to False at the start of each call.
+
+      :type: bool
+
+   .. attribute:: last_error
+
+      Stringified reason for the most recent degraded call, or None.
+
+      :type: str or None
+
+
+   .. py:attribute:: fleet_url
+      :value: ''
+
+
+
+   .. py:attribute:: industry_url
+      :value: ''
+
+
+
+   .. py:attribute:: api_key
+      :value: ''
+
+
+
+   .. py:attribute:: timeout_seconds
+      :value: 10.0
+
+
+
+   .. py:attribute:: max_results
+      :value: 5
+
+
+
+   .. py:attribute:: model_name
+      :value: 'oe-finetuned-v1'
+
+
+
+   .. py:attribute:: degraded
+      :type:  bool
+      :value: False
+
+
+
+   .. py:attribute:: last_error
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:method:: query(*, level, asset_id, component_ids, failure_mode_ids, event_type = None, actuation_type = None, max_results = None, timeout_seconds = None)
+
+      POST a structured query to the fleet or industry endpoint.
+
+      :param level: Which tier to query; selects ``fleet_url`` or ``industry_url`` and
+                    is stamped onto every returned record as ``source_level``.
+      :type level: {"fleet", "industry"}
+      :param asset_id: Target asset identifier included in the retrieval prompt.
+      :type asset_id: str or None
+      :param component_ids: Candidate component identifiers included in the prompt.
+      :type component_ids: list of str
+      :param failure_mode_ids: Candidate failure-mode identifiers included in the prompt.
+      :type failure_mode_ids: list of str
+      :param event_type: Event-type hint for the prompt.
+      :type event_type: str, optional
+      :param actuation_type: Actuation-type hint for the prompt.
+      :type actuation_type: str, optional
+      :param max_results: Maximum records to request.  When None (the default), the instance's
+                          ``max_results`` is used.
+      :type max_results: int, optional
+      :param timeout_seconds: Per-request timeout.  When None (the default), the instance's
+                              ``timeout_seconds`` is used.
+      :type timeout_seconds: float, optional
+
+      :returns: Normalised event records compatible with the
+                ``similar_event_list.json`` event-item schema.  Returns ``[]`` on
+                any failure or when the tier has no configured URL; in those cases
+                ``degraded`` is set and ``last_error`` records the reason.  Each
+                record carries ``event_id``, ``source_level``, ``confidence_weight``
+                (raw match score in ``[0.0, 1.0]``, before tier discount),
+                ``component_id`` (or None), and the descriptive fields.
+      :rtype: list of dict
+
+
+
+   .. py:method:: _build_query_prompt(*, level, asset_id, component_ids, failure_mode_ids, event_type, actuation_type, max_results)
+
+      Build a structured retrieval prompt for the fine-tuned LLM.
+
+
+
+   .. py:method:: _parse_response(data, *, level)
+      :staticmethod:
+
+
+      Normalise the endpoint response into a list of event-record dicts.
+
+      :param data: The decoded JSON returned by the endpoint.  Accepted shapes are a
+                   bare list of record dicts, or a dict wrapping such a list under one
+                   of the keys ``events``, ``results``, or ``data``.
+      :type data: object
+      :param level: The tier being queried; stamped onto every record as
+                    ``source_level``.
+      :type level: str
+
+      :returns: One normalised record per usable input record.  Individual records
+                that are malformed (not a dict, missing ``event_id``, or carrying a
+                non-numeric / non-finite ``confidence_weight``) are skipped.
+      :rtype: list of dict
+
+      :raises ValueError: If *data* is not a usable shape, or if it carried records but none
+          survived validation.  ``query()`` catches this, marks the tier
+          degraded, and returns ``[]``.
+
+
+
