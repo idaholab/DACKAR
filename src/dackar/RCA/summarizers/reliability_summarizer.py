@@ -800,37 +800,43 @@ def flatten_retrieval_summary_for_embedding(summary: Dict[str, Any]) -> str:
     """
     Convert retrieval_summary JSON into a dense string for embedding.
 
+    Only fields with content are emitted; empty sections are dropped so they
+    do not dilute the embedding text.
+
     Input: retrieval_summary dict
     Output: string
     """
     ent = summary.get("entities") or {}
-    lines = [
-        f"SCOPE: {summary.get('scope','')}",
-        "SYSTEMS: " + ", ".join(ent.get("systems") or []),
-        "EQUIPMENT: " + ", ".join(ent.get("equipment_ids") or []),
-        "COMPONENTS: " + ", ".join(ent.get("components") or []),
-        "SYMPTOMS/OUTCOMES: " + ", ".join(summary.get("symptoms_outcomes") or []),
-        "MECHANISMS: " + ", ".join(summary.get("mechanisms") or []),
-        "DIAGNOSTICS: " + ", ".join(summary.get("diagnostics") or []),
-        "ACTIONS: " + ", ".join(summary.get("corrective_actions") or []),
-        "NUMBERS/LIMITS: " + ", ".join(summary.get("numbers_limits") or []),
-        "KEYWORDS: " + ", ".join(summary.get("keywords_synonyms") or []),
+    fields = [
+        ("SCOPE", str(summary.get("scope") or "")),
+        ("SYSTEMS", ", ".join(ent.get("systems") or [])),
+        ("EQUIPMENT", ", ".join(ent.get("equipment_ids") or [])),
+        ("COMPONENTS", ", ".join(ent.get("components") or [])),
+        ("SYMPTOMS/OUTCOMES", ", ".join(summary.get("symptoms_outcomes") or [])),
+        ("MECHANISMS", ", ".join(summary.get("mechanisms") or [])),
+        ("DIAGNOSTICS", ", ".join(summary.get("diagnostics") or [])),
+        ("ACTIONS", ", ".join(summary.get("corrective_actions") or [])),
+        ("NUMBERS/LIMITS", ", ".join(summary.get("numbers_limits") or [])),
+        ("KEYWORDS", ", ".join(summary.get("keywords_synonyms") or [])),
     ]
-    return "\n".join([ln for ln in lines if ln.strip()])
+    return "\n".join(f"{label}: {value}" for label, value in fields if value.strip())
 
 
 def flatten_rca_frame_for_embedding(rca: Dict[str, Any]) -> str:
     """
     Convert rca_frame JSON into an embedding-friendly string.
 
+    Only fields with content are emitted; empty sections are dropped so they
+    do not dilute the embedding text.
+
     Input: rca_frame dict
     Output: string
     """
-    lines = [
-        "OBSERVED: " + "; ".join(rca.get("observed") or []),
-        "HYPOTHESES: " + "; ".join(rca.get("hypotheses") or []),
-        "TESTS: " + "; ".join(rca.get("tests_to_confirm") or []),
-        "ACTIONS: " + "; ".join(rca.get("candidate_actions") or []),
-        "CONSTRAINTS: " + "; ".join(rca.get("constraints") or []),
+    fields = [
+        ("OBSERVED", "; ".join(rca.get("observed") or [])),
+        ("HYPOTHESES", "; ".join(rca.get("hypotheses") or [])),
+        ("TESTS", "; ".join(rca.get("tests_to_confirm") or [])),
+        ("ACTIONS", "; ".join(rca.get("candidate_actions") or [])),
+        ("CONSTRAINTS", "; ".join(rca.get("constraints") or [])),
     ]
-    return "\n".join([ln for ln in lines if ln.strip()])
+    return "\n".join(f"{label}: {value}" for label, value in fields if value.strip())
