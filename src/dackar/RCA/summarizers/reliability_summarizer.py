@@ -11,9 +11,9 @@ Designed to integrate with your existing pipeline:
 This module provides:
 1) detect_doc_type(): Identify SOP/CR/WO/ECA/OTHER from doc_name/source_path and early text
 2) section_role_from_title(): Tag sections as purpose/steps/evidence/etc. based on doc type
-3) build_ollama_prompt_*(): Exact JSON-output prompts per doc type and view type
+3) build_prompt(): Exact JSON-output prompts per doc type and view type
 4) ollama_generate_json(): Call Ollama and parse JSON robustly
-5) quality gates: validate_summary_json(), validate_rca_json()
+5) quality gates: validate_retrieval_summary_json(), validate_rca_frame_json()
 
 All outputs are strict JSON dicts, suitable for:
 - storing alongside chunk records in chunks.jsonl
@@ -87,7 +87,16 @@ class NERSeed:
       "surveillance_actions": [...], # from surv_ops_v / surv_ops_n :contentReference[oaicite:9]{index=9}
       "maintenance_actions": [...],  # from mnt_ops :contentReference[oaicite:10]{index=10}
       "properties": [...],           # from prop :contentReference[oaicite:11]{index=11}
-      "tools": [...]                 # from surv_tool + mnt_tool :contentReference[oaicite:12]{index=12}
+      "tools": [...],                # from surv_tool + mnt_tool :contentReference[oaicite:12]{index=12}
+      "fm_ids": [...],               # failure-mode identifiers (regex-derived)
+      "measurements": [{...}],       # list of measurement dicts
+      "doc_refs": [...],             # referenced document identifiers
+      "alarm_ids": [...],            # alarm identifiers
+      "temporal_refs": [...],        # absolute/relative time references
+      "temporal_relations": [{...}], # list of temporal-relation dicts
+      "temporal_qualifiers": [...],  # qualifiers (e.g. "intermittent")
+      "locations": [{...}],          # list of location dicts
+      "conjectures": [...]           # hedged/uncertain statements
     }
 
     Output format
@@ -115,6 +124,16 @@ class NERSeed:
     conjectures: List[str] = field(default_factory=list)
 
     def to_json(self) -> Dict[str, Any]:
+        """Serialize the seed to the NER_SEED dict embedded in prompts.
+
+        Returns
+        -------
+        Dict[str, Any]
+            One JSON-serializable key per public field of this dataclass, each
+            defaulting to an empty list when unset.  ``fm_ids`` (failure-mode
+            identifiers) is included so it reaches the model through
+            ``build_prompt()``; the key set mirrors the class field list.
+        """
         return {
             "systems": self.systems or [],
             "equipment_ids": self.equipment_ids or [],
@@ -125,6 +144,7 @@ class NERSeed:
             "maintenance_actions": self.maintenance_actions or [],
             "properties": self.properties or [],
             "tools": self.tools or [],
+            "fm_ids": self.fm_ids or [],
             "doc_refs": self.doc_refs or [],
             "alarm_ids": self.alarm_ids or [],
             "measurements": self.measurements or [],
@@ -164,22 +184,28 @@ def detect_doc_type(doc_name: Optional[str], source_path: Optional[str], early_t
     """
     hay = " ".join([(doc_name or ""), (source_path or ""), (early_text or "")]).lower()
 
-    # Strong filename/path tokens
-    if re.search(r"\b(sop|op)\b[-_ ]?\d+", hay):
+    # Strong filename/path tokens.  The word boundary follows the digits so
+    # compact identifiers without a separator (e.g. "CR12345", "WO98765",
+    # "OP1234") still match instead of falling through to OTHER.
+    if re.search(r"\b(sop|op)[-_ ]?\d+\b", hay):
         return "SOP"
-    if re.search(r"\bcr\b[-_ ]?\d+", hay) or "condition report" in hay:
+    if re.search(r"\bcr[-_ ]?\d+\b", hay) or "condition report" in hay:
         return "CR"
-    if re.search(r"\bwo\b[-_ ]?\d+", hay) or "work order" in hay:
+    if re.search(r"\bwo[-_ ]?\d+\b", hay) or "work order" in hay:
         return "WO"
-    if re.search(r"\beca\b[-_ ]?\d+", hay) or "causal evaluation" in hay or "event causal" in hay:
+    if re.search(r"\beca[-_ ]?\d+\b", hay) or "causal evaluation" in hay or "event causal" in hay:
         return "ECA"
 
-    # General text hints
+    # General text hints: pick the most specific (longest) matching term, so a
+    # generic word such as "procedure" cannot outrank a specific phrase such as
+    # "root cause".
+    best_dt: DocType = "OTHER"
+    best_len = 0
     for dt, terms in _DOC_TYPE_HINTS:
         for t in terms:
-            if t in hay:
-                return dt
-    return "OTHER"
+            if t in hay and len(t) > best_len:
+                best_dt, best_len = dt, len(t)
+    return best_dt
 
 
 # -----------------------------------------------------------------------------
@@ -256,46 +282,112 @@ def section_role_from_title(doc_type: DocType, section_title: str) -> str:
 # JSON output contracts (keys/types)
 # -----------------------------------------------------------------------------
 
-def empty_retrieval_summary(ctx: ChunkContext) -> Dict[str, Any]:
+# Single source of truth for the output contracts, shared by the empty_*()
+# skeleton builders and the validate_*_json() gates so the two cannot drift.
+_ENTITY_LIST_FIELDS: Tuple[str, ...] = ("systems", "equipment_ids", "components")
+_RETRIEVAL_SUMMARY_LIST_FIELDS: Tuple[str, ...] = (
+    "symptoms_outcomes",
+    "mechanisms",
+    "diagnostics",
+    "corrective_actions",
+    "numbers_limits",
+    "keywords_synonyms",
+    "unknowns",
+)
+_RCA_FRAME_LIST_FIELDS: Tuple[str, ...] = (
+    "observed",
+    "hypotheses",
+    "tests_to_confirm",
+    "candidate_actions",
+    "constraints",
+)
+_CITATION_FIELD_TYPES: Dict[str, type] = {
+    "doc_id": str,
+    "section_path": str,
+    "page_start": int,
+    "page_end": int,
+}
+
+
+def _trusted_citations(ctx: ChunkContext) -> Dict[str, Any]:
+    """Build the citations block from trusted ChunkContext provenance."""
     return {
+        "doc_id": ctx.doc_id,
+        "section_path": ctx.section_path,
+        "page_start": int(ctx.page_start),
+        "page_end": int(ctx.page_end),
+    }
+
+
+def _apply_trusted_provenance(obj: Dict[str, Any], ctx: ChunkContext, view_type: ViewType) -> Dict[str, Any]:
+    """Overwrite provenance fields on a model result with trusted values.
+
+    The model is never trusted to report its own ``chunk_id``, ``doc_type``,
+    ``view_type``, or ``citations``; these are replaced in place from the
+    ChunkContext so a fabricated value can never be stored as authoritative
+    provenance.  Content fields are left untouched for the validator to check.
+    """
+    obj["chunk_id"] = ctx.chunk_id
+    obj["doc_type"] = ctx.doc_type
+    obj["view_type"] = view_type
+    obj["citations"] = _trusted_citations(ctx)
+    return obj
+
+
+def empty_retrieval_summary(ctx: ChunkContext) -> Dict[str, Any]:
+    """Return the empty retrieval_summary contract for a chunk.
+
+    Used both as the prompt output skeleton (forcing keys/types) and as the
+    canonical shape checked by validate_retrieval_summary_json().
+
+    Parameters
+    ----------
+    ctx : ChunkContext
+        Trusted provenance; populates the ``citations`` block.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Every contract key with an empty value of the correct type.
+    """
+    summary: Dict[str, Any] = {
         "chunk_id": ctx.chunk_id,
         "doc_type": ctx.doc_type,
         "view_type": "retrieval_summary",
         "scope": "",
-        "entities": {"systems": [], "equipment_ids": [], "components": []},
-        "symptoms_outcomes": [],
-        "mechanisms": [],
-        "diagnostics": [],
-        "corrective_actions": [],
-        "numbers_limits": [],
-        "keywords_synonyms": [],
-        "unknowns": [],
-        "citations": {
-            "doc_id": ctx.doc_id,
-            "section_path": ctx.section_path,
-            "page_start": int(ctx.page_start),
-            "page_end": int(ctx.page_end),
-        },
+        "entities": {k: [] for k in _ENTITY_LIST_FIELDS},
     }
+    for k in _RETRIEVAL_SUMMARY_LIST_FIELDS:
+        summary[k] = []
+    summary["citations"] = _trusted_citations(ctx)
+    return summary
 
 
 def empty_rca_frame(ctx: ChunkContext) -> Dict[str, Any]:
-    return {
+    """Return the empty rca_frame contract for a chunk.
+
+    Used both as the prompt output skeleton and as the canonical shape checked
+    by validate_rca_frame_json().
+
+    Parameters
+    ----------
+    ctx : ChunkContext
+        Trusted provenance; populates the ``citations`` block.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Every contract key with an empty value of the correct type.
+    """
+    frame: Dict[str, Any] = {
         "chunk_id": ctx.chunk_id,
         "doc_type": ctx.doc_type,
         "view_type": "rca_frame",
-        "observed": [],
-        "hypotheses": [],
-        "tests_to_confirm": [],
-        "candidate_actions": [],
-        "constraints": [],
-        "citations": {
-            "doc_id": ctx.doc_id,
-            "section_path": ctx.section_path,
-            "page_start": int(ctx.page_start),
-            "page_end": int(ctx.page_end),
-        },
     }
+    for k in _RCA_FRAME_LIST_FIELDS:
+        frame[k] = []
+    frame["citations"] = _trusted_citations(ctx)
+    return frame
 
 
 # -----------------------------------------------------------------------------
@@ -485,7 +577,26 @@ def ollama_generate_json(prompt: str, model: Optional[str] = None, timeout: int 
     return _parse_json_strict(content)
 
 
-_JSON_OBJ_RE = re.compile(r"\{.*\}", flags=re.DOTALL)
+def _extract_first_json_object(text: str) -> Optional[Dict[str, Any]]:
+    """Return the first standalone JSON object embedded in ``text``.
+
+    Scans each ``{`` and attempts ``raw_decode`` from that position, so a
+    single object is recovered even with extra text on either side
+    (e.g. ``prefix {"a": 1} suffix {"b": 2}`` yields ``{"a": 1}``).  A greedy
+    first-brace-to-last-brace match would instead span both objects and fail
+    with "Extra data".  Returns ``None`` when no position decodes to an object.
+    """
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
 
 
 def _parse_json_strict(text: str) -> Dict[str, Any]:
@@ -500,22 +611,21 @@ def _parse_json_strict(text: str) -> Dict[str, Any]:
     if not text:
         raise ValueError("Empty model output; cannot parse JSON.")
 
-    # Direct parse
+    # Direct parse.  A value that parses but is not an object (e.g. a JSON
+    # array) violates the object contract and is rejected here; only a genuine
+    # decode failure falls through to substring extraction.
     try:
         obj = json.loads(text)
         if not isinstance(obj, dict):
             raise ValueError("Model output JSON is not an object.")
         return obj
-    except Exception:
+    except json.JSONDecodeError:
         pass
 
-    # Try to extract a JSON object substring
-    m = _JSON_OBJ_RE.search(text)
-    if not m:
+    # Recover a single JSON object embedded in surrounding text.
+    obj = _extract_first_json_object(text)
+    if obj is None:
         raise ValueError(f"Could not locate JSON object in model output: {text[:200]}...")
-    obj = json.loads(m.group(0))
-    if not isinstance(obj, dict):
-        raise ValueError("Extracted JSON is not an object.")
     return obj
 
 
@@ -523,9 +633,28 @@ def _parse_json_strict(text: str) -> Dict[str, Any]:
 # Validation + quality gates (minimal, fast)
 # -----------------------------------------------------------------------------
 
+def _citation_flags(obj: Dict[str, Any]) -> List[str]:
+    """Flag a missing or mis-typed ``citations`` block against the contract."""
+    flags: List[str] = []
+    cit = obj.get("citations")
+    if not isinstance(cit, dict):
+        flags.append("citations_not_object")
+        return flags
+    for ck, ctype in _CITATION_FIELD_TYPES.items():
+        if ck not in cit:
+            flags.append(f"citations_{ck}_missing")
+        elif not isinstance(cit.get(ck), ctype):
+            flags.append(f"citations_{ck}_wrong_type")
+    return flags
+
+
 def validate_retrieval_summary_json(obj: Dict[str, Any]) -> List[str]:
     """
     Validate retrieval_summary shape and return flags (empty => pass).
+
+    Checks every field of the empty_retrieval_summary() contract for presence
+    and type, including the nested entities and citations blocks, using the
+    shared field tables so the gate cannot drift from the skeleton.
 
     Input: dict (parsed JSON)
     Output: List[str] flags
@@ -534,20 +663,33 @@ def validate_retrieval_summary_json(obj: Dict[str, Any]) -> List[str]:
 
     if obj.get("view_type") != "retrieval_summary":
         flags.append("bad_view_type")
-    for k in ["chunk_id", "doc_type", "scope", "entities", "citations", "unknowns"]:
+    for k in ["chunk_id", "doc_type", "scope", "entities", "citations"]:
         if k not in obj:
             flags.append(f"missing_{k}")
+    if "scope" in obj and not isinstance(obj.get("scope"), str):
+        flags.append("scope_not_str")
 
-    ent = obj.get("entities") or {}
+    # Every top-level array field must be present and a list.
+    for lk in _RETRIEVAL_SUMMARY_LIST_FIELDS:
+        if lk not in obj:
+            flags.append(f"missing_{lk}")
+        elif not isinstance(obj.get(lk), list):
+            flags.append(f"{lk}_not_list")
+
+    # entities: object with the three array sub-fields.
+    ent = obj.get("entities")
     if not isinstance(ent, dict):
         flags.append("entities_not_object")
     else:
-        for ek in ["systems", "equipment_ids", "components"]:
+        for ek in _ENTITY_LIST_FIELDS:
             if ek not in ent or not isinstance(ent.get(ek), list):
                 flags.append(f"entities_{ek}_missing_or_not_list")
 
+    # citations: object with the trusted-provenance fields of the right types.
+    flags.extend(_citation_flags(obj))
+
     # Basic quality checks
-    scope = (obj.get("scope") or "").strip()
+    scope = (obj.get("scope") if isinstance(obj.get("scope"), str) else "").strip()
     if len(scope) < 15:
         flags.append("scope_too_short")
     kws = obj.get("keywords_synonyms") or []
@@ -567,18 +709,24 @@ def validate_rca_frame_json(obj: Dict[str, Any]) -> List[str]:
     """
     Validate rca_frame shape and return flags (empty => pass).
 
+    Checks every field of the empty_rca_frame() contract for presence and
+    type, including the nested citations block, using the shared field tables.
+
     Input: dict (parsed JSON)
     Output: List[str] flags
     """
     flags: List[str] = []
     if obj.get("view_type") != "rca_frame":
         flags.append("bad_view_type")
-    for k in ["chunk_id", "doc_type", "observed", "citations"]:
+    for k in ["chunk_id", "doc_type", "citations"]:
         if k not in obj:
             flags.append(f"missing_{k}")
-    for lk in ["observed", "hypotheses", "tests_to_confirm", "candidate_actions", "constraints"]:
-        if lk in obj and not isinstance(obj.get(lk), list):
+    for lk in _RCA_FRAME_LIST_FIELDS:
+        if lk not in obj:
+            flags.append(f"missing_{lk}")
+        elif not isinstance(obj.get(lk), list):
             flags.append(f"{lk}_not_list")
+    flags.extend(_citation_flags(obj))
     return flags
 
 
@@ -620,6 +768,10 @@ def summarize_with_retry(
         try:
             time.sleep(sleep_sec)
             obj = ollama_generate_json(prompt, model=model, timeout=timeout)
+            # Never trust model-supplied provenance: stamp chunk_id/doc_type/
+            # view_type/citations from the trusted ChunkContext before the gate
+            # so a fabricated value can never be validated and stored.
+            _apply_trusted_provenance(obj, ctx, view_type)
             flags = validate_retrieval_summary_json(obj) if view_type == "retrieval_summary" else validate_rca_frame_json(obj)
             if not flags:
                 return obj
