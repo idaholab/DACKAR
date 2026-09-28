@@ -43,7 +43,11 @@ class SimilarEventAdapter(Protocol):
       multiplier defined in ``TIER_CONFIDENCE_MULTIPLIERS``.
     """
 
-    #: Set to True by the adapter implementation if the last query call failed.
+    #: Reflects the outcome of the most recent ``query()`` call only: the
+    #: implementation resets it to False at the start of every call and sets it
+    #: to True when that call fails or is skipped.  It is not cumulative across
+    #: calls.  The orchestrator reads it once per tier, immediately after each
+    #: ``query()`` call, to record whether that tier is degraded.
     degraded: bool
 
     def query(
