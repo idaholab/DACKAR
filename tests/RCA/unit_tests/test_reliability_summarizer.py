@@ -20,6 +20,8 @@ from dackar.RCA.summarizers.reliability_summarizer import (
     detect_doc_type,
     empty_rca_frame,
     empty_retrieval_summary,
+    flatten_rca_frame_for_embedding,
+    flatten_retrieval_summary_for_embedding,
     summarize_with_retry,
     validate_rca_frame_json,
     validate_retrieval_summary_json,
@@ -226,6 +228,76 @@ def test_rca_frame_flags_missing_list_and_bad_citation():
     flags = validate_rca_frame_json(bad)
     assert "missing_hypotheses" in flags
     assert "citations_page_end_wrong_type" in flags
+
+
+# ---------------------------------------------------------------------------
+# #6 embedding flatteners drop empty fields (PR #58 line-667 nit)
+# ---------------------------------------------------------------------------
+
+def test_flatten_retrieval_summary_drops_empty_fields():
+    summary = {
+        "scope": "",
+        "entities": {"systems": ["RCS"], "equipment_ids": [], "components": []},
+        "symptoms_outcomes": [],
+        "keywords_synonyms": ["packing"],
+    }
+    out = flatten_retrieval_summary_for_embedding(summary)
+    assert out == "SYSTEMS: RCS\nKEYWORDS: packing"
+    # no bare "LABEL: " lines from empty sections
+    assert "EQUIPMENT:" not in out
+    assert "SCOPE:" not in out
+    # a None scope is dropped, never rendered as "SCOPE: None"
+    assert flatten_retrieval_summary_for_embedding({"scope": None}) == ""
+    assert flatten_retrieval_summary_for_embedding({}) == ""
+
+
+def test_flatten_retrieval_summary_keeps_populated_fields():
+    summary = {
+        "scope": "pump seal leak",
+        "entities": {"systems": ["RCS"], "equipment_ids": ["P-1A"], "components": ["seal"]},
+        "symptoms_outcomes": ["leak"],
+        "mechanisms": ["wear"],
+        "diagnostics": ["visual"],
+        "corrective_actions": ["replace"],
+        "numbers_limits": ["<1gpm"],
+        "keywords_synonyms": ["packing"],
+    }
+    assert flatten_retrieval_summary_for_embedding(summary) == "\n".join([
+        "SCOPE: pump seal leak",
+        "SYSTEMS: RCS",
+        "EQUIPMENT: P-1A",
+        "COMPONENTS: seal",
+        "SYMPTOMS/OUTCOMES: leak",
+        "MECHANISMS: wear",
+        "DIAGNOSTICS: visual",
+        "ACTIONS: replace",
+        "NUMBERS/LIMITS: <1gpm",
+        "KEYWORDS: packing",
+    ])
+
+
+def test_flatten_rca_frame_drops_empty_fields():
+    out = flatten_rca_frame_for_embedding({"observed": ["a", "b"], "hypotheses": []})
+    assert out == "OBSERVED: a; b"
+    assert "HYPOTHESES:" not in out
+    assert flatten_rca_frame_for_embedding({}) == ""
+
+
+def test_flatten_rca_frame_keeps_populated_fields():
+    rca = {
+        "observed": ["a", "b"],
+        "hypotheses": ["h1"],
+        "tests_to_confirm": ["t1"],
+        "candidate_actions": ["c1"],
+        "constraints": ["k1"],
+    }
+    assert flatten_rca_frame_for_embedding(rca) == "\n".join([
+        "OBSERVED: a; b",
+        "HYPOTHESES: h1",
+        "TESTS: t1",
+        "ACTIONS: c1",
+        "CONSTRAINTS: k1",
+    ])
 
 
 if __name__ == "__main__":  # pragma: no cover
