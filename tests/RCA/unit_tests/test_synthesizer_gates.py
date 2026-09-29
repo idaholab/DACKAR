@@ -262,12 +262,12 @@ def test_gate_composite_exactly_at_threshold():
 # ── H6 — posture-aware recommended actions ───────────────────────────────────
 
 def test_recommended_actions_no_warning_when_supported():
-    """H6: supported posture → posture_warning is None on each action."""
+    """H6: supported posture → no posture_warning key emitted on each action."""
     s = make_synthesizer()
     candidate = {"candidate_id": "CAND-A", "cause_label": "corrosion", "evidence_posture": "supported"}
     actions = [{"action_type": "inspection", "description": "Inspect welds", "priority": "high"}]
     result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
-    assert result[0]["posture_warning"] is None
+    assert "posture_warning" not in result[0]
     print("  PASS test_recommended_actions_no_warning_when_supported")
 
 
@@ -299,11 +299,11 @@ def test_recommended_actions_warning_when_no_data():
 
 
 def test_recommended_actions_warning_absent_when_no_primary_candidate():
-    """H6: None primary_candidate → posture_warning is None (no posture available)."""
+    """H6: None primary_candidate → no posture_warning key emitted (no posture available)."""
     s = make_synthesizer()
     actions = [{"action_type": "inspection", "description": "Check seals", "priority": "low"}]
     result = s._normalize_recommended_actions(actions, primary_candidate=None)
-    assert result[0]["posture_warning"] is None
+    assert "posture_warning" not in result[0]
     print("  PASS test_recommended_actions_warning_absent_when_no_primary_candidate")
 
 
