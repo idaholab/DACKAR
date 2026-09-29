@@ -18,8 +18,6 @@ _VALID_OVERRIDE_TYPES = {
     "accept",
     "accept_with_caveats",
     "primary_candidate_change",
-    "alternative_rerank",
-    "evidence_role_change",
     "reject_all",
     "gate_override_physical",
     "gate_override_timeline",
@@ -143,7 +141,11 @@ class AnalystOverrideProcessor:
             )
 
         if override_type in {"accept", "accept_with_caveats", "primary_candidate_change"}:
-            self._apply_accepted_state(card, caveats)
+            self._apply_accepted_state(
+                card,
+                caveats,
+                require_gate_pass=(override_type == "primary_candidate_change"),
+            )
         elif override_type == "reject_all":
             self._apply_rejected_state(card)
         elif override_type in {"gate_override_physical", "gate_override_timeline", "gate_override_barrier"}:
@@ -157,9 +159,6 @@ class AnalystOverrideProcessor:
                 "lifecycle_event": "reinstated_by_analyst",
             }
             self._apply_gate_override_state(card, gate_override_snapshot, rationale)
-        # "alternative_rerank" and "evidence_role_change" update the record
-        # but do not structurally modify the rca_card — the analyst's rationale
-        # and questions_resolved carry the semantic content.
 
         created_at = _utcnow_iso()
         override_id = f"OVRD::{event_id}::{created_at}"
@@ -223,6 +222,23 @@ class AnalystOverrideProcessor:
             raise ValueError(
                 f"writeback_decision must be one of {sorted(_VALID_WRITEBACK_DECISIONS)}, "
                 f"got {writeback_decision!r}"
+            )
+
+        # override_type and writeback_decision are two views of one disposition and
+        # must not contradict: the card's state and the audit record cannot disagree.
+        if (
+            override_type in {"accept", "accept_with_caveats", "primary_candidate_change"}
+            and writeback_decision == "reject"
+        ):
+            raise ValueError(
+                f"override_type {override_type!r} accepts or advances the card, but "
+                "writeback_decision is 'reject'. Use 'accept' or 'defer', or "
+                "override_type 'reject_all'."
+            )
+        if override_type == "reject_all" and writeback_decision == "accept":
+            raise ValueError(
+                "override_type 'reject_all' discards the RCA, but writeback_decision "
+                "is 'accept'. Use 'reject' or 'defer'."
             )
 
         if override_type == "primary_candidate_change":
@@ -384,7 +400,7 @@ class AnalystOverrideProcessor:
             "uncertainties": target_alt.get("weaknesses") or [],
             "composite_score": target_alt.get("composite_score"),
             "confidence_label": target_alt.get("confidence_label"),
-            "citations": [],
+            "citations": list(target_alt.get("citations") or []),
             "analyst_override": True,
         }
 
@@ -409,14 +425,68 @@ class AnalystOverrideProcessor:
         exec_summary["confidence_label"] = new_primary.get("confidence_label") or "low"
         card["executive_summary"] = exec_summary
 
+        # Recompute the evidence gates for the promoted primary. This processor is
+        # stdlib-only and does not re-run the synthesizer's full score-floor gate;
+        # it applies the citation-presence gate it can compute correctly here, and
+        # the full score-floor gate is re-established on the next synthesis run.
+        # _apply_accepted_state consults these flags and only marks the card ready
+        # when the promoted primary still carries cited evidence.
+        has_citations = bool(new_primary.get("citations"))
+        validation_status = card.get("validation_status") or {}
+        validation_status["all_claims_cited"] = has_citations
+        validation_status["passed_minimum_evidence_gate"] = has_citations
+        card["validation_status"] = validation_status
+
         return override_primary_snapshot, card
 
-    def _apply_accepted_state(self, card: JsonDict, caveats: List[str]) -> None:
+    def _apply_accepted_state(
+        self,
+        card: JsonDict,
+        caveats: List[str],
+        require_gate_pass: bool = False,
+    ) -> None:
+        """Mark the card accepted, or hold it for review when a swap left the
+        promoted primary without evidence.
+
+        When ``require_gate_pass`` is True (a primary_candidate_change), the card
+        is marked writeback-ready only if the recomputed validation gates still
+        pass; otherwise it is held for analyst review with an attention flag. For
+        a plain accept the gates are left as the synthesizer computed them.
+        """
         analyst_review = card.get("analyst_review") or {}
-        analyst_review["decision_required"] = False
-        analyst_review["writeback_recommendation"] = "ready_if_accepted"
         if caveats:
             analyst_review["caveats"] = caveats
+
+        gates_ok = True
+        if require_gate_pass:
+            vs = card.get("validation_status") or {}
+            gates_ok = bool(vs.get("all_claims_cited")) and bool(
+                vs.get("passed_minimum_evidence_gate")
+            )
+
+        if not gates_ok:
+            # Promoted primary lost its evidence base — do not auto-advance.
+            analyst_review["decision_required"] = True
+            analyst_review["writeback_recommendation"] = "hold_until_review"
+            card["analyst_review"] = analyst_review
+
+            exec_summary = card.get("executive_summary") or {}
+            flags = exec_summary.get("analyst_attention_flags") or []
+            if not isinstance(flags, list):
+                flags = []
+            msg = (
+                "Promoted primary lacks cited evidence after analyst swap — "
+                "evidence gate must be re-established before writeback."
+            )
+            if msg not in flags:
+                flags.append(msg)
+            exec_summary["analyst_attention_flags"] = flags
+            exec_summary["decision_status"] = "review_required"
+            card["executive_summary"] = exec_summary
+            return
+
+        analyst_review["decision_required"] = False
+        analyst_review["writeback_recommendation"] = "ready_if_accepted"
         card["analyst_review"] = analyst_review
 
         exec_summary = card.get("executive_summary") or {}
