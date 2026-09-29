@@ -1,0 +1,762 @@
+src.dackar.RCA.synthesis.rca_synthesizer_v31
+============================================
+
+.. py:module:: src.dackar.RCA.synthesis.rca_synthesizer_v31
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.synthesis.rca_synthesizer_v31.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.synthesis.rca_synthesizer_v31.LLMClient
+   src.dackar.RCA.synthesis.rca_synthesizer_v31.RCASynthesizerConfig
+   src.dackar.RCA.synthesis.rca_synthesizer_v31.RuleValidatedRCASynthesizerV31
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.synthesis.rca_synthesizer_v31.utcnow_iso
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:function:: utcnow_iso()
+
+.. py:class:: LLMClient
+
+   Bases: :py:obj:`Protocol`
+
+
+   Minimal structured-generation interface expected by the synthesizer.
+
+
+   .. py:method:: generate_json(model, prompt, temperature = 0.1)
+
+      Generate a JSON object from a prompt.
+
+      :param model: Model identifier to invoke.
+      :param prompt: Fully-rendered prompt string.
+      :param temperature: Sampling temperature; the synthesizer passes a low default for
+                          determinism.
+
+      :returns: The parsed JSON object emitted by the model. Implementations must
+                return a ``dict`` (already JSON-decoded), not a raw string. A
+                generation or decode failure should raise; the synthesizer catches
+                the exception and falls back to deterministic template synthesis.
+      :rtype: JsonDict
+
+
+
+.. py:class:: RCASynthesizerConfig
+
+   Tunable configuration for :class:`RuleValidatedRCASynthesizerV31`.
+
+   .. attribute:: llm_model
+
+      Model identifier passed to ``LLMClient.generate_json``.
+
+   .. attribute:: llm_prompt_version
+
+      Prompt template version stamped into card provenance.
+
+   .. attribute:: temperature
+
+      Sampling temperature for LLM synthesis.
+
+   .. attribute:: max_candidates_in_prompt
+
+      Maximum causality candidates rendered into the synthesis prompt.
+
+   .. attribute:: max_synthesis_extra_review_candidates
+
+      Additional lower-ranked candidates retained for review context beyond
+      the prompt cap.
+
+   .. attribute:: max_evidence_in_prompt
+
+      Maximum evidence snippets rendered into the prompt.
+
+   .. attribute:: min_evidence_per_candidate_in_prompt
+
+      Minimum evidence snippets guaranteed per candidate when available.
+
+   .. attribute:: allow_fallback_template_fill
+
+      When True, a failed or invalid LLM generation falls back to
+      deterministic template synthesis instead of raising.
+
+   .. attribute:: minimum_primary_score
+
+      Baseline composite-score floor the primary hypothesis must clear to
+      pass the minimum-evidence gate. Event severity may raise this floor
+      (see ``minimum_score_for_severity``) but never lowers it.
+
+
+   .. py:attribute:: llm_model
+      :type:  str
+      :value: 'llama3:8b'
+
+
+
+   .. py:attribute:: llm_prompt_version
+      :type:  str
+      :value: 'rca_synth_v3_1'
+
+
+
+   .. py:attribute:: temperature
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: max_candidates_in_prompt
+      :type:  int
+      :value: 5
+
+
+
+   .. py:attribute:: max_synthesis_extra_review_candidates
+      :type:  int
+      :value: 8
+
+
+
+   .. py:attribute:: max_evidence_in_prompt
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: min_evidence_per_candidate_in_prompt
+      :type:  int
+      :value: 1
+
+
+
+   .. py:attribute:: allow_fallback_template_fill
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: minimum_primary_score
+      :type:  float
+      :value: 0.35
+
+
+
+.. py:class:: RuleValidatedRCASynthesizerV31(llm_client, config = None)
+
+   Synthesizer aligned to richer TSKR-aware causality candidate structure.
+
+   Responsibilities:
+     - select top candidates and evidence
+     - build a constrained prompt
+     - call LLM for structured JSON generation
+     - normalize output into rca_card schema
+     - validate minimum semantic requirements
+     - fallback to deterministic template synthesis if needed
+
+
+   .. py:attribute:: _PROXIMATE_CATEGORIES
+
+
+   .. py:attribute:: _CONTRIBUTING_CATEGORIES
+
+
+   .. py:attribute:: _ROOT_CATEGORIES
+
+
+   .. py:attribute:: _CHAIN_POSITION_PRIMARY_TIE_MARGIN
+      :value: 0.05
+
+
+
+   .. py:attribute:: llm_client
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: synthesize(event, telemetry_summary, kg_context, tskr_patterns, causality_candidates, evidence_bundle, operational_context, pm_compliance, ishikawa_matrix, run_context, cmms_context = None, similar_event_list = None)
+
+      Synthesize a validated RCA card from structured reasoning artifacts.
+
+      :param event: Target abnormal event. Must carry ``event_id`` (or ``id``); an
+                    optional ``severity`` (1–5) raises the minimum-evidence gate floor.
+      :param telemetry_summary: Telemetry anomaly summary for the event window.
+      :param kg_context: Knowledge-graph neighbourhood (components, failure modes, barriers).
+      :param tskr_patterns: TSKR chain-position patterns, or None when unavailable.
+      :param causality_candidates: Ranked candidate hypotheses under ``candidates`` (each with scores,
+                                   evidence posture, and optional epistemics digest).
+      :param evidence_bundle: Retrieved evidence snippets keyed for citation.
+      :param operational_context: Optional supporting artifacts folded into the card when present.
+      :param pm_compliance: Optional supporting artifacts folded into the card when present.
+      :param ishikawa_matrix: Optional supporting artifacts folded into the card when present.
+      :param cmms_context: Optional supporting artifacts folded into the card when present.
+      :param similar_event_list: Optional supporting artifacts folded into the card when present.
+      :param run_context: Orchestrator run context (``run_id``, optional ``event_id`` /
+                          ``asset_id``).
+
+      :returns: An RCA card conforming to ``schemas/rca_card.json``. On LLM failure
+                or invalid output a deterministic fallback card is returned instead
+                (``validation_status.fallback_used = True``) rather than raising.
+                ``validation_status`` records schema/citation/evidence-gate outcomes
+                and ``synthesis_quality`` (deterministic | partial_llm | full_llm).
+      :rtype: JsonDict
+
+
+
+   .. py:attribute:: _HARD_GATE_ORDER
+      :value: ('physical_plausibility', 'timeline_consistency', 'barrier_logic')
+
+
+
+   .. py:method:: _eliminating_gates_for(candidate)
+      :staticmethod:
+
+
+      Gate(s)/posture(s) that removed a candidate from primary standing.
+
+
+
+   .. py:method:: _build_gate_disposition(*, card, causality_candidates)
+
+      F-4 — make the elimination-first semantics explicit and auditable.
+
+      Hard gates already run (after scoring) and set ``primary_eligibility="blocked"``,
+      ``ruleout``, and ``primary_block_reasons`` on candidates — the raw audit exists but
+      is scattered, and an eliminated candidate keeps its (possibly high) composite_score.
+      This consolidates the verdicts into one card block stating that a failed gate is
+      dispositive regardless of score, and surfaces any high-scoring candidate that a gate
+      eliminated so it cannot be silently outranked-then-ignored. Purely additive; no
+      pipeline reordering, no ranking change.
+
+
+
+   .. py:method:: _build_causal_graph(*, card, event, causality_candidates)
+
+      N-6 — assemble one inspectable, directed per-run causal graph.
+
+      Causal reasoning is otherwise spread across TSKR chain-position, the telemetry
+      signal-DAG, common-cause/explain-away links, near-tie competition, and hard gates,
+      so depth/direction/mechanism are each approximated separately and never fall out of
+      a single model the analyst can contest. This consolidates those already-computed
+      signals into one graph: nodes are the target event and the assessed candidates;
+      directed edges commit a cause->effect ordering where the signals support it
+      (chain_position vs the event, shared-cause explain-away), and undirected edges mark
+      near-tie competition. Purely additive and ranking-neutral — it *reflects* the
+      existing scores, making N-1/N-2/N-3 checkable by construction.
+
+
+
+   .. py:method:: _build_score_interpretation()
+      :staticmethod:
+
+
+      N-4 — honest semantics for ``composite_score``.
+
+      The composite is a weighted blend of heuristic sub-scores with hand-set weights
+      and relation priors; it is not calibrated against outcome frequencies, and any
+      score confidence interval encodes data availability, not statistical uncertainty.
+      Emitting this block prevents ``composite_score = 0.72`` from being read as
+      '72% likely the cause'. Constant, additive, and ranking-neutral.
+
+
+
+   .. py:method:: _select_candidates(causality_candidates)
+
+      Top-N by score plus any ``review_required`` rows (SE review §6.7 H1 / NH11).
+
+
+
+   .. py:method:: _chain_position_of(candidate)
+      :staticmethod:
+
+
+
+   .. py:method:: _promote_initiator_over_consequence(ranked)
+
+      Promote a near-tie `initiating` candidate ahead of a top `consequence`.
+
+      Conservative: only fires when the #1 candidate is a `consequence` and some
+      `initiating` candidate scores within ``_CHAIN_POSITION_PRIMARY_TIE_MARGIN``
+      of it. A clearly-stronger consequence is left in place (and later flagged for
+      analyst review by ``_apply_chain_position_review_flag``).
+
+
+
+   .. py:method:: _apply_chain_position_review_flag(card, causality_candidates)
+
+      WS2 Part A: flag when the primary hypothesis is a downstream `consequence`.
+
+      A `consequence` is a derivative effect, not the initiating cause. When the
+      primary chain_position is `consequence`, surface an analyst attention flag and
+      an uncertainty note pointing to the strongest upstream `initiating` candidate,
+      so the analyst reviews whether the true primary cause is upstream. Depth
+      labelling is intentionally left category-based (WS2 scope = Part A only).
+
+
+
+   .. py:method:: _apply_temporal_support_flag(card, causality_candidates)
+
+      N-2: flag when the primary hypothesis's temporal support is unestablished.
+
+      When no TSKR pattern matched the primary failure mode, its temporal sub-score
+      is a *co-occurrence proxy* (anomalies merely co-present in the event window) —
+      not established temporal precedence and not a propagation path. Surface this so
+      an engineer does not read a proxy-derived temporal score as confirmed temporal
+      causation (post-hoc/cum-hoc guard).
+
+
+
+   .. py:method:: _apply_signal_dag_position_flag(card, causality_candidates)
+
+      P-5: surface the telemetry signal-DAG causal position of the primary hypothesis.
+
+      The signal-evidence builder classifies each candidate's anomaly within the
+      telemetry-propagation DAG (root / common-cause root / intermediate /
+      convergence confluence) and records whether a root's onset lead over its
+      successor was actually established. That view was previously consumed only to
+      zero convergence evidence. Here it is surfaced to the analyst in two honest,
+      additive ways (no ranking or confidence change):
+
+      * the primary sits at a **convergence confluence** — a downstream node where
+        multiple propagation chains meet, i.e. a likely symptom rather than the
+        initiator; or
+      * the primary is a signal-DAG **initiator whose onset lead was not established**
+        (co-temporal / OVERLAPS), so telemetry does not demonstrate it precedes the
+        sequence it is claimed to initiate.
+
+
+
+   .. py:method:: _apply_common_cause_explain_away_flag(card, causality_candidates)
+
+      N-3: flag when the primary hypothesis is a co-symptom of a suspected common cause.
+
+      The engine's common-cause analysis identifies when several candidates converge
+      on a shared dependency (`common_cause_summary.suspected_common_cause`), names the
+      strongest shared-cause candidate (`top_common_cause_candidate_id`) and lists the
+      remaining co-symptoms (`explained_away_candidate_ids`). A downstream symptom of a
+      common cause is not itself the initiating root — if such a co-symptom is selected
+      primary, surface an analyst flag pointing at the shared cause / shared dependency
+      so the true common cause is reviewed. Additive (flag + uncertainty note); ranking
+      is unchanged.
+
+
+
+   .. py:method:: _apply_data_limited_confidence_cap(card, causality_candidates)
+
+      P-7: cap card confidence when the primary hypothesis is data-limited.
+
+      The engine already reduces a data-limited candidate's quality multiplier and
+      flags ``data_limited_conclusion`` with ``critical_streams_below_floor``, but that
+      was previously only *annotated* (uncertainties/evidence-gaps) — the confidence
+      label could still read `high`. §3.5/§7 require conservative bias under sparse
+      data, so a data-limited primary must not carry a `high` confidence claim. Cap the
+      primary and executive confidence at `medium` (downward-only; never raises) and
+      add an analyst attention flag. Ranking is untouched.
+
+
+
+   .. py:method:: _select_evidence(evidence_bundle, selected_candidates = None)
+
+
+   .. py:method:: _evidence_row_key(row)
+      :staticmethod:
+
+
+
+   .. py:method:: _evidence_linked_candidate_id(row)
+      :staticmethod:
+
+
+
+   .. py:method:: _authority_level_rank(authority_level)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_prompt(event, telemetry_summary, kg_context, tskr_patterns, causality_candidates, evidence_bundle, operational_context, pm_compliance, ishikawa_matrix, run_context, cmms_context = None)
+
+
+   .. py:method:: _compact_cmms_context(cmms_context)
+
+      Return a token-efficient summary of cmms_context for the prompt.
+
+      Only the most recent CR/WO records (up to 5 each) are included,
+      with long_text stripped (long_text is already in Chroma for
+      semantic retrieval — duplicating it in the prompt wastes tokens).
+      The recurrence_summary and lookback window are always included.
+
+
+
+   .. py:method:: _normalize_llm_output(raw_output, rca_id, event, evidence_bundle, run_context, causality_candidates)
+
+
+   .. py:method:: _inject_review_required_questions(analyst_review, *, causality_candidates, max_candidates = 3)
+
+      Ensure Stage F review_required candidates are visible to analysts in
+      analyst_review.questions_to_resolve.
+
+
+
+   .. py:method:: _infer_evidence_support_role(evidence_row, primary_candidate)
+
+
+   .. py:method:: _infer_linked_candidate_id(evidence_row, primary_candidate)
+
+
+   .. py:method:: _build_alternative_supports(alt)
+
+
+   .. py:method:: _build_alternative_weaknesses(alt, primary_candidate)
+
+
+   .. py:method:: _build_alternative_citations(alt, primary_candidate)
+
+
+   .. py:method:: _normalize_alternatives(alternatives, primary_candidate)
+
+
+   .. py:method:: _normalize_contributing_causes(causes, primary_candidate)
+
+
+   .. py:method:: _normalize_evidence_rows(evidence_rows, primary_candidate, excerpt_index = None)
+
+
+   .. py:method:: _build_evidence_excerpt_index(evidence_rows)
+      :staticmethod:
+
+
+      Build a lookup index so card evidence rows can recover raw snippet excerpts.
+
+
+
+   .. py:method:: _looks_like_placeholder_excerpt(text)
+      :staticmethod:
+
+
+
+   .. py:method:: _resolve_evidence_excerpt(*, row, excerpt_index)
+
+      Ensure evidence excerpt is source text when available.
+
+
+
+   .. py:attribute:: _POSTURE_WARNINGS
+      :type:  Dict[str, str]
+
+
+   .. py:attribute:: _SEVERITY_SCORE_FLOORS
+      :type:  Dict[int, float]
+
+
+   .. py:method:: minimum_score_for_severity(severity)
+      :staticmethod:
+
+
+      Return the minimum composite score a primary must clear for a severity.
+
+      :param severity: Event severity 1 (minor) … 5 (critical). Accepts int or numeric
+                       string; None or an unparseable value defaults to severity 3.
+
+      :returns: The severity floor from ``_SEVERITY_SCORE_FLOORS`` (0.35 for any
+                severity outside 1–5). Callers combine this with
+                ``config.minimum_primary_score`` via ``max`` so the floor only ever
+                tightens the gate.
+      :rtype: float
+
+
+
+   .. py:attribute:: _CRITICAL_SAFETY_KEYWORDS
+      :value: ('reactor protection', 'reactor trip', 'trip logic', 'reactor shutdown', 'containment...
+
+
+
+   .. py:attribute:: _HIGH_SAFETY_KEYWORDS
+      :value: ('core cooling', 'emergency core cooling', 'emergency cooling', 'residual heat removal', 'decay...
+
+
+
+   .. py:method:: _normalize_recommended_actions(actions, primary_candidate)
+
+
+   .. py:method:: _enforce_recommended_action_depth_mapping(card, causality_candidates)
+
+
+   .. py:method:: _priority_rank(priority)
+      :staticmethod:
+
+
+
+   .. py:method:: _max_priority(a, b)
+      :classmethod:
+
+
+
+   .. py:method:: _bump_priority(base, steps = 1)
+      :classmethod:
+
+
+
+   .. py:method:: _normalize_safety_text(value)
+      :staticmethod:
+
+
+
+   .. py:method:: _contains_any_keyword(values, keywords)
+      :classmethod:
+
+
+
+   .. py:method:: _candidate_safety_context(primary_candidate)
+      :staticmethod:
+
+
+
+   .. py:method:: _candidate_barrier_context(primary_candidate)
+
+
+   .. py:method:: _candidate_risk_context(primary_candidate)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_safety_priority(current_priority, safety_ctx)
+      :classmethod:
+
+
+
+   .. py:method:: _apply_barrier_priority(current_priority, barrier_ctx)
+      :classmethod:
+
+
+
+   .. py:method:: _apply_risk_priority(current_priority, risk_ctx)
+      :classmethod:
+
+
+
+   .. py:method:: _apply_barrier_rationale_weighting(action_row, barrier_ctx)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_risk_rationale_weighting(action_row, risk_ctx)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_safety_significance_postprocessing(card, causality_candidates)
+
+
+   .. py:method:: _apply_metamodel_phase2_postprocessing(card, causality_candidates)
+
+
+   .. py:method:: _summarize_primary_evidence_posture(evidence_rows, primary_candidate_id)
+
+
+   .. py:method:: _fallback_decision_status_from_posture(*, evidence_summary, pattern_posture, passed_minimum_evidence_gate)
+
+
+   .. py:method:: _fallback_attention_flags_from_posture(*, evidence_summary, pattern_posture, passed_minimum_evidence_gate)
+
+
+   .. py:method:: _fallback_confidence_and_decision(*, evidence_summary, passed_minimum_evidence_gate)
+
+
+   .. py:method:: _candidate_recurrence(candidate)
+
+
+   .. py:method:: _primary_recurrence_why_primary(candidate)
+
+
+   .. py:method:: _primary_recurrence_uncertainties(candidate)
+
+
+   .. py:method:: _recurrence_review_questions(candidate)
+
+
+   .. py:method:: _candidate_common_cause(candidate)
+
+
+   .. py:method:: _candidate_temporal_posture(candidate)
+
+
+   .. py:method:: _candidate_evidence_posture(candidate)
+
+
+   .. py:method:: _build_causal_depth_summary(*, primary_candidate, selected_candidates)
+
+
+   .. py:method:: _build_unresolved_gaps(*, primary_candidate, evidence_summary, pattern_posture, analyst_attention_flags, causal_depth_summary = None, sensitivity_any_change = False, novel_pattern_flag = False, similar_event_list = None)
+
+      Deeper gap list — links depth layers, sensitivity table, novel patterns, and OE coverage.
+
+
+
+   .. py:method:: _build_effectiveness_monitoring_plan(*, primary_candidate, recommended_actions)
+      :staticmethod:
+
+
+      Depth-stratified monitoring plan.
+
+      Proximate  → equipment-health indicator (recurrence / precursor anomaly)
+      Contributing → process/procedure adherence indicator (PM compliance, WO closure)
+      Root       → programmatic/systemic indicator (fleet OE recurrence, AMP review)
+
+
+
+   .. py:method:: _build_prevention_analysis(*, card, causality_candidates, pm_compliance, telemetry_summary)
+
+      F-3 — deterministic 'why was it not prevented?' defense-in-depth assessment.
+
+      The metamodel requires the RCA card to state *which barriers failed, which held,
+      and why* (a first-class output). The existing structural ``barrier_analysis``
+      only maps which safety functions a scored candidate impacts; it does not explain
+      why the failure was not prevented. This assesses three defense-in-depth layers
+      for the primary cause from data already on hand — no new inputs, no speculation:
+
+        * **preventive_maintenance** — from ``pm_compliance`` surveillance/PM checks
+          (a failed check is a prevention gap);
+        * **condition_monitoring** — from telemetry detection (anomaly precursors
+          present ⇒ monitoring held; telemetry present but no precursor ⇒ a detection
+          gap; no telemetry ⇒ not evaluated);
+        * **protection_logic** — from the primary candidate's ``barrier_logic`` hard
+          gate (a retained primary passed the gate, so protection did not preclude the
+          cause ⇒ gap; degraded/absent inputs ⇒ not evaluated).
+
+      Honest by construction: any layer without inputs is ``not_evaluated`` rather than
+      being asserted as a failure. Additive card block; ranking untouched.
+
+
+
+   .. py:method:: _build_human_performance_assessment(*, selected_candidates, recommended_actions)
+      :staticmethod:
+
+
+      Step 6 — Human and Organisational Performance Assessment.
+
+      Scans retained candidates for H/I/J/K categories and produces a structured
+      block for the RCA card.  When no such candidates are present, returns an
+      ``applicable=False`` record so the field is always populated.
+
+
+
+   .. py:method:: _primary_common_cause_why_primary(candidate, causality_candidates)
+
+
+   .. py:method:: _primary_common_cause_uncertainties(candidate, causality_candidates)
+
+
+   .. py:method:: _common_cause_review_questions(candidate, causality_candidates)
+
+
+   .. py:method:: _confidence_rank(label)
+
+
+   .. py:method:: _cap_confidence_label(label, maximum)
+
+
+   .. py:method:: _score_gap_to_runner_up(selected_candidates)
+
+
+   .. py:method:: _summarize_primary_pattern_posture(primary_candidate, evidence_summary, selected_candidates, causality_candidates, *, passed_minimum_evidence_gate, fallback_used)
+
+
+   .. py:method:: _calibrate_primary_confidence(posture)
+
+
+   .. py:method:: _compute_conclusion_type(top, selected_candidates, calibrated_confidence_label, actuation_type)
+
+      Derives the epistemic standing of the RCA conclusion.
+
+      Mirrors Stage D A/B-series tiering thresholds (composite ≥ 0.45 AND evidence ≥ 0.35
+      = A-series) without requiring an explicit series label on the candidate object.
+
+      design_signal actuation: the pipeline is verifying a design-basis response, not
+      diagnosing a failure.  All anomaly-based FM candidates are speculative by definition,
+      so the minimum output is hypothesis_speculative regardless of scoring.
+
+
+
+   .. py:method:: _build_ccf_summary(selected_candidates, causality_candidates)
+
+      Builds the rca_card ccf_summary block from the causality engine's
+      common_cause_summary.  Returns None when no common-cause signal was
+      detected (candidate_count_with_common_cause == 0).
+
+      affected_trains is assembled from per-candidate common_cause.train_id_in_oos
+      so that all OOS trains in the clustered set are surfaced — the engine's
+      common_cause_summary does not aggregate this.
+
+
+
+   .. py:method:: _apply_epistemics_postprocessing(card, causality_candidates)
+
+      Enforce epistemics digest rules on the card in-place.
+
+      1. Cap confidence_label at digest.confidence_cap when set.
+      2. Set causal_grounding_absent on primary_hypothesis.
+      3. Add gap-typed attention flags per §7.4 when ungrounded or absent analyzes support.
+
+
+
+   .. py:method:: _fallback_card(rca_id, event, selected_candidates, selected_evidence, causality_candidates, evidence_bundle, run_context, prior_errors, tskr_patterns = None, similar_event_list = None)
+
+
+   .. py:method:: _balanced_fallback_evidence(*, selected_evidence, selected_candidates, max_rows = 10)
+
+
+   .. py:method:: _enforce_balanced_card_evidence(*, card, selected_candidates, evidence_pool, max_rows)
+
+      Tighten LLM-path evidence balance by ensuring in-card alternatives are represented.
+
+
+
+   .. py:method:: _validate_and_repair_llm_sections(card, all_input_candidate_ids)
+      :staticmethod:
+
+
+      Remove LLM-hallucinated candidate IDs from secondary card sections.
+
+      Filters contributing_causes[] and alternatives[] by removing entries
+      whose candidate_id is not in all_input_candidate_ids.  Nullifies
+      linked_candidate_id on recommended_actions[] and evidence[] items that
+      reference an invented ID.  Does NOT touch primary_hypothesis (handled
+      by the hard-reject gate in synthesize()).
+
+      Returns the count of repaired (removed/nullified) items so the caller
+      can set synthesis_quality accordingly.
+
+
+
+   .. py:method:: _validate_card_semantics(card)
+
+
+   .. py:method:: _all_claims_cited(card)
+
+
+   .. py:method:: _passes_minimum_evidence_gate(card, event_severity = None)
+
+
+   .. py:method:: _normalize_confidence_label(label)
+
+

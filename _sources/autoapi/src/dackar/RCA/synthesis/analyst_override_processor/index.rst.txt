@@ -1,0 +1,163 @@
+src.dackar.RCA.synthesis.analyst_override_processor
+===================================================
+
+.. py:module:: src.dackar.RCA.synthesis.analyst_override_processor
+
+.. autoapi-nested-parse::
+
+   analyst_override_processor — AnalystOverrideProcessor.
+
+   Accepts a completed RCA card + analyst override input, validates the
+   override, mutates the card to reflect the analyst decision, and returns a
+   structured AnalystOverride artifact for persistence and audit-history mining.
+
+   Override record schema: schemas/analyst_override.json
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.synthesis.analyst_override_processor.JsonDict
+   src.dackar.RCA.synthesis.analyst_override_processor._VALID_OVERRIDE_TYPES
+   src.dackar.RCA.synthesis.analyst_override_processor._VALID_WRITEBACK_DECISIONS
+   src.dackar.RCA.synthesis.analyst_override_processor._VALID_SUPPORT_ROLES
+   src.dackar.RCA.synthesis.analyst_override_processor._VALID_RESOLUTION_TYPES
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.synthesis.analyst_override_processor._utcnow_iso
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: _VALID_OVERRIDE_TYPES
+
+.. py:data:: _VALID_WRITEBACK_DECISIONS
+
+.. py:data:: _VALID_SUPPORT_ROLES
+
+.. py:data:: _VALID_RESOLUTION_TYPES
+
+.. py:function:: _utcnow_iso()
+
+.. py:class:: AnalystOverrideProcessor
+
+   Applies a structured analyst override to an RCA card.
+
+   Usage::
+
+       processor = AnalystOverrideProcessor()
+       modified_card, override_record = processor.apply(
+           rca_card=card,
+           override_input={
+               "override_type": "primary_candidate_change",
+               "rationale": "DO elevation unambiguously supports air in-leakage",
+               "override_primary_candidate_id": "CAND-AIR-INLEAK",
+               "writeback_decision": "accept",
+           },
+           run_context={"run_id": "run-001"},
+       )
+
+   The returned *modified_card* is a copy of the original card with the
+   override applied in-place.  The *override_record* conforms to
+   ``schemas/analyst_override.json`` and should be persisted by the caller.
+
+
+   .. py:method:: apply(rca_card, override_input, run_context)
+
+      Apply an analyst override and return (modified_card, override_record).
+
+      :param rca_card: The RCA card produced by the synthesis step.
+      :param override_input: Dict with the following keys:
+
+                             Required:
+                               - ``override_type`` (str) — one of the _VALID_OVERRIDE_TYPES
+                               - ``rationale`` (str, non-empty) — analyst rationale
+                               - ``writeback_decision`` (str) — "accept" | "reject" | "defer"
+
+                             Optional:
+                               - ``analyst_id`` (str)
+                               - ``override_primary_candidate_id`` (str) — required when
+                                 override_type == "primary_candidate_change"
+                               - ``questions_resolved`` (list of {question, answer,
+                                 resolution_type})
+                               - ``evidence_additions`` (list of {evidence_ref, support_role,
+                                 added_by_analyst, notes?})
+                               - ``caveats`` (list of str)
+      :param run_context: Orchestrator run context (must contain ``run_id``).
+
+      :returns: (modified_rca_card, override_record)
+      :rtype: tuple[JsonDict, JsonDict]
+
+      :raises ValueError: On invalid override_input.
+
+
+
+   .. py:method:: _validate_input(override_input, rca_card)
+
+
+   .. py:method:: _all_candidate_ids(rca_card)
+
+
+   .. py:method:: _snapshot_primary(rca_card)
+
+
+   .. py:method:: _compute_primary_diff(original, new_primary, override_type)
+
+      Return a structured before/after delta for primary_candidate_change overrides.
+
+      Fields compared: candidate_id, cause_label, composite_score, confidence_label.
+      Returns None for override types that don't change the primary candidate.
+
+
+
+   .. py:method:: _swap_primary(card, target_id, rationale)
+
+      Promotes the alternative with candidate_id == target_id to primary.
+      Demotes the current primary to alternatives.
+      Returns (override_primary_snapshot, mutated_card).
+
+
+
+   .. py:method:: _apply_accepted_state(card, caveats, require_gate_pass = False)
+
+      Mark the card accepted, or hold it for review when a swap left the
+      promoted primary without evidence.
+
+      When ``require_gate_pass`` is True (a primary_candidate_change), the card
+      is marked writeback-ready only if the recomputed validation gates still
+      pass; otherwise it is held for analyst review with an attention flag. For
+      a plain accept the gates are left as the synthesizer computed them.
+
+
+
+   .. py:method:: _apply_rejected_state(card)
+
+
+   .. py:method:: _apply_gate_override_state(card, gate_override, rationale)
+
+
+   .. py:method:: _normalize_questions(raw)
+
+
+   .. py:method:: _normalize_evidence_additions(raw)
+
+

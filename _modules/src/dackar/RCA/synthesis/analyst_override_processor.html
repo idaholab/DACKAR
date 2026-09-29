@@ -1,0 +1,737 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.synthesis.analyst_override_processor &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.synthesis.analyst_override_processor</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.synthesis.analyst_override_processor</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">analyst_override_processor — AnalystOverrideProcessor.</span>
+
+<span class="sd">Accepts a completed RCA card + analyst override input, validates the</span>
+<span class="sd">override, mutates the card to reflect the analyst decision, and returns a</span>
+<span class="sd">structured AnalystOverride artifact for persistence and audit-history mining.</span>
+
+<span class="sd">Override record schema: schemas/analyst_override.json</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="_VALID_OVERRIDE_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor._VALID_OVERRIDE_TYPES">[docs]</a>
+<span class="n">_VALID_OVERRIDE_TYPES</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"accept"</span><span class="p">,</span>
+    <span class="s2">"accept_with_caveats"</span><span class="p">,</span>
+    <span class="s2">"primary_candidate_change"</span><span class="p">,</span>
+    <span class="s2">"reject_all"</span><span class="p">,</span>
+    <span class="s2">"gate_override_physical"</span><span class="p">,</span>
+    <span class="s2">"gate_override_timeline"</span><span class="p">,</span>
+    <span class="s2">"gate_override_barrier"</span><span class="p">,</span>
+<span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="_VALID_WRITEBACK_DECISIONS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor._VALID_WRITEBACK_DECISIONS">[docs]</a>
+<span class="n">_VALID_WRITEBACK_DECISIONS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"accept"</span><span class="p">,</span> <span class="s2">"reject"</span><span class="p">,</span> <span class="s2">"defer"</span><span class="p">}</span></div>
+
+<div class="viewcode-block" id="_VALID_SUPPORT_ROLES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor._VALID_SUPPORT_ROLES">[docs]</a>
+<span class="n">_VALID_SUPPORT_ROLES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"supporting"</span><span class="p">,</span> <span class="s2">"contradicting"</span><span class="p">,</span> <span class="s2">"contextual"</span><span class="p">}</span></div>
+
+<div class="viewcode-block" id="_VALID_RESOLUTION_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor._VALID_RESOLUTION_TYPES">[docs]</a>
+<span class="n">_VALID_RESOLUTION_TYPES</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"resolved"</span><span class="p">,</span> <span class="s2">"deferred"</span><span class="p">,</span> <span class="s2">"not_applicable"</span><span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="_utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor._utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AnalystOverrideProcessor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Applies a structured analyst override to an RCA card.</span>
+
+<span class="sd">    Usage::</span>
+
+<span class="sd">        processor = AnalystOverrideProcessor()</span>
+<span class="sd">        modified_card, override_record = processor.apply(</span>
+<span class="sd">            rca_card=card,</span>
+<span class="sd">            override_input={</span>
+<span class="sd">                "override_type": "primary_candidate_change",</span>
+<span class="sd">                "rationale": "DO elevation unambiguously supports air in-leakage",</span>
+<span class="sd">                "override_primary_candidate_id": "CAND-AIR-INLEAK",</span>
+<span class="sd">                "writeback_decision": "accept",</span>
+<span class="sd">            },</span>
+<span class="sd">            run_context={"run_id": "run-001"},</span>
+<span class="sd">        )</span>
+
+<span class="sd">    The returned *modified_card* is a copy of the original card with the</span>
+<span class="sd">    override applied in-place.  The *override_record* conforms to</span>
+<span class="sd">    ``schemas/analyst_override.json`` and should be persisted by the caller.</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="AnalystOverrideProcessor.apply">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor.apply">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">override_input</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Apply an analyst override and return (modified_card, override_record).</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        rca_card:</span>
+<span class="sd">            The RCA card produced by the synthesis step.</span>
+<span class="sd">        override_input:</span>
+<span class="sd">            Dict with the following keys:</span>
+
+<span class="sd">            Required:</span>
+<span class="sd">              - ``override_type`` (str) — one of the _VALID_OVERRIDE_TYPES</span>
+<span class="sd">              - ``rationale`` (str, non-empty) — analyst rationale</span>
+<span class="sd">              - ``writeback_decision`` (str) — "accept" | "reject" | "defer"</span>
+
+<span class="sd">            Optional:</span>
+<span class="sd">              - ``analyst_id`` (str)</span>
+<span class="sd">              - ``override_primary_candidate_id`` (str) — required when</span>
+<span class="sd">                override_type == "primary_candidate_change"</span>
+<span class="sd">              - ``questions_resolved`` (list of {question, answer,</span>
+<span class="sd">                resolution_type})</span>
+<span class="sd">              - ``evidence_additions`` (list of {evidence_ref, support_role,</span>
+<span class="sd">                added_by_analyst, notes?})</span>
+<span class="sd">              - ``caveats`` (list of str)</span>
+
+<span class="sd">        run_context:</span>
+<span class="sd">            Orchestrator run context (must contain ``run_id``).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        tuple[JsonDict, JsonDict]</span>
+<span class="sd">            (modified_rca_card, override_record)</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            On invalid override_input.</span>
+<span class="sd">        """</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_input</span><span class="p">(</span><span class="n">override_input</span><span class="p">,</span> <span class="n">rca_card</span><span class="p">)</span>
+
+        <span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
+        <span class="n">card</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">rca_card</span><span class="p">)</span>
+
+        <span class="n">override_type</span> <span class="o">=</span> <span class="n">override_input</span><span class="p">[</span><span class="s2">"override_type"</span><span class="p">]</span>
+        <span class="n">writeback_decision</span> <span class="o">=</span> <span class="n">override_input</span><span class="p">[</span><span class="s2">"writeback_decision"</span><span class="p">]</span>
+        <span class="n">rationale</span> <span class="o">=</span> <span class="n">override_input</span><span class="p">[</span><span class="s2">"rationale"</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">analyst_id</span> <span class="o">=</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="kc">None</span>
+        <span class="n">questions_resolved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_questions</span><span class="p">(</span>
+            <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"questions_resolved"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="p">)</span>
+        <span class="n">evidence_additions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_evidence_additions</span><span class="p">(</span>
+            <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_additions"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="p">)</span>
+        <span class="n">caveats</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"caveats"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])]</span>
+
+        <span class="c1"># Capture original state before mutation</span>
+        <span class="n">original_primary</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_snapshot_primary</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+        <span class="n">original_decision_status</span> <span class="o">=</span> <span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">"decision_status"</span>
+        <span class="p">)</span>
+        <span class="n">original_writeback_rec</span> <span class="o">=</span> <span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="s2">"writeback_recommendation"</span>
+        <span class="p">)</span>
+        <span class="n">base_rca_card_id</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rca_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+        <span class="n">event_id</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+        <span class="n">asset_id</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span>
+        <span class="n">run_id</span> <span class="o">=</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span>
+
+        <span class="c1"># --- Apply override mutations ---</span>
+        <span class="n">override_primary_snapshot</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">gate_override_snapshot</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">override_type</span> <span class="o">==</span> <span class="s2">"primary_candidate_change"</span><span class="p">:</span>
+            <span class="n">target_id</span> <span class="o">=</span> <span class="n">override_input</span><span class="p">[</span><span class="s2">"override_primary_candidate_id"</span><span class="p">]</span>
+            <span class="n">override_primary_snapshot</span><span class="p">,</span> <span class="n">card</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_swap_primary</span><span class="p">(</span>
+                <span class="n">card</span><span class="p">,</span> <span class="n">target_id</span><span class="p">,</span> <span class="n">rationale</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">override_type</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"accept"</span><span class="p">,</span> <span class="s2">"accept_with_caveats"</span><span class="p">,</span> <span class="s2">"primary_candidate_change"</span><span class="p">}:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_accepted_state</span><span class="p">(</span>
+                <span class="n">card</span><span class="p">,</span>
+                <span class="n">caveats</span><span class="p">,</span>
+                <span class="n">require_gate_pass</span><span class="o">=</span><span class="p">(</span><span class="n">override_type</span> <span class="o">==</span> <span class="s2">"primary_candidate_change"</span><span class="p">),</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">override_type</span> <span class="o">==</span> <span class="s2">"reject_all"</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_rejected_state</span><span class="p">(</span><span class="n">card</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">override_type</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"gate_override_physical"</span><span class="p">,</span> <span class="s2">"gate_override_timeline"</span><span class="p">,</span> <span class="s2">"gate_override_barrier"</span><span class="p">}:</span>
+            <span class="n">gate_type</span> <span class="o">=</span> <span class="n">override_type</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"gate_override_"</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
+            <span class="n">gate_override_snapshot</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"gate_type"</span><span class="p">:</span> <span class="n">gate_type</span><span class="p">,</span>
+                <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gate_override_candidate_id"</span><span class="p">)),</span>
+                <span class="s2">"evidence_refs"</span><span class="p">:</span> <span class="p">[</span>
+                    <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gate_override_evidence_refs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                <span class="p">],</span>
+                <span class="s2">"lifecycle_event"</span><span class="p">:</span> <span class="s2">"reinstated_by_analyst"</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_apply_gate_override_state</span><span class="p">(</span><span class="n">card</span><span class="p">,</span> <span class="n">gate_override_snapshot</span><span class="p">,</span> <span class="n">rationale</span><span class="p">)</span>
+
+        <span class="n">created_at</span> <span class="o">=</span> <span class="n">_utcnow_iso</span><span class="p">()</span>
+        <span class="n">override_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"OVRD::</span><span class="si">{</span><span class="n">event_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">created_at</span><span class="si">}</span><span class="s2">"</span>
+
+        <span class="c1"># Stamp override reference into card provenance</span>
+        <span class="n">prov</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"provenance"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">prov</span><span class="p">[</span><span class="s2">"analyst_override_id"</span><span class="p">]</span> <span class="o">=</span> <span class="n">override_id</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"provenance"</span><span class="p">]</span> <span class="o">=</span> <span class="n">prov</span>
+
+        <span class="n">primary_diff</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compute_primary_diff</span><span class="p">(</span>
+            <span class="n">original_primary</span><span class="p">,</span>
+            <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">),</span>
+            <span class="n">override_type</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">override_record</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"override_id"</span><span class="p">:</span> <span class="n">override_id</span><span class="p">,</span>
+            <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_id</span><span class="p">,</span>
+            <span class="s2">"event_id"</span><span class="p">:</span> <span class="n">event_id</span><span class="p">,</span>
+            <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">asset_id</span><span class="p">,</span>
+            <span class="s2">"created_at"</span><span class="p">:</span> <span class="n">created_at</span><span class="p">,</span>
+            <span class="s2">"analyst_id"</span><span class="p">:</span> <span class="n">analyst_id</span><span class="p">,</span>
+            <span class="s2">"override_type"</span><span class="p">:</span> <span class="n">override_type</span><span class="p">,</span>
+            <span class="s2">"rationale"</span><span class="p">:</span> <span class="n">rationale</span><span class="p">,</span>
+            <span class="s2">"original_primary"</span><span class="p">:</span> <span class="n">original_primary</span><span class="p">,</span>
+            <span class="s2">"override_primary"</span><span class="p">:</span> <span class="n">override_primary_snapshot</span><span class="p">,</span>
+            <span class="s2">"gate_override"</span><span class="p">:</span> <span class="n">gate_override_snapshot</span><span class="p">,</span>
+            <span class="s2">"primary_diff"</span><span class="p">:</span> <span class="n">primary_diff</span><span class="p">,</span>
+            <span class="s2">"questions_resolved"</span><span class="p">:</span> <span class="n">questions_resolved</span><span class="p">,</span>
+            <span class="s2">"evidence_additions"</span><span class="p">:</span> <span class="n">evidence_additions</span><span class="p">,</span>
+            <span class="s2">"writeback_decision"</span><span class="p">:</span> <span class="n">writeback_decision</span><span class="p">,</span>
+            <span class="s2">"caveats"</span><span class="p">:</span> <span class="n">caveats</span><span class="p">,</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"base_rca_card_id"</span><span class="p">:</span> <span class="n">base_rca_card_id</span><span class="p">,</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="s2">"AnalystOverrideProcessor"</span><span class="p">,</span>
+                <span class="s2">"original_decision_status"</span><span class="p">:</span> <span class="n">original_decision_status</span><span class="p">,</span>
+                <span class="s2">"original_writeback_recommendation"</span><span class="p">:</span> <span class="n">original_writeback_rec</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
+
+        <span class="k">return</span> <span class="n">card</span><span class="p">,</span> <span class="n">override_record</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Input validation</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._validate_input">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._validate_input">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_input</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">override_input</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">override_type</span> <span class="o">=</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"override_type"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">override_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_VALID_OVERRIDE_TYPES</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"override_type must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_VALID_OVERRIDE_TYPES</span><span class="p">)</span><span class="si">}</span><span class="s2">, "</span>
+                <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="n">override_type</span><span class="si">!r}</span><span class="s2">"</span>
+            <span class="p">)</span>
+
+        <span class="n">rationale</span> <span class="o">=</span> <span class="p">(</span><span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"rationale"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">rationale</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"rationale is required and must be non-empty"</span><span class="p">)</span>
+
+        <span class="n">writeback_decision</span> <span class="o">=</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"writeback_decision"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">writeback_decision</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_VALID_WRITEBACK_DECISIONS</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"writeback_decision must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_VALID_WRITEBACK_DECISIONS</span><span class="p">)</span><span class="si">}</span><span class="s2">, "</span>
+                <span class="sa">f</span><span class="s2">"got </span><span class="si">{</span><span class="n">writeback_decision</span><span class="si">!r}</span><span class="s2">"</span>
+            <span class="p">)</span>
+
+        <span class="c1"># override_type and writeback_decision are two views of one disposition and</span>
+        <span class="c1"># must not contradict: the card's state and the audit record cannot disagree.</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">override_type</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"accept"</span><span class="p">,</span> <span class="s2">"accept_with_caveats"</span><span class="p">,</span> <span class="s2">"primary_candidate_change"</span><span class="p">}</span>
+            <span class="ow">and</span> <span class="n">writeback_decision</span> <span class="o">==</span> <span class="s2">"reject"</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"override_type </span><span class="si">{</span><span class="n">override_type</span><span class="si">!r}</span><span class="s2"> accepts or advances the card, but "</span>
+                <span class="s2">"writeback_decision is 'reject'. Use 'accept' or 'defer', or "</span>
+                <span class="s2">"override_type 'reject_all'."</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">override_type</span> <span class="o">==</span> <span class="s2">"reject_all"</span> <span class="ow">and</span> <span class="n">writeback_decision</span> <span class="o">==</span> <span class="s2">"accept"</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">"override_type 'reject_all' discards the RCA, but writeback_decision "</span>
+                <span class="s2">"is 'accept'. Use 'reject' or 'defer'."</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">override_type</span> <span class="o">==</span> <span class="s2">"primary_candidate_change"</span><span class="p">:</span>
+            <span class="n">target_id</span> <span class="o">=</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"override_primary_candidate_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">target_id</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">"override_primary_candidate_id is required when "</span>
+                    <span class="s2">"override_type == 'primary_candidate_change'"</span>
+                <span class="p">)</span>
+            <span class="n">available</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_all_candidate_ids</span><span class="p">(</span><span class="n">rca_card</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">target_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">available</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"override_primary_candidate_id </span><span class="si">{</span><span class="n">target_id</span><span class="si">!r}</span><span class="s2"> is not present "</span>
+                    <span class="sa">f</span><span class="s2">"in rca_card alternatives or primary. Available: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">available</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+            <span class="n">current_primary_id</span> <span class="o">=</span> <span class="p">(</span><span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">"candidate_id"</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">target_id</span> <span class="o">==</span> <span class="n">current_primary_id</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"override_primary_candidate_id </span><span class="si">{</span><span class="n">target_id</span><span class="si">!r}</span><span class="s2"> is already the "</span>
+                    <span class="s2">"current primary — use override_type='accept' instead"</span>
+                <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">override_type</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"gate_override_physical"</span><span class="p">,</span> <span class="s2">"gate_override_timeline"</span><span class="p">,</span> <span class="s2">"gate_override_barrier"</span><span class="p">}:</span>
+            <span class="n">candidate_id</span> <span class="o">=</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gate_override_candidate_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">candidate_id</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">"gate_override_candidate_id is required when override_type is a gate override."</span>
+                <span class="p">)</span>
+            <span class="n">available</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_all_candidate_ids</span><span class="p">(</span><span class="n">rca_card</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">candidate_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">available</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"gate_override_candidate_id </span><span class="si">{</span><span class="n">candidate_id</span><span class="si">!r}</span><span class="s2"> is not present "</span>
+                    <span class="sa">f</span><span class="s2">"in rca_card alternatives or primary. Available: </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">available</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+            <span class="n">refs</span> <span class="o">=</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"gate_override_evidence_refs"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="n">ref_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">([</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">refs</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()])</span>
+            <span class="k">if</span> <span class="n">ref_count</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">"gate_override_evidence_refs must contain at least one non-empty evidence reference."</span>
+                <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">qa</span> <span class="ow">in</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"questions_resolved"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">qa</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"questions_resolved items must be dicts"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">qa</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"question"</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">qa</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"answer"</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="s2">"questions_resolved items must have non-empty 'question' and 'answer'"</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">qa</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resolution_type"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">qa</span><span class="p">[</span><span class="s2">"resolution_type"</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_VALID_RESOLUTION_TYPES</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"resolution_type must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_VALID_RESOLUTION_TYPES</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">ea</span> <span class="ow">in</span> <span class="n">override_input</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_additions"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ea</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"evidence_additions items must be dicts"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">ea</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_ref"</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"evidence_additions items must have non-empty 'evidence_ref'"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ea</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_role"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">ea</span><span class="p">[</span><span class="s2">"support_role"</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_VALID_SUPPORT_ROLES</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"support_role must be one of </span><span class="si">{</span><span class="nb">sorted</span><span class="p">(</span><span class="n">_VALID_SUPPORT_ROLES</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+                <span class="p">)</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Helpers</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._all_candidate_ids">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._all_candidate_ids">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_all_candidate_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">set</span><span class="p">:</span>
+        <span class="n">ids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">primary</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">):</span>
+            <span class="n">ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">primary</span><span class="p">[</span><span class="s2">"candidate_id"</span><span class="p">])</span>
+        <span class="k">for</span> <span class="n">alt</span> <span class="ow">in</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alternatives"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alt</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">):</span>
+                <span class="n">ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">alt</span><span class="p">[</span><span class="s2">"candidate_id"</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">ids</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._snapshot_primary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._snapshot_primary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_snapshot_primary</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rca_card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="n">ph</span> <span class="o">=</span> <span class="n">rca_card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">ph</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">,</span>
+            <span class="s2">"cause_label"</span><span class="p">:</span> <span class="n">ph</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span>
+            <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">ph</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">),</span>
+            <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="n">ph</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">),</span>
+            <span class="s2">"fm_id"</span><span class="p">:</span> <span class="n">ph</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">),</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._compute_primary_diff">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._compute_primary_diff">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_compute_primary_diff</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">original</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">new_primary</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">override_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""Return a structured before/after delta for primary_candidate_change overrides.</span>
+
+<span class="sd">        Fields compared: candidate_id, cause_label, composite_score, confidence_label.</span>
+<span class="sd">        Returns None for override types that don't change the primary candidate.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">override_type</span> <span class="o">!=</span> <span class="s2">"primary_candidate_change"</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">new_primary</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">diff</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">,</span> <span class="s2">"cause_label"</span><span class="p">,</span> <span class="s2">"composite_score"</span><span class="p">,</span> <span class="s2">"confidence_label"</span><span class="p">):</span>
+            <span class="n">old_val</span> <span class="o">=</span> <span class="n">original</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+            <span class="n">new_val</span> <span class="o">=</span> <span class="n">new_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">old_val</span> <span class="o">!=</span> <span class="n">new_val</span><span class="p">:</span>
+                <span class="n">diff</span><span class="p">[</span><span class="n">field</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"from"</span><span class="p">:</span> <span class="n">old_val</span><span class="p">,</span> <span class="s2">"to"</span><span class="p">:</span> <span class="n">new_val</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">diff</span> <span class="ow">or</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._swap_primary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._swap_primary">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_swap_primary</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">target_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">rationale</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">,</span> <span class="n">JsonDict</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">"""</span>
+<span class="sd">        Promotes the alternative with candidate_id == target_id to primary.</span>
+<span class="sd">        Demotes the current primary to alternatives.</span>
+<span class="sd">        Returns (override_primary_snapshot, mutated_card).</span>
+<span class="sd">        """</span>
+        <span class="n">alternatives</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alternatives"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="n">old_primary</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+
+        <span class="c1"># Find target alternative</span>
+        <span class="n">target_alt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">remaining_alts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">alt</span> <span class="ow">in</span> <span class="n">alternatives</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alt</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="o">==</span> <span class="n">target_id</span><span class="p">:</span>
+                <span class="n">target_alt</span> <span class="o">=</span> <span class="n">alt</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">remaining_alts</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">alt</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">target_alt</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">"candidate_id </span><span class="si">{</span><span class="n">target_id</span><span class="si">!r}</span><span class="s2"> not found in alternatives — "</span>
+                <span class="s2">"this should have been caught by _validate_input"</span>
+            <span class="p">)</span>
+
+        <span class="n">override_primary_snapshot</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">target_alt</span><span class="p">[</span><span class="s2">"candidate_id"</span><span class="p">],</span>
+            <span class="s2">"cause_label"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">target_id</span><span class="p">,</span>
+            <span class="s2">"fm_id"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">),</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Build new primary_hypothesis from alternative fields</span>
+        <span class="n">new_primary</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">target_alt</span><span class="p">[</span><span class="s2">"candidate_id"</span><span class="p">],</span>
+            <span class="s2">"cause_label"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">target_id</span><span class="p">,</span>
+            <span class="s2">"hypothesis_type"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hypothesis_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"fm_id"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">),</span>
+            <span class="s2">"narrative"</span><span class="p">:</span> <span class="p">(</span>
+                <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+                <span class="ow">or</span> <span class="sa">f</span><span class="s2">"Analyst-selected primary: </span><span class="si">{</span><span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'cause_label'</span><span class="p">,</span><span class="w"> </span><span class="n">target_id</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span>
+            <span class="p">),</span>
+            <span class="s2">"why_primary"</span><span class="p">:</span> <span class="p">[</span>
+                <span class="sa">f</span><span class="s2">"Analyst override: </span><span class="si">{</span><span class="n">rationale</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="o">*</span><span class="p">(</span><span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"supports"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="p">],</span>
+            <span class="s2">"uncertainties"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"weaknesses"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[],</span>
+            <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">),</span>
+            <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">),</span>
+            <span class="s2">"citations"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="n">target_alt</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"citations"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]),</span>
+            <span class="s2">"analyst_override"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="p">}</span>
+
+        <span class="c1"># Demote old primary to alternatives</span>
+        <span class="n">demoted</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="n">old_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">,</span> <span class="s2">"unknown"</span><span class="p">),</span>
+            <span class="s2">"cause_label"</span><span class="p">:</span> <span class="n">old_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"hypothesis_type"</span><span class="p">:</span> <span class="n">old_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hypothesis_type"</span><span class="p">,</span> <span class="s2">""</span><span class="p">),</span>
+            <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">old_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span>
+            <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="n">old_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">,</span> <span class="s2">"low"</span><span class="p">),</span>
+            <span class="s2">"reason_not_primary"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"Analyst override: </span><span class="si">{</span><span class="n">rationale</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"supports"</span><span class="p">:</span> <span class="n">old_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"why_primary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[],</span>
+            <span class="s2">"weaknesses"</span><span class="p">:</span> <span class="n">old_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"uncertainties"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[],</span>
+        <span class="p">}</span>
+
+        <span class="n">card</span><span class="p">[</span><span class="s2">"primary_hypothesis"</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_primary</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"alternatives"</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">demoted</span><span class="p">]</span> <span class="o">+</span> <span class="n">remaining_alts</span>
+
+        <span class="c1"># Update executive summary</span>
+        <span class="n">exec_summary</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"primary_conclusion"</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_primary</span><span class="p">[</span><span class="s2">"cause_label"</span><span class="p">]</span>
+        <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"confidence_label"</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"low"</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"executive_summary"</span><span class="p">]</span> <span class="o">=</span> <span class="n">exec_summary</span>
+
+        <span class="c1"># Recompute the evidence gates for the promoted primary. This processor is</span>
+        <span class="c1"># stdlib-only and does not re-run the synthesizer's full score-floor gate;</span>
+        <span class="c1"># it applies the citation-presence gate it can compute correctly here, and</span>
+        <span class="c1"># the full score-floor gate is re-established on the next synthesis run.</span>
+        <span class="c1"># _apply_accepted_state consults these flags and only marks the card ready</span>
+        <span class="c1"># when the promoted primary still carries cited evidence.</span>
+        <span class="n">has_citations</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">new_primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"citations"</span><span class="p">))</span>
+        <span class="n">validation_status</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">validation_status</span><span class="p">[</span><span class="s2">"all_claims_cited"</span><span class="p">]</span> <span class="o">=</span> <span class="n">has_citations</span>
+        <span class="n">validation_status</span><span class="p">[</span><span class="s2">"passed_minimum_evidence_gate"</span><span class="p">]</span> <span class="o">=</span> <span class="n">has_citations</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"validation_status"</span><span class="p">]</span> <span class="o">=</span> <span class="n">validation_status</span>
+
+        <span class="k">return</span> <span class="n">override_primary_snapshot</span><span class="p">,</span> <span class="n">card</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._apply_accepted_state">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._apply_accepted_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_accepted_state</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">caveats</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">require_gate_pass</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Mark the card accepted, or hold it for review when a swap left the</span>
+<span class="sd">        promoted primary without evidence.</span>
+
+<span class="sd">        When ``require_gate_pass`` is True (a primary_candidate_change), the card</span>
+<span class="sd">        is marked writeback-ready only if the recomputed validation gates still</span>
+<span class="sd">        pass; otherwise it is held for analyst review with an attention flag. For</span>
+<span class="sd">        a plain accept the gates are left as the synthesizer computed them.</span>
+<span class="sd">        """</span>
+        <span class="n">analyst_review</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">caveats</span><span class="p">:</span>
+            <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"caveats"</span><span class="p">]</span> <span class="o">=</span> <span class="n">caveats</span>
+
+        <span class="n">gates_ok</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">require_gate_pass</span><span class="p">:</span>
+            <span class="n">vs</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"validation_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">gates_ok</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">vs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"all_claims_cited"</span><span class="p">))</span> <span class="ow">and</span> <span class="nb">bool</span><span class="p">(</span>
+                <span class="n">vs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"passed_minimum_evidence_gate"</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">gates_ok</span><span class="p">:</span>
+            <span class="c1"># Promoted primary lost its evidence base — do not auto-advance.</span>
+            <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"decision_required"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"writeback_recommendation"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"hold_until_review"</span>
+            <span class="n">card</span><span class="p">[</span><span class="s2">"analyst_review"</span><span class="p">]</span> <span class="o">=</span> <span class="n">analyst_review</span>
+
+            <span class="n">exec_summary</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">flags</span> <span class="o">=</span> <span class="n">exec_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_attention_flags"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flags</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">flags</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="s2">"Promoted primary lacks cited evidence after analyst swap — "</span>
+                <span class="s2">"evidence gate must be re-established before writeback."</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">msg</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">:</span>
+                <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"analyst_attention_flags"</span><span class="p">]</span> <span class="o">=</span> <span class="n">flags</span>
+            <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"decision_status"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"review_required"</span>
+            <span class="n">card</span><span class="p">[</span><span class="s2">"executive_summary"</span><span class="p">]</span> <span class="o">=</span> <span class="n">exec_summary</span>
+            <span class="k">return</span>
+
+        <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"decision_required"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"writeback_recommendation"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"ready_if_accepted"</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"analyst_review"</span><span class="p">]</span> <span class="o">=</span> <span class="n">analyst_review</span>
+
+        <span class="n">exec_summary</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">exec_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"decision_status"</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"candidate_ready"</span><span class="p">:</span>
+            <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"decision_status"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"candidate_ready"</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"executive_summary"</span><span class="p">]</span> <span class="o">=</span> <span class="n">exec_summary</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._apply_rejected_state">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._apply_rejected_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_rejected_state</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">analyst_review</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"decision_required"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"writeback_recommendation"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"hold_until_review"</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"analyst_review"</span><span class="p">]</span> <span class="o">=</span> <span class="n">analyst_review</span>
+
+        <span class="n">exec_summary</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"decision_status"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"review_required"</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"executive_summary"</span><span class="p">]</span> <span class="o">=</span> <span class="n">exec_summary</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._apply_gate_override_state">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._apply_gate_override_state">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_apply_gate_override_state</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">card</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">gate_override</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">rationale</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">exec_summary</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"executive_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">flags</span> <span class="o">=</span> <span class="n">exec_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_attention_flags"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">flags</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="n">flags</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">"Analyst gate override applied: "</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">gate_override</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'gate_type'</span><span class="p">)</span><span class="si">}</span><span class="s2"> for candidate </span><span class="si">{</span><span class="n">gate_override</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'candidate_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">."</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">msg</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"analyst_attention_flags"</span><span class="p">]</span> <span class="o">=</span> <span class="n">flags</span>
+        <span class="n">exec_summary</span><span class="p">[</span><span class="s2">"decision_status"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"review_required"</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"executive_summary"</span><span class="p">]</span> <span class="o">=</span> <span class="n">exec_summary</span>
+
+        <span class="n">analyst_review</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"analyst_review"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"decision_required"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"writeback_recommendation"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"hold_until_review"</span>
+        <span class="n">questions</span> <span class="o">=</span> <span class="n">analyst_review</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"questions_to_resolve"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">questions</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="n">questions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">followup</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"Gate override rationale (</span><span class="si">{</span><span class="n">gate_override</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'gate_type'</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="n">rationale</span><span class="si">}</span><span class="s2">. "</span>
+            <span class="s2">"Confirm reinstatement evidence before final writeback."</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">followup</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">questions</span><span class="p">:</span>
+            <span class="n">questions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">followup</span><span class="p">)</span>
+        <span class="n">analyst_review</span><span class="p">[</span><span class="s2">"questions_to_resolve"</span><span class="p">]</span> <span class="o">=</span> <span class="n">questions</span>
+        <span class="n">card</span><span class="p">[</span><span class="s2">"analyst_review"</span><span class="p">]</span> <span class="o">=</span> <span class="n">analyst_review</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._normalize_questions">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._normalize_questions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_questions</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="n">result</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"question"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"question"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+                <span class="s2">"answer"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"answer"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+                <span class="s2">"resolution_type"</span><span class="p">:</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"resolution_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"resolved"</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="AnalystOverrideProcessor._normalize_evidence_additions">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/synthesis/analyst_override_processor/index.html#src.dackar.RCA.synthesis.analyst_override_processor.AnalystOverrideProcessor._normalize_evidence_additions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_evidence_additions</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="n">result</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">raw</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">entry</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"evidence_ref"</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_ref"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">),</span>
+                <span class="s2">"support_role"</span><span class="p">:</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_role"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"contextual"</span><span class="p">,</span>
+                <span class="s2">"added_by_analyst"</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"notes"</span><span class="p">):</span>
+                <span class="n">entry</span><span class="p">[</span><span class="s2">"notes"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">item</span><span class="p">[</span><span class="s2">"notes"</span><span class="p">])</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
