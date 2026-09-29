@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Literal
 import copy
@@ -15,6 +16,25 @@ Severity = Literal["error", "warning"]
 
 @dataclass
 class ValidationIssue:
+    """A single validation finding against one artifact.
+
+    Attributes
+    ----------
+    artifact:
+        The artifact type the issue was raised against (e.g. ``"event"``).
+    severity:
+        ``"error"`` or ``"warning"``. In ``warn_only`` mode the validator
+        emits every finding as ``"warning"``.
+    code:
+        A stable machine-readable identifier for the issue (e.g.
+        ``"schema_validation_error"``, ``"event_time_order_invalid"``).
+    message:
+        Human-readable description of the problem.
+    path:
+        JSON path (as string segments) to the offending field, or an empty
+        list for artifact-level issues.
+    """
+
     artifact: str
     severity: Severity
     code: str
@@ -33,6 +53,22 @@ class ValidationIssue:
 
 @dataclass
 class ValidationReport:
+    """Aggregate result of validating one artifact or a run bundle.
+
+    Attributes
+    ----------
+    ok:
+        ``True`` when the report contains no ``"error"``-severity issues.
+        Callers should treat this as authoritative only after the report is
+        fully populated; :meth:`recompute_ok` refreshes it from ``issues``.
+    issues:
+        All findings collected during validation, both errors and warnings.
+
+    The :attr:`errors` and :attr:`warnings` properties partition ``issues`` by
+    severity. In ``warn_only`` mode every finding is a warning, so ``ok`` stays
+    ``True`` regardless of the problems found.
+    """
+
     ok: bool
     issues: List[ValidationIssue] = field(default_factory=list)
 
@@ -107,6 +143,30 @@ class RCAArtifactValidator:
         *,
         mode: Literal["strict", "compat", "warn_only"] = "compat",
     ) -> None:
+        """Load the artifact schemas and build one Draft 7 validator per type.
+
+        Parameters
+        ----------
+        schema_dir:
+            Directory holding one ``<artifact_type>.json`` Draft 7 schema file
+            per name in :attr:`CORE_ARTIFACTS`. Files that are absent are
+            skipped silently; validating that artifact type then yields a
+            single ``schema_missing`` error rather than raising.
+        mode:
+            - ``"strict"``: validate payloads as given, no legacy aliasing.
+            - ``"compat"`` (default): normalize common legacy field aliases
+              (e.g. event ``id``, processed-record metadata aliases) before
+              validation so current-engine output conforms.
+            - ``"warn_only"``: run the same checks but downgrade every schema
+              and semantic failure to ``"warning"`` severity.
+
+        Raises
+        ------
+        json.JSONDecodeError
+            If a schema file exists but does not contain valid JSON.
+        OSError
+            If a schema file exists but cannot be read.
+        """
         self.schema_dir = Path(schema_dir)
         self.mode = mode
         self.schemas: Dict[str, Dict[str, Any]] = {}
@@ -118,6 +178,29 @@ class RCAArtifactValidator:
     # ------------------------------------------------------------------
 
     def validate_artifact(self, artifact_type: str, payload: Dict[str, Any]) -> ValidationReport:
+        """Validate a single artifact payload against its schema and semantics.
+
+        The payload is first normalized (a deep copy — the caller's ``payload``
+        is never mutated) and validated against its Draft 7 schema. Semantic
+        consistency checks run **only when schema validation passes**: those
+        checks assume schema-valid object types, so running them on malformed
+        input could raise instead of reporting an issue.
+
+        Parameters
+        ----------
+        artifact_type:
+            One of :attr:`CORE_ARTIFACTS`. Whitespace and case are normalized.
+        payload:
+            The artifact object to validate.
+
+        Returns
+        -------
+        ValidationReport
+            All findings for this artifact. An unknown ``artifact_type`` yields
+            a single ``schema_missing`` issue. This method does not raise on
+            invalid payloads — every problem is returned as a
+            :class:`ValidationIssue`.
+        """
         artifact_type = self._norm_artifact_type(artifact_type)
         report = ValidationReport(ok=True)
 
@@ -135,7 +218,9 @@ class RCAArtifactValidator:
 
         # per-artifact schema validation
         validator = self.validators[artifact_type]
+        had_schema_error = False
         for err in sorted(validator.iter_errors(normalized), key=lambda e: list(e.path)):
+            had_schema_error = True
             report.add(self._issue(
                 artifact=artifact_type,
                 severity=self._sev("error"),
@@ -144,8 +229,11 @@ class RCAArtifactValidator:
                 path=[str(p) for p in err.path],
             ))
 
-        # per-artifact semantic validation
-        report.extend(self._semantic_checks_single(artifact_type, normalized))
+        # per-artifact semantic validation — skip when the payload failed schema
+        # validation, since the semantic checks assume schema-valid types and
+        # would raise on malformed input rather than reporting it.
+        if not had_schema_error:
+            report.extend(self._semantic_checks_single(artifact_type, normalized))
         report.recompute_ok()
         return report
 
@@ -166,6 +254,28 @@ class RCAArtifactValidator:
         pm_compliance: Optional[Dict[str, Any]] = None,
         cmms_context: Optional[Dict[str, Any]] = None,
     ) -> ValidationReport:
+        """Validate a run bundle: each member individually, then cross-artifact.
+
+        Every supplied member is validated on its own via
+        :meth:`validate_artifact`, then the schema-valid members are checked for
+        cross-artifact consistency (shared ``event_id`` / ``asset_id``, evidence
+        and candidate cross-references, full-mode RCA-card requirements, etc.).
+
+        Parameters
+        ----------
+        event, telemetry_summary, kg_context, signal_evidence, tskr_patterns, \
+        causality_candidates, evidence_bundle, ishikawa_matrix, barrier_analysis, \
+        rca_card, operational_context, pm_compliance, cmms_context:
+            Keyword-only bundle members. Each is optional; a member left as
+            ``None`` is skipped entirely. Caller payloads are never mutated.
+
+        Returns
+        -------
+        ValidationReport
+            Aggregate of every member's issues plus the cross-artifact findings.
+            Members that fail their own schema validation are excluded from the
+            cross-artifact checks so malformed input is reported, not raised on.
+        """
         report = ValidationReport(ok=True)
 
         bundle = {
@@ -191,8 +301,15 @@ class RCAArtifactValidator:
             if payload is None:
                 continue
             normalized = self._normalize_payload(artifact_type, payload)
-            normalized_bundle[artifact_type] = normalized
-            report.extend(self.validate_artifact(artifact_type, normalized).issues)
+            artifact_report = self.validate_artifact(artifact_type, normalized)
+            report.extend(artifact_report.issues)
+            # Only feed schema-valid members into the cross-artifact checks; a
+            # schema-invalid payload may carry types those checks don't expect.
+            if not any(
+                i.code in {"schema_validation_error", "schema_missing"}
+                for i in artifact_report.issues
+            ):
+                normalized_bundle[artifact_type] = normalized
 
         # cross-artifact semantic checks
         report.extend(self._semantic_checks_bundle(normalized_bundle))
@@ -228,9 +345,14 @@ class RCAArtifactValidator:
 
         if self.mode in {"compat", "warn_only"}:
             if artifact_type == "event":
-                # current dev fixtures / engine may use "id" instead of "event_id"
-                if "event_id" not in out and "id" in out:
-                    out["event_id"] = out["id"]
+                # current dev fixtures / engine may use "id" instead of "event_id".
+                # Consume the alias with pop() so the normalized payload conforms to
+                # the additionalProperties:false event schema; preserve any canonical
+                # event_id already supplied.
+                if "id" in out:
+                    alias = out.pop("id")
+                    if "event_id" not in out:
+                        out["event_id"] = alias
 
             if artifact_type == "causality_candidates":
                 # current dev engine may omit subgraph_id or telemetry weight
@@ -242,19 +364,29 @@ class RCAArtifactValidator:
                     pass
 
             if artifact_type == "processed_text_record":
-                # allow current parser output aliases
+                # consume current-parser output aliases with pop() so the normalized
+                # payload conforms to the additionalProperties:false schema; preserve
+                # any canonical value already supplied.
                 md = out.get("metadata") or {}
-                if "asset_ids" not in md and "equipment_ids" in md:
-                    md["asset_ids"] = list(md.get("equipment_ids") or [])
-                if "component_ids" not in md and "component_names" in md:
-                    md["component_ids"] = list(md.get("component_names") or [])
+                if "equipment_ids" in md:
+                    equipment_ids = md.pop("equipment_ids")
+                    if "asset_ids" not in md:
+                        md["asset_ids"] = list(equipment_ids or [])
+                if "component_names" in md:
+                    component_names = md.pop("component_names")
+                    if "component_ids" not in md:
+                        md["component_ids"] = list(component_names or [])
+                mechanisms = md.pop("mechanisms", None)
+                failure_outcomes = md.pop("failure_outcomes", None)
                 if "fm_ids" not in md:
-                    fm_ids = list(md.get("mechanisms") or []) + list(md.get("failure_outcomes") or [])
+                    fm_ids = list(mechanisms or []) + list(failure_outcomes or [])
                     if fm_ids:
                         md["fm_ids"] = fm_ids
                 out["metadata"] = md
 
-                enrich = out.get("enrichment") or {}
+                # stage5 enrichment is a source alias, not a canonical root field;
+                # consume it with pop() so the record conforms to the schema.
+                enrich = out.pop("enrichment", None) or {}
                 if "condition_assessment" not in out and "stage5_causal_condition" in enrich:
                     out["condition_assessment"] = (enrich.get("stage5_causal_condition") or {}).get("condition_state")
 
@@ -268,9 +400,9 @@ class RCAArtifactValidator:
         issues: List[ValidationIssue] = []
 
         if artifact_type == "event":
-            start = payload.get("timestamp_start")
-            end = payload.get("timestamp_end")
-            if start and end and str(end) < str(start):
+            start = self._parse_instant(payload.get("timestamp_start"))
+            end = self._parse_instant(payload.get("timestamp_end"))
+            if start is not None and end is not None and end < start:
                 issues.append(self._issue(
                     artifact="event",
                     severity=self._sev("error"),
@@ -792,6 +924,29 @@ class RCAArtifactValidator:
 
     def _norm_artifact_type(self, artifact_type: str) -> str:
         return artifact_type.strip().lower()
+
+    @staticmethod
+    def _parse_instant(value: Any) -> Optional[datetime]:
+        """Parse an ISO-8601 date-time string into a timezone-aware datetime.
+
+        Returns ``None`` when the value is not a parseable string, so callers
+        skip the comparison rather than raising. A naive datetime (no offset)
+        is assumed to be UTC, so two timestamps are always compared as instants
+        and offsets like ``+01:00`` vs ``Z`` order chronologically, not
+        lexicographically.
+        """
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if text.endswith(("Z", "z")):
+            text = text[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
 
     def _sev(self, base: Severity) -> Severity:
         if self.mode == "warn_only":
