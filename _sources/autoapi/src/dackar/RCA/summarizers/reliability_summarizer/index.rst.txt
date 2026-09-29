@@ -1,0 +1,533 @@
+src.dackar.RCA.summarizers.reliability_summarizer
+=================================================
+
+.. py:module:: src.dackar.RCA.summarizers.reliability_summarizer
+
+.. autoapi-nested-parse::
+
+   reliability_summarizer.py
+   ================================
+
+   Doc-type aware summarization utilities for nuclear plant reliability documents.
+
+   Designed to integrate with your existing pipeline:
+   - pdfParser.py creates document_index.json (text_md_path, tables_paths, figures, provenance) :contentReference[oaicite:3]{index=3}
+   - mdParser.py parses Markdown into sections and emits chunks.jsonl :contentReference[oaicite:4]{index=4}
+
+   This module provides:
+   1) detect_doc_type(): Identify SOP/CR/WO/ECA/OTHER from doc_name/source_path and early text
+   2) section_role_from_title(): Tag sections as purpose/steps/evidence/etc. based on doc type
+   3) build_prompt(): Exact JSON-output prompts per doc type and view type
+   4) ollama_generate_json(): Call Ollama and parse JSON robustly
+   5) quality gates: validate_retrieval_summary_json(), validate_rca_frame_json()
+
+   All outputs are strict JSON dicts, suitable for:
+   - storing alongside chunk records in chunks.jsonl
+   - feeding to Chroma embedding pipeline (e.g., embedding flattened JSON)
+
+   No external dependencies beyond 'requests' and the standard library.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.summarizers.reliability_summarizer.DocType
+   src.dackar.RCA.summarizers.reliability_summarizer.ViewType
+   src.dackar.RCA.summarizers.reliability_summarizer._DOC_TYPE_HINTS
+   src.dackar.RCA.summarizers.reliability_summarizer._ROLE_PATTERNS
+   src.dackar.RCA.summarizers.reliability_summarizer._ENTITY_LIST_FIELDS
+   src.dackar.RCA.summarizers.reliability_summarizer._RETRIEVAL_SUMMARY_LIST_FIELDS
+   src.dackar.RCA.summarizers.reliability_summarizer._RCA_FRAME_LIST_FIELDS
+   src.dackar.RCA.summarizers.reliability_summarizer._CITATION_FIELD_TYPES
+   src.dackar.RCA.summarizers.reliability_summarizer._COMMON_SYSTEM_CONTRACT
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.summarizers.reliability_summarizer.ChunkContext
+   src.dackar.RCA.summarizers.reliability_summarizer.NERSeed
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.summarizers.reliability_summarizer.detect_doc_type
+   src.dackar.RCA.summarizers.reliability_summarizer.section_role_from_title
+   src.dackar.RCA.summarizers.reliability_summarizer._trusted_citations
+   src.dackar.RCA.summarizers.reliability_summarizer._apply_trusted_provenance
+   src.dackar.RCA.summarizers.reliability_summarizer.empty_retrieval_summary
+   src.dackar.RCA.summarizers.reliability_summarizer.empty_rca_frame
+   src.dackar.RCA.summarizers.reliability_summarizer.build_prompt
+   src.dackar.RCA.summarizers.reliability_summarizer.ollama_generate_json
+   src.dackar.RCA.summarizers.reliability_summarizer._extract_first_json_object
+   src.dackar.RCA.summarizers.reliability_summarizer._parse_json_strict
+   src.dackar.RCA.summarizers.reliability_summarizer._citation_flags
+   src.dackar.RCA.summarizers.reliability_summarizer.validate_retrieval_summary_json
+   src.dackar.RCA.summarizers.reliability_summarizer.validate_rca_frame_json
+   src.dackar.RCA.summarizers.reliability_summarizer.summarize_with_retry
+   src.dackar.RCA.summarizers.reliability_summarizer.flatten_retrieval_summary_for_embedding
+   src.dackar.RCA.summarizers.reliability_summarizer.flatten_rca_frame_for_embedding
+
+
+Module Contents
+---------------
+
+.. py:data:: DocType
+
+.. py:data:: ViewType
+
+.. py:class:: ChunkContext
+
+   Context for a chunk being summarized.
+
+   Input format
+   ------------
+   - doc_id: str
+   - doc_type: DocType
+   - chunk_id: str
+   - section_path: str (e.g., "7 Procedure > 7.2 Stroke Time Verification")
+   - page_start: int
+   - page_end: int
+   - authority_level: str in {"mandatory","guidance","informational","unknown"}
+   - section_role: str (derived label such as "steps", "evidence", "analysis"...)
+
+   Output format
+   -------------
+   Used to populate the "citations" block of JSON outputs.
+
+
+   .. py:attribute:: doc_id
+      :type:  str
+
+
+   .. py:attribute:: doc_type
+      :type:  DocType
+
+
+   .. py:attribute:: chunk_id
+      :type:  str
+
+
+   .. py:attribute:: section_path
+      :type:  str
+
+
+   .. py:attribute:: page_start
+      :type:  int
+
+
+   .. py:attribute:: page_end
+      :type:  int
+
+
+   .. py:attribute:: authority_level
+      :type:  str
+      :value: 'unknown'
+
+
+
+   .. py:attribute:: section_role
+      :type:  str
+      :value: 'unknown'
+
+
+
+.. py:class:: NERSeed
+
+   Seed signals derived from your NER layer and tag regex extraction.
+
+   Input format
+   ------------
+   {
+     "systems": [...],              # from NER label "syst" :contentReference[oaicite:5]{index=5}
+     "equipment_ids": [...],        # regex-derived (recommend you add)
+     "components": [...],           # from ast_*, comp_* labels :contentReference[oaicite:6]{index=6}
+     "mechanisms": [...],           # from "deg_mech" :contentReference[oaicite:7]{index=7}
+     "outcomes": [...],             # from "fail_type_n" + "event" :contentReference[oaicite:8]{index=8}
+     "surveillance_actions": [...], # from surv_ops_v / surv_ops_n :contentReference[oaicite:9]{index=9}
+     "maintenance_actions": [...],  # from mnt_ops :contentReference[oaicite:10]{index=10}
+     "properties": [...],           # from prop :contentReference[oaicite:11]{index=11}
+     "tools": [...],                # from surv_tool + mnt_tool :contentReference[oaicite:12]{index=12}
+     "fm_ids": [...],               # failure-mode identifiers (regex-derived)
+     "measurements": [{...}],       # list of measurement dicts
+     "doc_refs": [...],             # referenced document identifiers
+     "alarm_ids": [...],            # alarm identifiers
+     "temporal_refs": [...],        # absolute/relative time references
+     "temporal_relations": [{...}], # list of temporal-relation dicts
+     "temporal_qualifiers": [...],  # qualifiers (e.g. "intermittent")
+     "locations": [{...}],          # list of location dicts
+     "conjectures": [...]           # hedged/uncertain statements
+   }
+
+   Output format
+   -------------
+   A JSON-serializable dict used inside prompts. The model is instructed to
+   ONLY include items if supported by CHUNK_TEXT.
+
+
+   .. py:attribute:: systems
+      :type:  List[str]
+
+
+   .. py:attribute:: equipment_ids
+      :type:  List[str]
+
+
+   .. py:attribute:: components
+      :type:  List[str]
+
+
+   .. py:attribute:: mechanisms
+      :type:  List[str]
+
+
+   .. py:attribute:: outcomes
+      :type:  List[str]
+
+
+   .. py:attribute:: surveillance_actions
+      :type:  List[str]
+
+
+   .. py:attribute:: maintenance_actions
+      :type:  List[str]
+
+
+   .. py:attribute:: properties
+      :type:  List[str]
+
+
+   .. py:attribute:: tools
+      :type:  List[str]
+
+
+   .. py:attribute:: fm_ids
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: measurements
+      :type:  List[Dict[str, Any]]
+      :value: []
+
+
+
+   .. py:attribute:: doc_refs
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: alarm_ids
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: temporal_refs
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: temporal_relations
+      :type:  List[Dict[str, str]]
+      :value: []
+
+
+
+   .. py:attribute:: temporal_qualifiers
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:attribute:: locations
+      :type:  List[Dict[str, str]]
+      :value: []
+
+
+
+   .. py:attribute:: conjectures
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:method:: to_json()
+
+      Serialize the seed to the NER_SEED dict embedded in prompts.
+
+      :returns: One JSON-serializable key per public field of this dataclass, each
+                defaulting to an empty list when unset.  ``fm_ids`` (failure-mode
+                identifiers) is included so it reaches the model through
+                ``build_prompt()``; the key set mirrors the class field list.
+      :rtype: Dict[str, Any]
+
+
+
+.. py:data:: _DOC_TYPE_HINTS
+   :type:  List[Tuple[DocType, List[str]]]
+   :value: [('SOP', ['standard operating procedure', 'procedure', 'operating procedure', 'sop']), ('CR',...
+
+
+.. py:function:: detect_doc_type(doc_name, source_path, early_text)
+
+   Detect document type using filename/path hints + early extracted text.
+
+   Inputs
+   ------
+   doc_name: optional filename from document_index["doc_name"] :contentReference[oaicite:13]{index=13}
+   source_path: optional path from document_index["source_path"] :contentReference[oaicite:14]{index=14}
+   early_text: first 2-5k chars of cleaned text from the first parsed section (string)
+
+   Output
+   ------
+   DocType: "SOP"|"CR"|"WO"|"ECA"|"OTHER"
+
+
+.. py:data:: _ROLE_PATTERNS
+   :type:  Dict[DocType, List[Tuple[str, str]]]
+
+.. py:function:: section_role_from_title(doc_type, section_title)
+
+   Infer a section role from its title based on doc type.
+
+   Inputs
+   ------
+   doc_type: SOP|CR|WO|ECA|OTHER
+   section_title: the markdown heading title
+
+   Output
+   ------
+   role: string (e.g., "steps", "evidence", "analysis", ...) or "unknown"
+
+
+.. py:data:: _ENTITY_LIST_FIELDS
+   :type:  Tuple[str, ...]
+   :value: ('systems', 'equipment_ids', 'components')
+
+
+.. py:data:: _RETRIEVAL_SUMMARY_LIST_FIELDS
+   :type:  Tuple[str, ...]
+   :value: ('symptoms_outcomes', 'mechanisms', 'diagnostics', 'corrective_actions', 'numbers_limits',...
+
+
+.. py:data:: _RCA_FRAME_LIST_FIELDS
+   :type:  Tuple[str, ...]
+   :value: ('observed', 'hypotheses', 'tests_to_confirm', 'candidate_actions', 'constraints')
+
+
+.. py:data:: _CITATION_FIELD_TYPES
+   :type:  Dict[str, type]
+
+.. py:function:: _trusted_citations(ctx)
+
+   Build the citations block from trusted ChunkContext provenance.
+
+
+.. py:function:: _apply_trusted_provenance(obj, ctx, view_type)
+
+   Overwrite provenance fields on a model result with trusted values.
+
+   The model is never trusted to report its own ``chunk_id``, ``doc_type``,
+   ``view_type``, or ``citations``; these are replaced in place from the
+   ChunkContext so a fabricated value can never be stored as authoritative
+   provenance.  Content fields are left untouched for the validator to check.
+
+
+.. py:function:: empty_retrieval_summary(ctx)
+
+   Return the empty retrieval_summary contract for a chunk.
+
+   Used both as the prompt output skeleton (forcing keys/types) and as the
+   canonical shape checked by validate_retrieval_summary_json().
+
+   :param ctx: Trusted provenance; populates the ``citations`` block.
+   :type ctx: ChunkContext
+
+   :returns: Every contract key with an empty value of the correct type.
+   :rtype: Dict[str, Any]
+
+
+.. py:function:: empty_rca_frame(ctx)
+
+   Return the empty rca_frame contract for a chunk.
+
+   Used both as the prompt output skeleton and as the canonical shape checked
+   by validate_rca_frame_json().
+
+   :param ctx: Trusted provenance; populates the ``citations`` block.
+   :type ctx: ChunkContext
+
+   :returns: Every contract key with an empty value of the correct type.
+   :rtype: Dict[str, Any]
+
+
+.. py:data:: _COMMON_SYSTEM_CONTRACT
+   :value: Multiline-String
+
+   .. raw:: html
+
+      <details><summary>Show Value</summary>
+
+   .. code-block:: python
+
+      """You are an information extraction engine for nuclear plant reliability documents.
+      Return ONLY valid JSON. Do not include markdown, comments, or extra text.
+      
+      Rules:
+      - Use ONLY facts explicitly present in the provided CHUNK_TEXT.
+      - If a field cannot be filled from CHUNK_TEXT, use an empty array [] and add a short note to unknowns (retrieval_summary only).
+      - Preserve numbers, limits, units, and step numbers exactly as written.
+      - Prefer exact phrases from CHUNK_TEXT for technical terms.
+      - Do NOT invent causes, steps, thresholds, or conclusions.
+      - Output must match the requested JSON structure exactly (keys and types).
+      """
+
+   .. raw:: html
+
+      </details>
+
+
+
+.. py:function:: build_prompt(doc_type, view_type, ctx, ner_seed, chunk_text)
+
+   Build an Ollama prompt that produces STRICT JSON for the required view.
+
+   Inputs
+   ------
+   doc_type: SOP|CR|WO|ECA|OTHER
+   view_type: retrieval_summary|rca_frame
+   ctx: ChunkContext (doc_id/doc_type/chunk_id/section_path/pages/authority/role)
+   ner_seed: NERSeed (JSON-serializable grouped entity hints)
+   chunk_text: string (cleaned text; include table text if relevant)
+
+   Output
+   ------
+   prompt: string for Ollama (/api/chat or /api/generate)
+
+
+.. py:function:: ollama_generate_json(prompt, model = None, timeout = 90)
+
+   Call Ollama and return a parsed JSON dict.
+
+   Inputs
+   ------
+   prompt: str (must instruct "JSON only")
+   model: optional model name; defaults to env OLLAMA_MODEL or "mistral:latest"
+   timeout: request timeout seconds
+
+   Output
+   ------
+   dict parsed from model output
+
+   Behavior
+   --------
+   - Prefers /api/chat (non-stream for easier JSON parsing)
+   - Falls back to /api/generate
+   - If output contains extra text, attempts to extract the first JSON object via regex
+
+
+.. py:function:: _extract_first_json_object(text)
+
+   Return the first standalone JSON object embedded in ``text``.
+
+   Scans each ``{`` and attempts ``raw_decode`` from that position, so a
+   single object is recovered even with extra text on either side
+   (e.g. ``prefix {"a": 1} suffix {"b": 2}`` yields ``{"a": 1}``).  A greedy
+   first-brace-to-last-brace match would instead span both objects and fail
+   with "Extra data".  Returns ``None`` when no position decodes to an object.
+
+
+.. py:function:: _parse_json_strict(text)
+
+   Parse JSON from the model output.
+   If the output includes extra text, extract the first {...} block.
+
+   Input: text (string)
+   Output: dict
+   Raises: ValueError on failure
+
+
+.. py:function:: _citation_flags(obj)
+
+   Flag a missing or mis-typed ``citations`` block against the contract.
+
+
+.. py:function:: validate_retrieval_summary_json(obj)
+
+   Validate retrieval_summary shape and return flags (empty => pass).
+
+   Checks every field of the empty_retrieval_summary() contract for presence
+   and type, including the nested entities and citations blocks, using the
+   shared field tables so the gate cannot drift from the skeleton.
+
+   Input: dict (parsed JSON)
+   Output: List[str] flags
+
+
+.. py:function:: validate_rca_frame_json(obj)
+
+   Validate rca_frame shape and return flags (empty => pass).
+
+   Checks every field of the empty_rca_frame() contract for presence and
+   type, including the nested citations block, using the shared field tables.
+
+   Input: dict (parsed JSON)
+   Output: List[str] flags
+
+
+.. py:function:: summarize_with_retry(doc_type, view_type, ctx, ner_seed, chunk_text, model = None, timeout = 90, max_tries = 3, sleep_sec = 0.25)
+
+   Robust summarize call with retries.
+
+   Inputs
+   ------
+   doc_type/view_type/ctx/ner_seed/chunk_text: see build_prompt()
+   model: optional Ollama model name
+   max_tries: integer retry count
+
+   Output
+   ------
+   Parsed JSON dict (retrieval_summary or rca_frame)
+
+   .. rubric:: Notes
+
+   Retry ladder:
+   1) normal prompt
+   2) add "Your previous response was invalid JSON. Return valid JSON only."
+   3) truncate chunk text to reduce failure risk
+
+
+.. py:function:: flatten_retrieval_summary_for_embedding(summary)
+
+   Convert retrieval_summary JSON into a dense string for embedding.
+
+   Only fields with content are emitted; empty sections are dropped so they
+   do not dilute the embedding text.
+
+   Input: retrieval_summary dict
+   Output: string
+
+
+.. py:function:: flatten_rca_frame_for_embedding(rca)
+
+   Convert rca_frame JSON into an embedding-friendly string.
+
+   Only fields with content are emitted; empty sections are dropped so they
+   do not dilute the embedding text.
+
+   Input: rca_frame dict
+   Output: string
+
+
