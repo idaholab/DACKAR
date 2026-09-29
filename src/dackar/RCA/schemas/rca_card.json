@@ -55,6 +55,10 @@
       },
       "additionalProperties": true
     },
+    "fallback_used": {
+      "type": "boolean",
+      "description": "Top-level alias of validation_status.fallback_used for direct analyst access."
+    },
     "validation_status": {
       "type": "object",
       "required": [
@@ -87,6 +91,11 @@
         },
         "fallback_used": {
           "type": "boolean"
+        },
+        "synthesis_quality": {
+          "type": "string",
+          "enum": ["deterministic", "partial_llm", "full_llm"],
+          "description": "Provenance of the synthesized card: deterministic (template fallback), partial_llm (LLM output with deterministic repair), or full_llm (LLM output accepted as generated)."
         }
       },
       "additionalProperties": false
@@ -136,6 +145,10 @@
         "external_oe_unavailable": {
           "type": "boolean"
         },
+        "confidence_label_cap_reason": {
+          "type": "string",
+          "description": "Set when confidence_label was capped downward (e.g. temporal_support_unestablished, data_limited_conclusion, observationally_ungrounded); records why the label is bounded."
+        },
         "conclusion_type": {
           "type": "string",
           "enum": [
@@ -156,7 +169,10 @@
             "depth_incomplete_reason": {
               "type": "string",
               "description": "Present when depth_complete=false. Explains which depth layer is unresolved and what data or causal evidence would complete it."
-            }
+            },
+            "proximate_covered": { "type": "boolean" },
+            "contributing_covered": { "type": "boolean" },
+            "root_cause_covered": { "type": "boolean" }
           }
         },
         "unresolved_gaps": {
@@ -284,6 +300,22 @@
             },
             "additionalProperties": false
           }
+        },
+        "analyst_override": {
+          "type": "boolean",
+          "description": "True when this primary was promoted from an alternative by an analyst override."
+        },
+        "causal_grounding_absent": {
+          "type": "boolean",
+          "description": "Epistemics flag: no formal causal conclusion (RCA/ECA/CR/OE) grounds this candidate."
+        },
+        "observationally_ungrounded": {
+          "type": "boolean",
+          "description": "Epistemics flag: candidate is observationally strong but lacks an affects-class precursor or analyzes-class conclusion."
+        },
+        "confidence_label_cap_reason": {
+          "type": "string",
+          "description": "Set when confidence_label was capped downward; records why the label is bounded."
         }
       },
       "additionalProperties": false
@@ -519,6 +551,10 @@
           },
           "owner": {
             "type": "string"
+          },
+          "posture_warning": {
+            "type": "string",
+            "description": "Evidence-posture caveat attached to actions when the primary hypothesis rests on weak or absent evidence."
           }
         },
         "additionalProperties": false
@@ -548,6 +584,11 @@
             "hold_until_review",
             "ready_if_accepted"
           ]
+        },
+        "caveats": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Analyst-noted caveats recorded on the card when accepted with caveats."
         }
       },
       "additionalProperties": false
