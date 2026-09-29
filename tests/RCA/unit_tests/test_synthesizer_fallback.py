@@ -14,8 +14,11 @@ Key invariants:
   6. Card with top candidate passes _validate_card_semantics
   7. Evidence evidence_id values are sequential EV-001, EV-002, ...
 """
+import json
 import sys
 from pathlib import Path
+
+from jsonschema import Draft7Validator  # type: ignore[import]
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
 if str(_RCA_ROOT) not in sys.path:
@@ -23,6 +26,7 @@ if str(_RCA_ROOT) not in sys.path:
 
 from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
 from synthesis.rca_synthesizer_v31 import RCASynthesizerConfig
+from synthesis.analyst_override_processor import AnalystOverrideProcessor
 
 
 # ── Stub LLM client ───────────────────────────────────────────────────────────
@@ -662,6 +666,59 @@ def test_fallback_card_includes_depth_gaps_and_monitoring_plan():
     print("  PASS test_fallback_card_includes_depth_gaps_and_monitoring_plan")
 
 
+def _load_schema(name):
+    with open(_RCA_ROOT / "schemas" / name, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_generated_artifacts_conform_to_draft7_schemas():
+    """Blocking-issue guard: a generated fallback card and the override record it
+    produces must validate against their declared Draft-7 schemas. Both schemas
+    set additionalProperties:false, so any un-declared emitted field fails. Also
+    checks the populated override primary_diff emitted on a primary swap."""
+    s = make_synthesizer()
+    primary = make_candidate("FM::PRIMARY", "Primary cause", 0.82)
+    primary["supporting_evidence_refs"] = ["SNIP-1"]
+    alt = make_candidate("FM::ALT", "Alternative cause", 0.70)
+    ev = make_evidence_item("SNIP-1", "DOC-1", linked_candidate_id="FM::PRIMARY",
+                            support_role="supporting")
+    card = s._fallback_card(
+        rca_id="RCA-CONF-001",
+        event=make_event(),
+        selected_candidates=[primary, alt],
+        selected_evidence=[ev],
+        causality_candidates=make_causality_candidates(primary, alt),
+        evidence_bundle={"bundle_id": "BND-001", "results": [ev]},
+        run_context=make_run_context(),
+        prior_errors=[],
+    )
+    card_validator = Draft7Validator(_load_schema("rca_card.json"))
+    card_errors = sorted(card_validator.iter_errors(card), key=lambda e: list(e.path))
+    assert card_errors == [], f"card schema errors: {[e.message for e in card_errors]}"
+
+    alt_id = card["alternatives"][0]["candidate_id"]
+    modified, record = AnalystOverrideProcessor().apply(
+        rca_card=card,
+        override_input={
+            "override_type": "primary_candidate_change",
+            "rationale": "Alternative better explains the evidence.",
+            "override_primary_candidate_id": alt_id,
+            "writeback_decision": "accept",
+        },
+        run_context=make_run_context(),
+    )
+    ovr_errors = sorted(
+        Draft7Validator(_load_schema("analyst_override.json")).iter_errors(record),
+        key=lambda e: list(e.path),
+    )
+    assert ovr_errors == [], f"override_record schema errors: {[e.message for e in ovr_errors]}"
+    assert record["primary_diff"] and "candidate_id" in record["primary_diff"]
+
+    mod_errors = sorted(card_validator.iter_errors(modified), key=lambda e: list(e.path))
+    assert mod_errors == [], f"modified card schema errors: {[e.message for e in mod_errors]}"
+    print("  PASS test_generated_artifacts_conform_to_draft7_schemas")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -685,6 +742,7 @@ ALL_TESTS = [
     test_llm_output_injects_review_required_question,
     test_fallback_injects_review_required_question,
     test_fallback_card_includes_depth_gaps_and_monitoring_plan,
+    test_generated_artifacts_conform_to_draft7_schemas,
 ]
 
 
