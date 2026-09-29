@@ -342,8 +342,13 @@ def test_full_mode_run_manifest_invalid_decision_trail_event_type_fails():
         {"event_type": "unknown_event", "candidate_id": "C1"}
     ]
     report = validator.validate_artifact("run_manifest", payload)
-    assert any(i.code == "run_manifest_decision_trail_event_type_invalid" for i in report.issues)
+    # An out-of-enum event_type is a schema violation; validate_artifact skips the
+    # semantic checks once the schema fails, so rejection is via the schema here.
     assert report.ok is False
+    assert any(
+        i.code == "schema_validation_error" and i.path == ["decision_trail", "0", "event_type"]
+        for i in report.issues
+    )
 
 
 def test_full_mode_run_manifest_ruleout_entry_requires_fields():
@@ -360,6 +365,9 @@ def test_full_mode_run_manifest_ruleout_entry_requires_fields():
 def test_full_mode_run_manifest_reinstatement_entry_requires_rationale_refs_and_timestamp():
     validator = RCAArtifactValidator(schema_dir=_RCA_ROOT / "schemas", mode="compat")
     payload = _base_run_manifest_full()
+    # reinstated_at is omitted (a missing timestamp). An empty-string "" would be
+    # rejected by the schema's date-time format, which now short-circuits the
+    # semantic checks this test exercises.
     payload["decision_trail"] = [
         {
             "event_type": "reinstatement_status",
@@ -367,7 +375,6 @@ def test_full_mode_run_manifest_reinstatement_entry_requires_rationale_refs_and_
             "status": "reinstated_by_analyst",
             "reason_detail": "",
             "evidence_refs": [],
-            "reinstated_at": "",
         }
     ]
     report = validator.validate_artifact("run_manifest", payload)
@@ -382,8 +389,13 @@ def test_full_mode_run_manifest_analyst_checkpoint_invalid_state_fails():
     payload = _base_run_manifest_full()
     payload["analyst_checkpoints"][0]["status"] = "done"
     report = validator.validate_artifact("run_manifest", payload)
-    assert any(i.code == "run_manifest_analyst_checkpoint_status_invalid" for i in report.issues)
+    # An out-of-enum checkpoint status is a schema violation; the semantic checks
+    # are skipped once the schema fails, so rejection is via the schema here.
     assert report.ok is False
+    assert any(
+        i.code == "schema_validation_error" and i.path == ["analyst_checkpoints", "0", "status"]
+        for i in report.issues
+    )
 
 
 def test_full_mode_run_manifest_analyst_checkpoint_state_consistency_fails():
@@ -573,8 +585,13 @@ def test_full_mode_run_context_requires_scope_management():
     payload = _base_run_context_full_mode()
     del payload["scope_management"]
     report = validator.validate_artifact("run_context", payload)
-    assert any(i.code == "scope_management_missing_full_mode" for i in report.issues)
+    # scope_management is schema-required at the root; the semantic full-mode check
+    # is skipped once the schema fails, so rejection is via the schema here.
     assert report.ok is False
+    assert any(
+        i.code == "schema_validation_error" and "scope_management" in i.message
+        for i in report.issues
+    )
 
 
 def test_full_mode_run_context_active_version_must_match_accepted_revision():
