@@ -110,8 +110,14 @@ def test_invalid_ruleout_reason_code_fails_semantic_validation():
         "pipeline_health": {"status": "green", "issues": []},
     }
     report = _validator().validate_artifact("causality_candidates", payload)
-    assert any(i.code == "ruleout_reason_code_invalid" for i in report.issues)
+    # An out-of-enum ruleout reason_code is a schema violation; validate_artifact
+    # skips the semantic checks once the schema fails, so rejection is via the schema.
     assert report.ok is False
+    assert any(
+        i.code == "schema_validation_error"
+        and i.path == ["candidates", "0", "ruleout", "reason_code"]
+        for i in report.issues
+    )
 
 
 def test_manifest_carries_wave1_metamodel_config():

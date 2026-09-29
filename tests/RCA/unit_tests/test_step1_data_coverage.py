@@ -428,6 +428,7 @@ def _base_manifest_full_coverage():
             "coverage_acknowledgement_required": False,
             "coverage_acknowledged": False,
             "writeback_ready": True,
+            "next_step": "analyst_review",  # schema-required in review_hooks
         },
         "pipeline_health": {"status": "green", "issues": []},
         "ap913_completeness": {
