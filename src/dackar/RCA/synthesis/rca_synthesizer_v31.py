@@ -17,11 +17,58 @@ class LLMClient(Protocol):
     """Minimal structured-generation interface expected by the synthesizer."""
 
     def generate_json(self, model: str, prompt: str, temperature: float = 0.1) -> JsonDict:
+        """Generate a JSON object from a prompt.
+
+        Parameters
+        ----------
+        model:
+            Model identifier to invoke.
+        prompt:
+            Fully-rendered prompt string.
+        temperature:
+            Sampling temperature; the synthesizer passes a low default for
+            determinism.
+
+        Returns
+        -------
+        JsonDict
+            The parsed JSON object emitted by the model. Implementations must
+            return a ``dict`` (already JSON-decoded), not a raw string. A
+            generation or decode failure should raise; the synthesizer catches
+            the exception and falls back to deterministic template synthesis.
+        """
         ...
 
 
 @dataclass
 class RCASynthesizerConfig:
+    """Tunable configuration for :class:`RuleValidatedRCASynthesizerV31`.
+
+    Attributes
+    ----------
+    llm_model:
+        Model identifier passed to ``LLMClient.generate_json``.
+    llm_prompt_version:
+        Prompt template version stamped into card provenance.
+    temperature:
+        Sampling temperature for LLM synthesis.
+    max_candidates_in_prompt:
+        Maximum causality candidates rendered into the synthesis prompt.
+    max_synthesis_extra_review_candidates:
+        Additional lower-ranked candidates retained for review context beyond
+        the prompt cap.
+    max_evidence_in_prompt:
+        Maximum evidence snippets rendered into the prompt.
+    min_evidence_per_candidate_in_prompt:
+        Minimum evidence snippets guaranteed per candidate when available.
+    allow_fallback_template_fill:
+        When True, a failed or invalid LLM generation falls back to
+        deterministic template synthesis instead of raising.
+    minimum_primary_score:
+        Baseline composite-score floor the primary hypothesis must clear to
+        pass the minimum-evidence gate. Event severity may raise this floor
+        (see ``minimum_score_for_severity``) but never lowers it.
+    """
     llm_model: str = "llama3:8b"
     llm_prompt_version: str = "rca_synth_v3_1"
     temperature: float = 0.1
@@ -75,6 +122,39 @@ class RuleValidatedRCASynthesizerV31:
         cmms_context: Optional[JsonDict] = None,
         similar_event_list: Optional[JsonDict] = None,
     ) -> JsonDict:
+        """Synthesize a validated RCA card from structured reasoning artifacts.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event. Must carry ``event_id`` (or ``id``); an
+            optional ``severity`` (1–5) raises the minimum-evidence gate floor.
+        telemetry_summary:
+            Telemetry anomaly summary for the event window.
+        kg_context:
+            Knowledge-graph neighbourhood (components, failure modes, barriers).
+        tskr_patterns:
+            TSKR chain-position patterns, or None when unavailable.
+        causality_candidates:
+            Ranked candidate hypotheses under ``candidates`` (each with scores,
+            evidence posture, and optional epistemics digest).
+        evidence_bundle:
+            Retrieved evidence snippets keyed for citation.
+        operational_context, pm_compliance, ishikawa_matrix, cmms_context, similar_event_list:
+            Optional supporting artifacts folded into the card when present.
+        run_context:
+            Orchestrator run context (``run_id``, optional ``event_id`` /
+            ``asset_id``).
+
+        Returns
+        -------
+        JsonDict
+            An RCA card conforming to ``schemas/rca_card.json``. On LLM failure
+            or invalid output a deterministic fallback card is returned instead
+            (``validation_status.fallback_used = True``) rather than raising.
+            ``validation_status`` records schema/citation/evidence-gate outcomes
+            and ``synthesis_quality`` (deterministic | partial_llm | full_llm).
+        """
         event_id = event.get("event_id") or event["id"]
         rca_id = f"RCA::{event_id}::{uuid.uuid4()}"
 
@@ -225,7 +305,9 @@ class RuleValidatedRCASynthesizerV31:
         card["fallback_used"] = fallback_used  # top-level alias for direct analyst access
         card["validation_status"]["schema_valid"] = len(validation_errors) == 0
         card["validation_status"]["all_claims_cited"] = self._all_claims_cited(card)
-        card["validation_status"]["passed_minimum_evidence_gate"] = self._passes_minimum_evidence_gate(card)
+        card["validation_status"]["passed_minimum_evidence_gate"] = self._passes_minimum_evidence_gate(
+            card, event.get("severity")
+        )
         if fallback_used:
             card["validation_status"]["synthesis_quality"] = "deterministic"
         elif _llm_repair_count > 0:
@@ -1810,6 +1892,22 @@ analyst_review = {
 
     @staticmethod
     def minimum_score_for_severity(severity) -> float:
+        """Return the minimum composite score a primary must clear for a severity.
+
+        Parameters
+        ----------
+        severity:
+            Event severity 1 (minor) … 5 (critical). Accepts int or numeric
+            string; None or an unparseable value defaults to severity 3.
+
+        Returns
+        -------
+        float
+            The severity floor from ``_SEVERITY_SCORE_FLOORS`` (0.35 for any
+            severity outside 1–5). Callers combine this with
+            ``config.minimum_primary_score`` via ``max`` so the floor only ever
+            tightens the gate.
+        """
         try:
             s = int(severity or 3)
         except (TypeError, ValueError):
@@ -1873,7 +1971,8 @@ analyst_review = {
             )
             action_row.setdefault("target_causal_depth", "proximate")
 
-            action_row["posture_warning"] = posture_warning
+            if posture_warning:
+                action_row["posture_warning"] = posture_warning
             action_row["priority"] = self._apply_safety_priority(
                 str(action_row.get("priority") or "low"),
                 safety_ctx,
@@ -3689,7 +3788,8 @@ analyst_review = {
                 {
                     "primary_hypothesis": {"candidate_id": primary_candidate_id, "composite_score": top.get("composite_score", 0.0), "citations": [{}]},
                     "evidence": evidence,
-                }
+                },
+                event.get("severity"),
             )
             fallback_posture = self._fallback_confidence_and_decision(
                 evidence_summary=evidence_summary,
@@ -4344,7 +4444,9 @@ analyst_review = {
 
         return True
 
-    def _passes_minimum_evidence_gate(self, card: JsonDict) -> bool:
+    def _passes_minimum_evidence_gate(
+        self, card: JsonDict, event_severity: Any = None
+    ) -> bool:
         primary = card.get("primary_hypothesis", {})
         if primary.get("candidate_id") == "NONE":
             return False
@@ -4352,7 +4454,14 @@ analyst_review = {
         if not primary_candidate_id:
             return False
 
-        if float(primary.get("composite_score", 0.0)) < self.config.minimum_primary_score:
+        # Event severity raises the writeback floor for high-severity events; it
+        # never lowers the configured baseline (max of the two), so low-severity
+        # events keep the existing minimum_primary_score behaviour.
+        minimum_score = max(
+            self.config.minimum_primary_score,
+            self.minimum_score_for_severity(event_severity),
+        )
+        if float(primary.get("composite_score", 0.0)) < minimum_score:
             return False
 
         if not primary.get("citations"):
