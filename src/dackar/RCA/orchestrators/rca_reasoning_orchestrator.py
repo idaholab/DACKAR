@@ -75,6 +75,8 @@ def parse_dt(value: Optional[str]) -> Optional[datetime]:
 
 
 class KGContextBuilder(Protocol):
+    """Collaborator that builds the knowledge-graph context for an event."""
+
     def build(
         self,
         event: JsonDict,
@@ -84,10 +86,34 @@ class KGContextBuilder(Protocol):
         run_context: JsonDict,
         focus_component_ids: Optional[List[str]] = None,
     ) -> JsonDict:
+        """Build the KG neighbourhood for an event.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event (must carry ``event_id`` or ``id``).
+        telemetry_summary:
+            Telemetry anomaly summary for the event window.
+        operational_context, pm_compliance:
+            Optional operating-state and PM-compliance inputs, or None.
+        run_context:
+            Orchestrator run context (``run_id`` and related identifiers).
+        focus_component_ids:
+            When provided, narrows the neighbourhood to these components;
+            auto re-entry uses it to refocus a second pass.
+
+        Returns
+        -------
+        JsonDict
+            KG neighbourhood (components, failure modes, barriers) conforming
+            to ``schemas/kg_context.json``.
+        """
         ...
 
 
 class TSKRTemporalScorer(Protocol):
+    """Collaborator that scores TSKR temporal chain-position patterns."""
+
     def score(
         self,
         event: JsonDict,
@@ -97,10 +123,34 @@ class TSKRTemporalScorer(Protocol):
         run_context: JsonDict,
         signal_evidence: Optional[JsonDict] = None,
     ) -> JsonDict:
+        """Score temporal patterns for the event's candidate failure modes.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event.
+        telemetry_summary:
+            Telemetry anomaly summary for the event window.
+        kg_context:
+            KG neighbourhood from :meth:`KGContextBuilder.build`.
+        operational_context:
+            Optional operating-state input, or None.
+        run_context:
+            Orchestrator run context.
+        signal_evidence:
+            Optional signal-episode evidence, or None when unavailable.
+
+        Returns
+        -------
+        JsonDict
+            TSKR patterns conforming to ``schemas/tskr_patterns.json``.
+        """
         ...
 
 
 class CausalityEngine(Protocol):
+    """Collaborator that generates and refines causal candidate hypotheses."""
+
     def generate(
         self,
         event: JsonDict,
@@ -111,10 +161,35 @@ class CausalityEngine(Protocol):
         pm_compliance: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        """Generate ranked causal candidate hypotheses for the event.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event.
+        telemetry_summary:
+            Telemetry anomaly summary for the event window.
+        kg_context:
+            KG neighbourhood from :meth:`KGContextBuilder.build`.
+        tskr_patterns:
+            TSKR chain-position patterns, or None when unavailable.
+        operational_context, pm_compliance:
+            Optional supporting artifacts, or None.
+        run_context:
+            Orchestrator run context.
+
+        Returns
+        -------
+        JsonDict
+            Candidate hypotheses conforming to
+            ``schemas/causality_candidates.json``.
+        """
         ...
 
 
 class EvidenceRetriever(Protocol):
+    """Collaborator that retrieves documentary evidence for candidates."""
+
     def retrieve(
         self,
         event: JsonDict,
@@ -123,10 +198,33 @@ class EvidenceRetriever(Protocol):
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        """Retrieve an evidence bundle supporting the candidate hypotheses.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event.
+        kg_context:
+            KG neighbourhood from :meth:`KGContextBuilder.build`.
+        causality_candidates:
+            Candidate hypotheses to gather evidence for.
+        operational_context:
+            Optional operating-state input, or None.
+        run_context:
+            Orchestrator run context.
+
+        Returns
+        -------
+        JsonDict
+            Evidence bundle conforming to ``schemas/evidence_bundle.json`` (its
+            ``results`` list holds normalized, candidate-linked hits).
+        """
         ...
 
 
 class RCASynthesizer(Protocol):
+    """Collaborator that synthesizes the final validated RCA card."""
+
     def synthesize(
         self,
         event: JsonDict,
@@ -140,10 +238,32 @@ class RCASynthesizer(Protocol):
         ishikawa_matrix: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        """Synthesize a validated RCA card from the reasoning artifacts.
+
+        Parameters
+        ----------
+        event, telemetry_summary, kg_context:
+            Target event, its telemetry summary, and the KG neighbourhood.
+        tskr_patterns:
+            TSKR chain-position patterns, or None.
+        causality_candidates, evidence_bundle:
+            Ranked candidate hypotheses and their retrieved evidence.
+        operational_context, pm_compliance, ishikawa_matrix:
+            Optional supporting artifacts folded into the card when present.
+        run_context:
+            Orchestrator run context.
+
+        Returns
+        -------
+        JsonDict
+            An RCA card conforming to ``schemas/rca_card.json``.
+        """
         ...
 
 
 class IshikawaEvaluator(Protocol):
+    """Collaborator that builds the Ishikawa (fishbone) contributing-factor matrix."""
+
     def evaluate(
         self,
         event: JsonDict,
@@ -156,6 +276,26 @@ class IshikawaEvaluator(Protocol):
         pm_compliance: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        """Build the Ishikawa contributing-factor matrix for the event.
+
+        Parameters
+        ----------
+        event, telemetry_summary, kg_context:
+            Target event, its telemetry summary, and the KG neighbourhood.
+        tskr_patterns:
+            TSKR chain-position patterns, or None.
+        causality_candidates, evidence_bundle:
+            Ranked candidate hypotheses and their retrieved evidence.
+        operational_context, pm_compliance:
+            Optional supporting artifacts, or None.
+        run_context:
+            Orchestrator run context.
+
+        Returns
+        -------
+        JsonDict
+            An Ishikawa matrix conforming to ``schemas/ishikawa_matrix.json``.
+        """
         ...
 
 class SchemaValidator(Protocol):
@@ -171,25 +311,69 @@ class SchemaValidator(Protocol):
            validate_run_bundle(event=..., telemetry_summary=..., ...) -> ValidationReport|dict|None
     """
     def validate(self, artifact_name: str, payload: JsonDict) -> None:
+        """Legacy style: validate *payload* for *artifact_name*, raising on failure."""
         ...
 
     def validate_artifact(self, artifact_name: str, payload: JsonDict) -> Any:
+        """Richer per-artifact style: return a validation report (or None) without raising."""
         ...
 
     def validate_run_bundle(self, **kwargs: Any) -> Any:
+        """Richer bundle style: cross-validate a whole run's artifacts passed as keywords."""
         ...
 
 class ArtifactStore(Protocol):
+    """Collaborator that persists run artifacts and returns their storage keys."""
+
     def save(self, run_id: str, artifact_name: str, payload: JsonDict) -> str:
+        """Persist a single artifact *payload* under *run_id* and return its storage key."""
         ...
 
     def save_list(self, run_id: str, artifact_name: str, payload: List[JsonDict]) -> str:
+        """Persist a list-valued artifact *payload* under *run_id* and return its storage key."""
         ...
 
 
 
 @dataclass
 class OrchestratorConfig:
+    """Tunable configuration for :class:`RCAReasoningOrchestrator`.
+
+    Attributes
+    ----------
+    enable_ishikawa:
+        When True, build the optional Ishikawa matrix (requires an
+        ``ishikawa_evaluator``).
+    persist_intermediate_artifacts:
+        When True, persist per-stage artifacts (not just the final card).
+    stop_on_validation_error:
+        When True (the default), a required-artifact validation failure — and a
+        genuine failure in an optional stage such as supersession or epistemics
+        — raises; when False, optional-stage failures are recorded in the run's
+        ``optional_artifact_failures`` and logged instead of raising.
+    run_label:
+        Optional human-readable label stamped into run context.
+    top_k_candidates, top_k_evidence:
+        Caps on candidates carried forward and evidence snippets retrieved.
+    enable_semantic_recurrence, semantic_similarity_threshold, near_match_window, fm_id_resolution_threshold, top_k_semantic:
+        Semantic document-recurrence parameters (§4.5).
+    enable_signal_episode_search, signal_episode_staleness_window_days:
+        Signal-episode retrieval parameters (Step 2d, Phase 1).
+    enable_cross_pattern_linkage:
+        When True, link candidates to historical signal episodes (Phase 2).
+    epistemics_policy_version:
+        Policy version forwarded to the Phase C supersession pass, or None.
+    fast_transient_event_types:
+        Event types that use a fast-transient Allen epsilon (Issue 5).
+    category_l_score_floor:
+        Organizational (Category L) minimum score floor (Issue 11).
+    tier_confidence_multipliers:
+        Per-tier (plant/fleet/industry) confidence multipliers (Issue 12).
+    extra:
+        Free-form overrides (e.g. ``enable_auto_reentry``,
+        ``auto_reentry_max_attempts``) consulted by optional stages.
+    """
+
     enable_ishikawa: bool = False
     persist_intermediate_artifacts: bool = True
     stop_on_validation_error: bool = True
@@ -226,6 +410,27 @@ class OrchestratorConfig:
 
 @dataclass
 class RCAReasoningOrchestrator:
+    """Deterministic RCA pipeline coordinating the reasoning collaborators.
+
+    Wires the injected collaborators (KG context, TSKR scoring, causality,
+    evidence retrieval, synthesis, and the optional Ishikawa evaluator) into a
+    single :meth:`run` that produces a validated RCA card and its supporting
+    artifacts. Collaborators are supplied as Protocol-typed dependencies so the
+    orchestrator stays agnostic to their concrete implementations; see
+    :func:`build_dev_orchestrator` for a ready-to-use development wiring.
+
+    Attributes
+    ----------
+    validator, artifact_store, kg_context_builder, causality_engine, evidence_retriever, rca_synthesizer:
+        Required collaborators (see the corresponding Protocols).
+    tskr_temporal_scorer, ishikawa_evaluator:
+        Optional collaborators; when None their stages are skipped.
+    cap_adapter, cap_config, workflow_dispatch_adapter, cmms_adapter, cmms_context_builder_config, similar_event_adapter, doc_extraction_store, pattern_searcher, cross_pattern_linker, epistemics_classifier:
+        Optional integration adapters enabling downstream/side features.
+    config:
+        :class:`OrchestratorConfig` controlling stage toggles and thresholds.
+    """
+
     validator: SchemaValidator
     artifact_store: ArtifactStore
     kg_context_builder: KGContextBuilder
@@ -269,15 +474,28 @@ class RCAReasoningOrchestrator:
             self.doc_extraction_store.epistemics_classifier = classifier
 
     def _attach_epistemics_digests(
-        self, causality_candidates: JsonDict, evidence_bundle: JsonDict
+        self,
+        causality_candidates: JsonDict,
+        evidence_bundle: JsonDict,
+        optional_artifact_failures: List[JsonDict],
     ) -> None:
         """Phase D — Build per-candidate EpistemicsDigests and attach in-place.
 
         Runs post-refine_with_evidence() so that observationally_ungrounded
         (set by Phase C) is already present on each candidate.
+
+        A missing ``epistemics_digest`` module is treated as an optional
+        capability (debug-logged, skipped).  A genuine failure while building the
+        digests re-raises under ``stop_on_validation_error``; otherwise it is
+        recorded in *optional_artifact_failures* and logged rather than silently
+        swallowed.
         """
         try:
             from .epistemics_digest import build_epistemics_digests
+        except (ImportError, ModuleNotFoundError) as exc:
+            LOGGER.debug("epistemics_digest module unavailable — skipping digests: %r", exc)
+            return
+        try:
             digests = build_epistemics_digests(
                 causality_candidates=causality_candidates,
                 results=evidence_bundle.get("results") or [],
@@ -286,20 +504,57 @@ class RCAReasoningOrchestrator:
                 cid = str(cand.get("candidate_id") or "")
                 if cid and cid in digests:
                     cand["epistemics_digest"] = digests[cid]
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            if self.config.stop_on_validation_error:
+                raise
+            LOGGER.warning(
+                "Epistemics digest build failed — pipeline continues without digests: %s",
+                exc,
+            )
+            optional_artifact_failures.append({
+                "phase": "epistemics_digest",
+                "artifact": "epistemics_digest",
+                "error_type": type(exc).__name__,
+                "error": repr(exc),
+                "impact": "candidates lack epistemics_digest annotations",
+            })
 
-    def _apply_supersession(self, evidence_bundle: JsonDict) -> JsonDict:
+    def _apply_supersession(
+        self, evidence_bundle: JsonDict, optional_artifact_failures: List[JsonDict]
+    ) -> JsonDict:
         """Apply Phase C supersession pass to an evidence bundle (ADR-1, 2026-04-30).
 
         Lazy-imports resolve_supersession so the orchestrator does not hard-depend
         on the supersession module when Phase C is not active.
+
+        A missing supersession module is treated as an optional capability
+        (debug-logged, bundle returned unmodified).  A genuine failure during the
+        pass re-raises under ``stop_on_validation_error``; otherwise it is recorded
+        in *optional_artifact_failures* and logged, and the unmodified bundle is
+        returned rather than swallowing the error silently.
         """
         try:
             from .supersession import resolve_supersession
+        except (ImportError, ModuleNotFoundError) as exc:
+            LOGGER.debug("supersession module unavailable — skipping supersession pass: %r", exc)
+            return evidence_bundle
+        try:
             policy_version = getattr(self.config, "epistemics_policy_version", None)
             return resolve_supersession(evidence_bundle, epistemics_policy_version=policy_version)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            if self.config.stop_on_validation_error:
+                raise
+            LOGGER.warning(
+                "Supersession pass failed — evidence bundle returned unmodified: %s",
+                exc,
+            )
+            optional_artifact_failures.append({
+                "phase": "supersession",
+                "artifact": "evidence_bundle",
+                "error_type": type(exc).__name__,
+                "error": repr(exc),
+                "impact": "supersession pass skipped; evidence bundle unmodified",
+            })
             return evidence_bundle
 
     def run(
@@ -322,6 +577,46 @@ class RCAReasoningOrchestrator:
         training_records: Optional[JsonDict] = None,
         initial_scope_management: Optional[JsonDict] = None,
     ) -> JsonDict:
+        """Run the full RCA reasoning pipeline for a single event.
+
+        Executes the ordered stages — KG context, TSKR temporal scoring,
+        causality generation, evidence retrieval, Phase C supersession, evidence
+        refinement, optional auto re-entry, Phase D epistemics digests, optional
+        Ishikawa evaluation, and synthesis — persisting each artifact and
+        validating it against its schema along the way. Pre-computed artifacts
+        may be supplied to skip the corresponding stage.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event. Must carry ``event_id`` (or ``id``).
+        telemetry_summary:
+            Telemetry anomaly summary for the event window.
+        operational_context, pm_compliance:
+            Optional operating-state and PM-compliance inputs, or None.
+        kg_context, signal_evidence, tskr_patterns, causality_candidates, evidence_bundle:
+            Optional pre-computed stage outputs; when provided, the matching
+            stage reuses them instead of recomputing.
+        soe_log, alarm_log:
+            Optional sequence-of-events and alarm logs feeding TSKR scoring
+            (including the auto re-entry rebuild).
+        protection_logic_context, configuration_change_records, environmental_monitoring, vendor_supply_chain_records, training_records, initial_scope_management:
+            Optional supplementary evidence artifacts folded in when present.
+
+        Returns
+        -------
+        JsonDict
+            The run bundle: the validated RCA card plus references to every
+            persisted artifact and the run manifest.
+
+        Raises
+        ------
+        Exception
+            Under ``config.stop_on_validation_error`` (the default), a
+            required-artifact validation failure or a genuine failure in an
+            optional stage (supersession/epistemics) propagates; otherwise
+            optional-stage failures are recorded in ``optional_artifact_failures``.
+        """
         run_id = str(uuid.uuid4())
         self.artifact_store.save(run_id, "run_status", {
             "run_id": run_id, "run_complete": False, "started_at": utcnow_iso(),
@@ -544,7 +839,7 @@ class RCAReasoningOrchestrator:
                 operational_context=operational_context,
                 run_context=run_context,
             )
-        evidence_bundle = self._apply_supersession(evidence_bundle)
+        evidence_bundle = self._apply_supersession(evidence_bundle, optional_artifact_failures)
         self._validate_and_persist(run_id, "evidence_bundle", evidence_bundle)
 
         causality_candidates_pre_refine: Optional[JsonDict] = None
@@ -624,6 +919,9 @@ class RCAReasoningOrchestrator:
             causality_candidates=causality_candidates,
             evidence_bundle=evidence_bundle,
             protection_logic_context=protection_logic_context,
+            alarm_log=alarm_log,
+            soe_log=soe_log,
+            optional_artifact_failures=optional_artifact_failures,
         )
         kg_context = reentry_execution["kg_context"]
         signal_evidence = reentry_execution["signal_evidence"]
@@ -748,7 +1046,7 @@ class RCAReasoningOrchestrator:
                 })
 
         # Phase D — attach EpistemicsDigest to each candidate before synthesis
-        self._attach_epistemics_digests(causality_candidates, evidence_bundle)
+        self._attach_epistemics_digests(causality_candidates, evidence_bundle, optional_artifact_failures)
 
         rca_card = self.rca_synthesizer.synthesize(
             event=event,
@@ -1474,7 +1772,15 @@ class RCAReasoningOrchestrator:
         causality_candidates: JsonDict,
         evidence_bundle: JsonDict,
         protection_logic_context: Optional[JsonDict] = None,
+        alarm_log: Optional[JsonDict] = None,
+        soe_log: Optional[JsonDict] = None,
+        optional_artifact_failures: Optional[List[JsonDict]] = None,
     ) -> JsonDict:
+        # alarm_log / soe_log feed the re-entry TSKR rebuild (mirroring run());
+        # optional_artifact_failures threads run()'s accumulator so a re-entry
+        # supersession failure is recorded rather than lost.
+        if optional_artifact_failures is None:
+            optional_artifact_failures = []
         hook = self._compute_reentry_hook(
             causality_candidates_pre_refine=causality_candidates_pre_refine,
             causality_candidates=causality_candidates,
@@ -1567,7 +1873,7 @@ class RCAReasoningOrchestrator:
                 operational_context=operational_context,
                 run_context=run_context,
             )
-            evidence_bundle = self._apply_supersession(evidence_bundle)
+            evidence_bundle = self._apply_supersession(evidence_bundle, optional_artifact_failures)
             self._validate_and_persist(run_id, "evidence_bundle", evidence_bundle)
 
             causality_candidates_pre_refine = copy.deepcopy(causality_candidates)
@@ -6756,6 +7062,42 @@ def build_dev_orchestrator(
     cmms_adapter=None,
     cmms_context_builder_config=None,
 ) -> RCAReasoningOrchestrator:
+    """Build a fully wired :class:`RCAReasoningOrchestrator` for local development.
+
+    Constructs concrete collaborators (KG context builder over *client*, TSKR
+    scorer, the selected causality engine, a Chroma-backed evidence retriever,
+    the rule-validated synthesizer, and the heuristic Ishikawa evaluator) around
+    a ``dev-local`` :class:`OrchestratorConfig` with Ishikawa and auto re-entry
+    enabled.
+
+    Parameters
+    ----------
+    output_dir:
+        Directory the :class:`FileArtifactStore` writes run artifacts to.
+    client:
+        Neo4j/Py2Neo client backing the KG context builder.
+    database:
+        Optional Neo4j database name, or None for the default.
+    evidence_store:
+        Pre-built evidence store; when None a Chroma-backed store is used.
+    llm_client:
+        LLM client for synthesis; when None a deterministic fallback is used.
+    schema_dir:
+        Directory of JSON schemas for the validator, or None for the default.
+    validator_mode:
+        Validator style key stored in ``config.extra`` (default ``"compat"``).
+    stop_on_validation_error:
+        Passed through to :attr:`OrchestratorConfig.stop_on_validation_error`.
+    causality_engine_version:
+        Which causality engine to wire (default ``"v32"``).
+    cap_adapter, cap_config, cmms_adapter, cmms_context_builder_config:
+        Optional CAP / CMMS integration adapters and their configs.
+
+    Returns
+    -------
+    RCAReasoningOrchestrator
+        A ready-to-run orchestrator instance.
+    """
 
     orchestrator_config = OrchestratorConfig(
         run_label="dev-local",

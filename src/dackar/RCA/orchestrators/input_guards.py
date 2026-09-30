@@ -7,20 +7,12 @@ Non-blocking warnings—runs continue; issues surface in ``run_context.input_gua
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from dackar.RCA._timeutils import parse_dt
+
 JsonDict = Dict[str, Any]
-
-
-def _parse(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
-        return None
 
 
 def assert_output_dir_writable(root: Path) -> None:
@@ -60,7 +52,7 @@ def build_input_guards(
     """
     flags: List[str] = []
     notes: List[str] = []
-    event_ts = _parse(
+    event_ts = parse_dt(
         (event or {}).get("timestamp_start")
         or (event or {}).get("timestamp")
     )
@@ -74,8 +66,8 @@ def build_input_guards(
 
     if event_ts and telemetry_summary:
         win = (telemetry_summary.get("window") or {}) if isinstance(telemetry_summary, dict) else {}
-        wend = _parse(win.get("end"))
-        wstart = _parse(win.get("start"))
+        wend = parse_dt(win.get("end"))
+        wstart = parse_dt(win.get("start"))
         if wend and event_ts and wend < event_ts:
             flags.append("telemetry_window_end_before_event")
             notes.append(
@@ -88,7 +80,7 @@ def build_input_guards(
             )
 
     if event_ts and pm_compliance and isinstance(pm_compliance, dict):
-        ad = _parse(pm_compliance.get("assessment_date"))
+        ad = parse_dt(pm_compliance.get("assessment_date"))
         if ad and event_ts:
             days = (event_ts.date() - ad.date()).days
             if days > pm_staleness_threshold_days:
@@ -103,7 +95,7 @@ def build_input_guards(
                 )
 
     if event_ts and operational_context and isinstance(operational_context, dict):
-        as_of = _parse(operational_context.get("as_of_timestamp"))
+        as_of = parse_dt(operational_context.get("as_of_timestamp"))
         if as_of and event_ts:
             delta = abs((event_ts - as_of).total_seconds() / 3600.0)
             if delta > float(oc_staleness_threshold_hours):
