@@ -4,15 +4,9 @@ Contract checks for Stage B.5 -> Stage C integration.
 Run:
   python test_stage_b5_c_contract.py
 """
-import sys
-from pathlib import Path
 from typing import Any, Dict
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
+from dackar.RCA.orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
 
 
 def _base_inputs() -> Dict[str, Any]:

@@ -21,12 +21,10 @@ from pathlib import Path
 from jsonschema import Draft7Validator  # type: ignore[import]
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
-from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
-from synthesis.rca_synthesizer_v31 import RCASynthesizerConfig
-from synthesis.analyst_override_processor import AnalystOverrideProcessor
+from dackar.RCA.synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
+from dackar.RCA.synthesis.rca_synthesizer_v31 import RCASynthesizerConfig
+from dackar.RCA.synthesis.analyst_override_processor import AnalystOverrideProcessor
 
 
 # ── Stub LLM client ───────────────────────────────────────────────────────────

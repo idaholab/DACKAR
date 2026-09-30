@@ -1,15 +1,8 @@
 """
 Unit tests for AnalystOverrideProcessor.
 """
-import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
 import pytest
-from synthesis.analyst_override_processor import AnalystOverrideProcessor
+from dackar.RCA.synthesis.analyst_override_processor import AnalystOverrideProcessor
 
 
 # ---------------------------------------------------------------------------

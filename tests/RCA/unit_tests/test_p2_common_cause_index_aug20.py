@@ -13,12 +13,7 @@ Run:  pytest test_p2_common_cause_index_aug20.py -v
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb",
              "langchain_community", "langchain_community.vectorstores",
@@ -26,7 +21,7 @@ for _mod in ("neo4j", "py2neo", "chromadb",
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32  # noqa: E402
+from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32  # noqa: E402
 
 
 def _engine():

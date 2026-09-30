@@ -31,17 +31,12 @@ from __future__ import annotations
 import copy
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import pytest
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from synthesis.rca_synthesizer_v31 import (  # noqa: E402
+from dackar.RCA.synthesis.rca_synthesizer_v31 import (  # noqa: E402
     RuleValidatedRCASynthesizerV31,
     RCASynthesizerConfig,
 )
@@ -288,7 +283,7 @@ def test_ollama_llm_semantic_regression():
     if not _ollama_reachable(base_url):
         pytest.skip(f"Ollama not reachable at {base_url}")
 
-    from orchestrators.llm_clients import OllamaLLMClient
+    from dackar.RCA.orchestrators.llm_clients import OllamaLLMClient
 
     primary = _candidate("FM::AIR-INLEAK", "Air in-leakage", 0.82)
     s = RuleValidatedRCASynthesizerV31(
