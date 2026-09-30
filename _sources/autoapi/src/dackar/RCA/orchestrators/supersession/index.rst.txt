@@ -1,0 +1,114 @@
+src.dackar.RCA.orchestrators.supersession
+=========================================
+
+.. py:module:: src.dackar.RCA.orchestrators.supersession
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.supersession.JsonDict
+   src.dackar.RCA.orchestrators.supersession._ANALYZES_CLASS
+   src.dackar.RCA.orchestrators.supersession._AFFECTS_CLASS
+   src.dackar.RCA.orchestrators.supersession._RELEVANCE_SUPERSEDE_MARGIN
+   src.dackar.RCA.orchestrators.supersession._ANALYZES_DOC_TYPES
+   src.dackar.RCA.orchestrators.supersession._AFFECTS_DOC_TYPES
+   src.dackar.RCA.orchestrators.supersession._CR_ANALYZES_STATUSES
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.supersession._epistemic_class_from_meta
+   src.dackar.RCA.orchestrators.supersession._is_analyzes_class
+   src.dackar.RCA.orchestrators.supersession._authority_rank
+   src.dackar.RCA.orchestrators.supersession._relevance_of
+   src.dackar.RCA.orchestrators.supersession._recency_dt
+   src.dackar.RCA.orchestrators.supersession._patch_candidate_summary
+   src.dackar.RCA.orchestrators.supersession.resolve_supersession
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: _ANALYZES_CLASS
+   :value: 'analyzes_past_degradation'
+
+
+.. py:data:: _AFFECTS_CLASS
+   :value: 'affects_performance'
+
+
+.. py:data:: _RELEVANCE_SUPERSEDE_MARGIN
+   :value: 0.15
+
+
+.. py:data:: _ANALYZES_DOC_TYPES
+   :type:  Set[str]
+
+.. py:data:: _AFFECTS_DOC_TYPES
+   :type:  Set[str]
+
+.. py:data:: _CR_ANALYZES_STATUSES
+   :type:  Set[str]
+
+.. py:function:: _epistemic_class_from_meta(meta)
+
+   Return epistemic class string, preferring Phase A annotation over doc_type fallback.
+
+
+.. py:function:: _is_analyzes_class(meta)
+
+.. py:function:: _authority_rank(meta)
+
+   Return authority rank — lower integer = higher authority.
+
+
+.. py:function:: _relevance_of(hit)
+
+   Relevance (on-pointness) proxy for the P-4 supersession gate.
+
+   Prefers an explicit relevance / semantic-overlap annotation when the retriever
+   supplies one, else falls back to the retrieval ``support_score`` (the pre-
+   supersession value if a prior pass already zeroed it). This is the axis
+   supersession must respect so a higher-authority but *off-point* hit does not erase
+   strongly on-point lower-authority support.
+
+
+.. py:function:: _recency_dt(meta)
+
+   Extract best available recency timestamp from hit metadata.  Returns None when absent.
+
+
+.. py:function:: _patch_candidate_summary(summary, results)
+
+   Recompute score-affecting fields of candidate_evidence_summary after supersession.
+
+   Only patches best_support_score, supporting_count, supporting_snippet_ids, and
+   best_source_tier — all fields touched by support_score zeroing.  spaCy aggregates
+   and NER entity lists are metadata-derived and unaffected.
+
+
+.. py:function:: resolve_supersession(bundle, epistemics_policy_version = None)
+
+   Zero support_score of analyzes-class hits superseded by higher-authority hits.
+
+   Modifies bundle in-place.  On each superseded hit sets:
+     ``superseded = True``, ``support_score_original`` (original value),
+     ``support_score = 0.0``, and downgrades ``metadata.support_role`` from
+     "supporting" to "contextual".
+
+   Patches ``bundle["candidate_evidence_summary"]`` so that
+   ``refine_with_evidence`` sees the post-supersession best scores.
+
+   Adds provenance fields to the bundle:
+     ``supersession_applied``, ``supersession_count``,
+     ``supersession_policy_version`` (when policy_version is supplied).
+
+

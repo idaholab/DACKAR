@@ -1,0 +1,869 @@
+src.dackar.RCA.orchestrators.causality_engine_v32
+=================================================
+
+.. py:module:: src.dackar.RCA.orchestrators.causality_engine_v32
+
+.. autoapi-nested-parse::
+
+   causality_engine_v32 — Rule-based causality engine, TSKR-aware production variant.
+
+   Role in the pipeline
+   --------------------
+   This engine extends v31 with two additional scoring dimensions:
+
+   * **TSKR temporal patterns** — Allen interval algebra classifies each anomaly
+     window relative to the failure event; latency alignment and recurrence
+     profiles are folded into the temporal score.
+   * **NER entity normalisation** — ``EntityNormalizer`` reconciles free-text
+     component mentions in FMEA/KG records against the structured plant vocabulary,
+     improving candidate matching precision.
+
+   Relationship to v31
+   -------------------
+   ``causality_engine_v31`` is the baseline engine and is intentionally retained
+   alongside this module.  Running both engines on the same inputs provides an
+   independent validation baseline: v31 results represent the purely
+   structural/evidence view, while v32 adds temporal reasoning.  Comparing the
+   two candidate rankings helps verify that TSKR enrichment improves rather than
+   regresses root-cause identification, and surfaces edge cases such as
+   delayed-onset failure modes where temporal penalties may be inappropriate.
+
+   Intended usage: pass ``RuleBasedCausalityEngineV32`` as the ``causality_engine``
+   argument of ``RCAReasoningOrchestrator`` for production runs, and
+   ``RuleBasedCausalityEngineV31`` for baseline validation passes.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.causality_engine_v32.JsonDict
+   src.dackar.RCA.orchestrators.causality_engine_v32._PM_CHECK_KEYWORDS
+   src.dackar.RCA.orchestrators.causality_engine_v32._CRITICAL_BARRIER_KEYWORDS
+   src.dackar.RCA.orchestrators.causality_engine_v32._HIGH_BARRIER_KEYWORDS
+   src.dackar.RCA.orchestrators.causality_engine_v32._CRITICAL_RISK_KEYWORDS
+   src.dackar.RCA.orchestrators.causality_engine_v32._HIGH_RISK_KEYWORDS
+   src.dackar.RCA.orchestrators.causality_engine_v32._DEFAULT_SCORING_PROFILES
+   src.dackar.RCA.orchestrators.causality_engine_v32._SCORING_PROFILE_DIMENSIONS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.causality_engine_v32.CausalityEngineConfigV32
+   src.dackar.RCA.orchestrators.causality_engine_v32.RuleBasedCausalityEngineV32
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: _PM_CHECK_KEYWORDS
+
+.. py:data:: _CRITICAL_BARRIER_KEYWORDS
+   :value: ('reactor protection', 'reactor trip', 'trip logic', 'reactor shutdown', 'containment...
+
+
+.. py:data:: _HIGH_BARRIER_KEYWORDS
+   :value: ('core cooling', 'emergency core cooling', 'residual heat removal', 'decay heat removal',...
+
+
+.. py:data:: _CRITICAL_RISK_KEYWORDS
+   :value: ('reactor protection', 'reactor trip', 'trip logic', 'reactor shutdown', 'containment...
+
+
+.. py:data:: _HIGH_RISK_KEYWORDS
+   :value: ('core cooling', 'emergency core cooling', 'residual heat removal', 'decay heat removal',...
+
+
+.. py:data:: _DEFAULT_SCORING_PROFILES
+   :type:  Dict[str, Dict[str, float]]
+
+.. py:data:: _SCORING_PROFILE_DIMENSIONS
+
+.. py:class:: CausalityEngineConfigV32
+
+   .. py:attribute:: top_k_candidates
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: weights
+      :type:  Dict[str, float]
+      :value: None
+
+
+
+   .. py:attribute:: scoring_profiles
+      :type:  Optional[Dict[str, Dict[str, float]]]
+      :value: None
+
+
+
+   .. py:attribute:: minimum_evidence_threshold
+      :type:  float
+      :value: 0.35
+
+
+
+   .. py:attribute:: minimum_pre_evidence_threshold
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: minimum_composite_threshold
+      :type:  float
+      :value: 0.3
+
+
+
+   .. py:attribute:: temporal_window_days_cap
+      :type:  int
+      :value: 3650
+
+
+
+   .. py:attribute:: review_alternative_gap
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: tskr_enabled
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: retention_mode
+      :type:  str
+      :value: 'threshold_then_top_k'
+
+
+
+   .. py:attribute:: metamodel_compliance_level
+      :type:  str
+      :value: 'full'
+
+
+
+   .. py:attribute:: metamodel_wave_label
+      :type:  str
+      :value: 'wave4'
+
+
+
+   .. py:method:: __post_init__()
+
+
+.. py:class:: RuleBasedCausalityEngineV32(config = None)
+
+   TSKR-aware deterministic causality engine with explicit screening metadata.
+
+
+   .. py:attribute:: _CAUSAL_CATEGORIES
+      :type:  List[str]
+      :value: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']
+
+
+
+   .. py:attribute:: _RULEOUT_REASON_CODES
+      :type:  List[str]
+      :value: ['physically_impossible', 'timeline_inconsistent', 'barrier_held', 'no_supporting_data',...
+
+
+
+   .. py:attribute:: _CATEGORY_KEYWORDS
+      :type:  Dict[str, List[str]]
+
+
+   .. py:attribute:: _CATEGORY_PROFILE_NAMES
+      :type:  Dict[str, str]
+
+
+   .. py:attribute:: _CATEGORY_REQUIRED_STREAMS
+      :type:  Dict[str, List[str]]
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: generate(event, telemetry_summary, kg_context, tskr_patterns, operational_context, pm_compliance, run_context)
+
+      Generate ranked causal candidate hypotheses for the event.
+
+      Combines failure-mode candidates (from the KG neighbourhood, scored on
+      temporal/logical/documentary streams) with historical event analogs,
+      assigns cause categories, and ranks them by composite score.
+
+      :param event: Target abnormal event.
+      :param telemetry_summary: Telemetry anomaly summary for the event window.
+      :param kg_context: KG neighbourhood (components, failure modes, past events).
+      :param tskr_patterns: TSKR chain-position patterns keyed by target, or None.
+      :param operational_context: Optional supporting artifacts, or None.
+      :param pm_compliance: Optional supporting artifacts, or None.
+      :param run_context: Orchestrator run context.
+
+      :returns: Candidate hypotheses conforming to
+                ``schemas/causality_candidates.json`` (each with scores, a cause
+                category, and temporal evidence).
+      :rtype: JsonDict
+
+
+
+   .. py:method:: _build_failure_mode_candidates(event, event_time, telemetry_summary, kg_context, tskr_index, pm_compliance, past_event_index, common_cause_index, operational_context=None, sf_index=None)
+
+
+   .. py:method:: _build_past_event_candidates(event, event_time, telemetry_summary, kg_context, tskr_index, pm_compliance, past_event_index, common_cause_index, operational_context=None, sf_index=None)
+
+
+   .. py:method:: _eligible_review_alternative(primary_candidate, other_candidate)
+
+
+   .. py:method:: _compact_filtered_candidate(candidate)
+
+
+   .. py:method:: _historical_event_note(pe)
+
+
+   .. py:method:: _filter_reason(candidate)
+
+
+   .. py:method:: _evidence_posture(support_score, contradiction_score, contextual_score, retrieved_hit_count = 0)
+
+      Classify the evidence posture for a candidate.
+
+      Distinguishes "evidence against" (contradicted) from "no data retrieved"
+      (no_data) — these have different implications for corrective action scope.
+      A "weak" posture means documents were retrieved but none were strongly
+      for or against the hypothesis.  "no_data" means the retrieval layer
+      returned nothing for this candidate, so the hypothesis is neither
+      supported nor contradicted by the document corpus.
+
+
+
+   .. py:method:: _temporal_posture(temporal_score, temporal_precedence, latency_consistency, temporal_contradiction)
+
+
+   .. py:method:: _candidate_summary_lookup(evidence_bundle)
+
+
+   .. py:method:: refine_with_evidence(causality_candidates, evidence_bundle, kg_context = None, signal_evidence = None, entity_normalizer_cfg = None, coverage_summary = None, allen_relation_map = None, protection_logic_context = None)
+
+      Re-score candidates with retrieved evidence and auxiliary signals.
+
+      Folds each candidate's supporting/contradicting evidence, signal-episode
+      chain scores, Allen temporal relations, and protection-logic barrier
+      state into an updated composite score and evidence posture, returning a
+      new candidates payload (the input is not mutated).
+
+      :param causality_candidates: Candidate hypotheses from :meth:`generate`.
+      :param evidence_bundle: Retrieved evidence whose per-candidate summary drives re-scoring.
+      :param kg_context: Optional KG neighbourhood supplying failure modes for entity
+                         normalization, or None.
+      :param signal_evidence: Optional per-candidate signal-episode chain scores, or None.
+      :param entity_normalizer_cfg: Optional entity-normalizer configuration overrides, or None.
+      :param coverage_summary: Optional evidence-coverage summary shaping the coverage factor.
+      :param allen_relation_map: Optional Allen temporal-relation map between components, or None.
+      :param protection_logic_context: Optional protection-logic (barrier) context, or None.
+
+      :returns: A refined candidates payload conforming to
+                ``schemas/causality_candidates.json``.
+      :rtype: JsonDict
+
+
+
+   .. py:method:: _canonical_candidate_key(*, component_id, mechanism_id, category, chain_position, event_scope_id)
+      :classmethod:
+
+
+
+   .. py:method:: _canonical_tuple(*, component_id, mechanism_id, category, chain_position)
+      :staticmethod:
+
+
+
+   .. py:method:: _chain_position_from_signal_dag(position_type)
+      :staticmethod:
+
+
+      Map a signal-DAG ``position_type`` onto the candidate ``chain_position`` vocabulary.
+
+      The telemetry-propagation DAG classifies a candidate's anomaly as a root /
+      common-cause root (upstream initiator), an intermediate node, or a convergence
+      confluence (a downstream node where multiple chains meet — a symptom). This
+      maps that view onto the coarser initiating/contributing/consequence vocabulary
+      used for analyst-facing chain-position reasoning.
+
+
+
+   .. py:method:: _chain_position_from_relation(relation)
+      :staticmethod:
+
+
+
+   .. py:method:: _chain_position_for_candidate(*, relation, temporal_precedence, temporal_contradiction)
+
+
+   .. py:method:: _infer_category_from_text(text, default = 'A')
+      :classmethod:
+
+
+
+   .. py:method:: _infer_primary_category_for_failure_mode(*, fm, event)
+      :classmethod:
+
+
+
+   .. py:method:: _infer_primary_category_for_past_event(*, pe)
+      :classmethod:
+
+
+
+   .. py:method:: _assess_category_applicability(*, kg_context, operational_context, external_oe_unavailable)
+      :classmethod:
+
+
+
+   .. py:method:: _build_metamodel_scaffolds(*, retained_candidates, filtered_out_candidates, event_analogs, kg_context, operational_context, external_oe_unavailable)
+      :classmethod:
+
+
+
+   .. py:method:: _summarize_applicability(applicability)
+      :classmethod:
+
+
+
+   .. py:method:: _summarize_uncertainty(candidates)
+      :staticmethod:
+
+
+
+   .. py:method:: _summarize_decision_posture(candidates)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_applicability_labels(candidates, applicability)
+      :staticmethod:
+
+
+
+   .. py:method:: _has_external_oe_signal(summary_lookup)
+      :staticmethod:
+
+
+
+   .. py:method:: _stream_quality_for_candidate(candidate)
+
+
+   .. py:method:: _apply_uncertainty_propagation(candidate)
+
+
+   .. py:method:: _coverage_quality_profile(coverage_summary)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_allen_component_index(allen_relation_map)
+      :staticmethod:
+
+
+      Index Allen relation map nodes by component_id for fast per-candidate lookup.
+
+      :returns: causal_scores   {component_id → best allen_base_score among causal nodes}
+                causal_relation {component_id → allen_relation_to_event of the best node}
+                follow_ids      set of component_ids that have at least one 'follows' node
+
+
+
+   .. py:method:: _apply_allen_temporal_blend(candidate, causal_scores, causal_relation, follow_ids, weights)
+      :staticmethod:
+
+
+      Blend Allen base score into candidate temporal score in-place.
+
+      Blend formula (α = 0.25):
+          new_temporal = 0.75 × old_temporal + 0.25 × allen_score   (when match found)
+
+      Allen can both raise and lower the temporal score depending on whether
+      the Allen base score is above or below the TSKR-derived baseline.  This
+      allows candidates with weak Allen relations (e.g. OVERLAPS with a low
+      allen_base_score) to score lower than candidates with strong relations
+      (e.g. PRECEDES with a high allen_base_score), as intended.
+      When the component has a 'follows' node, temporal_contradiction is set True.
+      composite_raw and composite_score are updated by the temporal weight delta.
+
+
+
+   .. py:method:: _apply_score_confidence_interval(candidate)
+      :staticmethod:
+
+
+      Compute a per-candidate score confidence interval from data-degradation signals.
+
+      Five scoring dimensions are assessed; each contributes 1/5 to the interval
+      width when its primary data source is absent or proxy-derived:
+
+        structural — physical_plausibility gate ran in degraded mode
+        temporal   — temporal_score_quality is "proxy" (no Allen causal match)
+        telemetry  — telemetry sub-score is zero (no telemetry signal available)
+        evidence   — candidate is observationally_ungrounded (no affects-class evidence)
+        governance — barrier_logic gate ran in degraded mode
+
+      width = n_degraded / 5  (0.0 → narrow, 1.0 → very wide)
+      lower = max(0.0, composite_score − width/2)
+      upper = min(1.0, composite_score + width/2)
+
+      Writes candidate["score_confidence_interval"].
+
+
+
+   .. py:method:: _build_plc_barrier_index(protection_logic_context)
+      :staticmethod:
+
+
+      Parse protection_logic_context into lookup structures.
+
+      :returns: sf_state_index   {sf_id → barrier_state}  from barrier_states[]
+                logic_signal_ids set of signal/component IDs from logic_set
+                                 input_signals and output_signals (all logic_sets)
+
+
+
+   .. py:attribute:: _OP_MODE_BASE
+      :type:  Dict[str, float]
+
+
+   .. py:attribute:: _OP_HIGH_POWER_KEYWORDS
+
+
+   .. py:attribute:: _OP_STANDBY_KEYWORDS
+
+
+   .. py:method:: _operating_point_score(*, operational_context, primary_causal_category, fm_superclass, fm_name)
+      :classmethod:
+
+
+      Return (score 0–1, rationale_note) for the operating-point dimension.
+
+      Returns (0.0, "not_assessed") when operational_context is None or
+      mode is absent — never penalises candidates for missing data.
+
+      Only Category E candidates receive the power-level modifier.
+      Train OOS bonus applies to standby-mechanism keywords for all categories.
+
+
+
+   .. py:method:: _build_sensitivity_table(*, candidates, coverage_summary, top_n = 5)
+      :staticmethod:
+
+
+      Step 5 — sensitivity table: estimate composite-score delta per candidate
+      if each currently missing/not_assessed data source were available at full quality.
+
+      The estimate re-computes the coverage_factor with the target family set to
+      'complete', then scales the composite_raw by the ratio of the new factor to
+      the current one (capped at 1.0).  This is an upper-bound estimate, not a
+      precise prediction.
+
+
+
+   .. py:method:: _apply_coverage_quality_adjustment(candidate, *, coverage_factor, coverage_flags)
+
+
+   .. py:method:: _apply_category_minimum_evidence_gate(candidate)
+
+
+   .. py:method:: _apply_physical_plausibility_gate(candidate, plc_logic_signal_ids = None, plc_sf_state = None)
+
+
+   .. py:method:: _apply_timeline_consistency_gate(candidate)
+
+
+   .. py:method:: _apply_barrier_logic_gate(candidate, plc_sf_state = None)
+
+
+   .. py:method:: _build_pipeline_health(*, retained_candidates, filtered_out_candidates)
+      :staticmethod:
+
+
+
+   .. py:method:: _candidate_meets_threshold(candidate)
+
+
+   .. py:attribute:: _SEED_STRUCTURAL_SCORES
+      :type:  Dict[str, float]
+
+
+   .. py:attribute:: _DEFAULT_NEIGHBOR_SCORE
+      :type:  float
+      :value: 0.75
+
+
+
+   .. py:attribute:: _UNKNOWN_COMPONENT_SCORE
+      :type:  float
+      :value: 0.4
+
+
+
+   .. py:attribute:: _AUTHORITY_WEIGHTS
+      :type:  Dict[str, float]
+
+
+   .. py:attribute:: _FM_MAINTENANCE_PREVENTABLE_KEYWORDS
+      :type:  frozenset
+
+
+   .. py:attribute:: _FM_EXTERNAL_CAUSE_KEYWORDS
+      :type:  frozenset
+
+
+   .. py:method:: _governance_weight_for_fm(superclass)
+      :staticmethod:
+
+
+
+   .. py:method:: _scoring_profile_for_fm(category)
+
+      Return the full weight profile for a causal category (Step 2 / Phase 4c).
+
+      Looks up self.config.scoring_profiles by category letter; falls back to
+      the 'A' (equipment_origin) profile when the category is unrecognised.
+      Returns a copy so callers cannot mutate the config.
+
+
+
+   .. py:method:: _structural_score_for_fm(component_id, components)
+
+
+   .. py:attribute:: _ALARM_PRIORITY_WEIGHT
+      :type:  Dict[str, float]
+
+
+   .. py:method:: _alarm_signal_for_candidate(component_id, operational_context, components)
+
+      Derive an alarm-based structural corroboration signal for a candidate.
+
+      Iterates ``operational_context.recent_alarms`` and checks whether each
+      alarm's ``system_affected`` matches the candidate's component or any
+      component in the same KG subgraph neighborhood.
+
+      Match tiers (highest wins, not additive to avoid gaming):
+      - **Direct**: ``system_affected`` equals the candidate ``component_id``
+        exactly, or is a prefix/substring of it (plant tag convention).
+      - **Neighborhood**: ``system_affected`` matches any other component in the
+        subgraph (e.g. an upstream component that feeds the failing one).
+
+      Alarm weight = priority weight × acknowledgement factor:
+      - Unacknowledged alarms (``acknowledged_at`` is null): full weight
+      - Acknowledged alarms: 0.5× (condition was noted but may be ongoing)
+
+      Returns a float in [0.0, 1.0] — the maximum weighted alarm signal
+      across all alarms.  Zero when no alarms match or when
+      ``operational_context`` has no ``recent_alarms``.
+
+
+
+   .. py:method:: _symptom_match_score(event, fm, telemetry_summary)
+
+      Score [0, 1] for how well the event's observed symptoms match what
+      this failure mode is expected to produce.
+
+      0.5  = neutral (no symptom data available in either direction)
+      >0.5 = symptoms consistent with this failure mode
+      <0.5 = symptoms inconsistent with this failure mode
+
+      Two sub-signals combined by available weight:
+        - Anomaly pattern match (weight 0.6): dominant observed pattern vs.
+          fm.expected_anomaly_pattern.  Observed pattern is taken from the
+          most frequently occurring anomaly pattern in telemetry (more
+          objective), falling back to event.symptom_signature.anomaly_pattern.
+        - Symptom type overlap (weight 0.4): F1-score between event's
+          symptom_types and fm.expected_symptom_types.
+
+      When a sub-signal has no data, its weight is excluded and the remaining
+      signal is used alone.  When neither sub-signal has data, returns 0.5.
+
+
+
+   .. py:method:: _normalize_symptom_text(value)
+      :staticmethod:
+
+
+
+   .. py:method:: _pattern_similarity_score(expected_pattern, observed_pattern)
+      :classmethod:
+
+
+
+   .. py:method:: _dominant_telemetry_pattern(telemetry_summary)
+      :staticmethod:
+
+
+      Return the most frequently occurring anomaly pattern across all signals,
+      or None if no anomalies are present.
+
+
+
+   .. py:attribute:: _TEMPORAL_COOCCURRENCE_TSKR_PROXY
+      :value: 0.55
+
+
+
+   .. py:attribute:: _TEMPORAL_COOCCURRENCE_LATENCY_PROXY
+      :value: 0.3
+
+
+
+   .. py:method:: _temporal_score_for_fm(fm, telemetry_summary, event_time, tskr_index)
+
+
+   .. py:method:: _recency_factor(time_distance_days)
+      :staticmethod:
+
+
+      Map *time_distance_days* to a [0.55, 1.0] recency multiplier.
+
+      None (unknown age) receives a conservative 0.75 — neither penalised
+      nor given full credit.  Values are intentionally coarse so that small
+      differences in document age do not create artificial score cliffs.
+
+
+
+   .. py:attribute:: _TIMELESS_DOC_TYPES
+      :type:  frozenset
+
+
+   .. py:method:: _evidence_score_for_fm(documents)
+
+
+   .. py:method:: _structural_score_for_past_event(target_asset_id, target_components, target_fm_ids, pe)
+
+
+   .. py:method:: _temporal_score_for_past_event(current_event_time, pe, telemetry_summary, tskr_index)
+
+
+   .. py:method:: _evidence_score_for_past_event(documents, pe)
+
+
+   .. py:method:: _governance_details(pm_compliance, fm_name=None, fm_superclass=None, component_name=None, component_id=None, fm_id=None)
+
+      Candidate-specific governance score from PM compliance data, with full trace.
+
+      Matching priority (per failed check):
+      1. **Structural** — ``check.component_id == component_id``: the check is
+         scoped to this candidate's component in the CMMS; no keyword heuristics needed.
+      2. **FM-level** — ``fm_id in check.applicable_fm_ids``: the PM task explicitly
+         targets this failure mode (e.g., a surveillance test for a specific trip
+         function); this narrows a component-level check to a single FM.
+      3. **Keyword fallback** — ``check_type`` keywords matched against
+         ``fm_name + component_name`` text; used only when neither structural field
+         is available (legacy or synthetic data without ``component_id``).
+
+      Returns a dict containing:
+      - ``score``: float in [0.5, 0.95]
+      - ``pm_data_available``: bool
+      - ``total_checks``: int — total PM checks in the compliance record
+      - ``failed_check_count``: int — asset-level failed checks
+      - ``relevant_failed_checks``: list of dicts, one per matched failed check,
+        each containing ``check_type``, ``check_id``, ``wo_id`` (if present),
+        ``overdue_by_days``, ``matched_keywords``, and ``match_method``
+        ("component_id", "applicable_fm_ids", or "keyword")
+      - ``count_boost``: float — score contribution from number of relevant failures
+      - ``overdue_boost``: float — score contribution from overdue days
+      - ``candidate_text``: str — the lowercased text used for keyword matching
+
+      Score semantics:
+      - 0.5 (neutral): no PM data, all checks passed, or no checks relevant to
+        this candidate.  Never below 0.5 — PM alone cannot exonerate a candidate.
+      - > 0.5: at least one failed check is relevant; scaled by count + overdue.
+      - Maximum 0.95 — PM alone is never conclusive.
+
+
+
+   .. py:method:: _governance_score(pm_compliance, fm_name=None, fm_superclass=None, component_name=None, component_id=None, fm_id=None)
+
+      Thin wrapper — returns only the score float from :meth:`_governance_details`.
+
+
+
+   .. py:method:: _pm_check_matched_keywords(check, candidate_text)
+      :staticmethod:
+
+
+      Return the set of keywords from this check type that appear in *candidate_text*.
+
+      Splits on whitespace AND hyphens/underscores so that hyphenated compounds
+      like "in-leakage" are tokenised as ["in", "leakage"] and the keyword
+      "leakage" correctly matches.
+
+
+
+   .. py:method:: _pm_check_relevant(check, candidate_text)
+      :staticmethod:
+
+
+      Return True if a PM check type matches keywords in the candidate's text.
+
+
+
+   .. py:method:: _governance_rationale(gov)
+      :staticmethod:
+
+
+      Render the governance details dict as a traceable rationale string.
+
+      .. rubric:: Examples
+
+      - No PM data: "No PM compliance data available; score=0.5 (neutral)."
+      - All passed:  "All 4 PM checks passed on asset; score=0.5 (neutral)."
+      - No match:    "3 asset-level PM failures; none relevant to candidate
+                      (candidate_text='bearing wear pump-1a'); score=0.5 (neutral)."
+      - Match:       "2 relevant failed PM checks: lubrication (keywords: bearing,
+                      wear; WO=WO-123; overdue=45d), inspection (keywords: corrosion;
+                      overdue=0d); count_boost=0.15, overdue_boost=0.05; score=0.75."
+
+
+
+   .. py:method:: _telemetry_score_for_fm(telemetry_summary, fm, component_id, components)
+
+
+   .. py:method:: _telemetry_score_for_past_event(telemetry_summary, pe)
+
+
+   .. py:method:: _combine_scores(scores, weights_override=None)
+
+
+   .. py:method:: _supporting_doc_refs(documents, preferred)
+
+
+   .. py:method:: _build_safety_function_index(kg_context)
+
+      Build a {component_id: [sf_dict, ...]} lookup from kg_context.safety_functions.
+
+
+
+   .. py:method:: _affected_safety_functions_for_candidate(component_id, sf_index, impact_type = 'direct')
+
+      Return the list of safety function dicts linked to *component_id* via *sf_index*.
+
+      Deduplicates by sf_id.  Returns an empty list when the component has no
+      associated safety functions or *sf_index* is empty (e.g. the KG has no
+      safety_function nodes, or the feature was disabled in KGContextBuilderConfig).
+
+
+
+   .. py:method:: _normalize_barrier_text(value)
+      :staticmethod:
+
+
+
+   .. py:method:: _barrier_signal_from_safety_functions(affected_safety_functions)
+
+
+   .. py:method:: _risk_significance_from_safety_functions(*, affected_safety_functions, barrier_signal = 0.0)
+
+
+   .. py:method:: _apply_risk_significance_to_governance(*, governance_score, risk_significance_scalar)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_past_event_index(kg_context)
+
+
+   .. py:method:: _recurrence_score_from_features(same_failure_mode_event_count, same_component_event_count, same_asset_event_count, unresolved_fm_count = 0, unresolved_component_count = 0, weighted_unresolved_fm_boost = None)
+
+
+   .. py:method:: _recurrence_confidence(score)
+
+
+   .. py:method:: _recurrence_features_for_candidate(candidate, event, past_event_index, hypothesis_component_id=None, hypothesis_failure_mode_id=None)
+
+
+   .. py:method:: _apply_recurrence_to_candidate(candidate, recurrence)
+
+
+   .. py:attribute:: _SUPPORT_DEPENDENCY_EDGE_FAMILIES
+      :value: ('support', 'connects_port', 'connector', 'power', 'supplies', 'supply', 'cool',...
+
+
+
+   .. py:method:: _is_support_dependency_edge(edge_type)
+      :classmethod:
+
+
+
+   .. py:method:: _build_common_cause_index(kg_context)
+
+
+   .. py:method:: _common_cause_score_from_features(shared_dependency_signal, shared_upstream_signal, symptom_convergence_signal, governance_commonality_signal, train_oos_signal = 0.0)
+
+
+   .. py:method:: _common_cause_confidence(score)
+
+
+   .. py:method:: _common_cause_features_for_candidate(candidate, kg_context, telemetry_summary, pm_compliance, common_cause_index, candidate_component_id=None, operational_context=None)
+
+
+   .. py:method:: _build_recurrence_summary(retained_candidates, filtered_out_candidates)
+
+
+   .. py:method:: _build_common_cause_summary(retained_candidates, filtered_out_candidates)
+
+
+   .. py:method:: _event_time(event)
+
+
+   .. py:method:: _index_tskr_patterns(tskr_patterns)
+
+
+   .. py:method:: _lookup_tskr_pattern(tskr_index, target_id)
+
+      Return the highest-confidence pattern for *target_id*, or None.
+
+
+
+   .. py:method:: _pattern_latency_alignment(pattern)
+
+
+   .. py:method:: _pattern_temporal_contradiction(pattern)
+
+
+   .. py:method:: _normalized_confidence_label(score)
+
+
+   .. py:method:: _refresh_candidate_confidence_and_thresholds(candidate)
+
+
+   .. py:method:: _update_score_rationale_for_refinement(candidate, *, support_score, contradiction_score, contextual_score, prior_evidence_score, authority_tier, authority_weight)
+
+
+   .. py:method:: _pattern_confidence(pattern)
+
+
+   .. py:method:: _pattern_support(pattern)
+
+
+   .. py:method:: _relation_precedence_score(relation, has_anomalies=False)
+
+
+   .. py:method:: _latency_consistency(min_h, max_h, inferred_delay_hours)
+
+
+   .. py:method:: _fm_path_nodes(component_id, fm_id, event_id, components)
+
+
+   .. py:method:: _event_path_nodes(pe, target_event_id)
+
+

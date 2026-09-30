@@ -1,0 +1,465 @@
+src.dackar.RCA.orchestrators.tskr_temporal_scorer
+=================================================
+
+.. py:module:: src.dackar.RCA.orchestrators.tskr_temporal_scorer
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.tskr_temporal_scorer.logger
+   src.dackar.RCA.orchestrators.tskr_temporal_scorer.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.tskr_temporal_scorer.TSKRTemporalScorerConfig
+   src.dackar.RCA.orchestrators.tskr_temporal_scorer.RecurrenceProfile
+   src.dackar.RCA.orchestrators.tskr_temporal_scorer.TSKRTemporalScorerV1
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.tskr_temporal_scorer.clamp01
+
+
+Module Contents
+---------------
+
+.. py:data:: logger
+
+.. py:data:: JsonDict
+
+.. py:function:: clamp01(x)
+
+.. py:class:: TSKRTemporalScorerConfig
+
+   .. py:attribute:: simultaneous_epsilon_hours
+      :type:  float
+      :value: 0.5
+
+
+
+   .. py:attribute:: default_precedes_lag_hours
+      :type:  float
+      :value: 1.0
+
+
+
+   .. py:attribute:: fallback_confidence
+      :type:  float
+      :value: 0.25
+
+
+
+   .. py:attribute:: anomaly_weight
+      :type:  float
+      :value: 0.45
+
+
+
+   .. py:attribute:: latency_weight
+      :type:  float
+      :value: 0.3
+
+
+
+   .. py:attribute:: history_weight
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: chain_weight
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: min_confidence_for_support
+      :type:  float
+      :value: 0.35
+
+
+
+   .. py:attribute:: anomaly_count_weight
+      :type:  float
+      :value: 0.15
+
+
+
+   .. py:attribute:: lag_consistency_weight
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: telemetry_support_floor
+      :type:  float
+      :value: 0.35
+
+
+
+   .. py:attribute:: tone_vocabulary_version
+      :type:  str
+      :value: 'npp_tone_v1'
+
+
+
+   .. py:attribute:: tone_transient_max_minutes
+      :type:  float
+      :value: 5.0
+
+
+
+   .. py:attribute:: tone_watch_min_minutes
+      :type:  float
+      :value: 5.0
+
+
+
+   .. py:attribute:: tone_alert_min_minutes
+      :type:  float
+      :value: 10.0
+
+
+
+   .. py:attribute:: tone_trip_min_minutes
+      :type:  float
+      :value: 2.0
+
+
+
+   .. py:attribute:: enable_semantic_recurrence
+      :type:  bool
+      :value: False
+
+
+
+   .. py:attribute:: semantic_similarity_threshold
+      :type:  float
+      :value: 0.75
+
+
+
+   .. py:attribute:: near_match_window
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: top_k_semantic
+      :type:  int
+      :value: 5
+
+
+
+.. py:class:: RecurrenceProfile
+
+   Recurrence statistics for a (failure_mode, component) pair over past events.
+
+
+   .. py:attribute:: fm_id
+      :type:  Optional[str]
+
+
+   .. py:attribute:: component_id
+      :type:  Optional[str]
+
+
+   .. py:attribute:: count
+      :type:  int
+
+
+   .. py:attribute:: mean_inter_event_days
+      :type:  Optional[float]
+
+
+   .. py:attribute:: trend
+      :type:  str
+
+
+   .. py:attribute:: unresolved_count
+      :type:  int
+
+
+   .. py:attribute:: most_recent_days_ago
+      :type:  Optional[int]
+
+
+   .. py:attribute:: contributing_event_ids
+      :type:  List[str]
+      :value: None
+
+
+
+   .. py:method:: __post_init__()
+
+
+.. py:class:: TSKRTemporalScorerV1(config = None, doc_extraction_store = None)
+
+   .. py:attribute:: _INSTRUMENT_VALIDITY_MULTIPLIER
+      :type:  Dict[str, float]
+
+      Deterministic temporal scorer using interval-based Allen relations.
+
+      Inputs:
+        - event interval (timestamp_start / timestamp_end)
+        - telemetry anomaly windows (start, end, severity, pattern)
+        - kg_context.failure_modes[*].expected_latency_min_hours/max_hours
+        - kg_context.past_events for recurrence analysis
+
+      Output:
+        - tskr_patterns artifact aligned to tskr_patterns.json schema
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: doc_extraction_store
+      :value: None
+
+
+
+   .. py:method:: score(event, telemetry_summary, kg_context, operational_context, run_context, signal_evidence = None, alarm_log = None, soe_log = None, pm_compliance = None)
+
+
+   .. py:method:: _extract_anomaly_windows(telemetry_summary)
+
+
+   .. py:method:: _extract_anomaly_windows_from_signal_evidence(signal_evidence)
+
+
+   .. py:method:: _extract_alarm_windows(alarm_log)
+      :staticmethod:
+
+
+      Extract point-event windows from alarm_log.alarms[] for pattern matching.
+
+      Alarms without an ``acknowledged_at`` are treated as point events (end == start).
+      Clock-sync failures mark windows as low-severity so they contribute less to scoring.
+
+
+
+   .. py:method:: _extract_soe_windows(soe_log)
+      :staticmethod:
+
+
+      Extract point-event windows from soe_log.records[] for pattern matching.
+
+      All SOE records are point events (end == start).  Clock-sync failure
+      marks windows as unreliable; they are still included but flagged.
+
+
+
+   .. py:method:: _is_cr_like_event(row)
+      :staticmethod:
+
+
+
+   .. py:method:: _recurrence_match_quality_stats(past_events)
+      :classmethod:
+
+
+
+   .. py:method:: _normalize_interval_type(value)
+      :staticmethod:
+
+
+
+   .. py:method:: _normalize_past_events(past_events)
+      :staticmethod:
+
+
+      Remap alternate field names produced by different KG schema versions.
+
+      Some KG exports use ``related_failure_modes`` / ``occurred_at`` instead of
+      the canonical ``matched_failure_mode_ids`` / ``timestamp_start``.  This
+      normalizer makes both schemas transparent to the rest of the scorer without
+      mutating caller-owned dicts.
+
+
+
+   .. py:method:: _stage_b_allen_relation_by_component(kg_context)
+      :classmethod:
+
+
+
+   .. py:method:: _summarize_anomaly_windows(anomaly_windows)
+
+
+   .. py:method:: _extract_signal_ids(telemetry_summary)
+
+
+   .. py:method:: _extract_signal_ids_for_fm(telemetry_summary, fm)
+
+      Return sensor IDs with anomalies that are relevant to this FM.
+
+      Relevance is determined by matching the signal's ``parameter`` field
+      against the FM's ``expected_symptom_types``.  When the FM carries no
+      symptom type information the method falls back to returning all
+      anomalous sensor IDs (same behaviour as the global extractor).
+
+
+
+   .. py:method:: _telemetry_support_score(anomaly_windows)
+
+
+   .. py:method:: _classify_tone(*, start, end, severity, severity_score)
+
+      Deterministic tone classification from anomaly severity and duration.
+
+
+
+   .. py:method:: _summarize_tones(anomaly_windows)
+      :staticmethod:
+
+
+
+   .. py:method:: _severity_weight(window)
+
+      Return a [0.1, 1.0] weight from a window's severity fields.
+
+      Prefers the numeric ``severity_score`` when present; falls back to
+      the string ``severity`` field; defaults to 0.5 (medium).
+
+
+
+   .. py:method:: _instrument_validity_multiplier(value)
+
+
+   .. py:method:: _effective_anomaly_count(windows)
+
+      Severity-weighted effective anomaly count (sum of per-window severity weights).
+
+      A single high-severity anomaly (weight 0.9) is treated similarly to
+      ~1.8 low-severity ones (weight 0.5 each), preventing noise spikes from
+      inflating the count-based score as much as high-confidence detections.
+
+
+
+   .. py:method:: _anomaly_count_score(n)
+
+      Map an effective anomaly count (float) to [0, 1].
+
+      Thresholds are intentionally coarse — the exact breakpoints matter less
+      than the monotone shape.  Accepts both raw integer counts (backward
+      compatible) and the float effective counts from _effective_anomaly_count.
+
+
+
+   .. py:method:: _lag_consistency_score(std_lag_hours)
+
+
+   .. py:method:: _normalized_weighted_sum(components)
+      :staticmethod:
+
+
+      Return normalized weighted average in [0, 1].
+
+      This keeps confidence convex even when configured weights do not sum to 1.
+
+
+
+   .. py:method:: _infer_operator_family(event_start, event_end, anomaly_windows, event_end_supplied = False)
+
+      Classify the temporal-operator family from the event and anomaly shapes.
+
+      Emits only the TSKR schema vocabulary: ``interval_interval``,
+      ``interval_point``, ``point_point``, or ``None``. The event counts as an
+      interval only when a real ``timestamp_end`` was supplied and it is strictly
+      after ``timestamp_start``; the ``score()`` fallback that copies the start
+      into a missing end does not turn a point event into an interval. An anomaly
+      side is an interval when any window has an end strictly after its start
+      (SOE records, unacknowledged alarms, and end-less telemetry anomalies are
+      points). With no event start or no anomaly windows there is no operator
+      pairing, so the family is ``None``.
+
+
+
+   .. py:method:: _score_against_anomalies(*, event_start, event_end, anomaly_windows)
+
+      Compute dominant Allen relation, severity-weighted lag stats, and
+      severity-weighted anomaly score across all anomaly windows.
+
+      Returns ``(dominant_relation, mean_lag_hours, std_lag_hours, anomaly_score)``.
+
+      Dominant relation: the highest-priority causal relation present in any
+      window (priority order: OVERLAPS > CONTAINS > PRECEDES > DURING > FOLLOWS).
+      A single OVERLAPS window beats many DURING windows because it represents
+      an anomaly that was already active at event onset.
+
+      Lag stats: severity-weighted mean and std over causally-relevant windows
+      (PRECEDES, OVERLAPS, CONTAINS) only.  High-severity anomalies pull the
+      mean lag estimate more than low-severity noise spikes.  Weighted std is
+      used for lag consistency scoring — tightly clustered high-severity windows
+      produce a lower std and therefore a higher lag-consistency score.
+
+      Anomaly score: severity-weighted mean of RELATION_SCORE values across all
+      windows.
+
+
+
+   .. py:method:: _build_recurrence_profile(*, fm_id, component_id, past_events, event_start = None)
+
+      Build a RecurrenceProfile by matching past_events to the given
+      failure mode / component and deriving recurrence statistics.
+
+
+
+   .. py:method:: _recurrence_trend(intervals)
+      :staticmethod:
+
+
+      Fit an OLS line to the inter-event interval sequence and classify the trend.
+
+      A negative slope means intervals are shrinking (events accelerating) →
+      "increasing" recurrence rate, the stronger causal signal.  The slope is
+      normalised by the mean interval so the threshold is scale-independent.
+      Requires at least 3 intervals (4 events) for a meaningful fit.
+
+
+
+   .. py:method:: _score_from_recurrence_profile(profile)
+
+      Convert a RecurrenceProfile to a scalar history support score [0, 1].
+
+      Scoring rationale:
+        - Base score rises with occurrence count (each repetition adds evidence).
+        - Accelerating trend (+0.15): shortening intervals suggest progressive
+          degradation, a stronger causal signal than a stable recurrence rate.
+        - Unresolved prior events (+0.10): latent condition that was never fixed.
+        - Recent occurrence (+0.05): recency increases relevance to the current event.
+
+
+
+   .. py:method:: _score_from_effective_count(effective_count, profile)
+
+      Score from effective (exact + semantic) recurrence count (§4.3).
+
+      Uses floor(effective_count) for threshold bracketing so that fractional
+      semantic contributions require at least 0.5 cumulative weight to cross
+      into the next tier.
+
+
+
+   .. py:method:: _score_history_support(*, fm_id, component_id, past_events, event_start = None)
+
+
+   .. py:method:: _score_failure_mode_pattern(*, event_id, asset_id, event_start, event_end, anomaly_windows, alarm_soe_windows = None, anomaly_window_summary, signal_ids, fm_signal_ids = None, telemetry_support, operator_family, fm, past_events, stage_b_allen_relation = None, chain_position_score = 0.0, chain_position_type = 'absent', contributing_cause_role = None, confluence_component_id = None, pm_compliance = None)
+
+
+   .. py:method:: _score_expected_latency(*, mean_lag_hours, expected_min, expected_max)
+
+
+   .. py:method:: _latency_alignment_details(*, mean_lag_hours, expected_min, expected_max)
+
+

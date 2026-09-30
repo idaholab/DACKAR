@@ -1,0 +1,319 @@
+src.dackar.RCA.orchestrators.evidence_retriever
+===============================================
+
+.. py:module:: src.dackar.RCA.orchestrators.evidence_retriever
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.evidence_retriever.LOGGER
+   src.dackar.RCA.orchestrators.evidence_retriever.JsonDict
+   src.dackar.RCA.orchestrators.evidence_retriever._NEGATION_SINGLE_TRIGGERS
+   src.dackar.RCA.orchestrators.evidence_retriever._NEGATION_MULTIWORD_TRIGGERS
+   src.dackar.RCA.orchestrators.evidence_retriever._NEGATABLE_STATE_TERMS
+   src.dackar.RCA.orchestrators.evidence_retriever._NEGATION_SCOPE_TOKENS
+   src.dackar.RCA.orchestrators.evidence_retriever.store
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.evidence_retriever._EmbeddingEncoder
+   src.dackar.RCA.orchestrators.evidence_retriever.EvidenceStore
+   src.dackar.RCA.orchestrators.evidence_retriever.EvidenceRetrieverConfig
+   src.dackar.RCA.orchestrators.evidence_retriever.ChromaEvidenceRetriever
+   src.dackar.RCA.orchestrators.evidence_retriever.InMemoryEvidenceStore
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.evidence_retriever.utcnow_iso
+   src.dackar.RCA.orchestrators.evidence_retriever._norm_text
+   src.dackar.RCA.orchestrators.evidence_retriever._tokenize
+   src.dackar.RCA.orchestrators.evidence_retriever._overlap_score
+   src.dackar.RCA.orchestrators.evidence_retriever._contains_any
+   src.dackar.RCA.orchestrators.evidence_retriever._negation_refutation_hit
+   src.dackar.RCA.orchestrators.evidence_retriever._cosine_sim
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:function:: utcnow_iso()
+
+.. py:function:: _norm_text(value)
+
+.. py:function:: _tokenize(value)
+
+.. py:function:: _overlap_score(query_terms, text_terms)
+
+.. py:function:: _contains_any(text, phrases)
+
+.. py:data:: _NEGATION_SINGLE_TRIGGERS
+
+.. py:data:: _NEGATION_MULTIWORD_TRIGGERS
+   :value: ('no evidence of', 'no sign of', 'no signs of', 'no indication of', 'no indications of', 'did...
+
+
+.. py:data:: _NEGATABLE_STATE_TERMS
+
+.. py:data:: _NEGATION_SCOPE_TOKENS
+   :value: 3
+
+
+.. py:function:: _negation_refutation_hit(snippet, target_terms)
+
+   Return True when a negation trigger is followed, within a short window, by a
+   degradation/failure-state term — i.e. the snippet refutes a degradation claim.
+
+   Deterministic and high-precision by design (short scope window; state-term targets
+   only). ``snippet`` must already be normalised (lowercased, whitespace-collapsed).
+
+
+.. py:function:: _cosine_sim(a, b)
+
+   Cosine similarity between two pre-normalised numpy vectors.
+
+   Both *a* and *b* must already be unit-norm.  Returns a float in [0, 1]
+   (clipped to exclude numeric noise below zero).
+
+
+.. py:class:: _EmbeddingEncoder
+
+   Bases: :py:obj:`Protocol`
+
+
+   Duck-typed protocol for anything that can embed a list of strings.
+
+   Compatible with ``SentenceTransformer``, ``langchain`` embedders, and any
+   object whose ``encode`` method accepts ``List[str]`` and returns an
+   array-like of shape ``(N, D)``.
+
+
+   .. py:method:: encode(texts)
+
+
+.. py:class:: EvidenceStore
+
+   Bases: :py:obj:`Protocol`
+
+
+   Abstract retrieval backend, e.g. Chroma via LangChain.
+
+
+   .. py:method:: query(query_text, top_k = 10, filters = None)
+
+
+.. py:class:: EvidenceRetrieverConfig
+
+   .. py:attribute:: top_k_total
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: top_k_per_query
+      :type:  int
+      :value: 5
+
+
+
+   .. py:attribute:: include_doc_id_filter
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_asset_filter
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_component_filter
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_doc_type_filter
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: score_threshold
+      :type:  float
+      :value: 0.0
+
+
+
+   .. py:attribute:: score_metric
+      :type:  str
+      :value: 'kg_guided_semantic_relevance'
+
+
+
+   .. py:attribute:: contradiction_cues
+      :type:  Optional[List[str]]
+      :value: None
+
+
+
+   .. py:attribute:: structural_contradiction_cues
+      :type:  Optional[List[str]]
+      :value: None
+
+
+
+   .. py:attribute:: support_cues
+      :type:  Optional[List[str]]
+      :value: None
+
+
+
+   .. py:attribute:: contextual_cues
+      :type:  Optional[List[str]]
+      :value: None
+
+
+
+   .. py:attribute:: doc_type_priority
+      :type:  Optional[Dict[str, float]]
+      :value: None
+
+
+
+   .. py:method:: __post_init__()
+
+
+.. py:class:: ChromaEvidenceRetriever(store, config = None, annotator=None, encoder = None)
+
+   Deterministic KG-guided evidence retriever.
+
+
+   .. py:attribute:: store
+
+
+   .. py:attribute:: config
+
+
+   .. py:attribute:: annotator
+      :value: None
+
+
+
+   .. py:attribute:: encoder
+      :value: None
+
+
+
+   .. py:attribute:: _emb_cache
+      :type:  Dict[str, Any]
+
+
+   .. py:method:: _embed(text)
+
+      Return a unit-norm embedding vector for *text*, or ``None`` if no encoder.
+
+      Results are cached in ``self._emb_cache`` (reset at the start of each
+      ``retrieve()`` call) so each unique text is encoded at most once per
+      retrieval session.
+
+
+
+   .. py:method:: retrieve(event, kg_context, causality_candidates, operational_context, run_context)
+
+      Retrieve and rank documentary evidence for the causal candidates.
+
+      Builds per-candidate queries from the KG context, runs them against the
+      Chroma store, normalizes and de-duplicates the hits, assesses each hit's
+      support role against its candidate, and summarizes the evidence per
+      candidate.
+
+      :param event: Target abnormal event (supplies ``asset_id`` and query terms).
+      :param kg_context: KG neighbourhood providing documents and components to query over.
+      :param causality_candidates: Candidate hypotheses whose cause labels seed the queries.
+      :param operational_context: Optional operating-state input influencing query planning, or None.
+      :param run_context: Orchestrator run context.
+
+      :returns: Evidence bundle conforming to ``schemas/evidence_bundle.json``. Each
+                entry in ``results`` carries top-level ``snippet_id`` /
+                ``support_score`` and, under ``metadata``, ``support_role`` and the
+                ``linked_candidate_id`` used by downstream stages.
+      :rtype: JsonDict
+
+
+
+   .. py:method:: _component_filter_mode(*, merged_hits, component_ids_requested)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_queries(event, kg_context, causality_candidates, operational_context)
+
+
+   .. py:method:: _candidate_component_ids(candidate, kg_context)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_operational_context_query(asset_id, operational_context)
+
+
+   .. py:method:: _build_filters(asset_id, query_plan, kg_context)
+
+
+   .. py:method:: _assess_hit_against_candidate(hit, query_plan, cause_label_emb = None)
+
+
+   .. py:method:: _normalize_hits(hits, query_plan)
+
+
+   .. py:method:: _build_candidate_evidence_summary(hits)
+
+
+   .. py:method:: _build_pipeline_health(*, planned_queries, merged_hits, retrieval_mode)
+      :staticmethod:
+
+
+
+   .. py:method:: _dedupe_and_rank(hits)
+
+
+.. py:class:: InMemoryEvidenceStore(rows = None)
+
+   Development stub that mimics Chroma-style retrieval.
+
+
+   .. py:attribute:: rows
+      :value: []
+
+
+
+   .. py:method:: add(row)
+
+
+   .. py:method:: add_documents(docs)
+
+      Accept CMMS-style Chroma document payloads and normalize into row format.
+
+
+
+   .. py:method:: query(query_text, top_k = 10, filters = None)
+
+
+.. py:data:: store
+

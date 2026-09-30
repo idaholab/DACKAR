@@ -1,0 +1,221 @@
+src.dackar.RCA.orchestrators.kg_context_builder
+===============================================
+
+.. py:module:: src.dackar.RCA.orchestrators.kg_context_builder
+
+.. autoapi-nested-parse::
+
+   kg_context_builder — KGContextBuilderConfig and Neo4jKGContextBuilder.
+
+   Extracted from rca_reasoning_orchestrator.py.  The parent module re-exports
+   both names for backward-compatible imports.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.kg_context_builder.JsonDict
+   src.dackar.RCA.orchestrators.kg_context_builder.LOGGER
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.kg_context_builder.KGContextBuilderConfig
+   src.dackar.RCA.orchestrators.kg_context_builder.Neo4jKGContextBuilder
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.kg_context_builder.utcnow_iso
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: LOGGER
+
+.. py:function:: utcnow_iso()
+
+.. py:class:: KGContextBuilderConfig
+
+   .. py:attribute:: max_hops
+      :type:  int
+      :value: 2
+
+
+
+   .. py:attribute:: max_past_events
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: max_documents
+      :type:  int
+      :value: 20
+
+
+
+   .. py:attribute:: include_documents
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_past_events
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_safety_functions
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: include_oe_documents
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: max_oe_documents
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: doc_window_days_before
+      :type:  int
+      :value: 90
+
+
+
+   .. py:attribute:: doc_window_days_after
+      :type:  int
+      :value: 7
+
+
+
+   .. py:attribute:: past_event_window_days
+      :type:  int
+      :value: 3650
+
+
+
+.. py:class:: Neo4jKGContextBuilder(client, database = None, config = None)
+
+   .. py:attribute:: client
+
+
+   .. py:attribute:: database
+      :value: None
+
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: build(event, telemetry_summary, operational_context, pm_compliance, run_context, focus_component_ids = None)
+
+
+   .. py:method:: _record_truncation(*, family, total_matched, cap, dropped_ids, retained = None)
+
+      Record per-family truncation stats into ``self._truncation_stats`` (P-1).
+
+      ``total_matched`` is None when the pre-truncation total is unknown (e.g. a
+      DB-side ``LIMIT``); in that case truncation is inferred from an at-cap
+      retained count. Otherwise a family is ``truncated`` when more items matched
+      than the cap allows.
+
+
+
+   .. py:method:: _basic_input_checks(event, telemetry_summary)
+
+
+   .. py:method:: _resolve_seed_nodes(event, telemetry_summary)
+
+
+   .. py:method:: _resolve_monitored_variable(sensor_id, monitored_variable_id)
+
+
+   .. py:method:: _expand_neighborhood(seed_component_ids)
+
+
+   .. py:method:: _estimate_path_strength(hop_count, rel_types)
+
+
+   .. py:method:: _fetch_failure_modes(component_ids)
+
+
+   .. py:method:: _fetch_safety_functions(component_ids)
+
+      Fetch safety function nodes in the KG that are linked to any component in
+      *component_ids* via standard nuclear-plant relation types.
+
+      The query is intentionally permissive on relation direction: different
+      KG schemas place the directed arrow in either direction between a component
+      and its associated safety function.  Both directions are matched.
+
+      Returns a list of dicts conforming to ``kg_context.json#/safety_functions``.
+
+
+
+   .. py:method:: _fetch_kg_snapshot_version()
+
+      Return a stable version string that identifies the current state of the Neo4j KG.
+
+      Strategy (in priority order):
+      1. ``CALL dbms.components()`` — returns the Neo4j server version.  Combined
+         with the highest ``last_modified`` timestamp across all nodes this gives a
+         reproducible snapshot key tied to both the software and data state.
+      2. Highest node ``last_modified`` timestamp alone (if dbms.components fails).
+      3. Synthetic ISO timestamp fallback — used when the graph has no
+         ``last_modified`` properties and the procedure call is unavailable.
+
+      The returned string is recorded in ``kg_context.kg_snapshot_version`` so
+      that every RCA run can be replayed against the exact KG state that existed
+      at query time (§6 Model Governance).
+
+
+
+   .. py:method:: _fetch_oe_documents(failure_mode_ids, component_types)
+
+      Return OE report nodes from the KG relevant to this event's failure modes
+      and component types.
+
+      OE documents are fleet-wide and timeless — no date window is applied.
+      Retrieval is via two soft-match paths (ordered by specificity):
+        1. Direct FM linkage: (oe_document)-[:APPLICABLE_TO]->(failure_mode)
+        2. Component-type soft match: oe_document.applicable_component_types overlaps
+           with the subgraph component types.
+
+      ``plant_scope`` (pwr_only / bwr_only) is surfaced as metadata but is NOT used
+      as a hard filter — many components are shared across reactor types.
+
+
+
+   .. py:method:: _fetch_documents(asset_ids, component_ids, event, operational_context)
+
+
+   .. py:method:: _fetch_past_events(target_event_id, asset_ids, component_ids, failure_mode_ids, event)
+
+
+   .. py:method:: _parse_event_time(event)
+
+
+   .. py:method:: _compute_time_distance_days(created_at, event_time)
+
+

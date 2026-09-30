@@ -1,0 +1,266 @@
+src.dackar.RCA.orchestrators.causality_engine_v31
+=================================================
+
+.. py:module:: src.dackar.RCA.orchestrators.causality_engine_v31
+
+.. autoapi-nested-parse::
+
+   causality_engine_v31 — Rule-based causality engine, baseline variant.
+
+   Role in the pipeline
+   --------------------
+   This engine produces failure-mode candidates scored on five weighted dimensions:
+   structural, temporal, telemetry, evidence, and governance.  It operates purely
+   from structured KG context and telemetry summary inputs, without consuming
+   TSKR temporal-pattern metadata.
+
+   Relationship to v32
+   -------------------
+   ``causality_engine_v32`` is the production engine.  It extends v31 with
+   TSKR-aware scoring (Allen interval relations, latency alignment) and NER-based
+   entity normalisation via ``EntityNormalizer``.
+
+   **Both engines are intentionally retained.**  Running v31 alongside v32 on the
+   same inputs provides an independent baseline that can be used to:
+
+   * validate that TSKR enrichment improves — and does not regress — candidate
+     ranking relative to the simpler structural/evidence model;
+   * detect edge cases where temporal patterns over-penalise the correct root
+     cause (e.g. delayed-onset failure modes);
+   * support ablation studies during model development and audit.
+
+   Intended usage: pass ``RuleBasedCausalityEngineV31`` as the ``causality_engine``
+   argument of ``RCAReasoningOrchestrator`` when running a baseline/validation
+   pass, and ``RuleBasedCausalityEngineV32`` for the primary production pass.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.causality_engine_v31.JsonDict
+   src.dackar.RCA.orchestrators.causality_engine_v31._PM_CHECK_KEYWORDS
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig
+   src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.causality_engine_v31.utcnow_iso
+   src.dackar.RCA.orchestrators.causality_engine_v31.parse_dt
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: _PM_CHECK_KEYWORDS
+
+.. py:function:: utcnow_iso()
+
+.. py:function:: parse_dt(value)
+
+.. py:class:: CausalityEngineConfig
+
+   .. py:attribute:: top_k_candidates
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: weights
+      :type:  Dict[str, float]
+      :value: None
+
+
+
+   .. py:attribute:: minimum_evidence_threshold
+      :type:  float
+      :value: 0.35
+
+
+
+   .. py:attribute:: minimum_composite_threshold
+      :type:  float
+      :value: 0.3
+
+
+
+   .. py:attribute:: temporal_window_days_cap
+      :type:  int
+      :value: 3650
+
+
+
+   .. py:attribute:: tskr_enabled
+      :type:  bool
+      :value: True
+
+
+
+   .. py:method:: __post_init__()
+
+
+.. py:class:: RuleBasedCausalityEngineV31(config = None)
+
+   TSKR-aware deterministic causality engine.
+
+
+   .. py:attribute:: config
+
+
+   .. py:method:: generate(event, telemetry_summary, kg_context, tskr_patterns, operational_context, pm_compliance, run_context)
+
+
+   .. py:method:: _build_failure_mode_candidates(event, event_time, telemetry_summary, kg_context, tskr_index, pm_compliance)
+
+
+   .. py:method:: _build_past_event_candidates(event, event_time, telemetry_summary, kg_context, tskr_index, pm_compliance)
+
+
+   .. py:method:: _structural_score_for_fm(component_id, components)
+
+
+   .. py:method:: _symptom_match_score(event, fm, telemetry_summary)
+
+      Score [0, 1] for how well the event's observed symptoms match what
+      this failure mode is expected to produce.
+
+      0.5  = neutral (no symptom data available in either direction)
+      >0.5 = symptoms consistent with this failure mode
+      <0.5 = symptoms inconsistent with this failure mode
+
+      Two sub-signals combined by available weight:
+        - Anomaly pattern match (weight 0.6): dominant observed pattern vs.
+          fm.expected_anomaly_pattern.  Observed pattern is taken from the
+          most frequently occurring anomaly pattern in telemetry (more
+          objective), falling back to event.symptom_signature.anomaly_pattern.
+        - Symptom type overlap (weight 0.4): F1-score between event's
+          symptom_types and fm.expected_symptom_types.
+
+      When a sub-signal has no data, its weight is excluded and the remaining
+      signal is used alone.  When neither sub-signal has data, returns 0.5.
+
+
+
+   .. py:method:: _dominant_telemetry_pattern(telemetry_summary)
+      :staticmethod:
+
+
+      Return the most frequently occurring anomaly pattern across all signals,
+      or None if no anomalies are present.
+
+
+
+   .. py:method:: _temporal_score_for_fm(fm, telemetry_summary, event_time, tskr_index)
+
+
+   .. py:method:: _recency_factor(time_distance_days)
+      :staticmethod:
+
+
+      Map *time_distance_days* to a [0.55, 1.0] recency multiplier.
+
+      None (unknown age) receives a conservative 0.75 — neither penalised
+      nor given full credit.  Values are intentionally coarse so that small
+      differences in document age do not create artificial score cliffs.
+
+
+
+   .. py:method:: _evidence_score_for_fm(documents)
+
+
+   .. py:method:: _structural_score_for_past_event(target_asset_id, target_components, target_fm_ids, pe)
+
+
+   .. py:method:: _temporal_score_for_past_event(current_event_time, pe, telemetry_summary, tskr_index)
+
+
+   .. py:method:: _evidence_score_for_past_event(documents, pe)
+
+
+   .. py:method:: _governance_score(pm_compliance, fm_name=None, fm_superclass=None, component_name=None)
+
+      Candidate-specific governance score from PM compliance data.
+
+      Returns 0.5 (neutral) when:
+        - no PM data is available,
+        - all checks passed (no maintenance contribution signal), or
+        - PM checks failed elsewhere on the asset but none are relevant
+          to this specific failure mode / component.
+
+      Returns > 0.5 when at least one failed check is relevant to this
+      candidate, scaled by the number of relevant failures and how overdue
+      they are.  Maximum value is 0.95 (never certain from PM alone).
+
+
+
+   .. py:method:: _pm_check_relevant(check, candidate_text)
+      :staticmethod:
+
+
+      Return True if a PM check type matches keywords in the candidate's text.
+
+
+
+   .. py:method:: _telemetry_score_for_fm(telemetry_summary, fm, component_id, components)
+
+
+   .. py:method:: _telemetry_score_for_past_event(telemetry_summary, pe)
+
+
+   .. py:method:: _combine_scores(scores)
+
+
+   .. py:method:: _candidate_meets_threshold(candidate)
+
+
+   .. py:method:: _confidence_label(score)
+
+
+   .. py:method:: _supporting_doc_refs(documents, preferred)
+
+
+   .. py:method:: _event_time(event)
+
+
+   .. py:method:: _index_tskr_patterns(tskr_patterns)
+
+
+   .. py:method:: _lookup_tskr_pattern(tskr_index, target_id)
+
+      Return the highest-confidence pattern for *target_id*, or None.
+
+
+
+   .. py:method:: _pattern_confidence(pattern)
+
+
+   .. py:method:: _pattern_support(pattern)
+
+
+   .. py:method:: _relation_precedence_score(relation, has_anomalies=False)
+
+
+   .. py:method:: _latency_consistency(min_h, max_h, inferred_delay_hours)
+
+
+   .. py:method:: _fm_path_nodes(component_id, fm_id, event_id, components)
+
+
+   .. py:method:: _event_path_nodes(pe, target_event_id)
+
+

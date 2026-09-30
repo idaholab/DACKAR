@@ -1,0 +1,262 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.orchestrators.temporal_relations &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.orchestrators.temporal_relations</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.orchestrators.temporal_relations</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Tuple</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># The 6 RCA-relevant Allen relations (A = anomaly/maintenance interval,</span>
+<span class="c1"># B = event interval).</span>
+<span class="c1">#</span>
+<span class="c1"># Semantics (A relative to B):</span>
+<span class="c1">#   PRECEDES   — A ends before B starts; lag = A-onset to B-onset</span>
+<span class="c1">#   OVERLAPS   — A started before B, still active at B onset (strongest causal signal)</span>
+<span class="c1">#   CONTAINS   — A encompasses B; long-running latent degradation</span>
+<span class="c1">#   DURING     — A started at or after B onset; likely consequential, not a cause</span>
+<span class="c1">#   FOLLOWS    — A starts after B ends; temporal contradiction</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="PRECEDES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.PRECEDES">[docs]</a>
+<span class="n">PRECEDES</span>  <span class="o">=</span> <span class="s2">"precedes"</span></div>
+
+<div class="viewcode-block" id="OVERLAPS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.OVERLAPS">[docs]</a>
+<span class="n">OVERLAPS</span>  <span class="o">=</span> <span class="s2">"overlaps"</span></div>
+
+<div class="viewcode-block" id="CONTAINS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.CONTAINS">[docs]</a>
+<span class="n">CONTAINS</span>  <span class="o">=</span> <span class="s2">"contains"</span></div>
+
+<div class="viewcode-block" id="DURING">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.DURING">[docs]</a>
+<span class="n">DURING</span>    <span class="o">=</span> <span class="s2">"during"</span></div>
+
+<div class="viewcode-block" id="FOLLOWS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.FOLLOWS">[docs]</a>
+<span class="n">FOLLOWS</span>   <span class="o">=</span> <span class="s2">"follows"</span></div>
+
+
+<span class="c1"># Causal priority order used by consumers to pick the dominant relation.</span>
+<span class="c1"># Higher priority = stronger causal candidacy.</span>
+<div class="viewcode-block" id="CAUSAL_PRIORITY">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.CAUSAL_PRIORITY">[docs]</a>
+<span class="n">CAUSAL_PRIORITY</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">OVERLAPS</span><span class="p">,</span> <span class="n">CONTAINS</span><span class="p">,</span> <span class="n">PRECEDES</span><span class="p">,</span> <span class="n">DURING</span><span class="p">,</span> <span class="n">FOLLOWS</span><span class="p">)</span></div>
+
+
+<span class="c1"># Base RCA relevance scores.  Refined downstream by latency alignment</span>
+<span class="c1"># and severity weighting; these express the prior relevance of each relation.</span>
+<div class="viewcode-block" id="RELATION_SCORE">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.RELATION_SCORE">[docs]</a>
+<span class="n">RELATION_SCORE</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">OVERLAPS</span><span class="p">:</span> <span class="mf">0.90</span><span class="p">,</span>   <span class="c1"># degradation active at event onset — very strong</span>
+    <span class="n">CONTAINS</span><span class="p">:</span> <span class="mf">0.85</span><span class="p">,</span>   <span class="c1"># long-running latent condition</span>
+    <span class="n">PRECEDES</span><span class="p">:</span> <span class="mf">0.75</span><span class="p">,</span>   <span class="c1"># classic causal lead-time</span>
+    <span class="n">DURING</span><span class="p">:</span>   <span class="mf">0.30</span><span class="p">,</span>   <span class="c1"># anomaly appeared after event onset — likely a symptom</span>
+    <span class="n">FOLLOWS</span><span class="p">:</span>  <span class="mf">0.10</span><span class="p">,</span>   <span class="c1"># anomaly after event resolution — contradiction</span>
+<span class="p">}</span></div>
+
+
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="viewcode-block" id="Interval">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.Interval">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Interval</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A closed time interval [start, end].  For point events set end == start."""</span>
+<div class="viewcode-block" id="Interval.start">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.Interval.start">[docs]</a>
+    <span class="n">start</span><span class="p">:</span> <span class="n">datetime</span></div>
+
+<div class="viewcode-block" id="Interval.end">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.Interval.end">[docs]</a>
+    <span class="n">end</span><span class="p">:</span> <span class="n">datetime</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="allen_relation">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.allen_relation">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">allen_relation</span><span class="p">(</span>
+    <span class="n">a</span><span class="p">:</span> <span class="n">Interval</span><span class="p">,</span>
+    <span class="n">b</span><span class="p">:</span> <span class="n">Interval</span><span class="p">,</span>
+    <span class="n">epsilon_hours</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">interval_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"closed"</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Classify the temporal relation of interval A relative to reference interval B.</span>
+
+<span class="sd">    Returns ``(relation_name, base_rca_relevance_score)``.</span>
+
+<span class="sd">    ``b`` is the event interval; ``a`` is an anomaly or maintenance window.</span>
+<span class="sd">    ``epsilon_hours`` absorbs timestamp noise and near-simultaneous boundary</span>
+<span class="sd">    cases — boundaries within epsilon are treated as touching.</span>
+<span class="sd">    ``interval_type`` controls whether anomaly endpoints are interpreted as</span>
+<span class="sd">    closed/open when evaluating boundary-touching cases.</span>
+
+<span class="sd">    Decision logic (evaluated in order):</span>
+
+<span class="sd">    1. FOLLOWS   — a starts meaningfully after b ends</span>
+<span class="sd">    2. PRECEDES  — a ends meaningfully before b starts</span>
+<span class="sd">    3. CONTAINS  — a started before b AND ends after b  (encompasses event)</span>
+<span class="sd">    4. OVERLAPS  — a started before b, ends within b    (degradation active at onset)</span>
+<span class="sd">    5. DURING    — everything else: a started at or after b onset, including</span>
+<span class="sd">                   "started inside b and ended after b" (consequential anomaly)</span>
+<span class="sd">    """</span>
+    <span class="n">eps</span> <span class="o">=</span> <span class="n">epsilon_hours</span> <span class="o">*</span> <span class="mf">3600.0</span>
+    <span class="n">a_s_raw</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+    <span class="n">a_e_raw</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">end</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+    <span class="n">b_s</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+    <span class="n">b_e</span> <span class="o">=</span> <span class="n">b</span><span class="o">.</span><span class="n">end</span><span class="o">.</span><span class="n">timestamp</span><span class="p">()</span>
+
+    <span class="n">norm_interval_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">interval_type</span> <span class="ow">or</span> <span class="s2">"closed"</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">norm_interval_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"closed"</span><span class="p">,</span> <span class="s2">"open"</span><span class="p">,</span> <span class="s2">"half_open_start"</span><span class="p">,</span> <span class="s2">"half_open_end"</span><span class="p">}:</span>
+        <span class="n">norm_interval_type</span> <span class="o">=</span> <span class="s2">"closed"</span>
+
+    <span class="c1"># Use a tiny endpoint shift to model open boundaries. This keeps relation</span>
+    <span class="c1"># semantics deterministic while preserving existing epsilon-based tolerance.</span>
+    <span class="n">endpoint_shift_s</span> <span class="o">=</span> <span class="mf">1e-6</span>
+    <span class="n">start_shift</span> <span class="o">=</span> <span class="n">endpoint_shift_s</span> <span class="k">if</span> <span class="n">norm_interval_type</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"open"</span><span class="p">,</span> <span class="s2">"half_open_start"</span><span class="p">}</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="n">end_shift</span> <span class="o">=</span> <span class="n">endpoint_shift_s</span> <span class="k">if</span> <span class="n">norm_interval_type</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"open"</span><span class="p">,</span> <span class="s2">"half_open_end"</span><span class="p">}</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="n">a_s</span> <span class="o">=</span> <span class="n">a_s_raw</span> <span class="o">+</span> <span class="n">start_shift</span>
+    <span class="n">a_e</span> <span class="o">=</span> <span class="n">a_e_raw</span> <span class="o">-</span> <span class="n">end_shift</span>
+    <span class="k">if</span> <span class="n">a_e</span> <span class="o">&lt;</span> <span class="n">a_s</span><span class="p">:</span>
+        <span class="n">midpoint</span> <span class="o">=</span> <span class="p">(</span><span class="n">a_s_raw</span> <span class="o">+</span> <span class="n">a_e_raw</span><span class="p">)</span> <span class="o">/</span> <span class="mf">2.0</span>
+        <span class="n">a_s</span> <span class="o">=</span> <span class="n">midpoint</span>
+        <span class="n">a_e</span> <span class="o">=</span> <span class="n">midpoint</span>
+
+    <span class="k">if</span> <span class="n">a_s</span> <span class="o">&gt;</span> <span class="n">b_e</span> <span class="o">+</span> <span class="n">eps</span><span class="p">:</span>
+        <span class="n">rel</span> <span class="o">=</span> <span class="n">FOLLOWS</span>
+    <span class="k">elif</span> <span class="n">a_e</span> <span class="o">&lt;</span> <span class="n">b_s</span> <span class="o">-</span> <span class="n">eps</span><span class="p">:</span>
+        <span class="n">rel</span> <span class="o">=</span> <span class="n">PRECEDES</span>
+    <span class="k">elif</span> <span class="n">a_s</span> <span class="o">&lt;</span> <span class="n">b_s</span> <span class="o">-</span> <span class="n">eps</span> <span class="ow">and</span> <span class="n">a_e</span> <span class="o">&gt;</span> <span class="n">b_e</span> <span class="o">+</span> <span class="n">eps</span><span class="p">:</span>
+        <span class="n">rel</span> <span class="o">=</span> <span class="n">CONTAINS</span>
+    <span class="k">elif</span> <span class="n">a_s</span> <span class="o">&lt;</span> <span class="n">b_s</span> <span class="o">-</span> <span class="n">eps</span><span class="p">:</span>          <span class="c1"># and a_e &lt;= b_e + eps</span>
+        <span class="n">rel</span> <span class="o">=</span> <span class="n">OVERLAPS</span>
+    <span class="k">else</span><span class="p">:</span>                           <span class="c1"># a_s &gt;= b_s - eps</span>
+        <span class="n">rel</span> <span class="o">=</span> <span class="n">DURING</span>
+
+    <span class="k">return</span> <span class="n">rel</span><span class="p">,</span> <span class="n">RELATION_SCORE</span><span class="p">[</span><span class="n">rel</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="onset_lag_hours">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/temporal_relations/index.html#src.dackar.RCA.orchestrators.temporal_relations.onset_lag_hours">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">onset_lag_hours</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="n">Interval</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="n">Interval</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Signed lag in hours from A onset to B onset (b.start − a.start).</span>
+
+<span class="sd">    Positive  → A predates B onset (causal candidate).</span>
+<span class="sd">    Negative  → A postdates B onset (symptom candidate).</span>
+<span class="sd">    """</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">b</span><span class="o">.</span><span class="n">start</span> <span class="o">-</span> <span class="n">a</span><span class="o">.</span><span class="n">start</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

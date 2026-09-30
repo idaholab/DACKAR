@@ -1,0 +1,488 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.orchestrators.ishikawa_evaluator &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.orchestrators.ishikawa_evaluator</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.orchestrators.ishikawa_evaluator</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">ishikawa_evaluator — Deterministic Ishikawa (fishbone) matrix builder.</span>
+
+<span class="sd">Extracted from rca_reasoning_orchestrator.py.  The parent module re-exports</span>
+<span class="sd">HeuristicIshikawaEvaluatorV1 for backward-compatible imports.</span>
+<span class="sd">"""</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">HeuristicIshikawaEvaluatorV1</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    First deterministic Ishikawa evaluator.</span>
+
+<span class="sd">    Builds a structured fishbone-style matrix from:</span>
+<span class="sd">      - candidate hypotheses</span>
+<span class="sd">      - KG context</span>
+<span class="sd">      - temporal support</span>
+<span class="sd">      - retrieved evidence</span>
+<span class="sd">      - optional PM / operational context</span>
+<span class="sd">    """</span>
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1.CATEGORY_ORDER">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1.CATEGORY_ORDER">[docs]</a>
+    <span class="n">CATEGORY_ORDER</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">"equipment_hardware"</span><span class="p">,</span>
+        <span class="s2">"process_procedure"</span><span class="p">,</span>
+        <span class="s2">"measurement_instrumentation"</span><span class="p">,</span>
+        <span class="s2">"environment_operating_context"</span><span class="p">,</span>
+        <span class="s2">"maintenance_human_factors"</span><span class="p">,</span>
+    <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1.evaluate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1.evaluate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">evaluate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">tskr_patterns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">evidence_bundle</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">operational_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">pm_compliance</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Build the Ishikawa contributing-factor matrix for an event.</span>
+
+<span class="sd">        Assembles category-grouped rows from the causal candidates (each cited</span>
+<span class="sd">        with its *own* supporting evidence — see</span>
+<span class="sd">        :meth:`_supporting_evidence_by_candidate`), telemetry/TSKR measurement</span>
+<span class="sd">        signals, maintenance and operating-context factors, process evidence,</span>
+<span class="sd">        and KG-context factors.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        event, telemetry_summary, kg_context:</span>
+<span class="sd">            Target event (must carry ``event_id`` or ``id``), its telemetry</span>
+<span class="sd">            summary, and the KG neighbourhood.</span>
+<span class="sd">        tskr_patterns:</span>
+<span class="sd">            TSKR chain-position patterns, or None.</span>
+<span class="sd">        causality_candidates, evidence_bundle:</span>
+<span class="sd">            Ranked candidate hypotheses and their retrieved evidence.</span>
+<span class="sd">        operational_context, pm_compliance:</span>
+<span class="sd">            Optional supporting artifacts, or None.</span>
+<span class="sd">        run_context:</span>
+<span class="sd">            Orchestrator run context (``run_id``).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        JsonDict</span>
+<span class="sd">            An Ishikawa matrix conforming to ``schemas/ishikawa_matrix.json``</span>
+<span class="sd">            (categories, rows, and a summary of top candidates).</span>
+<span class="sd">        """</span>
+        <span class="n">event_id</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="p">[</span><span class="s2">"id"</span><span class="p">]</span>
+        <span class="n">asset_id</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="n">candidate_rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_candidate_rows</span><span class="p">(</span><span class="n">causality_candidates</span><span class="p">,</span> <span class="n">evidence_bundle</span><span class="p">)</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">candidate_rows</span><span class="p">)</span>
+
+        <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_measurement_rows</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">tskr_patterns</span><span class="p">))</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_maintenance_rows</span><span class="p">(</span><span class="n">pm_compliance</span><span class="p">,</span> <span class="n">causality_candidates</span><span class="p">))</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_operating_context_rows</span><span class="p">(</span><span class="n">operational_context</span><span class="p">,</span> <span class="n">event</span><span class="p">))</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_process_rows</span><span class="p">(</span><span class="n">evidence_bundle</span><span class="p">))</span>
+        <span class="n">rows</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_kg_context_rows</span><span class="p">(</span><span class="n">kg_context</span><span class="p">))</span>
+
+        <span class="n">grouped</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_group_rows</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"matrix_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"ISHI::</span><span class="si">{</span><span class="n">event_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+            <span class="s2">"event_id"</span><span class="p">:</span> <span class="n">event_id</span><span class="p">,</span>
+            <span class="s2">"asset_id"</span><span class="p">:</span> <span class="n">asset_id</span><span class="p">,</span>
+            <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">utcnow_iso</span><span class="p">(),</span>
+            <span class="s2">"categories"</span><span class="p">:</span> <span class="p">[</span>
+                <span class="p">{</span>
+                    <span class="s2">"category"</span><span class="p">:</span> <span class="n">category</span><span class="p">,</span>
+                    <span class="s2">"rows"</span><span class="p">:</span> <span class="n">grouped</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">category</span><span class="p">,</span> <span class="p">[]),</span>
+                <span class="p">}</span>
+                <span class="k">for</span> <span class="n">category</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">CATEGORY_ORDER</span>
+            <span class="p">],</span>
+            <span class="s2">"summary"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"row_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">rows</span><span class="p">),</span>
+                <span class="s2">"category_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">([</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">CATEGORY_ORDER</span> <span class="k">if</span> <span class="n">grouped</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="p">)]),</span>
+                <span class="s2">"top_candidate_ids"</span><span class="p">:</span> <span class="p">[</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])[:</span><span class="mi">3</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+                <span class="p">],</span>
+            <span class="p">},</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="s2">"HeuristicIshikawaEvaluatorV1"</span><span class="p">,</span>
+                <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._candidate_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._candidate_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_candidate_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">evidence_bundle</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="n">evidence_by_candidate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_supporting_evidence_by_candidate</span><span class="p">(</span><span class="n">evidence_bundle</span><span class="p">)</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">hyp_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"hypothesis_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">hyp_type</span> <span class="o">==</span> <span class="s2">"failure_mode"</span><span class="p">:</span>
+                <span class="n">category</span> <span class="o">=</span> <span class="s2">"equipment_hardware"</span>
+            <span class="k">elif</span> <span class="n">hyp_type</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">"procedure"</span><span class="p">,</span> <span class="s2">"procedural_deviation"</span><span class="p">}:</span>
+                <span class="n">category</span> <span class="o">=</span> <span class="s2">"process_procedure"</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">category</span> <span class="o">=</span> <span class="s2">"equipment_hardware"</span>
+
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"factor_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">category</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'candidate_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"cause_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">),</span>
+                <span class="s2">"source_artifact"</span><span class="p">:</span> <span class="s2">"causality_candidates"</span><span class="p">,</span>
+                <span class="s2">"linked_candidate_ids"</span><span class="p">:</span> <span class="p">[</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)],</span>
+                <span class="s2">"supporting_evidence_ids"</span><span class="p">:</span> <span class="n">evidence_by_candidate</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">),</span> <span class="p">[]),</span>
+                <span class="s2">"strength"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">),</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score_rationale"</span><span class="p">,</span> <span class="p">{}),</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"temporal_evidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">),</span>
+                <span class="s2">"telemetry_signals"</span><span class="p">:</span> <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"telemetry_evidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matching_signal_ids"</span><span class="p">,</span> <span class="p">[]),</span>
+                <span class="s2">"category"</span><span class="p">:</span> <span class="n">category</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">rows</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._supporting_evidence_by_candidate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._supporting_evidence_by_candidate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_supporting_evidence_by_candidate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">evidence_bundle</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">"""Index the evidence bundle by the candidate each hit supports.</span>
+
+<span class="sd">        Groups the bundle's ``results`` by their ``metadata.linked_candidate_id``</span>
+<span class="sd">        (falling back to ``metadata.candidate_id``), keeping only non-superseded,</span>
+<span class="sd">        ``support_role == "supporting"`` hits, so that each Ishikawa row cites the</span>
+<span class="sd">        evidence retrieved for *its own* candidate rather than the first three</span>
+<span class="sd">        snippet ids in the bundle.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        evidence_bundle : JsonDict</span>
+<span class="sd">            Evidence bundle whose ``results`` list holds normalized retrieval</span>
+<span class="sd">            hits (top-level ``snippet_id`` / ``support_score`` / ``superseded``,</span>
+<span class="sd">            with ``support_role`` and candidate linkage under ``metadata``).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Dict[str, List[str]]</span>
+<span class="sd">            Maps ``candidate_id`` to its supporting snippet ids, highest</span>
+<span class="sd">            ``support_score`` first and capped at three. Candidates with no</span>
+<span class="sd">            supporting evidence are absent (callers default to ``[]``).</span>
+<span class="sd">        """</span>
+        <span class="n">scored</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">tuple</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="p">(</span><span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"results"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"superseded"</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">meta</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_role"</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">"supporting"</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">candidate_id</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"linked_candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">candidate_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">snippet_id</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"snippet_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">snippet_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">scored</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">candidate_id</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">snippet_id</span><span class="p">)</span>
+            <span class="p">)</span>
+        <span class="n">result</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">candidate_id</span><span class="p">,</span> <span class="n">pairs</span> <span class="ow">in</span> <span class="n">scored</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">pairs</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">result</span><span class="p">[</span><span class="n">candidate_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">sid</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">sid</span> <span class="ow">in</span> <span class="n">pairs</span><span class="p">][:</span><span class="mi">3</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._measurement_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._measurement_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_measurement_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span> <span class="n">tskr_patterns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">pattern_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"target_id"</span><span class="p">):</span> <span class="n">p</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="p">(</span><span class="n">tskr_patterns</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"patterns"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">anomalies</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">anomalies</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"factor_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"measurement::</span><span class="si">{</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'sensor_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"Signal anomaly on </span><span class="si">{</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'sensor_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"source_artifact"</span><span class="p">:</span> <span class="s2">"telemetry_summary"</span><span class="p">,</span>
+                <span class="s2">"linked_candidate_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"supporting_evidence_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"strength"</span><span class="p">:</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.4</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">anomalies</span><span class="p">)),</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"parameter"</span><span class="p">:</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parameter"</span><span class="p">),</span>
+                    <span class="s2">"unit"</span><span class="p">:</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"unit"</span><span class="p">),</span>
+                    <span class="s2">"anomaly_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">anomalies</span><span class="p">),</span>
+                <span class="p">},</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="nb">next</span><span class="p">(</span>
+                    <span class="p">(</span>
+                        <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">)</span>
+                        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">pattern_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                        <span class="k">if</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                    <span class="p">),</span>
+                    <span class="kc">None</span><span class="p">,</span>
+                <span class="p">),</span>
+                <span class="s2">"telemetry_signals"</span><span class="p">:</span> <span class="p">[</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)],</span>
+                <span class="s2">"category"</span><span class="p">:</span> <span class="s2">"measurement_instrumentation"</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">rows</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._maintenance_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._maintenance_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_maintenance_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pm_compliance</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">pm_compliance</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c1"># aggregator writes "overdue_items"; "overdue_tasks" is a legacy alias kept for</span>
+        <span class="c1"># backward compatibility with pre-Wave-2 fixtures</span>
+        <span class="n">overdue</span> <span class="o">=</span> <span class="n">pm_compliance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_items"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">pm_compliance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_tasks"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">overdue</span><span class="p">:</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"factor_id"</span><span class="p">:</span> <span class="s2">"maintenance::overdue_tasks"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="s2">"Overdue preventive maintenance"</span><span class="p">,</span>
+                <span class="s2">"source_artifact"</span><span class="p">:</span> <span class="s2">"pm_compliance"</span><span class="p">,</span>
+                <span class="s2">"linked_candidate_ids"</span><span class="p">:</span> <span class="p">[</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])[:</span><span class="mi">3</span><span class="p">]</span>
+                    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
+                <span class="p">],</span>
+                <span class="s2">"supporting_evidence_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"strength"</span><span class="p">:</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.3</span> <span class="o">+</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">overdue</span><span class="p">)),</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"overdue_items"</span><span class="p">:</span> <span class="n">overdue</span><span class="p">},</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"telemetry_signals"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"category"</span><span class="p">:</span> <span class="s2">"maintenance_human_factors"</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">rows</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._operating_context_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._operating_context_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_operating_context_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">operational_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span> <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">operational_context</span><span class="p">:</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"factor_id"</span><span class="p">:</span> <span class="s2">"environment::operational_context"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="s2">"Operating context influence"</span><span class="p">,</span>
+                <span class="s2">"source_artifact"</span><span class="p">:</span> <span class="s2">"operational_context"</span><span class="p">,</span>
+                <span class="s2">"linked_candidate_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"supporting_evidence_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"strength"</span><span class="p">:</span> <span class="mf">0.4</span><span class="p">,</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="n">operational_context</span><span class="p">,</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"telemetry_signals"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"category"</span><span class="p">:</span> <span class="s2">"environment_operating_context"</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">):</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"factor_id"</span><span class="p">:</span> <span class="s2">"environment::event_severity"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="s2">"Event severity context"</span><span class="p">,</span>
+                <span class="s2">"source_artifact"</span><span class="p">:</span> <span class="s2">"event"</span><span class="p">,</span>
+                <span class="s2">"linked_candidate_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"supporting_evidence_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"strength"</span><span class="p">:</span> <span class="mf">0.2</span><span class="p">,</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"severity"</span><span class="p">:</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)},</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"telemetry_signals"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"category"</span><span class="p">:</span> <span class="s2">"environment_operating_context"</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">rows</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._process_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._process_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_process_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">evidence_bundle</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="p">(</span><span class="n">evidence_bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"results"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])[:</span><span class="mi">3</span><span class="p">]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">doc_id</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">)</span>
+            <span class="n">snippet</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"snippet"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">doc_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"factor_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"process::</span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"Procedure/documentary evidence from </span><span class="si">{</span><span class="n">doc_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"source_artifact"</span><span class="p">:</span> <span class="s2">"evidence_bundle"</span><span class="p">,</span>
+                <span class="s2">"linked_candidate_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"supporting_evidence_ids"</span><span class="p">:</span> <span class="p">[</span><span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"snippet_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">doc_id</span><span class="p">],</span>
+                <span class="s2">"strength"</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"score"</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">),</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"snippet"</span><span class="p">:</span> <span class="n">snippet</span><span class="p">},</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"telemetry_signals"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"category"</span><span class="p">:</span> <span class="s2">"process_procedure"</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">rows</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._kg_context_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._kg_context_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_kg_context_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]:</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">comp</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"factor_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"equipment::</span><span class="si">{</span><span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'component_id'</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_label"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">),</span>
+                <span class="s2">"source_artifact"</span><span class="p">:</span> <span class="s2">"kg_context"</span><span class="p">,</span>
+                <span class="s2">"linked_candidate_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"supporting_evidence_ids"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"strength"</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"seed_match_type"</span><span class="p">:</span> <span class="n">comp</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"seed_match_type"</span><span class="p">)},</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"telemetry_signals"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"category"</span><span class="p">:</span> <span class="s2">"equipment_hardware"</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">rows</span></div>
+
+
+<div class="viewcode-block" id="HeuristicIshikawaEvaluatorV1._group_rows">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/ishikawa_evaluator/index.html#src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1._group_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_group_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rows</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]:</span>
+        <span class="n">grouped</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="p">[]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">CATEGORY_ORDER</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="n">category</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"category"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">category</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">grouped</span><span class="p">:</span>
+                <span class="n">grouped</span><span class="p">[</span><span class="n">category</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">grouped</span><span class="p">[</span><span class="n">category</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">row</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">grouped</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

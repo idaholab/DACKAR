@@ -1,0 +1,1396 @@
+src.dackar.RCA.orchestrators.rca_reasoning_orchestrator
+=======================================================
+
+.. py:module:: src.dackar.RCA.orchestrators.rca_reasoning_orchestrator
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.LOGGER
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.JsonDict
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator._SCORING_FIELDS_PROTECTED
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.KGContextBuilder
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.TSKRTemporalScorer
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.CausalityEngine
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.EvidenceRetriever
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.RCASynthesizer
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.IshikawaEvaluator
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.SchemaValidator
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.ArtifactStore
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.OrchestratorConfig
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.RCAReasoningOrchestrator
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.utcnow_iso
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.parse_dt
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator._serialize_signal_episode
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator._summarize_signal_episodes
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator._summarize_cross_pattern_evidence
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator._build_epistemics_manifest_summary
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator._assert_cross_pattern_non_intrusion
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator._collect_keys
+   src.dackar.RCA.orchestrators.rca_reasoning_orchestrator.build_dev_orchestrator
+
+
+Module Contents
+---------------
+
+.. py:data:: LOGGER
+
+.. py:data:: JsonDict
+
+.. py:function:: utcnow_iso()
+
+.. py:function:: parse_dt(value)
+
+.. py:class:: KGContextBuilder
+
+   Bases: :py:obj:`Protocol`
+
+
+   Collaborator that builds the knowledge-graph context for an event.
+
+
+   .. py:method:: build(event, telemetry_summary, operational_context, pm_compliance, run_context, focus_component_ids = None)
+
+      Build the KG neighbourhood for an event.
+
+      :param event: Target abnormal event (must carry ``event_id`` or ``id``).
+      :param telemetry_summary: Telemetry anomaly summary for the event window.
+      :param operational_context: Optional operating-state and PM-compliance inputs, or None.
+      :param pm_compliance: Optional operating-state and PM-compliance inputs, or None.
+      :param run_context: Orchestrator run context (``run_id`` and related identifiers).
+      :param focus_component_ids: When provided, narrows the neighbourhood to these components;
+                                  auto re-entry uses it to refocus a second pass.
+
+      :returns: KG neighbourhood (components, failure modes, barriers) conforming
+                to ``schemas/kg_context.json``.
+      :rtype: JsonDict
+
+
+
+.. py:class:: TSKRTemporalScorer
+
+   Bases: :py:obj:`Protocol`
+
+
+   Collaborator that scores TSKR temporal chain-position patterns.
+
+
+   .. py:method:: score(event, telemetry_summary, kg_context, operational_context, run_context, signal_evidence = None)
+
+      Score temporal patterns for the event's candidate failure modes.
+
+      :param event: Target abnormal event.
+      :param telemetry_summary: Telemetry anomaly summary for the event window.
+      :param kg_context: KG neighbourhood from :meth:`KGContextBuilder.build`.
+      :param operational_context: Optional operating-state input, or None.
+      :param run_context: Orchestrator run context.
+      :param signal_evidence: Optional signal-episode evidence, or None when unavailable.
+
+      :returns: TSKR patterns conforming to ``schemas/tskr_patterns.json``.
+      :rtype: JsonDict
+
+
+
+.. py:class:: CausalityEngine
+
+   Bases: :py:obj:`Protocol`
+
+
+   Collaborator that generates and refines causal candidate hypotheses.
+
+
+   .. py:method:: generate(event, telemetry_summary, kg_context, tskr_patterns, operational_context, pm_compliance, run_context)
+
+      Generate ranked causal candidate hypotheses for the event.
+
+      :param event: Target abnormal event.
+      :param telemetry_summary: Telemetry anomaly summary for the event window.
+      :param kg_context: KG neighbourhood from :meth:`KGContextBuilder.build`.
+      :param tskr_patterns: TSKR chain-position patterns, or None when unavailable.
+      :param operational_context: Optional supporting artifacts, or None.
+      :param pm_compliance: Optional supporting artifacts, or None.
+      :param run_context: Orchestrator run context.
+
+      :returns: Candidate hypotheses conforming to
+                ``schemas/causality_candidates.json``.
+      :rtype: JsonDict
+
+
+
+.. py:class:: EvidenceRetriever
+
+   Bases: :py:obj:`Protocol`
+
+
+   Collaborator that retrieves documentary evidence for candidates.
+
+
+   .. py:method:: retrieve(event, kg_context, causality_candidates, operational_context, run_context)
+
+      Retrieve an evidence bundle supporting the candidate hypotheses.
+
+      :param event: Target abnormal event.
+      :param kg_context: KG neighbourhood from :meth:`KGContextBuilder.build`.
+      :param causality_candidates: Candidate hypotheses to gather evidence for.
+      :param operational_context: Optional operating-state input, or None.
+      :param run_context: Orchestrator run context.
+
+      :returns: Evidence bundle conforming to ``schemas/evidence_bundle.json`` (its
+                ``results`` list holds normalized, candidate-linked hits).
+      :rtype: JsonDict
+
+
+
+.. py:class:: RCASynthesizer
+
+   Bases: :py:obj:`Protocol`
+
+
+   Collaborator that synthesizes the final validated RCA card.
+
+
+   .. py:method:: synthesize(event, telemetry_summary, kg_context, tskr_patterns, causality_candidates, evidence_bundle, operational_context, pm_compliance, ishikawa_matrix, run_context)
+
+      Synthesize a validated RCA card from the reasoning artifacts.
+
+      :param event: Target event, its telemetry summary, and the KG neighbourhood.
+      :param telemetry_summary: Target event, its telemetry summary, and the KG neighbourhood.
+      :param kg_context: Target event, its telemetry summary, and the KG neighbourhood.
+      :param tskr_patterns: TSKR chain-position patterns, or None.
+      :param causality_candidates: Ranked candidate hypotheses and their retrieved evidence.
+      :param evidence_bundle: Ranked candidate hypotheses and their retrieved evidence.
+      :param operational_context: Optional supporting artifacts folded into the card when present.
+      :param pm_compliance: Optional supporting artifacts folded into the card when present.
+      :param ishikawa_matrix: Optional supporting artifacts folded into the card when present.
+      :param run_context: Orchestrator run context.
+
+      :returns: An RCA card conforming to ``schemas/rca_card.json``.
+      :rtype: JsonDict
+
+
+
+.. py:class:: IshikawaEvaluator
+
+   Bases: :py:obj:`Protocol`
+
+
+   Collaborator that builds the Ishikawa (fishbone) contributing-factor matrix.
+
+
+   .. py:method:: evaluate(event, telemetry_summary, kg_context, tskr_patterns, causality_candidates, evidence_bundle, operational_context, pm_compliance, run_context)
+
+      Build the Ishikawa contributing-factor matrix for the event.
+
+      :param event: Target event, its telemetry summary, and the KG neighbourhood.
+      :param telemetry_summary: Target event, its telemetry summary, and the KG neighbourhood.
+      :param kg_context: Target event, its telemetry summary, and the KG neighbourhood.
+      :param tskr_patterns: TSKR chain-position patterns, or None.
+      :param causality_candidates: Ranked candidate hypotheses and their retrieved evidence.
+      :param evidence_bundle: Ranked candidate hypotheses and their retrieved evidence.
+      :param operational_context: Optional supporting artifacts, or None.
+      :param pm_compliance: Optional supporting artifacts, or None.
+      :param run_context: Orchestrator run context.
+
+      :returns: An Ishikawa matrix conforming to ``schemas/ishikawa_matrix.json``.
+      :rtype: JsonDict
+
+
+
+.. py:class:: SchemaValidator
+
+   Bases: :py:obj:`Protocol`
+
+
+   Backward-compatible validator protocol.
+
+   Supported validator styles:
+     1) legacy:
+          validate(artifact_name, payload) -> None
+     2) richer per-artifact:
+          validate_artifact(artifact_name, payload) -> ValidationReport|dict|None
+     3) richer bundle:
+          validate_run_bundle(event=..., telemetry_summary=..., ...) -> ValidationReport|dict|None
+
+
+   .. py:method:: validate(artifact_name, payload)
+
+      Legacy style: validate *payload* for *artifact_name*, raising on failure.
+
+
+
+   .. py:method:: validate_artifact(artifact_name, payload)
+
+      Richer per-artifact style: return a validation report (or None) without raising.
+
+
+
+   .. py:method:: validate_run_bundle(**kwargs)
+
+      Richer bundle style: cross-validate a whole run's artifacts passed as keywords.
+
+
+
+.. py:class:: ArtifactStore
+
+   Bases: :py:obj:`Protocol`
+
+
+   Collaborator that persists run artifacts and returns their storage keys.
+
+
+   .. py:method:: save(run_id, artifact_name, payload)
+
+      Persist a single artifact *payload* under *run_id* and return its storage key.
+
+
+
+   .. py:method:: save_list(run_id, artifact_name, payload)
+
+      Persist a list-valued artifact *payload* under *run_id* and return its storage key.
+
+
+
+.. py:class:: OrchestratorConfig
+
+   Tunable configuration for :class:`RCAReasoningOrchestrator`.
+
+   .. attribute:: enable_ishikawa
+
+      When True, build the optional Ishikawa matrix (requires an
+      ``ishikawa_evaluator``).
+
+   .. attribute:: persist_intermediate_artifacts
+
+      When True, persist per-stage artifacts (not just the final card).
+
+   .. attribute:: stop_on_validation_error
+
+      When True (the default), a required-artifact validation failure — and a
+      genuine failure in an optional stage such as supersession or epistemics
+      — raises; when False, optional-stage failures are recorded in the run's
+      ``optional_artifact_failures`` and logged instead of raising.
+
+   .. attribute:: run_label
+
+      Optional human-readable label stamped into run context.
+
+   .. attribute:: top_k_candidates, top_k_evidence
+
+      Caps on candidates carried forward and evidence snippets retrieved.
+
+   .. attribute:: enable_semantic_recurrence, semantic_similarity_threshold, near_match_window, fm_id_resolution_threshold, top_k_semantic
+
+      Semantic document-recurrence parameters (§4.5).
+
+   .. attribute:: enable_signal_episode_search, signal_episode_staleness_window_days
+
+      Signal-episode retrieval parameters (Step 2d, Phase 1).
+
+   .. attribute:: enable_cross_pattern_linkage
+
+      When True, link candidates to historical signal episodes (Phase 2).
+
+   .. attribute:: epistemics_policy_version
+
+      Policy version forwarded to the Phase C supersession pass, or None.
+
+   .. attribute:: fast_transient_event_types
+
+      Event types that use a fast-transient Allen epsilon (Issue 5).
+
+   .. attribute:: category_l_score_floor
+
+      Organizational (Category L) minimum score floor (Issue 11).
+
+   .. attribute:: tier_confidence_multipliers
+
+      Per-tier (plant/fleet/industry) confidence multipliers (Issue 12).
+
+   .. attribute:: extra
+
+      Free-form overrides (e.g. ``enable_auto_reentry``,
+      ``auto_reentry_max_attempts``) consulted by optional stages.
+
+
+   .. py:attribute:: enable_ishikawa
+      :type:  bool
+      :value: False
+
+
+
+   .. py:attribute:: persist_intermediate_artifacts
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: stop_on_validation_error
+      :type:  bool
+      :value: True
+
+
+
+   .. py:attribute:: run_label
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: top_k_candidates
+      :type:  int
+      :value: 5
+
+
+
+   .. py:attribute:: top_k_evidence
+      :type:  int
+      :value: 10
+
+
+
+   .. py:attribute:: enable_semantic_recurrence
+      :type:  bool
+      :value: False
+
+
+
+   .. py:attribute:: semantic_similarity_threshold
+      :type:  float
+      :value: 0.75
+
+
+
+   .. py:attribute:: near_match_window
+      :type:  float
+      :value: 0.1
+
+
+
+   .. py:attribute:: fm_id_resolution_threshold
+      :type:  float
+      :value: 0.88
+
+
+
+   .. py:attribute:: top_k_semantic
+      :type:  int
+      :value: 5
+
+
+
+   .. py:attribute:: enable_signal_episode_search
+      :type:  bool
+      :value: False
+
+
+
+   .. py:attribute:: signal_episode_staleness_window_days
+      :type:  int
+      :value: 30
+
+
+
+   .. py:attribute:: enable_cross_pattern_linkage
+      :type:  bool
+      :value: False
+
+
+
+   .. py:attribute:: epistemics_policy_version
+      :type:  Optional[str]
+      :value: None
+
+
+
+   .. py:attribute:: fast_transient_event_types
+      :type:  Set[str]
+
+
+   .. py:attribute:: category_l_score_floor
+      :type:  float
+      :value: 0.2
+
+
+
+   .. py:attribute:: tier_confidence_multipliers
+      :type:  Dict[str, float]
+
+
+   .. py:attribute:: extra
+      :type:  JsonDict
+
+
+.. py:class:: RCAReasoningOrchestrator
+
+   Deterministic RCA pipeline coordinating the reasoning collaborators.
+
+   Wires the injected collaborators (KG context, TSKR scoring, causality,
+   evidence retrieval, synthesis, and the optional Ishikawa evaluator) into a
+   single :meth:`run` that produces a validated RCA card and its supporting
+   artifacts. Collaborators are supplied as Protocol-typed dependencies so the
+   orchestrator stays agnostic to their concrete implementations; see
+   :func:`build_dev_orchestrator` for a ready-to-use development wiring.
+
+   .. attribute:: validator, artifact_store, kg_context_builder, causality_engine, evidence_retriever, rca_synthesizer
+
+      Required collaborators (see the corresponding Protocols).
+
+   .. attribute:: tskr_temporal_scorer, ishikawa_evaluator
+
+      Optional collaborators; when None their stages are skipped.
+
+   .. attribute:: cap_adapter, cap_config, workflow_dispatch_adapter, cmms_adapter, cmms_context_builder_config, similar_event_adapter, doc_extraction_store, pattern_searcher, cross_pattern_linker, epistemics_classifier
+
+      Optional integration adapters enabling downstream/side features.
+
+   .. attribute:: config
+
+      :class:`OrchestratorConfig` controlling stage toggles and thresholds.
+
+
+   .. py:attribute:: validator
+      :type:  SchemaValidator
+
+
+   .. py:attribute:: artifact_store
+      :type:  ArtifactStore
+
+
+   .. py:attribute:: kg_context_builder
+      :type:  KGContextBuilder
+
+
+   .. py:attribute:: tskr_temporal_scorer
+      :type:  Optional[TSKRTemporalScorer]
+
+
+   .. py:attribute:: causality_engine
+      :type:  CausalityEngine
+
+
+   .. py:attribute:: evidence_retriever
+      :type:  EvidenceRetriever
+
+
+   .. py:attribute:: rca_synthesizer
+      :type:  RCASynthesizer
+
+
+   .. py:attribute:: ishikawa_evaluator
+      :type:  Optional[IshikawaEvaluator]
+      :value: None
+
+
+
+   .. py:attribute:: cap_adapter
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: cap_config
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: workflow_dispatch_adapter
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: cmms_adapter
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: cmms_context_builder_config
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: similar_event_adapter
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: doc_extraction_store
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: pattern_searcher
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: cross_pattern_linker
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: epistemics_classifier
+      :type:  Optional[Any]
+      :value: None
+
+
+
+   .. py:attribute:: config
+      :type:  OrchestratorConfig
+
+
+   .. py:method:: set_similar_event_adapter(adapter)
+
+      Inject a SimilarEventAdapter for fleet/industry OE queries.
+
+
+
+   .. py:method:: set_doc_extraction_store(store)
+
+      Inject a DocExtractionStore for semantic recurrence queries.
+
+
+
+   .. py:method:: set_pattern_searcher(searcher)
+
+      Inject a PatternSearcher for Step 2d signal episode retrieval.
+
+
+
+   .. py:method:: set_cross_pattern_linker(linker)
+
+      Inject a CrossPatternLinker for Phase 2 cross-pattern linkage.
+
+
+
+   .. py:method:: set_epistemics_classifier(classifier)
+
+      Inject an EpistemicClassifier for Phase A epistemic annotation.
+
+
+
+   .. py:method:: _attach_epistemics_digests(causality_candidates, evidence_bundle, optional_artifact_failures)
+
+      Phase D — Build per-candidate EpistemicsDigests and attach in-place.
+
+      Runs post-refine_with_evidence() so that observationally_ungrounded
+      (set by Phase C) is already present on each candidate.
+
+      A missing ``epistemics_digest`` module is treated as an optional
+      capability (debug-logged, skipped).  A genuine failure while building the
+      digests re-raises under ``stop_on_validation_error``; otherwise it is
+      recorded in *optional_artifact_failures* and logged rather than silently
+      swallowed.
+
+
+
+   .. py:method:: _apply_supersession(evidence_bundle, optional_artifact_failures)
+
+      Apply Phase C supersession pass to an evidence bundle (ADR-1, 2026-04-30).
+
+      Lazy-imports resolve_supersession so the orchestrator does not hard-depend
+      on the supersession module when Phase C is not active.
+
+      A missing supersession module is treated as an optional capability
+      (debug-logged, bundle returned unmodified).  A genuine failure during the
+      pass re-raises under ``stop_on_validation_error``; otherwise it is recorded
+      in *optional_artifact_failures* and logged, and the unmodified bundle is
+      returned rather than swallowing the error silently.
+
+
+
+   .. py:method:: run(event, telemetry_summary, operational_context = None, pm_compliance = None, kg_context = None, signal_evidence = None, tskr_patterns = None, causality_candidates = None, evidence_bundle = None, soe_log = None, alarm_log = None, protection_logic_context = None, configuration_change_records = None, environmental_monitoring = None, vendor_supply_chain_records = None, training_records = None, initial_scope_management = None)
+
+      Run the full RCA reasoning pipeline for a single event.
+
+      Executes the ordered stages — KG context, TSKR temporal scoring,
+      causality generation, evidence retrieval, Phase C supersession, evidence
+      refinement, optional auto re-entry, Phase D epistemics digests, optional
+      Ishikawa evaluation, and synthesis — persisting each artifact and
+      validating it against its schema along the way. Pre-computed artifacts
+      may be supplied to skip the corresponding stage.
+
+      :param event: Target abnormal event. Must carry ``event_id`` (or ``id``).
+      :param telemetry_summary: Telemetry anomaly summary for the event window.
+      :param operational_context: Optional operating-state and PM-compliance inputs, or None.
+      :param pm_compliance: Optional operating-state and PM-compliance inputs, or None.
+      :param kg_context: Optional pre-computed stage outputs; when provided, the matching
+                         stage reuses them instead of recomputing.
+      :param signal_evidence: Optional pre-computed stage outputs; when provided, the matching
+                              stage reuses them instead of recomputing.
+      :param tskr_patterns: Optional pre-computed stage outputs; when provided, the matching
+                            stage reuses them instead of recomputing.
+      :param causality_candidates: Optional pre-computed stage outputs; when provided, the matching
+                                   stage reuses them instead of recomputing.
+      :param evidence_bundle: Optional pre-computed stage outputs; when provided, the matching
+                              stage reuses them instead of recomputing.
+      :param soe_log: Optional sequence-of-events and alarm logs feeding TSKR scoring
+                      (including the auto re-entry rebuild).
+      :param alarm_log: Optional sequence-of-events and alarm logs feeding TSKR scoring
+                        (including the auto re-entry rebuild).
+      :param protection_logic_context: Optional supplementary evidence artifacts folded in when present.
+      :param configuration_change_records: Optional supplementary evidence artifacts folded in when present.
+      :param environmental_monitoring: Optional supplementary evidence artifacts folded in when present.
+      :param vendor_supply_chain_records: Optional supplementary evidence artifacts folded in when present.
+      :param training_records: Optional supplementary evidence artifacts folded in when present.
+      :param initial_scope_management: Optional supplementary evidence artifacts folded in when present.
+
+      :returns: The run bundle: the validated RCA card plus references to every
+                persisted artifact and the run manifest.
+      :rtype: JsonDict
+
+      :raises Exception: Under ``config.stop_on_validation_error`` (the default), a
+          required-artifact validation failure or a genuine failure in an
+          optional stage (supersession/epistemics) propagates; otherwise
+          optional-stage failures are recorded in ``optional_artifact_failures``.
+
+
+
+   .. py:method:: _build_tskr_patterns(*, event, telemetry_summary, kg_context, operational_context, run_context, signal_evidence = None, alarm_log = None, soe_log = None, pm_compliance = None)
+
+
+   .. py:method:: _apply_tskr_runtime_overrides()
+
+
+   .. py:method:: _tskr_runtime_snapshot()
+
+
+   .. py:method:: _build_semantic_recurrence_provenance(tskr_patterns)
+
+      Summarise semantic recurrence usage across all TSKR patterns for run_manifest provenance.
+
+
+
+   .. py:method:: _build_signal_evidence(*, run_id, event, telemetry_summary, kg_context)
+
+
+   .. py:method:: _build_pm_compliance_if_needed(*, event, operational_context, kg_context)
+
+
+   .. py:method:: _extract_pm_export_rows(operational_context)
+      :staticmethod:
+
+
+
+   .. py:method:: _resolve_signal_evidence_historian_policy()
+
+
+   .. py:method:: _evaluate_input_guard_policy(*, input_guards, strict_enabled, blocking_flags = None, hard_stop_on_any_flag = False)
+      :staticmethod:
+
+
+
+   .. py:method:: _enforce_input_guard_policy(*, run_id, run_context, input_guards)
+
+
+   .. py:method:: _should_hard_abort_for_kg_governance(kg_governance)
+
+
+   .. py:method:: _enforce_kg_governance_policy(*, run_id, kg_governance)
+
+
+   .. py:method:: _stage_i_archive_chroma(*, run_id, run_context)
+
+
+   .. py:method:: _should_hard_abort_for_chroma_archive(chroma_archive)
+
+
+   .. py:method:: _run_auto_reentry_if_needed(*, run_id, event, telemetry_summary, operational_context, pm_compliance, run_context, kg_context, signal_evidence, tskr_patterns, causality_candidates_pre_refine, causality_candidates, evidence_bundle, protection_logic_context = None, alarm_log = None, soe_log = None, optional_artifact_failures = None)
+
+
+   .. py:method:: _cmms_record_to_past_event(*, record, record_type, asset_id)
+      :staticmethod:
+
+
+
+   .. py:method:: _classify_past_event_source(event_id)
+      :staticmethod:
+
+
+
+   .. py:method:: _source_doc_id_from_event_id(event_id)
+      :staticmethod:
+
+
+      Derive source document ID from a CMMS-injected past event's event_id.
+
+      CMMS past events use format ``"CMMS::CR::<doc_id>"`` or ``"CMMS::WO::<doc_id>"``.
+      Returns None for KG-native events that have no corresponding extraction record.
+
+
+
+   .. py:method:: _build_doc_id_semantic_scores(*, kg_context, causality_candidates, query_top_n)
+
+      Query DocExtractionStore for top FM candidates; return doc_id → max_similarity map.
+
+      Returns None when semantic recurrence is disabled or store is absent.
+      When returned as a dict (possibly empty), ``_query_plant_past_events`` switches
+      to renormalized weights and adds the semantic dimension to plant-tier scoring.
+
+
+
+   .. py:method:: _enrich_past_events_temporal_metadata(*, kg_context, event)
+
+      Post-processing pass over kg_context.past_events (WS1–WS3 for Step 2b):
+        1. Tag each event with in_precursor_window (bool) and window_tier (str).
+        2. Build per_component_past_events index: {component_id: [event_id, ...]}.
+        3. Build temporal_search_summary in seed_context.
+
+
+
+   .. py:method:: _augment_kg_context_with_cmms_past_events(*, kg_context, cmms_context, event)
+
+
+   .. py:method:: _augment_kg_context_with_cmms_documents(*, kg_context, cmms_context)
+      :staticmethod:
+
+
+      Route Path-A CMMS records into retrieval scope via kg_context.documents.
+
+
+
+   .. py:method:: _build_canonical_event_graph(*, current_event_id, asset_id, past_events)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_historical_support_channels(*, past_events, injected_event_ids = None)
+      :staticmethod:
+
+
+
+   .. py:method:: _stage_a_build_run_context(run_id, event, telemetry_summary, operational_context, pm_compliance, input_validation = None, input_guards = None, cmms_context = None, soe_log = None, alarm_log = None, protection_logic_context = None, configuration_change_records = None)
+
+
+   .. py:method:: _build_initial_scope_revision_record(*, event, operational_context, pm_compliance = None, cmms_context = None, soe_log = None, alarm_log = None, protection_logic_context = None, configuration_change_records = None, started_at)
+      :staticmethod:
+
+
+
+   .. py:method:: apply_scope_revision(*, run_id, run_context, revision_input, persist = True)
+
+      Apply a scope revision decision to run_context.scope_management.
+
+      Accepted revisions become the active scope; deferred/rejected revisions
+      are logged for audit and keep the current active scope version.
+
+
+
+   .. py:method:: resolve_expansion_suggestion(*, run_id, run_context, signal_id, decision, rationale = None, persist = True)
+
+      Mark a scope-expansion suggestion and, if accepted, update the scope.
+
+      This is the canonical bridge between the expansion-suggestion write path
+      (``_detect_scope_expansion_signals`` → ``expansion_suggestions[]``) and
+      the scope-revision lifecycle (``apply_scope_revision``).
+
+      :param signal_id: The ``signal_id`` of the suggestion to resolve.
+      :param decision: One of ``"accepted"``, ``"deferred"``, or ``"rejected"``.
+      :param rationale: Free-text analyst note stored alongside the decision.
+      :param Returns the updated ``run_context``.:
+
+      :raises ValueError: When *signal_id* does not match any existing suggestion.
+
+
+
+   .. py:method:: _apply_rank_inversion_attention_flag(rca_card, pre_refine, post_refine)
+      :staticmethod:
+
+
+      SE review §3.1 short-term: surface pre- vs post-evidence leader change.
+
+
+
+   .. py:method:: _summarize_primary_candidate_posture(rca_card, causality_candidates)
+
+
+   .. py:method:: _validate_and_persist(run_id, artifact_name, payload, *, optional = False, optional_failures = None)
+
+      Validate and persist a pipeline artifact.
+
+      If *optional* is True, a validation failure is logged as a warning and
+      appended to *optional_failures* (if provided) rather than aborting the
+      run.  Required artifacts (optional=False) still raise on failure.
+
+
+
+   .. py:method:: _rank_candidates_by_composite(cands)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_scoring_evolution(pre_refine, post_refine)
+
+      Compact v1→v2 summary for run_manifest when pre-refine snapshot exists.
+
+
+
+   .. py:method:: _build_scope_revision_summary(run_context)
+      :staticmethod:
+
+
+
+   .. py:method:: _stage_g_finalize_manifest(run_context, kg_context, tskr_patterns, causality_candidates, causality_candidates_pre_refine, evidence_bundle, ishikawa_matrix, cmms_context, rca_card, input_validation, output_validation, optional_artifact_failures = None, kg_governance = None, barrier_analysis = None, reentry_execution = None, reentry_hook = None, chroma_archive = None, signal_evidence = None, telemetry_summary = None, soe_log = None, alarm_log = None, protection_logic_context = None, configuration_change_records = None, environmental_monitoring = None, vendor_supply_chain_records = None, training_records = None, event = None, pre_computed_allen_map = None, pre_computed_similar_event_list = None, historical_signal_episodes = None, cross_pattern_evidence = None)
+
+
+   .. py:method:: _compute_pipeline_health(*, output_validation, causality_candidates, evidence_bundle, optional_artifact_failures, kg_governance = None, stage_health = None, chroma_archive = None)
+      :staticmethod:
+
+
+
+   .. py:method:: _compute_stage_health(*, kg_context, tskr_patterns, causality_candidates, evidence_bundle, ishikawa_matrix, optional_artifact_failures, chroma_archive = None)
+      :staticmethod:
+
+
+
+   .. py:method:: _annotate_candidates_with_oe_evidence(*, causality_candidates, similar_event_list)
+      :staticmethod:
+
+
+      Inject matched similar events into each candidate's oe_reinstatement_evidence.
+
+      Mutates candidates in-place.  Matches on component_id OR failure_mode_id overlap.
+      Only events with confidence_weight ≥ 0.30 are cited.
+
+
+
+   .. py:method:: _query_plant_past_events(*, event, kg_context, causality_candidates, top_n = 5, doc_id_semantic_scores = None)
+      :staticmethod:
+
+
+      Score kg_context.past_events against current event dimensions.
+
+      Returns top-N plant-tier SimilarEvent records sorted by
+      confidence_weight descending.
+
+      When ``doc_id_semantic_scores`` is provided (not None), a semantic
+      similarity dimension is added at weight 0.10 and the other five
+      dimensions are renormalized (× 0.90) so the total remains 1.0.
+      Only CMMS-sourced past events (event_id starting with ``CMMS::CR::``
+      or ``CMMS::WO::``) carry a ``source_doc_id`` that can be looked up in
+      the semantic store; KG-native events receive semantic score 0.0.
+
+
+
+   .. py:method:: _build_similar_event_list(*, event, kg_context, causality_candidates)
+
+      Build the Step 2d similar_event_list artifact.
+
+      Plant tier always runs (in-memory, zero latency).
+      Fleet and industry tiers run when self.similar_event_adapter is set.
+
+
+
+   .. py:method:: _build_signal_lessons_learned(*, tskr_patterns, alarm_log = None, soe_log = None, run_context = None, history_score_threshold = 0.2)
+      :staticmethod:
+
+
+      Build the Step-3.5 signal_lessons_learned artifact from tskr_patterns.
+
+      Separates patterns into:
+      - ``matched_patterns``:  historical support exists (recurrence_count > 0 OR
+        history_score >= threshold).  Causal/resolution text attached when available
+        from the pattern's recurrence profile.
+      - ``novel_patterns``:    novel_pattern == True (no history, no match).
+
+      Returns a dict conforming to signal_lessons_learned.json schema.
+
+
+
+   .. py:method:: _build_historical_signal_episodes(*, event, telemetry_summary, alarm_log, soe_log)
+
+      Build the historical_signal_episodes artifact via PatternSearcher.
+
+      Constructs a query IncidentFingerprint from the current event's alarm,
+      SOE, and anomaly data, then runs PatternSearcher.search() against the
+      pre-built episode index.
+
+      Returns a JSON-serializable artifact dict, or None on unrecoverable failure.
+
+
+
+   .. py:method:: _build_cross_pattern_evidence(*, historical_signal_episodes, causality_candidates, event, kg_context = None)
+
+      Build cross_pattern_evidence artifact via CrossPatternLinker.
+
+      Converts historical_signal_episodes["episodes"] dicts back to
+      HistoricalSignalEpisode objects, queries DocExtractionStore for doc
+      extractions, then calls CrossPatternLinker.run().
+
+      Returns a JSON-serializable dict or None on unrecoverable failure.
+
+
+
+   .. py:method:: _semantic_match_to_historical_doc(sm)
+      :staticmethod:
+
+
+      Convert a SemanticMatch to a HistoricalDocExtraction.
+
+      SemanticMatch (as currently defined in doc_extraction/store.py) has:
+        record_id, doc_id, chain_index, identified_effect, assessed_cause,
+        inferred_fm_label, fm_id_candidate, confidence (ConfidenceLevel),
+        cause_is_symptom, similarity_score, fm_resolution_status,
+        doc_type, finding_status, authority_level,
+        epistemic_class, classification_resolution_level, degraded_classification
+
+      Fields not present on SemanticMatch are defaulted safely.
+
+
+
+   .. py:method:: _apply_cross_pattern_attention_flags(rca_card, cross_pattern_evidence, causality_candidates)
+      :staticmethod:
+
+
+      Add analyst attention flags derived from cross-pattern evidence (Phase 2).
+
+
+
+   .. py:method:: _build_rca_card_cross_pattern_summary(cross_pattern_evidence)
+      :staticmethod:
+
+
+      Build rca_card['cross_pattern_summary'] block (Phase 3).
+
+      Contains narrative text (§4.7 wording), linkage_outcome_distribution,
+      and a per-candidate summary. Never contains or modifies scoring fields.
+
+
+
+   .. py:method:: _build_allen_relation_map(*, event, telemetry_summary = None, alarm_log = None, soe_log = None, epsilon_hours = 0.5, max_soe_nodes = 200)
+      :staticmethod:
+
+
+      Build a Step-2c Allen-relation map for anomalies, alarm entries, and SOE records.
+
+      Returns None when the event interval cannot be determined.
+
+
+
+   .. py:method:: _detect_scope_expansion_signals(*, run_context, allen_relation_map = None, signal_evidence = None, tskr_patterns = None)
+      :staticmethod:
+
+
+      Scan pipeline outputs and emit scope-expansion suggestion signals.
+
+      Each signal identifies a component or pattern that is either
+      (a) causally implicated but outside the current scope boundary, or
+      (b) flagged as a novel pattern with no historical precedent.
+
+      Returns a (possibly empty) list of signal dicts ready to be merged
+      into ``run_context.scope_management.expansion_suggestions``.
+
+
+
+   .. py:method:: _inject_scope_expansion_signals(run_context, signals)
+      :staticmethod:
+
+
+      Merge new scope-expansion signals into run_context.scope_management.
+
+      Existing signals with the same ``signal_id`` are NOT overwritten
+      (idempotent — supports re-runs).
+      Returns the mutated run_context (in-place update on the same dict).
+
+
+
+   .. py:method:: _resolve_approved_scope_boundary(run_context)
+      :staticmethod:
+
+
+      Return the approved component-ID boundary from the latest accepted
+      scope revision, or None when the pipeline is in discovery mode.
+
+      Returns None when:
+      - ``active_scope_version == 0`` (initial run, no analyst decisions yet).
+      - The latest accepted revision has an empty ``component_ids`` list.
+
+      The returned frozenset is lower-cased and stripped so it can be compared
+      directly against ``candidate["component_id"].strip().lower()``.
+
+
+
+   .. py:method:: _apply_scope_boundary_filter(candidates, approved_boundary, scope_version)
+      :staticmethod:
+
+
+      Move out-of-scope candidates to ``candidates['ruled_out']``.
+
+      Candidates whose ``component_id`` is NOT in *approved_boundary* are
+      soft-filtered: they are appended to ``ruled_out[]`` with
+      ``reason_code = "scope_filtered"`` and removed from ``candidates[]``.
+
+      Candidates that carry no ``component_id`` are left untouched — we
+      never silently discard candidates for which the boundary check is
+      ambiguous.
+
+      Mutates *candidates* in-place and returns it.
+
+
+
+   .. py:method:: _build_data_coverage_summary(*, kg_context, tskr_patterns, evidence_bundle, causality_candidates, run_context = None, telemetry_summary = None, soe_log = None, alarm_log = None, protection_logic_context = None, configuration_change_records = None, environmental_monitoring = None, vendor_supply_chain_records = None, training_records = None)
+      :staticmethod:
+
+
+
+   .. py:method:: _compute_ap913_completeness(*, rca_card, causality_candidates, cmms_context)
+      :staticmethod:
+
+
+
+   .. py:method:: _compute_review_hooks(rca_card, output_validation, pipeline_health = None, coverage_summary = None, reentry_hook = None, stage_health = None, event_severity=None, scope_expansion_summary = None)
+
+
+   .. py:method:: _evaluate_stage_policy_hooks(*, stage_health)
+
+
+   .. py:method:: _barrier_summary_for_card(barrier_analysis)
+      :staticmethod:
+
+
+
+   .. py:method:: _compute_barrier_analysis(*, event, kg_context, causality_candidates, evidence_bundle, ishikawa_matrix)
+
+
+   .. py:method:: _compute_reentry_hook(*, causality_candidates_pre_refine, causality_candidates, kg_context)
+
+
+   .. py:method:: _compute_kg_governance(*, event, kg_context)
+
+
+   .. py:method:: _extract_snapshot_modified_timestamp(version)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_kg_governance_attention_flags(rca_card, kg_governance)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_recurrence_match_quality_attention_flags(rca_card, tskr_patterns)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_near_match_pattern_attention_flags(rca_card, tskr_patterns)
+      :staticmethod:
+
+
+      Add attention flag when any pattern is a near-match but not a full semantic match (§4.3).
+
+
+
+   .. py:method:: _apply_signal_episode_index_attention_flags(rca_card, historical_signal_episodes)
+      :staticmethod:
+
+
+      Add attention flags when the signal episode index is missing or stale (§4.11).
+
+
+
+   .. py:method:: _apply_fm_resolution_ambiguity_flags(rca_card, tskr_patterns)
+      :staticmethod:
+
+
+      Add attention flag when any TSKR pattern has fm_resolution_ambiguous = True (§4.10).
+
+
+
+   .. py:method:: _apply_accelerating_recurrence_attention_flags(rca_card, tskr_patterns)
+      :staticmethod:
+
+
+      Add attention flag when any TSKR pattern shows an accelerating recurrence trend.
+
+
+
+   .. py:method:: _apply_ishikawa_skip_attention_flag(rca_card, ishikawa_matrix)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_signal_evidence_attention_flags(rca_card, signal_evidence)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_out_of_boundary_attention_flags(rca_card, kg_context)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_metamodel_coverage_attention_flags(rca_card, causality_candidates)
+      :staticmethod:
+
+
+
+   .. py:method:: _apply_residual_anomaly_gaps(rca_card, allen_relation_map, causality_candidates)
+      :staticmethod:
+
+
+      Issue 2 (residual variant) — Tag Allen map nodes as 'explained' or 'residual'.
+
+      After the primary hypothesis is selected, each causal-candidate Allen node is
+      classified relative to that hypothesis:
+      - 'explained':  node's component_id matches the primary candidate's component_id.
+      - 'residual':   node is a causal candidate but on a different component — it may
+                      indicate a co-existing cause, an upstream trigger, or a scope gap.
+
+      Residual nodes are written to rca_card['unresolved_gaps'] so the analyst has a
+      structured list of unexplained causal signals to investigate.
+
+      Nodes with relation 'follows' (temporal contradiction) are excluded — they are
+      already handled by the contradiction gate and are not causal residuals.
+
+
+
+   .. py:method:: _apply_fast_transient_attention_flags(rca_card, event, allen_relation_map, fast_transient_event_types)
+      :staticmethod:
+
+
+      Issue 5 — Flag when Allen epsilon (0.5 h) is larger than the causal sequence duration.
+
+      Fires when event_type is a known fast-transient type AND the Allen map contains at least
+      one causal node, meaning temporal interval assignments were computed for signals whose
+      actual ordering may resolve within seconds rather than the 30-minute epsilon window.
+
+
+
+   .. py:method:: _apply_pm_corrective_actions(rca_card, pm_compliance)
+      :staticmethod:
+
+
+      Architecture §4 — inject deterministic ``pm_corrective`` recommended actions.
+
+      When the pm_compliance artifact carries scope gaps for the primary hypothesis
+      failure mode and KG PM↔FM linkage is available, a ``pm_corrective`` action is
+      appended to ``rca_card.recommended_actions`` for each affected component.
+
+      Priority rule (architecture §3.6):
+      - ``maintenance_induced_risk == "high"``  → ``priority: "high"`` (unconditional)
+      - otherwise                               → ``priority: "medium"``
+
+      Guards:
+      - No pm_compliance or no ``components`` → no-op.
+      - ``fmea_pm_linkage_available`` must be True; without KG linkage the scope
+        gaps are not reliable enough to generate a structured corrective action.
+      - Existing ``pm_corrective`` actions for a component are not duplicated.
+
+
+
+   .. py:method:: _apply_category_l_floor_attention_flags(rca_card, causality_candidates, cmms_context, category_l_score_floor)
+      :staticmethod:
+
+
+      Issue 11 — Flag when no Category L (systemic/organizational) candidate clears the floor.
+
+      Fires when: (a) no L-category candidate has composite_score >= category_l_score_floor,
+      AND (b) the event has any recurrence signal (open CRs or unresolved prior events).
+      The flag forces the analyst to actively document why organizational root cause does not apply,
+      rather than letting it silently score low.
+
+
+
+   .. py:method:: _build_workflow_dispatch(*, run_context, rca_card, review_hooks)
+
+
+   .. py:method:: _execute_workflow_dispatch_transport(payload)
+
+
+   .. py:method:: _summarize_primary_evidence(rca_card, evidence_bundle)
+
+
+   .. py:method:: _build_analyst_checkpoints(*, rca_card, stage_health = None)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_replayability_signature(*, causality_candidates, stage_health, decision_posture, uncertainty_summary, review_hooks)
+      :staticmethod:
+
+
+
+   .. py:method:: _build_decision_trail(*, causality_candidates, rca_card)
+      :staticmethod:
+
+
+
+   .. py:method:: _validate_artifact(run_id, artifact_name, payload)
+
+      Validate a single artifact while supporting both legacy and richer validators.
+
+
+
+   .. py:method:: _validate_bundle(run_id, stage, *, event = None, telemetry_summary = None, kg_context = None, signal_evidence = None, tskr_patterns = None, causality_candidates = None, evidence_bundle = None, ishikawa_matrix = None, barrier_analysis = None, rca_card = None, operational_context = None, pm_compliance = None, cmms_context = None)
+
+      Cross-artifact validation for an RCA run stage.
+
+
+
+   .. py:method:: _normalize_validation_report(report, fallback_artifact)
+
+
+   .. py:method:: _raise_if_invalid(report, message)
+
+
+   .. py:method:: apply_override(run_id, rca_card, override_input)
+
+      Apply an analyst override to a completed RCA card.
+
+      Validates the override, mutates the card to reflect the analyst
+      decision, persists the structured override record, and returns
+      both artifacts.
+
+      :param run_id: The RCA run_id that produced *rca_card*.
+      :param rca_card: The RCA card artifact to be overridden.
+      :param override_input:
+                             Dict conforming to the override input schema.  At minimum::
+
+                                 {
+                                     "override_type": "accept",
+                                     "rationale": "...",
+                                     "writeback_decision": "accept",
+                                 }
+
+      :returns: (modified_rca_card, override_record)
+      :rtype: tuple[JsonDict, JsonDict]
+
+      :raises ValueError: If the override_input fails validation.
+
+
+
+   .. py:method:: export_cap(run_id, rca_card, kg_context, override_record)
+
+      Serialize an accepted rca_card into a CAPExportPackage and submit it
+      via the configured CAPAdapter.
+
+      :param run_id: RCA run identifier.
+      :param rca_card: Analyst-accepted RCA card (writeback_recommendation must be
+                       ``"ready_if_accepted"``).
+      :param kg_context: KG context artifact from the same run (used for FLOC resolution).
+      :param override_record: The ``AnalystOverride`` record returned by ``apply_override()``;
+                              must carry ``writeback_decision == "accept"`` and seeds the
+                              stable ``export_id``.
+
+      :returns: ``package`` — the CAPExportPackage dict.
+                ``receipt``  — CAPSubmissionReceipt from the adapter.
+      :rtype: (package, receipt)
+
+      :raises ValueError: If the override record is not an accepted writeback, or the card
+          has not been approved (wrong writeback_recommendation).
+      :raises RuntimeError: If no CAPAdapter is configured.
+
+
+
+   .. py:method:: build_cmms_context(run_id, event, kg_context)
+
+      Fetch live CMMS context (CRs and WOs) for the event and persist
+      the artifact.  Also injects narrative text into the evidence store
+      for semantic retrieval in Stage 6.
+
+      Called automatically by ``run()`` when ``cmms_adapter`` is set.
+      Can also be called standalone for incremental/staged pipelines.
+
+      :param run_id: RCA run identifier.
+      :param event: Raw event dict (provides event_time and asset_id).
+      :param kg_context: KG context artifact from Stage 5A (provides last PM date and
+                         sister component IDs).
+
+      :returns: ``cmms_context`` artifact, or ``None`` if no adapter is configured.
+      :rtype: dict or None
+
+
+
+.. py:function:: _serialize_signal_episode(ep)
+
+   Convert a HistoricalSignalEpisode to a JSON-serializable dict.
+
+
+.. py:function:: _summarize_signal_episodes(historical_signal_episodes)
+
+   Build the run_manifest artifacts summary for historical_signal_episodes.
+
+
+.. py:function:: _summarize_cross_pattern_evidence(cross_pattern_evidence)
+
+   Build the run_manifest artifacts summary for cross_pattern_evidence.
+
+   Delegates to build_manifest_cross_pattern_summary() for full detail including
+   precedence_level_distribution, temporal_link_skipped_count, and per-candidate
+   summaries (§4.9).
+
+
+.. py:data:: _SCORING_FIELDS_PROTECTED
+   :type:  frozenset
+
+.. py:function:: _build_epistemics_manifest_summary(cross_pattern_evidence, policy_version)
+
+   Delegate to build_epistemics_manifest_summary() in doc_extraction/epistemics.py.
+
+
+.. py:function:: _assert_cross_pattern_non_intrusion(cross_pattern_evidence, causality_candidates)
+
+   Runtime guard: verify cross_pattern_evidence does not contain protected scoring fields.
+
+   Logs a warning if any scoring field is detected inside cross_pattern_evidence.
+   Does not raise — cross-pattern failures must never abort the pipeline.
+
+
+.. py:function:: _collect_keys(obj, out, depth, max_depth)
+
+   Recursively collect dict keys up to max_depth.
+
+
+.. py:function:: build_dev_orchestrator(output_dir, client, database = None, evidence_store=None, llm_client=None, schema_dir = None, validator_mode = 'compat', stop_on_validation_error = True, causality_engine_version = 'v32', cap_adapter=None, cap_config=None, cmms_adapter=None, cmms_context_builder_config=None)
+
+   Build a fully wired :class:`RCAReasoningOrchestrator` for local development.
+
+   Constructs concrete collaborators (KG context builder over *client*, TSKR
+   scorer, the selected causality engine, a Chroma-backed evidence retriever,
+   the rule-validated synthesizer, and the heuristic Ishikawa evaluator) around
+   a ``dev-local`` :class:`OrchestratorConfig` with Ishikawa and auto re-entry
+   enabled.
+
+   :param output_dir: Directory the :class:`FileArtifactStore` writes run artifacts to.
+   :param client: Neo4j/Py2Neo client backing the KG context builder.
+   :param database: Optional Neo4j database name, or None for the default.
+   :param evidence_store: Pre-built evidence store; when None a Chroma-backed store is used.
+   :param llm_client: LLM client for synthesis; when None a deterministic fallback is used.
+   :param schema_dir: Directory of JSON schemas for the validator, or None for the default.
+   :param validator_mode: Validator style key stored in ``config.extra`` (default ``"compat"``).
+   :param stop_on_validation_error: Passed through to :attr:`OrchestratorConfig.stop_on_validation_error`.
+   :param causality_engine_version: Which causality engine to wire (default ``"v32"``).
+   :param cap_adapter: Optional CAP / CMMS integration adapters and their configs.
+   :param cap_config: Optional CAP / CMMS integration adapters and their configs.
+   :param cmms_adapter: Optional CAP / CMMS integration adapters and their configs.
+   :param cmms_context_builder_config: Optional CAP / CMMS integration adapters and their configs.
+
+   :returns: A ready-to-run orchestrator instance.
+   :rtype: RCAReasoningOrchestrator
+
+

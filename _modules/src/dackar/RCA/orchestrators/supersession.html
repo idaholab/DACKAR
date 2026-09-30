@@ -1,0 +1,452 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.orchestrators.supersession &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.orchestrators.supersession</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.orchestrators.supersession</h1><div class="highlight"><pre>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="sd">"""Phase C — Evidence bundle supersession pass (ADR-1 + ADR-2, 2026-04-30).</span>
+
+<span class="sd">resolve_supersession() runs between EvidenceRetriever.retrieve() and</span>
+<span class="sd">CausalityEngine.refine_with_evidence().  It zeroes the support_score of</span>
+<span class="sd">analyzes-class evidence hits that are superseded by a higher-authority hit</span>
+<span class="sd">covering the same candidate, then patches candidate_evidence_summary so that</span>
+<span class="sd">refine_with_evidence() sees only the post-supersession best scores.</span>
+
+<span class="sd">Authority hierarchy (ADR-2):</span>
+<span class="sd">  1. plant RCA with formal_conclusion</span>
+<span class="sd">  2. plant ECA with formal_conclusion  /  any RCA or ECA</span>
+<span class="sd">  3. plant CR with preliminary_assessment</span>
+<span class="sd">  4. fleet OE  (finding_status == "fleet_experience")</span>
+<span class="sd">  5. industry OE  (doc_type OE, other finding_status)</span>
+<span class="sd">  6. any other analyzes-class (LER, etc.)</span>
+
+<span class="sd">Rules:</span>
+<span class="sd">  - Only analyzes_past_degradation hits participate in supersession.</span>
+<span class="sd">  - Higher authority supersedes lower authority for the same candidate.</span>
+<span class="sd">  - Equal authority + different known recency → most recent wins; older zeroed.</span>
+<span class="sd">  - Equal authority + recency unknown or tied → both contribute (no supersession).</span>
+<span class="sd">  - Cross-class hits (monitors, affects, characterizes) are never superseded</span>
+<span class="sd">    and never supersede.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># String constants — mirror schema.EpistemicClass without importing across packages</span>
+<div class="viewcode-block" id="_ANALYZES_CLASS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._ANALYZES_CLASS">[docs]</a>
+<span class="n">_ANALYZES_CLASS</span> <span class="o">=</span> <span class="s2">"analyzes_past_degradation"</span></div>
+
+<div class="viewcode-block" id="_AFFECTS_CLASS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._AFFECTS_CLASS">[docs]</a>
+<span class="n">_AFFECTS_CLASS</span> <span class="o">=</span> <span class="s2">"affects_performance"</span></div>
+
+
+<span class="c1"># P-4 — relevance gate margin.</span>
+<span class="c1"># Authority and relevance are different axes. A higher-authority hit may only</span>
+<span class="c1"># supersede a lower-authority hit when it is at least *nearly as on-point*: its</span>
+<span class="c1"># relevance must be within this margin of the hit it would erase. A higher-authority</span>
+<span class="c1"># but off-point hit (relevance more than the margin below the on-point lower-authority</span>
+<span class="c1"># hit) does NOT supersede it — the most on-point evidence survives. Kept modest so the</span>
+<span class="c1"># authority hierarchy still governs the normal case (comparable relevance).</span>
+<div class="viewcode-block" id="_RELEVANCE_SUPERSEDE_MARGIN">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._RELEVANCE_SUPERSEDE_MARGIN">[docs]</a>
+<span class="n">_RELEVANCE_SUPERSEDE_MARGIN</span> <span class="o">=</span> <span class="mf">0.15</span></div>
+
+
+<span class="c1"># doc_type sets used as fallback when epistemic_class annotation is absent</span>
+<div class="viewcode-block" id="_ANALYZES_DOC_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._ANALYZES_DOC_TYPES">[docs]</a>
+<span class="n">_ANALYZES_DOC_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"RCA"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">,</span> <span class="s2">"OE"</span><span class="p">,</span> <span class="s2">"LER"</span><span class="p">}</span></div>
+
+<div class="viewcode-block" id="_AFFECTS_DOC_TYPES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._AFFECTS_DOC_TYPES">[docs]</a>
+<span class="n">_AFFECTS_DOC_TYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"WO"</span><span class="p">}</span></div>
+
+<span class="c1"># CR is analyzes-class only when finding_status indicates a formal assessment</span>
+<div class="viewcode-block" id="_CR_ANALYZES_STATUSES">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._CR_ANALYZES_STATUSES">[docs]</a>
+<span class="n">_CR_ANALYZES_STATUSES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"preliminary_assessment"</span><span class="p">,</span> <span class="s2">"formal_conclusion"</span><span class="p">}</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Internal helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="_epistemic_class_from_meta">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._epistemic_class_from_meta">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_epistemic_class_from_meta</span><span class="p">(</span><span class="n">meta</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return epistemic class string, preferring Phase A annotation over doc_type fallback."""</span>
+    <span class="n">ep</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"epistemic_class"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">ep</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">ep</span>
+    <span class="n">doc_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"CR"</span><span class="p">:</span>
+        <span class="c1"># CR earns analyzes-class only with an explicit assessment finding_status</span>
+        <span class="n">finding_status</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">finding_status</span> <span class="ow">in</span> <span class="n">_CR_ANALYZES_STATUSES</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_ANALYZES_CLASS</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="ow">in</span> <span class="n">_ANALYZES_DOC_TYPES</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_ANALYZES_CLASS</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="ow">in</span> <span class="n">_AFFECTS_DOC_TYPES</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_AFFECTS_CLASS</span>
+    <span class="k">return</span> <span class="s2">""</span></div>
+
+
+
+<div class="viewcode-block" id="_is_analyzes_class">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._is_analyzes_class">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_analyzes_class</span><span class="p">(</span><span class="n">meta</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">_epistemic_class_from_meta</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span> <span class="o">==</span> <span class="n">_ANALYZES_CLASS</span></div>
+
+
+
+<div class="viewcode-block" id="_authority_rank">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._authority_rank">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_authority_rank</span><span class="p">(</span><span class="n">meta</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Return authority rank — lower integer = higher authority."""</span>
+    <span class="n">doc_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">finding_status</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"finding_status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"RCA"</span> <span class="ow">and</span> <span class="n">finding_status</span> <span class="o">==</span> <span class="s2">"formal_conclusion"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"ECA"</span> <span class="ow">and</span> <span class="n">finding_status</span> <span class="o">==</span> <span class="s2">"formal_conclusion"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">2</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"RCA"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mi">2</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"CR"</span> <span class="ow">and</span> <span class="n">finding_status</span> <span class="o">==</span> <span class="s2">"preliminary_assessment"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">3</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"OE"</span> <span class="ow">and</span> <span class="n">finding_status</span> <span class="o">==</span> <span class="s2">"fleet_experience"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">4</span>
+    <span class="k">if</span> <span class="n">doc_type</span> <span class="o">==</span> <span class="s2">"OE"</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">5</span>
+    <span class="k">return</span> <span class="mi">6</span>  <span class="c1"># other analyzes-class (LER, etc.)</span></div>
+
+
+
+<div class="viewcode-block" id="_relevance_of">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._relevance_of">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_relevance_of</span><span class="p">(</span><span class="n">hit</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Relevance (on-pointness) proxy for the P-4 supersession gate.</span>
+
+<span class="sd">    Prefers an explicit relevance / semantic-overlap annotation when the retriever</span>
+<span class="sd">    supplies one, else falls back to the retrieval ``support_score`` (the pre-</span>
+<span class="sd">    supersession value if a prior pass already zeroed it). This is the axis</span>
+<span class="sd">    supersession must respect so a higher-authority but *off-point* hit does not erase</span>
+<span class="sd">    strongly on-point lower-authority support.</span>
+<span class="sd">    """</span>
+    <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"relevance_score"</span><span class="p">,</span> <span class="s2">"semantic_overlap"</span><span class="p">,</span> <span class="s2">"on_point_score"</span><span class="p">):</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
+    <span class="n">val</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_score_original"</span><span class="p">,</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_score"</span><span class="p">))</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">val</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">except</span> <span class="p">(</span><span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+        <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+
+<div class="viewcode-block" id="_recency_dt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._recency_dt">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_recency_dt</span><span class="p">(</span><span class="n">meta</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">"""Extract best available recency timestamp from hit metadata.  Returns None when absent."""</span>
+    <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="p">(</span>
+        <span class="s2">"event_time_start"</span><span class="p">,</span> <span class="s2">"event_date"</span><span class="p">,</span> <span class="s2">"document_date"</span><span class="p">,</span>
+        <span class="s2">"event_start"</span><span class="p">,</span> <span class="s2">"created_at"</span><span class="p">,</span> <span class="s2">"timestamp_start"</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="n">val</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">field</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">val</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">val</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">val</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"Z"</span><span class="p">,</span> <span class="s2">"+00:00"</span><span class="p">))</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="_patch_candidate_summary">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession._patch_candidate_summary">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">_patch_candidate_summary</span><span class="p">(</span>
+    <span class="n">summary</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Recompute score-affecting fields of candidate_evidence_summary after supersession.</span>
+
+<span class="sd">    Only patches best_support_score, supporting_count, supporting_snippet_ids, and</span>
+<span class="sd">    best_source_tier — all fields touched by support_score zeroing.  spaCy aggregates</span>
+<span class="sd">    and NER entity lists are metadata-derived and unaffected.</span>
+<span class="sd">    """</span>
+    <span class="n">by_cid</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">hit</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
+        <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"linked_candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cid</span><span class="p">:</span>
+            <span class="n">by_cid</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">cid</span><span class="p">),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">hit</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">summary</span><span class="p">:</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+        <span class="n">hits</span> <span class="o">=</span> <span class="n">by_cid</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">best_score</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">best_tier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">best_tier_sc</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>
+        <span class="k">for</span> <span class="n">hit</span> <span class="ow">in</span> <span class="n">hits</span><span class="p">:</span>
+            <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_role"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"supporting"</span><span class="p">:</span>
+                <span class="n">sc</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+                <span class="n">best_score</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">best_score</span><span class="p">,</span> <span class="n">sc</span><span class="p">)</span>
+                <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="n">sid</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"snippet_id"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">sid</span><span class="p">:</span>
+                    <span class="n">ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sid</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">sc</span> <span class="o">&gt;=</span> <span class="n">best_tier_sc</span><span class="p">:</span>
+                    <span class="n">tier</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"source_tier"</span><span class="p">)</span>
+                    <span class="n">best_tier</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">tier</span><span class="p">)</span> <span class="k">if</span> <span class="n">tier</span> <span class="k">else</span> <span class="kc">None</span>
+                    <span class="n">best_tier_sc</span> <span class="o">=</span> <span class="n">sc</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">"best_support_score"</span><span class="p">]</span> <span class="o">=</span> <span class="n">best_score</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">"supporting_count"</span><span class="p">]</span> <span class="o">=</span> <span class="n">count</span>
+        <span class="n">row</span><span class="p">[</span><span class="s2">"supporting_snippet_ids"</span><span class="p">]</span> <span class="o">=</span> <span class="n">ids</span>
+        <span class="k">if</span> <span class="n">best_tier</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">row</span><span class="p">[</span><span class="s2">"best_source_tier"</span><span class="p">]</span> <span class="o">=</span> <span class="n">best_tier</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Public API</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="resolve_supersession">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/supersession/index.html#src.dackar.RCA.orchestrators.supersession.resolve_supersession">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve_supersession</span><span class="p">(</span>
+    <span class="n">bundle</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">epistemics_policy_version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Zero support_score of analyzes-class hits superseded by higher-authority hits.</span>
+
+<span class="sd">    Modifies bundle in-place.  On each superseded hit sets:</span>
+<span class="sd">      ``superseded = True``, ``support_score_original`` (original value),</span>
+<span class="sd">      ``support_score = 0.0``, and downgrades ``metadata.support_role`` from</span>
+<span class="sd">      "supporting" to "contextual".</span>
+
+<span class="sd">    Patches ``bundle["candidate_evidence_summary"]`` so that</span>
+<span class="sd">    ``refine_with_evidence`` sees the post-supersession best scores.</span>
+
+<span class="sd">    Adds provenance fields to the bundle:</span>
+<span class="sd">      ``supersession_applied``, ``supersession_count``,</span>
+<span class="sd">      ``supersession_policy_version`` (when policy_version is supplied).</span>
+<span class="sd">    """</span>
+    <span class="n">results</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="n">bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"results"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">results</span><span class="p">:</span>
+        <span class="n">bundle</span><span class="p">[</span><span class="s2">"supersession_applied"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="n">bundle</span><span class="p">[</span><span class="s2">"supersession_count"</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="n">bundle</span>
+
+    <span class="c1"># Group analyzes-class hit indices by candidate_id</span>
+    <span class="n">by_candidate</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">hit</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">results</span><span class="p">):</span>
+        <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"linked_candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">cid</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_analyzes_class</span><span class="p">(</span><span class="n">meta</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="n">by_candidate</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">cid</span><span class="p">),</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+
+    <span class="n">superseded</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+    <span class="n">relevance_retained</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="k">for</span> <span class="n">cid</span><span class="p">,</span> <span class="n">indices</span> <span class="ow">in</span> <span class="n">by_candidate</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">indices</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">continue</span>
+
+        <span class="n">group</span> <span class="o">=</span> <span class="p">[(</span><span class="n">idx</span><span class="p">,</span> <span class="n">results</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span> <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">indices</span><span class="p">]</span>
+
+        <span class="c1"># Step 1 — authority rank filter, gated by relevance (P-4).</span>
+        <span class="c1"># A lower-authority hit is only superseded when at least one best-rank</span>
+        <span class="c1"># (would-be superseding) hit is nearly as on-point (within the relevance</span>
+        <span class="c1"># margin). If every higher-authority hit is materially *less* relevant than</span>
+        <span class="c1"># this hit, the hit is the most on-point evidence and is retained despite its</span>
+        <span class="c1"># lower authority — authority must not erase relevance.</span>
+        <span class="n">best_rank</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">_authority_rank</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="n">group</span><span class="p">)</span>
+        <span class="n">best_rank_relevance</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+            <span class="n">_relevance_of</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="n">group</span>
+            <span class="k">if</span> <span class="n">_authority_rank</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span> <span class="o">==</span> <span class="n">best_rank</span>
+        <span class="p">)</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="n">group</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">_authority_rank</span><span class="p">(</span><span class="n">meta</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">best_rank</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">this_relevance</span> <span class="o">=</span> <span class="n">_relevance_of</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
+            <span class="k">if</span> <span class="n">best_rank_relevance</span> <span class="o">&gt;=</span> <span class="n">this_relevance</span> <span class="o">-</span> <span class="n">_RELEVANCE_SUPERSEDE_MARGIN</span><span class="p">:</span>
+                <span class="n">superseded</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Higher-authority evidence is off-point relative to this hit — retain.</span>
+                <span class="n">results</span><span class="p">[</span><span class="n">idx</span><span class="p">][</span><span class="s2">"supersession_relevance_retained"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+                <span class="n">results</span><span class="p">[</span><span class="n">idx</span><span class="p">][</span><span class="s2">"supersession_relevance"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">this_relevance</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+                <span class="n">results</span><span class="p">[</span><span class="n">idx</span><span class="p">][</span><span class="s2">"supersession_superior_relevance"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">best_rank_relevance</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+                <span class="n">relevance_retained</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Step 2 — recency tiebreak, scoped to survivors of the *same* authority rank.</span>
+        <span class="c1"># (Relevance-retained lower-authority survivors must not be re-erased by a</span>
+        <span class="c1"># newer higher-authority hit — that would defeat the Step-1 relevance gate.)</span>
+        <span class="n">survivors</span> <span class="o">=</span> <span class="p">[(</span><span class="n">idx</span><span class="p">,</span> <span class="n">meta</span><span class="p">)</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="n">group</span> <span class="k">if</span> <span class="n">idx</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">superseded</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">survivors</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">by_rank</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">]</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="nb">list</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="n">survivors</span><span class="p">:</span>
+            <span class="n">by_rank</span><span class="p">[</span><span class="n">_authority_rank</span><span class="p">(</span><span class="n">meta</span><span class="p">)]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">idx</span><span class="p">,</span> <span class="n">meta</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">_rank</span><span class="p">,</span> <span class="n">bucket</span> <span class="ow">in</span> <span class="n">by_rank</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">bucket</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">dated</span> <span class="o">=</span> <span class="p">[(</span><span class="n">idx</span><span class="p">,</span> <span class="n">_recency_dt</span><span class="p">(</span><span class="n">meta</span><span class="p">))</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">meta</span> <span class="ow">in</span> <span class="n">bucket</span><span class="p">]</span>
+            <span class="n">known</span> <span class="o">=</span> <span class="p">[(</span><span class="n">idx</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span> <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">dated</span> <span class="k">if</span> <span class="n">dt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">known</span><span class="p">:</span>
+                <span class="k">continue</span>  <span class="c1"># no recency info — both contribute</span>
+            <span class="n">latest_dt</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">dt</span> <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">known</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">dt</span> <span class="ow">in</span> <span class="n">dated</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">dt</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">dt</span> <span class="o">&lt;</span> <span class="n">latest_dt</span><span class="p">:</span>
+                    <span class="n">superseded</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+            <span class="c1"># Ties or unknown recency: contribute without supersession</span>
+
+    <span class="c1"># Apply supersession: zero support_score, downgrade role</span>
+    <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="n">superseded</span><span class="p">:</span>
+        <span class="n">hit</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+        <span class="n">hit</span><span class="p">[</span><span class="s2">"superseded"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">hit</span><span class="p">[</span><span class="s2">"support_score_original"</span><span class="p">]</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="n">hit</span><span class="p">[</span><span class="s2">"support_score"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">meta</span> <span class="o">=</span> <span class="n">hit</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"metadata"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support_role"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"supporting"</span><span class="p">:</span>
+            <span class="n">meta</span><span class="p">[</span><span class="s2">"support_role"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"contextual"</span>
+            <span class="n">meta</span><span class="p">[</span><span class="s2">"superseded_downgrade"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="c1"># Patch candidate_evidence_summary to reflect zeroed scores</span>
+    <span class="n">summary</span> <span class="o">=</span> <span class="n">bundle</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_evidence_summary"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">summary</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="n">superseded</span><span class="p">:</span>
+        <span class="n">_patch_candidate_summary</span><span class="p">(</span><span class="n">summary</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+
+    <span class="n">bundle</span><span class="p">[</span><span class="s2">"supersession_applied"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">superseded</span><span class="p">)</span>
+    <span class="n">bundle</span><span class="p">[</span><span class="s2">"supersession_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">superseded</span><span class="p">)</span>
+    <span class="n">bundle</span><span class="p">[</span><span class="s2">"supersession_relevance_retained_count"</span><span class="p">]</span> <span class="o">=</span> <span class="n">relevance_retained</span>
+    <span class="k">if</span> <span class="n">epistemics_policy_version</span><span class="p">:</span>
+        <span class="n">bundle</span><span class="p">[</span><span class="s2">"supersession_policy_version"</span><span class="p">]</span> <span class="o">=</span> <span class="n">epistemics_policy_version</span>
+
+    <span class="k">return</span> <span class="n">bundle</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

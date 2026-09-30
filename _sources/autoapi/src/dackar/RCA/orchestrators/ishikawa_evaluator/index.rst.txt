@@ -1,0 +1,134 @@
+src.dackar.RCA.orchestrators.ishikawa_evaluator
+===============================================
+
+.. py:module:: src.dackar.RCA.orchestrators.ishikawa_evaluator
+
+.. autoapi-nested-parse::
+
+   ishikawa_evaluator — Deterministic Ishikawa (fishbone) matrix builder.
+
+   Extracted from rca_reasoning_orchestrator.py.  The parent module re-exports
+   HeuristicIshikawaEvaluatorV1 for backward-compatible imports.
+
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.ishikawa_evaluator.JsonDict
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.ishikawa_evaluator.HeuristicIshikawaEvaluatorV1
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.ishikawa_evaluator.utcnow_iso
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:function:: utcnow_iso()
+
+.. py:class:: HeuristicIshikawaEvaluatorV1
+
+   First deterministic Ishikawa evaluator.
+
+   Builds a structured fishbone-style matrix from:
+     - candidate hypotheses
+     - KG context
+     - temporal support
+     - retrieved evidence
+     - optional PM / operational context
+
+
+   .. py:attribute:: CATEGORY_ORDER
+      :value: ['equipment_hardware', 'process_procedure', 'measurement_instrumentation',...
+
+
+
+   .. py:method:: evaluate(event, telemetry_summary, kg_context, tskr_patterns, causality_candidates, evidence_bundle, operational_context, pm_compliance, run_context)
+
+      Build the Ishikawa contributing-factor matrix for an event.
+
+      Assembles category-grouped rows from the causal candidates (each cited
+      with its *own* supporting evidence — see
+      :meth:`_supporting_evidence_by_candidate`), telemetry/TSKR measurement
+      signals, maintenance and operating-context factors, process evidence,
+      and KG-context factors.
+
+      :param event: Target event (must carry ``event_id`` or ``id``), its telemetry
+                    summary, and the KG neighbourhood.
+      :param telemetry_summary: Target event (must carry ``event_id`` or ``id``), its telemetry
+                                summary, and the KG neighbourhood.
+      :param kg_context: Target event (must carry ``event_id`` or ``id``), its telemetry
+                         summary, and the KG neighbourhood.
+      :param tskr_patterns: TSKR chain-position patterns, or None.
+      :param causality_candidates: Ranked candidate hypotheses and their retrieved evidence.
+      :param evidence_bundle: Ranked candidate hypotheses and their retrieved evidence.
+      :param operational_context: Optional supporting artifacts, or None.
+      :param pm_compliance: Optional supporting artifacts, or None.
+      :param run_context: Orchestrator run context (``run_id``).
+
+      :returns: An Ishikawa matrix conforming to ``schemas/ishikawa_matrix.json``
+                (categories, rows, and a summary of top candidates).
+      :rtype: JsonDict
+
+
+
+   .. py:method:: _candidate_rows(causality_candidates, evidence_bundle)
+
+
+   .. py:method:: _supporting_evidence_by_candidate(evidence_bundle)
+
+      Index the evidence bundle by the candidate each hit supports.
+
+      Groups the bundle's ``results`` by their ``metadata.linked_candidate_id``
+      (falling back to ``metadata.candidate_id``), keeping only non-superseded,
+      ``support_role == "supporting"`` hits, so that each Ishikawa row cites the
+      evidence retrieved for *its own* candidate rather than the first three
+      snippet ids in the bundle.
+
+      :param evidence_bundle: Evidence bundle whose ``results`` list holds normalized retrieval
+                              hits (top-level ``snippet_id`` / ``support_score`` / ``superseded``,
+                              with ``support_role`` and candidate linkage under ``metadata``).
+      :type evidence_bundle: JsonDict
+
+      :returns: Maps ``candidate_id`` to its supporting snippet ids, highest
+                ``support_score`` first and capped at three. Candidates with no
+                supporting evidence are absent (callers default to ``[]``).
+      :rtype: Dict[str, List[str]]
+
+
+
+   .. py:method:: _measurement_rows(telemetry_summary, tskr_patterns)
+
+
+   .. py:method:: _maintenance_rows(pm_compliance, causality_candidates)
+
+
+   .. py:method:: _operating_context_rows(operational_context, event)
+
+
+   .. py:method:: _process_rows(evidence_bundle)
+
+
+   .. py:method:: _kg_context_rows(kg_context)
+
+
+   .. py:method:: _group_rows(rows)
+
+

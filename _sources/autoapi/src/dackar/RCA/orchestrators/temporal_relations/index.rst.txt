@@ -1,0 +1,109 @@
+src.dackar.RCA.orchestrators.temporal_relations
+===============================================
+
+.. py:module:: src.dackar.RCA.orchestrators.temporal_relations
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.temporal_relations.PRECEDES
+   src.dackar.RCA.orchestrators.temporal_relations.OVERLAPS
+   src.dackar.RCA.orchestrators.temporal_relations.CONTAINS
+   src.dackar.RCA.orchestrators.temporal_relations.DURING
+   src.dackar.RCA.orchestrators.temporal_relations.FOLLOWS
+   src.dackar.RCA.orchestrators.temporal_relations.CAUSAL_PRIORITY
+   src.dackar.RCA.orchestrators.temporal_relations.RELATION_SCORE
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.temporal_relations.Interval
+
+
+Functions
+---------
+
+.. autoapisummary::
+
+   src.dackar.RCA.orchestrators.temporal_relations.allen_relation
+   src.dackar.RCA.orchestrators.temporal_relations.onset_lag_hours
+
+
+Module Contents
+---------------
+
+.. py:data:: PRECEDES
+   :value: 'precedes'
+
+
+.. py:data:: OVERLAPS
+   :value: 'overlaps'
+
+
+.. py:data:: CONTAINS
+   :value: 'contains'
+
+
+.. py:data:: DURING
+   :value: 'during'
+
+
+.. py:data:: FOLLOWS
+   :value: 'follows'
+
+
+.. py:data:: CAUSAL_PRIORITY
+   :type:  Tuple[str, ...]
+
+.. py:data:: RELATION_SCORE
+   :type:  dict[str, float]
+
+.. py:class:: Interval
+
+   A closed time interval [start, end].  For point events set end == start.
+
+
+   .. py:attribute:: start
+      :type:  datetime.datetime
+
+
+   .. py:attribute:: end
+      :type:  datetime.datetime
+
+
+.. py:function:: allen_relation(a, b, epsilon_hours = 0.5, interval_type = 'closed')
+
+   Classify the temporal relation of interval A relative to reference interval B.
+
+   Returns ``(relation_name, base_rca_relevance_score)``.
+
+   ``b`` is the event interval; ``a`` is an anomaly or maintenance window.
+   ``epsilon_hours`` absorbs timestamp noise and near-simultaneous boundary
+   cases — boundaries within epsilon are treated as touching.
+   ``interval_type`` controls whether anomaly endpoints are interpreted as
+   closed/open when evaluating boundary-touching cases.
+
+   Decision logic (evaluated in order):
+
+   1. FOLLOWS   — a starts meaningfully after b ends
+   2. PRECEDES  — a ends meaningfully before b starts
+   3. CONTAINS  — a started before b AND ends after b  (encompasses event)
+   4. OVERLAPS  — a started before b, ends within b    (degradation active at onset)
+   5. DURING    — everything else: a started at or after b onset, including
+                  "started inside b and ended after b" (consequential anomaly)
+
+
+.. py:function:: onset_lag_hours(a, b)
+
+   Signed lag in hours from A onset to B onset (b.start − a.start).
+
+   Positive  → A predates B onset (causal candidate).
+   Negative  → A postdates B onset (symptom candidate).
+
+

@@ -1,0 +1,1047 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.orchestrators.causality_engine_v31 &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.orchestrators.causality_engine_v31</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.orchestrators.causality_engine_v31</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">causality_engine_v31 — Rule-based causality engine, baseline variant.</span>
+
+<span class="sd">Role in the pipeline</span>
+<span class="sd">--------------------</span>
+<span class="sd">This engine produces failure-mode candidates scored on five weighted dimensions:</span>
+<span class="sd">structural, temporal, telemetry, evidence, and governance.  It operates purely</span>
+<span class="sd">from structured KG context and telemetry summary inputs, without consuming</span>
+<span class="sd">TSKR temporal-pattern metadata.</span>
+
+<span class="sd">Relationship to v32</span>
+<span class="sd">-------------------</span>
+<span class="sd">``causality_engine_v32`` is the production engine.  It extends v31 with</span>
+<span class="sd">TSKR-aware scoring (Allen interval relations, latency alignment) and NER-based</span>
+<span class="sd">entity normalisation via ``EntityNormalizer``.</span>
+
+<span class="sd">**Both engines are intentionally retained.**  Running v31 alongside v32 on the</span>
+<span class="sd">same inputs provides an independent baseline that can be used to:</span>
+
+<span class="sd">* validate that TSKR enrichment improves — and does not regress — candidate</span>
+<span class="sd">  ranking relative to the simpler structural/evidence model;</span>
+<span class="sd">* detect edge cases where temporal patterns over-penalise the correct root</span>
+<span class="sd">  cause (e.g. delayed-onset failure modes);</span>
+<span class="sd">* support ablation studies during model development and audit.</span>
+
+<span class="sd">Intended usage: pass ``RuleBasedCausalityEngineV31`` as the ``causality_engine``</span>
+<span class="sd">argument of ``RCAReasoningOrchestrator`` when running a baseline/validation</span>
+<span class="sd">pass, and ``RuleBasedCausalityEngineV32`` for the primary production pass.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+<span class="c1"># Maps pm_compliance check_type → keyword fragments matched against a failure</span>
+<span class="c1"># mode's name, superclass, and component_name (all lowercased).  A check is</span>
+<span class="c1"># considered relevant to a candidate only when at least one keyword hits.</span>
+<span class="c1"># "scheduled_pm" covers generic maintenance-induced degradation broadly;</span>
+<span class="c1"># "other" / unmapped types produce no match and contribute nothing.</span>
+<div class="viewcode-block" id="_PM_CHECK_KEYWORDS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31._PM_CHECK_KEYWORDS">[docs]</a>
+<span class="n">_PM_CHECK_KEYWORDS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">"calibration"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"calibrat"</span><span class="p">,</span> <span class="s2">"instrument"</span><span class="p">,</span> <span class="s2">"sensor"</span><span class="p">,</span> <span class="s2">"drift"</span><span class="p">,</span> <span class="s2">"measurement"</span><span class="p">,</span> <span class="s2">"transmitter"</span><span class="p">,</span> <span class="s2">"indication"</span><span class="p">},</span>
+    <span class="s2">"lubrication"</span><span class="p">:</span>       <span class="p">{</span><span class="s2">"lubricat"</span><span class="p">,</span> <span class="s2">"bearing"</span><span class="p">,</span> <span class="s2">"friction"</span><span class="p">,</span> <span class="s2">"wear"</span><span class="p">,</span> <span class="s2">"grease"</span><span class="p">,</span> <span class="s2">"oil"</span><span class="p">,</span> <span class="s2">"shaft"</span><span class="p">,</span> <span class="s2">"rotating"</span><span class="p">},</span>
+    <span class="s2">"inspection"</span><span class="p">:</span>        <span class="p">{</span><span class="s2">"inspect"</span><span class="p">,</span> <span class="s2">"fouling"</span><span class="p">,</span> <span class="s2">"corrosion"</span><span class="p">,</span> <span class="s2">"degradat"</span><span class="p">,</span> <span class="s2">"erosion"</span><span class="p">,</span> <span class="s2">"leakage"</span><span class="p">,</span> <span class="s2">"scaling"</span><span class="p">,</span> <span class="s2">"deposit"</span><span class="p">},</span>
+    <span class="s2">"surveillance_test"</span><span class="p">:</span> <span class="p">{</span><span class="s2">"surveillance"</span><span class="p">,</span> <span class="s2">"functional"</span><span class="p">,</span> <span class="s2">"operabilit"</span><span class="p">,</span> <span class="s2">"performance"</span><span class="p">},</span>
+    <span class="s2">"functional_test"</span><span class="p">:</span>   <span class="p">{</span><span class="s2">"functional"</span><span class="p">,</span> <span class="s2">"control"</span><span class="p">,</span> <span class="s2">"valve"</span><span class="p">,</span> <span class="s2">"actuator"</span><span class="p">,</span> <span class="s2">"relay"</span><span class="p">,</span> <span class="s2">"trip"</span><span class="p">},</span>
+    <span class="s2">"scheduled_pm"</span><span class="p">:</span>      <span class="p">{</span><span class="s2">"wear"</span><span class="p">,</span> <span class="s2">"degradat"</span><span class="p">,</span> <span class="s2">"aging"</span><span class="p">,</span> <span class="s2">"maintenance"</span><span class="p">,</span> <span class="s2">"overhaul"</span><span class="p">},</span>
+    <span class="s2">"other"</span><span class="p">:</span>             <span class="nb">set</span><span class="p">(),</span>
+<span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="utcnow_iso">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.utcnow_iso">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">utcnow_iso</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="parse_dt">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.parse_dt">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_dt</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">datetime</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">datetime</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">value</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">"Z"</span><span class="p">,</span> <span class="s2">"+00:00"</span><span class="p">))</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<span class="nd">@dataclass</span>
+<div class="viewcode-block" id="CausalityEngineConfig">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CausalityEngineConfig</span><span class="p">:</span>
+<div class="viewcode-block" id="CausalityEngineConfig.top_k_candidates">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig.top_k_candidates">[docs]</a>
+    <span class="n">top_k_candidates</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span></div>
+
+<div class="viewcode-block" id="CausalityEngineConfig.weights">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig.weights">[docs]</a>
+    <span class="n">weights</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="CausalityEngineConfig.minimum_evidence_threshold">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig.minimum_evidence_threshold">[docs]</a>
+    <span class="n">minimum_evidence_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.35</span></div>
+
+<div class="viewcode-block" id="CausalityEngineConfig.minimum_composite_threshold">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig.minimum_composite_threshold">[docs]</a>
+    <span class="n">minimum_composite_threshold</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.30</span></div>
+
+<div class="viewcode-block" id="CausalityEngineConfig.temporal_window_days_cap">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig.temporal_window_days_cap">[docs]</a>
+    <span class="n">temporal_window_days_cap</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3650</span></div>
+
+<div class="viewcode-block" id="CausalityEngineConfig.tskr_enabled">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig.tskr_enabled">[docs]</a>
+    <span class="n">tskr_enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="CausalityEngineConfig.__post_init__">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.CausalityEngineConfig.__post_init__">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">weights</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">weights</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"structural"</span><span class="p">:</span> <span class="mf">0.30</span><span class="p">,</span>
+                <span class="s2">"temporal"</span><span class="p">:</span> <span class="mf">0.20</span><span class="p">,</span>
+                <span class="s2">"telemetry"</span><span class="p">:</span> <span class="mf">0.20</span><span class="p">,</span>
+                <span class="s2">"evidence"</span><span class="p">:</span> <span class="mf">0.20</span><span class="p">,</span>
+                <span class="s2">"governance"</span><span class="p">:</span> <span class="mf">0.10</span><span class="p">,</span>
+            <span class="p">}</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RuleBasedCausalityEngineV31</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""TSKR-aware deterministic causality engine."""</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">CausalityEngineConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31.config">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31.config">[docs]</a>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">CausalityEngineConfig</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31.generate">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31.generate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">kg_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+        <span class="n">tskr_patterns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">operational_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">pm_compliance</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">run_context</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+        <span class="n">event_time</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_time</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+        <span class="n">tskr_index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_index_tskr_patterns</span><span class="p">(</span><span class="n">tskr_patterns</span><span class="p">)</span>
+
+        <span class="c1"># Failure mode candidates and historical event analogs are kept in separate</span>
+        <span class="c1"># pools.  top_k_candidates applies only to the FM pool so that event analogs</span>
+        <span class="c1"># never displace failure mode hypotheses.</span>
+        <span class="n">fm_candidates</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_failure_mode_candidates</span><span class="p">(</span>
+            <span class="n">event</span><span class="p">,</span>
+            <span class="n">event_time</span><span class="p">,</span>
+            <span class="n">telemetry_summary</span><span class="p">,</span>
+            <span class="n">kg_context</span><span class="p">,</span>
+            <span class="n">tskr_index</span><span class="p">,</span>
+            <span class="n">pm_compliance</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">event_analogs_raw</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_build_past_event_candidates</span><span class="p">(</span>
+            <span class="n">event</span><span class="p">,</span>
+            <span class="n">event_time</span><span class="p">,</span>
+            <span class="n">telemetry_summary</span><span class="p">,</span>
+            <span class="n">kg_context</span><span class="p">,</span>
+            <span class="n">tskr_index</span><span class="p">,</span>
+            <span class="n">pm_compliance</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">fm_candidates</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="n">x</span><span class="p">[</span><span class="s2">"composite_score"</span><span class="p">],</span> <span class="n">x</span><span class="p">[</span><span class="s2">"candidate_id"</span><span class="p">]))</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">fm_candidates</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_candidate_meets_threshold</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="p">][:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">top_k_candidates</span><span class="p">]</span>
+
+        <span class="n">event_analogs_raw</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="n">x</span><span class="p">[</span><span class="s2">"composite_score"</span><span class="p">],</span> <span class="n">x</span><span class="p">[</span><span class="s2">"candidate_id"</span><span class="p">]))</span>
+        <span class="n">event_analogs</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">event_analogs_raw</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_candidate_meets_threshold</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="n">subgraph_id</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"subgraph_id"</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"event_id"</span><span class="p">:</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span>
+            <span class="s2">"subgraph_id"</span><span class="p">:</span> <span class="n">subgraph_id</span><span class="p">,</span>
+            <span class="s2">"generated_at"</span><span class="p">:</span> <span class="n">utcnow_iso</span><span class="p">(),</span>
+            <span class="s2">"scoring_config"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"weights"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">weights</span><span class="p">,</span>
+                <span class="s2">"tskr_enabled"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">tskr_enabled</span><span class="p">,</span>
+                <span class="s2">"minimum_evidence_threshold"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">minimum_evidence_threshold</span><span class="p">,</span>
+                <span class="s2">"minimum_composite_threshold"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">minimum_composite_threshold</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">"candidates"</span><span class="p">:</span> <span class="n">candidates</span><span class="p">,</span>
+            <span class="s2">"event_analogs"</span><span class="p">:</span> <span class="n">event_analogs</span><span class="p">,</span>
+            <span class="s2">"provenance"</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">"generated_by"</span><span class="p">:</span> <span class="s2">"RuleBasedCausalityEngineV31"</span><span class="p">,</span>
+                <span class="s2">"run_id"</span><span class="p">:</span> <span class="n">run_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"run_id"</span><span class="p">),</span>
+                <span class="s2">"tskr_enabled"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">tskr_enabled</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._build_failure_mode_candidates">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._build_failure_mode_candidates">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_failure_mode_candidates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">event_time</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">,</span> <span class="n">tskr_index</span><span class="p">,</span> <span class="n">pm_compliance</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">components</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">):</span> <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)}</span>
+        <span class="n">documents</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"documents"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="n">fm_id</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">fm_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">component_id</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+            <span class="n">topology</span>     <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_structural_score_for_fm</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">components</span><span class="p">)</span>
+            <span class="n">symptom_score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_symptom_match_score</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">fm</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">)</span>
+            <span class="n">symptom_delta</span> <span class="o">=</span> <span class="mf">0.40</span> <span class="o">*</span> <span class="p">(</span><span class="n">symptom_score</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">)</span>   <span class="c1"># [-0.20, +0.20]</span>
+            <span class="n">structural</span>   <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">topology</span> <span class="o">+</span> <span class="n">symptom_delta</span><span class="p">))</span>
+            <span class="n">temporal_parts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_temporal_score_for_fm</span><span class="p">(</span><span class="n">fm</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">event_time</span><span class="p">,</span> <span class="n">tskr_index</span><span class="p">)</span>
+            <span class="n">telemetry</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_telemetry_score_for_fm</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">fm</span><span class="p">,</span> <span class="n">component_id</span><span class="p">,</span> <span class="n">components</span><span class="p">)</span>
+            <span class="n">evidence</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evidence_score_for_fm</span><span class="p">(</span><span class="n">documents</span><span class="p">)</span>
+            <span class="n">governance</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_governance_score</span><span class="p">(</span>
+                <span class="n">pm_compliance</span><span class="p">,</span>
+                <span class="n">fm_name</span><span class="o">=</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">),</span>
+                <span class="n">fm_superclass</span><span class="o">=</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"superclass"</span><span class="p">),</span>
+                <span class="n">component_name</span><span class="o">=</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_name"</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">scores</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"structural"</span><span class="p">:</span> <span class="n">structural</span><span class="p">,</span>
+                <span class="s2">"temporal"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">],</span>
+                <span class="s2">"telemetry"</span><span class="p">:</span> <span class="n">telemetry</span><span class="p">,</span>
+                <span class="s2">"evidence"</span><span class="p">:</span> <span class="n">evidence</span><span class="p">,</span>
+                <span class="s2">"governance"</span><span class="p">:</span> <span class="n">governance</span><span class="p">,</span>
+                <span class="s2">"tskr_pattern_match"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"tskr_pattern_match"</span><span class="p">],</span>
+                <span class="s2">"temporal_precedence"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"temporal_precedence"</span><span class="p">],</span>
+                <span class="s2">"latency_consistency"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"latency_consistency"</span><span class="p">],</span>
+                <span class="s2">"symptom_match"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">symptom_score</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+            <span class="p">}</span>
+            <span class="n">composite</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_combine_scores</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
+            <span class="n">meets_evidence_threshold</span> <span class="o">=</span> <span class="n">evidence</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">minimum_evidence_threshold</span>
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"FM::</span><span class="si">{</span><span class="n">fm_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"hypothesis_type"</span><span class="p">:</span> <span class="s2">"failure_mode"</span><span class="p">,</span>
+                <span class="s2">"cause_node_id"</span><span class="p">:</span> <span class="n">fm_id</span><span class="p">,</span>
+                <span class="s2">"cause_label"</span><span class="p">:</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">fm_id</span><span class="p">,</span>
+                <span class="s2">"target_event_id"</span><span class="p">:</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span>
+                <span class="s2">"kg_path"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fm_path_nodes</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="n">fm_id</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span> <span class="n">components</span><span class="p">),</span>
+                <span class="s2">"kg_edges"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"APPLIES_TO"</span><span class="p">,</span> <span class="s2">"EXPLAINS_EVENT"</span><span class="p">],</span>
+                <span class="s2">"scores"</span><span class="p">:</span> <span class="n">scores</span><span class="p">,</span>
+                <span class="s2">"score_rationale"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"structural"</span><span class="p">:</span> <span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"Topology score for component </span><span class="si">{</span><span class="n">component_id</span><span class="si">}</span><span class="s2"> (base: </span><span class="si">{</span><span class="nb">round</span><span class="p">(</span><span class="n">topology</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">)</span><span class="si">}</span><span class="s2">); "</span>
+                        <span class="sa">f</span><span class="s2">"symptom match: </span><span class="si">{</span><span class="nb">round</span><span class="p">(</span><span class="n">symptom_score</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">)</span><span class="si">}</span><span class="s2"> "</span>
+                        <span class="sa">f</span><span class="s2">"(</span><span class="si">{</span><span class="s1">'consistent'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">symptom_score</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">0.6</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'inconsistent'</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">symptom_score</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mf">0.4</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">'neutral/no data'</span><span class="si">}</span><span class="s2">)."</span>
+                    <span class="p">),</span>
+                    <span class="s2">"temporal"</span><span class="p">:</span> <span class="s2">"Temporal score derived from anomalies plus TSKR-style signal/latency checks."</span><span class="p">,</span>
+                    <span class="s2">"telemetry"</span><span class="p">:</span> <span class="s2">"Telemetry score derived from anomaly count, severity, and telemetry-linked component alignment."</span><span class="p">,</span>
+                    <span class="s2">"evidence"</span><span class="p">:</span> <span class="s2">"Evidence score derived from presence of operational and engineering documents."</span><span class="p">,</span>
+                    <span class="s2">"governance"</span><span class="p">:</span> <span class="s2">"Governance: PM relevance-matched to this failure mode."</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">composite</span><span class="p">,</span>
+                <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_confidence_label</span><span class="p">(</span><span class="n">composite</span><span class="p">),</span>
+                <span class="s2">"supporting_evidence_refs"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_supporting_doc_refs</span><span class="p">(</span><span class="n">documents</span><span class="p">,</span> <span class="p">{</span><span class="s2">"CR"</span><span class="p">,</span> <span class="s2">"WO"</span><span class="p">,</span> <span class="s2">"FMEA"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">}),</span>
+                <span class="s2">"temporal_evidence"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"tskr_rule_ids"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"TSKR:ANOMALY_PRESENT"</span><span class="p">]</span> <span class="k">if</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"tskr_pattern_match"</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">[],</span>
+                    <span class="s2">"matching_signal_ids"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"matching_signal_ids"</span><span class="p">],</span>
+                    <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"start"</span><span class="p">),</span>
+                    <span class="s2">"window_end"</span><span class="p">:</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end"</span><span class="p">),</span>
+                    <span class="s2">"relation"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">),</span>
+                    <span class="s2">"operator_family"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"operator_family"</span><span class="p">),</span>
+                    <span class="s2">"mean_lag_hours"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">),</span>
+                    <span class="s2">"support"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support"</span><span class="p">),</span>
+                    <span class="s2">"pattern_id"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_id"</span><span class="p">),</span>
+                <span class="p">},</span>
+                <span class="s2">"assumptions"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"meets_evidence_threshold"</span><span class="p">:</span> <span class="n">meets_evidence_threshold</span><span class="p">,</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"Failure mode candidate for component </span><span class="si">{</span><span class="n">component_id</span><span class="si">}</span><span class="s2">"</span> <span class="k">if</span> <span class="n">component_id</span> <span class="k">else</span> <span class="s2">""</span><span class="p">,</span>
+                <span class="s2">"temporal_relation"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">),</span>
+                <span class="s2">"telemetry_evidence"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"signal_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]),</span>
+                    <span class="s2">"matching_signal_ids"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"matching_signal_ids"</span><span class="p">],</span>
+                    <span class="s2">"anomaly_window"</span><span class="p">:</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window"</span><span class="p">,</span> <span class="p">{}),</span>
+                <span class="p">},</span>
+
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._build_past_event_candidates">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._build_past_event_candidates">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_build_past_event_candidates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">event_time</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">kg_context</span><span class="p">,</span> <span class="n">tskr_index</span><span class="p">,</span> <span class="n">pm_compliance</span><span class="p">):</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">target_asset_id</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span>
+        <span class="n">target_event_type</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span>
+        <span class="n">target_severity</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)</span>
+        <span class="n">current_components</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"components"</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)}</span>
+        <span class="n">current_fm_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)</span> <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)}</span>
+        <span class="n">documents</span> <span class="o">=</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"documents"</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="n">fm_lookup</span> <span class="o">=</span> <span class="p">{</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">):</span> <span class="n">fm</span> <span class="k">for</span> <span class="n">fm</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_modes"</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">)}</span>
+
+        <span class="k">for</span> <span class="n">pe</span> <span class="ow">in</span> <span class="n">kg_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"past_events"</span><span class="p">,</span> <span class="p">[]):</span>
+            <span class="n">event_id</span> <span class="o">=</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">event_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">structural</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_structural_score_for_past_event</span><span class="p">(</span><span class="n">target_asset_id</span><span class="p">,</span> <span class="n">current_components</span><span class="p">,</span> <span class="n">current_fm_ids</span><span class="p">,</span> <span class="n">pe</span><span class="p">)</span>
+            <span class="n">temporal_parts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_temporal_score_for_past_event</span><span class="p">(</span><span class="n">event_time</span><span class="p">,</span> <span class="n">pe</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">tskr_index</span><span class="p">)</span>
+            <span class="n">telemetry</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_telemetry_score_for_past_event</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">pe</span><span class="p">)</span>
+            <span class="n">evidence</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evidence_score_for_past_event</span><span class="p">(</span><span class="n">documents</span><span class="p">,</span> <span class="n">pe</span><span class="p">)</span>
+            <span class="n">matched_fm</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">fm_lookup</span><span class="p">[</span><span class="n">mid</span><span class="p">]</span> <span class="k">for</span> <span class="n">mid</span> <span class="ow">in</span> <span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_failure_mode_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">mid</span> <span class="ow">in</span> <span class="n">fm_lookup</span><span class="p">),</span>
+                <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">governance</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_governance_score</span><span class="p">(</span>
+                <span class="n">pm_compliance</span><span class="p">,</span>
+                <span class="n">fm_name</span><span class="o">=</span><span class="n">matched_fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="k">if</span> <span class="n">matched_fm</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">fm_superclass</span><span class="o">=</span><span class="n">matched_fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"superclass"</span><span class="p">)</span> <span class="k">if</span> <span class="n">matched_fm</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="n">component_name</span><span class="o">=</span><span class="n">matched_fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_name"</span><span class="p">)</span> <span class="k">if</span> <span class="n">matched_fm</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">target_event_type</span> <span class="ow">and</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span> <span class="o">==</span> <span class="n">target_event_type</span><span class="p">:</span>
+                <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">]</span> <span class="o">+</span> <span class="mf">0.05</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">target_severity</span> <span class="ow">and</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)</span> <span class="o">==</span> <span class="n">target_severity</span><span class="p">:</span>
+                <span class="n">structural</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">structural</span> <span class="o">+</span> <span class="mf">0.05</span><span class="p">)</span>
+            <span class="n">scores</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">"structural"</span><span class="p">:</span> <span class="n">structural</span><span class="p">,</span>
+                <span class="s2">"temporal"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">],</span>
+                <span class="s2">"telemetry"</span><span class="p">:</span> <span class="n">telemetry</span><span class="p">,</span>
+                <span class="s2">"evidence"</span><span class="p">:</span> <span class="n">evidence</span><span class="p">,</span>
+                <span class="s2">"governance"</span><span class="p">:</span> <span class="n">governance</span><span class="p">,</span>
+                <span class="s2">"tskr_pattern_match"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"tskr_pattern_match"</span><span class="p">],</span>
+                <span class="s2">"temporal_precedence"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"temporal_precedence"</span><span class="p">],</span>
+                <span class="s2">"latency_consistency"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"latency_consistency"</span><span class="p">],</span>
+            <span class="p">}</span>
+            <span class="n">composite</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_combine_scores</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
+            <span class="n">meets_evidence_threshold</span> <span class="o">=</span> <span class="n">evidence</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">minimum_evidence_threshold</span>
+
+            <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"candidate_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"EVENT::</span><span class="si">{</span><span class="n">event_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"hypothesis_type"</span><span class="p">:</span> <span class="s2">"historical_event"</span><span class="p">,</span>
+                <span class="s2">"cause_node_id"</span><span class="p">:</span> <span class="n">event_id</span><span class="p">,</span>
+                <span class="s2">"cause_label"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"Historical analog </span><span class="si">{</span><span class="n">event_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                <span class="s2">"target_event_id"</span><span class="p">:</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="p">[</span><span class="s2">"id"</span><span class="p">],</span>
+                <span class="s2">"kg_path"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_event_path_nodes</span><span class="p">(</span><span class="n">pe</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">event</span><span class="p">[</span><span class="s2">"id"</span><span class="p">]),</span>
+                <span class="s2">"kg_edges"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"RELATED_TO"</span><span class="p">,</span> <span class="s2">"MAY_CAUSE"</span><span class="p">],</span>
+                <span class="s2">"scores"</span><span class="p">:</span> <span class="n">scores</span><span class="p">,</span>
+                <span class="s2">"score_rationale"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"structural"</span><span class="p">:</span> <span class="s2">"Historical event scored from shared asset/component/failure-mode context."</span><span class="p">,</span>
+                    <span class="s2">"temporal"</span><span class="p">:</span> <span class="s2">"Temporal score reflects precedence and recency, plus TSKR-style anomaly presence."</span><span class="p">,</span>
+                    <span class="s2">"telemetry"</span><span class="p">:</span> <span class="s2">"Telemetry score reflects active anomaly burden and analog alignment support."</span><span class="p">,</span>
+                    <span class="s2">"evidence"</span><span class="p">:</span> <span class="s2">"Evidence score reflects matching context and supporting document availability."</span><span class="p">,</span>
+                    <span class="s2">"governance"</span><span class="p">:</span> <span class="s2">"Governance score derived from PM compliance signals."</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="s2">"composite_score"</span><span class="p">:</span> <span class="n">composite</span><span class="p">,</span>
+                <span class="s2">"confidence_label"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_confidence_label</span><span class="p">(</span><span class="n">composite</span><span class="p">),</span>
+                <span class="s2">"supporting_evidence_refs"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_supporting_doc_refs</span><span class="p">(</span><span class="n">documents</span><span class="p">,</span> <span class="p">{</span><span class="s2">"CR"</span><span class="p">,</span> <span class="s2">"WO"</span><span class="p">,</span> <span class="s2">"ECA"</span><span class="p">,</span> <span class="s2">"RCA"</span><span class="p">}),</span>
+                <span class="s2">"temporal_evidence"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"tskr_rule_ids"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"TSKR:HISTORICAL_PRECEDENT"</span><span class="p">]</span> <span class="k">if</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"tskr_pattern_match"</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="p">[],</span>
+                    <span class="s2">"matching_signal_ids"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"matching_signal_ids"</span><span class="p">],</span>
+                    <span class="s2">"window_start"</span><span class="p">:</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">),</span>
+                    <span class="s2">"window_end"</span><span class="p">:</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">),</span>
+                    <span class="s2">"relation"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">),</span>
+                    <span class="s2">"operator_family"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"operator_family"</span><span class="p">),</span>
+                    <span class="s2">"mean_lag_hours"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">),</span>
+                    <span class="s2">"support"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support"</span><span class="p">),</span>
+                    <span class="s2">"pattern_id"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_id"</span><span class="p">),</span>
+                <span class="p">},</span>
+                <span class="s2">"assumptions"</span><span class="p">:</span> <span class="p">[],</span>
+                <span class="s2">"meets_evidence_threshold"</span><span class="p">:</span> <span class="n">meets_evidence_threshold</span><span class="p">,</span>
+                <span class="s2">"notes"</span><span class="p">:</span> <span class="s2">"Historical analog candidate derived from kg_context.past_events"</span><span class="p">,</span>
+                <span class="s2">"telemetry_evidence"</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">"signal_count"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]),</span>
+                    <span class="s2">"matching_signal_ids"</span><span class="p">:</span> <span class="n">temporal_parts</span><span class="p">[</span><span class="s2">"matching_signal_ids"</span><span class="p">],</span>
+                    <span class="s2">"anomaly_window"</span><span class="p">:</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window"</span><span class="p">,</span> <span class="p">{}),</span>
+                <span class="p">},</span>
+            <span class="p">})</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._structural_score_for_fm">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._structural_score_for_fm">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_structural_score_for_fm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">,</span> <span class="n">components</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">component_id</span> <span class="ow">and</span> <span class="n">component_id</span> <span class="ow">in</span> <span class="n">components</span><span class="p">:</span>
+            <span class="n">seed_type</span> <span class="o">=</span> <span class="n">components</span><span class="p">[</span><span class="n">component_id</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"seed_match_type"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">seed_type</span> <span class="o">==</span> <span class="s2">"seed"</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mf">0.85</span>
+            <span class="k">if</span> <span class="n">seed_type</span> <span class="o">==</span> <span class="s2">"telemetry"</span><span class="p">:</span>
+                <span class="k">return</span> <span class="mf">0.90</span>
+            <span class="k">return</span> <span class="mf">0.75</span>
+        <span class="k">return</span> <span class="mf">0.40</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._symptom_match_score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._symptom_match_score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_symptom_match_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">fm</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Score [0, 1] for how well the event's observed symptoms match what</span>
+<span class="sd">        this failure mode is expected to produce.</span>
+
+<span class="sd">        0.5  = neutral (no symptom data available in either direction)</span>
+<span class="sd">        &gt;0.5 = symptoms consistent with this failure mode</span>
+<span class="sd">        &lt;0.5 = symptoms inconsistent with this failure mode</span>
+
+<span class="sd">        Two sub-signals combined by available weight:</span>
+<span class="sd">          - Anomaly pattern match (weight 0.6): dominant observed pattern vs.</span>
+<span class="sd">            fm.expected_anomaly_pattern.  Observed pattern is taken from the</span>
+<span class="sd">            most frequently occurring anomaly pattern in telemetry (more</span>
+<span class="sd">            objective), falling back to event.symptom_signature.anomaly_pattern.</span>
+<span class="sd">          - Symptom type overlap (weight 0.4): F1-score between event's</span>
+<span class="sd">            symptom_types and fm.expected_symptom_types.</span>
+
+<span class="sd">        When a sub-signal has no data, its weight is excluded and the remaining</span>
+<span class="sd">        signal is used alone.  When neither sub-signal has data, returns 0.5.</span>
+<span class="sd">        """</span>
+        <span class="n">pattern_score</span> <span class="o">=</span> <span class="mf">0.5</span>
+        <span class="n">pattern_weight</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">type_score</span> <span class="o">=</span> <span class="mf">0.5</span>
+        <span class="n">type_weight</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># --- Anomaly pattern sub-signal ---</span>
+        <span class="n">fm_pattern</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_anomaly_pattern"</span><span class="p">)</span>
+        <span class="n">observed_pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_dominant_telemetry_pattern</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">observed_pattern</span> <span class="ow">or</span> <span class="n">observed_pattern</span> <span class="o">==</span> <span class="s2">"unknown"</span><span class="p">:</span>
+            <span class="n">observed_pattern</span> <span class="o">=</span> <span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"symptom_signature"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_pattern"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fm_pattern</span> <span class="ow">and</span> <span class="n">observed_pattern</span> <span class="ow">and</span> <span class="n">observed_pattern</span> <span class="o">!=</span> <span class="s2">"unknown"</span><span class="p">:</span>
+            <span class="n">pattern_score</span>  <span class="o">=</span> <span class="mf">1.0</span> <span class="k">if</span> <span class="n">fm_pattern</span> <span class="o">==</span> <span class="n">observed_pattern</span> <span class="k">else</span> <span class="mf">0.0</span>
+            <span class="n">pattern_weight</span> <span class="o">=</span> <span class="mf">0.6</span>
+
+        <span class="c1"># --- Symptom type sub-signal ---</span>
+        <span class="n">fm_types</span>    <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_symptom_types"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="n">event_types</span> <span class="o">=</span> <span class="nb">set</span><span class="p">((</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"symptom_signature"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"symptom_types"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="n">fm_types</span> <span class="ow">and</span> <span class="n">event_types</span><span class="p">:</span>
+            <span class="n">intersection</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fm_types</span> <span class="o">&amp;</span> <span class="n">event_types</span><span class="p">)</span>
+            <span class="n">recall</span>    <span class="o">=</span> <span class="n">intersection</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">fm_types</span><span class="p">)</span>
+            <span class="n">precision</span> <span class="o">=</span> <span class="n">intersection</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">event_types</span><span class="p">)</span>
+            <span class="n">type_score</span>  <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">recall</span> <span class="o">*</span> <span class="n">precision</span> <span class="o">/</span> <span class="p">(</span><span class="n">recall</span> <span class="o">+</span> <span class="n">precision</span><span class="p">))</span> <span class="k">if</span> <span class="p">(</span><span class="n">recall</span> <span class="o">+</span> <span class="n">precision</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mf">0.0</span>
+            <span class="n">type_weight</span> <span class="o">=</span> <span class="mf">0.4</span>
+
+        <span class="n">total_weight</span> <span class="o">=</span> <span class="n">pattern_weight</span> <span class="o">+</span> <span class="n">type_weight</span>
+        <span class="k">if</span> <span class="n">total_weight</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.5</span>  <span class="c1"># no symptom data — return neutral</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">pattern_score</span> <span class="o">*</span> <span class="n">pattern_weight</span> <span class="o">+</span> <span class="n">type_score</span> <span class="o">*</span> <span class="n">type_weight</span><span class="p">)</span> <span class="o">/</span> <span class="n">total_weight</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._dominant_telemetry_pattern">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._dominant_telemetry_pattern">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_dominant_telemetry_pattern</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Return the most frequently occurring anomaly pattern across all signals,</span>
+<span class="sd">        or None if no anomalies are present."""</span>
+        <span class="n">counts</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+                <span class="n">p</span> <span class="o">=</span> <span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">p</span> <span class="ow">and</span> <span class="n">p</span> <span class="o">!=</span> <span class="s2">"unknown"</span><span class="p">:</span>
+                    <span class="n">counts</span><span class="p">[</span><span class="n">p</span><span class="p">]</span> <span class="o">=</span> <span class="n">counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">counts</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">counts</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">counts</span><span class="o">.</span><span class="fm">__getitem__</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._temporal_score_for_fm">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._temporal_score_for_fm">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_temporal_score_for_fm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fm</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">event_time</span><span class="p">,</span> <span class="n">tskr_index</span><span class="p">):</span>
+        <span class="n">anomaly_signals</span> <span class="o">=</span> <span class="p">[</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)]</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_tskr_pattern</span><span class="p">(</span><span class="n">tskr_index</span><span class="p">,</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"fm_id"</span><span class="p">))</span>
+        <span class="n">tskr_pattern_match</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pattern_confidence</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+        <span class="n">relation</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="s2">"unknown"</span>
+        <span class="n">operator_family</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"operator_family"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">mean_lag_hours</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">support</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pattern_support</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">tskr_pattern_match</span> <span class="o">==</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="n">anomaly_signals</span><span class="p">:</span>
+            <span class="n">tskr_pattern_match</span> <span class="o">=</span> <span class="mf">0.85</span>
+
+        <span class="n">temporal_precedence</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_relation_precedence_score</span><span class="p">(</span><span class="n">relation</span><span class="p">,</span> <span class="n">has_anomalies</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">anomaly_signals</span><span class="p">))</span>
+        <span class="n">min_h</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_min_hours"</span><span class="p">)</span>
+        <span class="n">max_h</span> <span class="o">=</span> <span class="n">fm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"expected_latency_max_hours"</span><span class="p">)</span>
+        <span class="n">latency_consistency</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_latency_consistency</span><span class="p">(</span>
+            <span class="n">min_h</span><span class="p">,</span>
+            <span class="n">max_h</span><span class="p">,</span>
+            <span class="n">inferred_delay_hours</span><span class="o">=</span><span class="n">mean_lag_hours</span> <span class="k">if</span> <span class="n">mean_lag_hours</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="p">(</span><span class="mf">1.0</span> <span class="k">if</span> <span class="n">anomaly_signals</span> <span class="k">else</span> <span class="kc">None</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">temporal</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span>
+            <span class="mf">1.0</span><span class="p">,</span>
+            <span class="mf">0.35</span> <span class="o">*</span> <span class="n">tskr_pattern_match</span>
+            <span class="o">+</span> <span class="mf">0.30</span> <span class="o">*</span> <span class="n">temporal_precedence</span>
+            <span class="o">+</span> <span class="mf">0.20</span> <span class="o">*</span> <span class="n">latency_consistency</span>
+            <span class="o">+</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">support</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"temporal"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">temporal</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"tskr_pattern_match"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">tskr_pattern_match</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"temporal_precedence"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">temporal_precedence</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"latency_consistency"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">latency_consistency</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"matching_signal_ids"</span><span class="p">:</span> <span class="n">anomaly_signals</span><span class="p">[:</span><span class="mi">5</span><span class="p">],</span>
+            <span class="s2">"relation"</span><span class="p">:</span> <span class="n">relation</span><span class="p">,</span>
+            <span class="s2">"operator_family"</span><span class="p">:</span> <span class="n">operator_family</span><span class="p">,</span>
+            <span class="s2">"mean_lag_hours"</span><span class="p">:</span> <span class="n">mean_lag_hours</span><span class="p">,</span>
+            <span class="s2">"support"</span><span class="p">:</span> <span class="n">support</span><span class="p">,</span>
+            <span class="s2">"pattern_id"</span><span class="p">:</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_id"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._recency_factor">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._recency_factor">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_recency_factor</span><span class="p">(</span><span class="n">time_distance_days</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">"""Map *time_distance_days* to a [0.55, 1.0] recency multiplier.</span>
+
+<span class="sd">        None (unknown age) receives a conservative 0.75 — neither penalised</span>
+<span class="sd">        nor given full credit.  Values are intentionally coarse so that small</span>
+<span class="sd">        differences in document age do not create artificial score cliffs.</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="n">time_distance_days</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.75</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">time_distance_days</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">d</span> <span class="o">&lt;=</span> <span class="mi">90</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.00</span>
+        <span class="k">if</span> <span class="n">d</span> <span class="o">&lt;=</span> <span class="mi">365</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.85</span>
+        <span class="k">if</span> <span class="n">d</span> <span class="o">&lt;=</span> <span class="mi">730</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.70</span>
+        <span class="k">return</span> <span class="mf">0.55</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._evidence_score_for_fm">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._evidence_score_for_fm">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_evidence_score_for_fm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">documents</span><span class="p">):</span>
+        <span class="c1"># Build doc_type → best recency factor (most recent doc of that type).</span>
+        <span class="n">type_recency</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">documents</span><span class="p">:</span>
+            <span class="n">dt</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">dt</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">rf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_recency_factor</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"time_distance_days"</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">dt</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">type_recency</span> <span class="ow">or</span> <span class="n">rf</span> <span class="o">&gt;</span> <span class="n">type_recency</span><span class="p">[</span><span class="n">dt</span><span class="p">]:</span>
+                <span class="n">type_recency</span><span class="p">[</span><span class="n">dt</span><span class="p">]</span> <span class="o">=</span> <span class="n">rf</span>
+
+        <span class="n">score</span> <span class="o">=</span> <span class="mf">0.30</span>
+        <span class="k">if</span> <span class="s2">"FMEA"</span> <span class="ow">in</span> <span class="n">type_recency</span><span class="p">:</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.25</span> <span class="o">*</span> <span class="n">type_recency</span><span class="p">[</span><span class="s2">"FMEA"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s2">"CR"</span> <span class="ow">in</span> <span class="n">type_recency</span> <span class="ow">or</span> <span class="s2">"WO"</span> <span class="ow">in</span> <span class="n">type_recency</span><span class="p">:</span>
+            <span class="n">rf</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">type_recency</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"CR"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">type_recency</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"WO"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.20</span> <span class="o">*</span> <span class="n">rf</span>
+        <span class="k">if</span> <span class="s2">"ECA"</span> <span class="ow">in</span> <span class="n">type_recency</span> <span class="ow">or</span> <span class="s2">"RCA"</span> <span class="ow">in</span> <span class="n">type_recency</span><span class="p">:</span>
+            <span class="n">rf</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">type_recency</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ECA"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="n">type_recency</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"RCA"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">rf</span>
+        <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._structural_score_for_past_event">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._structural_score_for_past_event">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_structural_score_for_past_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target_asset_id</span><span class="p">,</span> <span class="n">target_components</span><span class="p">,</span> <span class="n">target_fm_ids</span><span class="p">,</span> <span class="n">pe</span><span class="p">):</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="mf">0.20</span>
+        <span class="n">matched_asset_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_asset_ids"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="n">matched_component_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_component_ids"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="n">matched_fm_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_failure_mode_ids"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span>
+        <span class="k">if</span> <span class="n">target_asset_id</span> <span class="ow">and</span> <span class="p">(</span><span class="n">target_asset_id</span> <span class="ow">in</span> <span class="n">matched_asset_ids</span> <span class="ow">or</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">)</span> <span class="o">==</span> <span class="n">target_asset_id</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.70</span>
+        <span class="k">if</span> <span class="n">target_components</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">matched_component_ids</span><span class="p">)</span> <span class="ow">or</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">target_components</span><span class="p">:</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.60</span>
+        <span class="k">if</span> <span class="n">target_fm_ids</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">matched_fm_ids</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.85</span>
+        <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._temporal_score_for_past_event">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._temporal_score_for_past_event">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_temporal_score_for_past_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">current_event_time</span><span class="p">,</span> <span class="n">pe</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">tskr_index</span><span class="p">):</span>
+        <span class="n">past_time</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">))</span>
+        <span class="n">anomaly_signals</span> <span class="o">=</span> <span class="p">[</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="k">if</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="n">current_event_time</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">past_time</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_tskr_pattern</span><span class="p">(</span><span class="n">tskr_index</span><span class="p">,</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">))</span>
+            <span class="k">return</span> <span class="p">{</span>
+                <span class="s2">"temporal"</span><span class="p">:</span> <span class="mf">0.40</span><span class="p">,</span>
+                <span class="s2">"tskr_pattern_match"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pattern_confidence</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="p">(</span><span class="mf">0.50</span> <span class="k">if</span> <span class="n">anomaly_signals</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">),</span>
+                <span class="s2">"temporal_precedence"</span><span class="p">:</span> <span class="mf">0.40</span><span class="p">,</span>
+                <span class="s2">"latency_consistency"</span><span class="p">:</span> <span class="mf">0.30</span><span class="p">,</span>
+                <span class="s2">"matching_signal_ids"</span><span class="p">:</span> <span class="n">anomaly_signals</span><span class="p">[:</span><span class="mi">5</span><span class="p">],</span>
+                <span class="s2">"relation"</span><span class="p">:</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="s2">"unknown"</span><span class="p">,</span>
+                <span class="s2">"operator_family"</span><span class="p">:</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"operator_family"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"mean_lag_hours"</span><span class="p">:</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">"support"</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pattern_support</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span>
+                <span class="s2">"pattern_id"</span><span class="p">:</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_id"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="n">delta_h</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">((</span><span class="n">current_event_time</span> <span class="o">-</span> <span class="n">past_time</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span> <span class="o">/</span> <span class="mf">3600.0</span>
+        <span class="k">if</span> <span class="n">past_time</span> <span class="o">&gt;=</span> <span class="n">current_event_time</span><span class="p">:</span>
+            <span class="n">recency_precedence</span> <span class="o">=</span> <span class="mf">0.05</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">delta_days</span> <span class="o">=</span> <span class="p">(</span><span class="n">current_event_time</span> <span class="o">-</span> <span class="n">past_time</span><span class="p">)</span><span class="o">.</span><span class="n">days</span>
+            <span class="k">if</span> <span class="n">delta_days</span> <span class="o">&lt;=</span> <span class="mi">30</span><span class="p">:</span>
+                <span class="n">recency_precedence</span> <span class="o">=</span> <span class="mf">0.95</span>
+            <span class="k">elif</span> <span class="n">delta_days</span> <span class="o">&lt;=</span> <span class="mi">180</span><span class="p">:</span>
+                <span class="n">recency_precedence</span> <span class="o">=</span> <span class="mf">0.80</span>
+            <span class="k">elif</span> <span class="n">delta_days</span> <span class="o">&lt;=</span> <span class="mi">365</span><span class="p">:</span>
+                <span class="n">recency_precedence</span> <span class="o">=</span> <span class="mf">0.70</span>
+            <span class="k">elif</span> <span class="n">delta_days</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">temporal_window_days_cap</span><span class="p">:</span>
+                <span class="n">recency_precedence</span> <span class="o">=</span> <span class="mf">0.55</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">recency_precedence</span> <span class="o">=</span> <span class="mf">0.35</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_lookup_tskr_pattern</span><span class="p">(</span><span class="n">tskr_index</span><span class="p">,</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">))</span>
+        <span class="n">relation</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="s2">"unknown"</span>
+        <span class="n">operator_family</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"operator_family"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="n">mean_lag_hours</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"mean_lag_hours"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="n">delta_h</span>
+        <span class="n">support</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pattern_support</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+
+        <span class="n">base_precedence</span> <span class="o">=</span> <span class="mf">0.85</span> <span class="k">if</span> <span class="n">delta_h</span> <span class="o">&lt;=</span> <span class="mi">72</span> <span class="k">else</span> <span class="mf">0.60</span> <span class="k">if</span> <span class="n">delta_h</span> <span class="o">&lt;=</span> <span class="mi">720</span> <span class="k">else</span> <span class="mf">0.35</span>
+        <span class="n">relation_score</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_relation_precedence_score</span><span class="p">(</span><span class="n">relation</span><span class="p">,</span> <span class="n">has_anomalies</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">anomaly_signals</span><span class="p">))</span>
+        <span class="n">temporal_precedence</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">recency_precedence</span><span class="p">,</span> <span class="n">base_precedence</span><span class="p">,</span> <span class="n">relation_score</span><span class="p">)</span>
+
+        <span class="n">tskr_pattern_match</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pattern_confidence</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">tskr_pattern_match</span> <span class="o">==</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="n">anomaly_signals</span><span class="p">:</span>
+            <span class="n">tskr_pattern_match</span> <span class="o">=</span> <span class="mf">0.70</span>
+        <span class="n">latency_consistency</span> <span class="o">=</span> <span class="mf">0.60</span> <span class="k">if</span> <span class="n">anomaly_signals</span> <span class="k">else</span> <span class="mf">0.30</span>
+        <span class="n">temporal</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span>
+            <span class="mf">1.0</span><span class="p">,</span>
+            <span class="mf">0.35</span> <span class="o">*</span> <span class="n">tskr_pattern_match</span>
+            <span class="o">+</span> <span class="mf">0.30</span> <span class="o">*</span> <span class="n">temporal_precedence</span>
+            <span class="o">+</span> <span class="mf">0.20</span> <span class="o">*</span> <span class="n">latency_consistency</span>
+            <span class="o">+</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">support</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">"temporal"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">temporal</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"tskr_pattern_match"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">tskr_pattern_match</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"temporal_precedence"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">temporal_precedence</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"latency_consistency"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">latency_consistency</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"matching_signal_ids"</span><span class="p">:</span> <span class="n">anomaly_signals</span><span class="p">[:</span><span class="mi">5</span><span class="p">],</span>
+            <span class="s2">"relation"</span><span class="p">:</span> <span class="n">relation</span><span class="p">,</span>
+            <span class="s2">"operator_family"</span><span class="p">:</span> <span class="n">operator_family</span><span class="p">,</span>
+            <span class="s2">"mean_lag_hours"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">mean_lag_hours</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">mean_lag_hours</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="k">else</span> <span class="n">mean_lag_hours</span><span class="p">,</span>
+            <span class="s2">"support"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">support</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span>
+            <span class="s2">"pattern_id"</span><span class="p">:</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern_id"</span><span class="p">)</span> <span class="k">if</span> <span class="n">pattern</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._evidence_score_for_past_event">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._evidence_score_for_past_event">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_evidence_score_for_past_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">documents</span><span class="p">,</span> <span class="n">pe</span><span class="p">):</span>
+        <span class="c1"># Scale context-match bonuses by the recency of the past event itself.</span>
+        <span class="c1"># Document-type bonuses are kept flat — those docs are pre-filtered for</span>
+        <span class="c1"># relevance by the KG retriever and their age is less discriminating here.</span>
+        <span class="n">recency</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_recency_factor</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"time_distance_days"</span><span class="p">))</span>
+        <span class="n">score</span> <span class="o">=</span> <span class="mf">0.25</span>
+        <span class="k">if</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_asset_ids"</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">recency</span>
+        <span class="k">if</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_component_ids"</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="n">recency</span>
+        <span class="k">if</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_failure_mode_ids"</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.20</span> <span class="o">*</span> <span class="n">recency</span>
+        <span class="n">doc_types</span> <span class="o">=</span> <span class="p">{</span><span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">documents</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)}</span>
+        <span class="k">if</span> <span class="s2">"CR"</span> <span class="ow">in</span> <span class="n">doc_types</span> <span class="ow">or</span> <span class="s2">"WO"</span> <span class="ow">in</span> <span class="n">doc_types</span><span class="p">:</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.10</span>
+        <span class="k">if</span> <span class="s2">"ECA"</span> <span class="ow">in</span> <span class="n">doc_types</span> <span class="ow">or</span> <span class="s2">"RCA"</span> <span class="ow">in</span> <span class="n">doc_types</span><span class="p">:</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.10</span>
+        <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._governance_score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._governance_score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_governance_score</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">pm_compliance</span><span class="p">,</span>
+        <span class="n">fm_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">fm_superclass</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">component_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Candidate-specific governance score from PM compliance data.</span>
+
+<span class="sd">        Returns 0.5 (neutral) when:</span>
+<span class="sd">          - no PM data is available,</span>
+<span class="sd">          - all checks passed (no maintenance contribution signal), or</span>
+<span class="sd">          - PM checks failed elsewhere on the asset but none are relevant</span>
+<span class="sd">            to this specific failure mode / component.</span>
+
+<span class="sd">        Returns &gt; 0.5 when at least one failed check is relevant to this</span>
+<span class="sd">        candidate, scaled by the number of relevant failures and how overdue</span>
+<span class="sd">        they are.  Maximum value is 0.95 (never certain from PM alone).</span>
+<span class="sd">        """</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">pm_compliance</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.5</span>
+        <span class="n">checks</span> <span class="o">=</span> <span class="n">pm_compliance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"checks"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">checks</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.5</span>
+
+        <span class="n">failed_checks</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"fail"</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">failed_checks</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.5</span>  <span class="c1"># all PM compliant — no maintenance contribution signal</span>
+
+        <span class="c1"># Without any candidate identity, no candidate-specific match is possible</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">([</span><span class="n">fm_name</span><span class="p">,</span> <span class="n">fm_superclass</span><span class="p">,</span> <span class="n">component_name</span><span class="p">]):</span>
+            <span class="k">return</span> <span class="mf">0.5</span>
+
+        <span class="n">candidate_text</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+            <span class="n">s</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">[</span><span class="n">fm_name</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span> <span class="n">fm_superclass</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">,</span> <span class="n">component_name</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">]</span> <span class="k">if</span> <span class="n">s</span>
+        <span class="p">)</span>
+        <span class="n">relevant_failed</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">failed_checks</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pm_check_relevant</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="n">candidate_text</span><span class="p">)]</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">relevant_failed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.5</span>  <span class="c1"># PM failed elsewhere on asset — not relevant to this candidate</span>
+
+        <span class="n">count_boost</span>   <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.30</span><span class="p">,</span> <span class="mf">0.15</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">relevant_failed</span><span class="p">))</span>
+        <span class="n">max_overdue</span>   <span class="o">=</span> <span class="nb">max</span><span class="p">((</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"overdue_by_days"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">relevant_failed</span><span class="p">)</span>
+        <span class="n">overdue_boost</span> <span class="o">=</span> <span class="mf">0.05</span> <span class="k">if</span> <span class="n">max_overdue</span> <span class="o">&gt;</span> <span class="mi">30</span> <span class="k">else</span> <span class="mf">0.0</span>
+        <span class="k">return</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.95</span><span class="p">,</span> <span class="mf">0.55</span> <span class="o">+</span> <span class="n">count_boost</span> <span class="o">+</span> <span class="n">overdue_boost</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._pm_check_relevant">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._pm_check_relevant">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pm_check_relevant</span><span class="p">(</span><span class="n">check</span><span class="p">,</span> <span class="n">candidate_text</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Return True if a PM check type matches keywords in the candidate's text."""</span>
+        <span class="n">check_type</span> <span class="o">=</span> <span class="n">check</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"check_type"</span><span class="p">,</span> <span class="s2">"other"</span><span class="p">)</span>
+        <span class="n">keywords</span>   <span class="o">=</span> <span class="n">_PM_CHECK_KEYWORDS</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">check_type</span><span class="p">,</span> <span class="nb">set</span><span class="p">())</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">keywords</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="nb">any</span><span class="p">(</span><span class="n">kw</span> <span class="ow">in</span> <span class="n">candidate_text</span> <span class="k">for</span> <span class="n">kw</span> <span class="ow">in</span> <span class="n">keywords</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._telemetry_score_for_fm">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._telemetry_score_for_fm">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_telemetry_score_for_fm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">fm</span><span class="p">,</span> <span class="n">component_id</span><span class="p">,</span> <span class="n">components</span><span class="p">):</span>
+        <span class="n">signals</span> <span class="o">=</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">signals</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.20</span>
+
+        <span class="n">anomaly_count</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">severity_points</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">matching_signal_ids</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">signals</span><span class="p">:</span>
+            <span class="n">anomalies</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">anomalies</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">anomaly_count</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">anomalies</span><span class="p">)</span>
+            <span class="n">matching_signal_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">))</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">anomalies</span><span class="p">:</span>
+                <span class="n">sev</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">sev</span> <span class="o">==</span> <span class="s2">"high"</span><span class="p">:</span>                    <span class="n">severity_points</span> <span class="o">+=</span> <span class="mf">1.0</span>
+                <span class="k">elif</span> <span class="n">sev</span> <span class="o">==</span> <span class="s2">"medium"</span><span class="p">:</span>
+                    <span class="n">severity_points</span> <span class="o">+=</span> <span class="mf">0.7</span>
+                <span class="k">elif</span> <span class="n">sev</span> <span class="o">==</span> <span class="s2">"low"</span><span class="p">:</span>
+                    <span class="n">severity_points</span> <span class="o">+=</span> <span class="mf">0.4</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">severity_points</span> <span class="o">+=</span> <span class="mf">0.5</span>
+
+        <span class="k">if</span> <span class="n">anomaly_count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.20</span>
+
+        <span class="n">base</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.35</span> <span class="o">+</span> <span class="mf">0.12</span> <span class="o">*</span> <span class="n">anomaly_count</span> <span class="o">+</span> <span class="mf">0.08</span> <span class="o">*</span> <span class="n">severity_points</span><span class="p">)</span>
+
+        <span class="n">seed_type</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">component_id</span> <span class="ow">and</span> <span class="n">component_id</span> <span class="ow">in</span> <span class="n">components</span><span class="p">:</span>
+            <span class="n">seed_type</span> <span class="o">=</span> <span class="n">components</span><span class="p">[</span><span class="n">component_id</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"seed_match_type"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">seed_type</span> <span class="o">==</span> <span class="s2">"telemetry"</span><span class="p">:</span>
+            <span class="n">base</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">base</span> <span class="o">+</span> <span class="mf">0.10</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="n">base</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._telemetry_score_for_past_event">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._telemetry_score_for_past_event">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_telemetry_score_for_past_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">telemetry_summary</span><span class="p">,</span> <span class="n">pe</span><span class="p">):</span>
+        <span class="n">signals</span> <span class="o">=</span> <span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]</span>
+        <span class="n">anomaly_count</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="n">signals</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">anomaly_count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.20</span>
+
+        <span class="n">score</span> <span class="o">=</span> <span class="mf">0.35</span> <span class="o">+</span> <span class="nb">min</span><span class="p">(</span><span class="mf">0.35</span><span class="p">,</span> <span class="mf">0.08</span> <span class="o">*</span> <span class="n">anomaly_count</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_failure_mode_ids"</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.10</span>
+        <span class="k">if</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_component_ids"</span><span class="p">):</span>
+            <span class="n">score</span> <span class="o">+=</span> <span class="mf">0.05</span>
+        <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">score</span><span class="p">),</span> <span class="mi">6</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._combine_scores">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._combine_scores">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_combine_scores</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scores</span><span class="p">):</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">weights</span>
+        <span class="n">total_weight</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">w</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+        <span class="k">if</span> <span class="n">total_weight</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">w</span><span class="p">[</span><span class="s2">"structural"</span><span class="p">]</span> <span class="o">*</span> <span class="n">scores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"structural"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="o">+</span> <span class="n">w</span><span class="p">[</span><span class="s2">"temporal"</span><span class="p">]</span> <span class="o">*</span> <span class="n">scores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"temporal"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="o">+</span> <span class="n">w</span><span class="p">[</span><span class="s2">"telemetry"</span><span class="p">]</span> <span class="o">*</span> <span class="n">scores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"telemetry"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="o">+</span> <span class="n">w</span><span class="p">[</span><span class="s2">"evidence"</span><span class="p">]</span> <span class="o">*</span> <span class="n">scores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"evidence"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+            <span class="o">+</span> <span class="n">w</span><span class="p">[</span><span class="s2">"governance"</span><span class="p">]</span> <span class="o">*</span> <span class="n">scores</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"governance"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="nb">round</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">raw</span> <span class="o">/</span> <span class="n">total_weight</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">),</span> <span class="mi">6</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._candidate_meets_threshold">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._candidate_meets_threshold">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_candidate_meets_threshold</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">candidate</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="n">composite_ok</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">candidate</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">))</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">minimum_composite_threshold</span>
+        <span class="n">evidence_ok</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="n">candidate</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"meets_evidence_threshold"</span><span class="p">,</span> <span class="kc">False</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">composite_ok</span> <span class="ow">and</span> <span class="n">evidence_ok</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._confidence_label">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._confidence_label">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_confidence_label</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">score</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;=</span> <span class="mf">0.75</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"high"</span>
+        <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;=</span> <span class="mf">0.45</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"medium"</span>
+        <span class="k">if</span> <span class="n">score</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">"low"</span>
+        <span class="k">return</span> <span class="s2">"speculative"</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._supporting_doc_refs">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._supporting_doc_refs">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_supporting_doc_refs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">documents</span><span class="p">,</span> <span class="n">preferred</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">d</span><span class="p">[</span><span class="s2">"doc_id"</span><span class="p">]</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">documents</span> <span class="k">if</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_id"</span><span class="p">)</span> <span class="ow">and</span> <span class="n">d</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"doc_type"</span><span class="p">)</span> <span class="ow">in</span> <span class="n">preferred</span><span class="p">][:</span><span class="mi">5</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._event_time">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._event_time">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_event_time</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span> <span class="ow">or</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._index_tskr_patterns">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._index_tskr_patterns">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_index_tskr_patterns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tskr_patterns</span><span class="p">):</span>
+        <span class="n">index</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">tskr_patterns</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">index</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">tskr_patterns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"patterns"</span><span class="p">,</span> <span class="p">[])</span> <span class="ow">or</span> <span class="p">[]:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="n">target_id</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"target_id"</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">target_id</span><span class="p">:</span>
+                <span class="n">index</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">target_id</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">index</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._lookup_tskr_pattern">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._lookup_tskr_pattern">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_lookup_tskr_pattern</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tskr_index</span><span class="p">,</span> <span class="n">target_id</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""Return the highest-confidence pattern for *target_id*, or None."""</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">tskr_index</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">target_id</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="n">patterns</span> <span class="o">=</span> <span class="n">tskr_index</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">target_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">patterns</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">patterns</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="n">p</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._pattern_confidence">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._pattern_confidence">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pattern_confidence</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pattern</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">pattern</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="n">conf</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"confidence"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">conf</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">conf</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._pattern_support">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._pattern_support">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_pattern_support</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pattern</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">pattern</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+        <span class="n">support</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"support"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">support</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">support</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="mf">0.0</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._relation_precedence_score">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._relation_precedence_score">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_relation_precedence_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relation</span><span class="p">,</span> <span class="n">has_anomalies</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">relation</span> <span class="o">==</span> <span class="s2">"precedes"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">1.0</span>
+        <span class="k">if</span> <span class="n">relation</span> <span class="o">==</span> <span class="s2">"overlaps"</span><span class="p">:</span>    <span class="c1"># anomaly active at event onset — very strong</span>
+            <span class="k">return</span> <span class="mf">0.95</span>
+        <span class="k">if</span> <span class="n">relation</span> <span class="o">==</span> <span class="s2">"contains"</span><span class="p">:</span>    <span class="c1"># long-running latent condition</span>
+            <span class="k">return</span> <span class="mf">0.90</span>
+        <span class="k">if</span> <span class="n">relation</span> <span class="o">==</span> <span class="s2">"simultaneous"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.85</span>
+        <span class="k">if</span> <span class="n">relation</span> <span class="o">==</span> <span class="s2">"unordered"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.45</span>
+        <span class="k">if</span> <span class="n">relation</span> <span class="o">==</span> <span class="s2">"during"</span><span class="p">:</span>      <span class="c1"># anomaly appeared after event onset — likely consequential</span>
+            <span class="k">return</span> <span class="mf">0.25</span>
+        <span class="k">if</span> <span class="n">relation</span> <span class="o">==</span> <span class="s2">"follows"</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.20</span>
+        <span class="k">return</span> <span class="mf">0.50</span> <span class="k">if</span> <span class="n">has_anomalies</span> <span class="k">else</span> <span class="mf">0.30</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._latency_consistency">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._latency_consistency">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_latency_consistency</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">min_h</span><span class="p">,</span> <span class="n">max_h</span><span class="p">,</span> <span class="n">inferred_delay_hours</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">inferred_delay_hours</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.30</span>
+        <span class="k">if</span> <span class="n">min_h</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">max_h</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.50</span>
+        <span class="k">if</span> <span class="n">min_h</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">inferred_delay_hours</span> <span class="o">&lt;</span> <span class="n">min_h</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.20</span>
+        <span class="k">if</span> <span class="n">max_h</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">inferred_delay_hours</span> <span class="o">&gt;</span> <span class="n">max_h</span><span class="p">:</span>
+            <span class="k">return</span> <span class="mf">0.20</span>
+        <span class="k">return</span> <span class="mf">0.95</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._fm_path_nodes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._fm_path_nodes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_fm_path_nodes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">component_id</span><span class="p">,</span> <span class="n">fm_id</span><span class="p">,</span> <span class="n">event_id</span><span class="p">,</span> <span class="n">components</span><span class="p">):</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">component_id</span><span class="p">:</span>
+            <span class="n">c</span> <span class="o">=</span> <span class="n">components</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">component_id</span><span class="p">,</span> <span class="p">{})</span>
+            <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"node_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+                <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"element_usage"</span><span class="p">,</span>
+                <span class="s2">"label"</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"name"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">component_id</span><span class="p">,</span>
+            <span class="p">})</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"node_id"</span><span class="p">:</span> <span class="n">fm_id</span><span class="p">,</span> <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"failure_mode"</span><span class="p">,</span> <span class="s2">"label"</span><span class="p">:</span> <span class="n">fm_id</span><span class="p">})</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"node_id"</span><span class="p">:</span> <span class="n">event_id</span><span class="p">,</span> <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"abnormal_event"</span><span class="p">,</span> <span class="s2">"label"</span><span class="p">:</span> <span class="n">event_id</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">path</span></div>
+
+
+<div class="viewcode-block" id="RuleBasedCausalityEngineV31._event_path_nodes">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/causality_engine_v31/index.html#src.dackar.RCA.orchestrators.causality_engine_v31.RuleBasedCausalityEngineV31._event_path_nodes">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_event_path_nodes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pe</span><span class="p">,</span> <span class="n">target_event_id</span><span class="p">):</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"asset_id"</span><span class="p">):</span>
+            <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"node_id"</span><span class="p">:</span> <span class="n">pe</span><span class="p">[</span><span class="s2">"asset_id"</span><span class="p">],</span> <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"element_usage"</span><span class="p">,</span> <span class="s2">"label"</span><span class="p">:</span> <span class="n">pe</span><span class="p">[</span><span class="s2">"asset_id"</span><span class="p">]})</span>
+        <span class="k">if</span> <span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">):</span>
+            <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"node_id"</span><span class="p">:</span> <span class="n">pe</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">],</span> <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"element_usage"</span><span class="p">,</span> <span class="s2">"label"</span><span class="p">:</span> <span class="n">pe</span><span class="p">[</span><span class="s2">"component_id"</span><span class="p">]})</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"node_id"</span><span class="p">:</span> <span class="n">pe</span><span class="p">[</span><span class="s2">"event_id"</span><span class="p">],</span> <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"abnormal_event"</span><span class="p">,</span> <span class="s2">"label"</span><span class="p">:</span> <span class="n">pe</span><span class="p">[</span><span class="s2">"event_id"</span><span class="p">]})</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">"node_id"</span><span class="p">:</span> <span class="n">target_event_id</span><span class="p">,</span> <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"abnormal_event"</span><span class="p">,</span> <span class="s2">"label"</span><span class="p">:</span> <span class="n">target_event_id</span><span class="p">})</span>
+        <span class="k">return</span> <span class="n">path</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

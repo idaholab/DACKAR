@@ -1,0 +1,265 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>src.dackar.RCA.orchestrators.input_guards &mdash; DACKAR 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/graphviz.css?v=4ae1632d" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../../../../_static/documentation_options.js?v=2709fde1"></script>
+      <script src="../../../../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../../../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../../../../_static/copybutton.js?v=f281be69"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    <script src="../../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../../index.html" class="icon icon-home">
+            DACKAR
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../install_new.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../support.html">Support</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../notebooks/index.html">Notebooks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../knowledge_graph.html">Knowledge Graph Construction Through Neo4j</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">More documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../../autoapi/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../../index.html">DACKAR</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../../index.html">Module code</a></li>
+          <li class="breadcrumb-item"><a href="../../../dackar.html">src.dackar</a></li>
+      <li class="breadcrumb-item active">src.dackar.RCA.orchestrators.input_guards</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for src.dackar.RCA.orchestrators.input_guards</h1><div class="highlight"><pre>
+<span></span><span class="sd">"""</span>
+<span class="sd">Stage A cross-artifact checks (RCA SE Review §3.4–3.5, §6.1 A1 / A2).</span>
+
+<span class="sd">Non-blocking warnings—runs continue; issues surface in ``run_context.input_guards``.</span>
+<span class="sd">"""</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.._timeutils</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_dt</span>
+
+<div class="viewcode-block" id="JsonDict">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/input_guards/index.html#src.dackar.RCA.orchestrators.input_guards.JsonDict">[docs]</a>
+<span class="n">JsonDict</span> <span class="o">=</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="assert_output_dir_writable">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/input_guards/index.html#src.dackar.RCA.orchestrators.input_guards.assert_output_dir_writable">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">assert_output_dir_writable</span><span class="p">(</span><span class="n">root</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A3: fail fast if artifact root cannot be created or written (SE review §6.1)."""</span>
+    <span class="n">root</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">root</span><span class="p">)</span>
+    <span class="n">root</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">root</span><span class="p">),</span> <span class="n">os</span><span class="o">.</span><span class="n">W_OK</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"output_dir is not writable: </span><span class="si">{</span><span class="n">root</span><span class="si">}</span><span class="s2"> — fix permissions before running the pipeline."</span>
+        <span class="p">)</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">root</span> <span class="o">/</span> <span class="s2">".__dackar_w_ok"</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">t</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="s2">"1"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">t</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+            <span class="k">pass</span>
+    <span class="k">except</span> <span class="ne">OSError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"output_dir is not writable (probe write failed): </span><span class="si">{</span><span class="n">root</span><span class="si">}</span><span class="s2"> — </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">"</span>
+        <span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span></div>
+
+
+
+<div class="viewcode-block" id="build_input_guards">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/input_guards/index.html#src.dackar.RCA.orchestrators.input_guards.build_input_guards">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">build_input_guards</span><span class="p">(</span>
+    <span class="n">event</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
+    <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">operational_context</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="n">pm_compliance</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">pm_staleness_threshold_days</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span><span class="p">,</span>
+    <span class="n">oc_staleness_threshold_hours</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">48</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""</span>
+<span class="sd">    Return structured warnings for *temporal consistency* and *event scoping* (soft signals).</span>
+
+<span class="sd">    Does not block the run; the orchestrator stores this on ``run_context`` for analysts / viz.</span>
+<span class="sd">    """</span>
+    <span class="n">flags</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">notes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">event_ts</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span>
+        <span class="p">(</span><span class="n">event</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">)</span>
+        <span class="ow">or</span> <span class="p">(</span><span class="n">event</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp"</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">eid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">((</span><span class="n">event</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="n">event</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">event_ts</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"missing_event_timestamp"</span><span class="p">)</span>
+        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="s2">"event.timestamp_start is null or absent — all temporal guard checks will be skipped (SE §3.4 / A1)."</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">event_ts</span> <span class="ow">and</span> <span class="n">telemetry_summary</span><span class="p">:</span>
+        <span class="n">win</span> <span class="o">=</span> <span class="p">(</span><span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"window"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+        <span class="n">wend</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">win</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end"</span><span class="p">))</span>
+        <span class="n">wstart</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">win</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"start"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">wend</span> <span class="ow">and</span> <span class="n">event_ts</span> <span class="ow">and</span> <span class="n">wend</span> <span class="o">&lt;</span> <span class="n">event_ts</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"telemetry_window_end_before_event"</span><span class="p">)</span>
+            <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">"telemetry_summary.window.end is before event.timestamp_start — summary may not cover the event (SE §3.4 / A1)."</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">wstart</span> <span class="ow">and</span> <span class="n">event_ts</span> <span class="ow">and</span> <span class="n">wstart</span> <span class="o">&gt;</span> <span class="n">event_ts</span><span class="p">:</span>
+            <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"telemetry_window_starts_after_event"</span><span class="p">)</span>
+            <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="s2">"telemetry_summary.window.start is after event.timestamp_start — time window is inconsistent (SE §3.4 / A1)."</span>
+            <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">event_ts</span> <span class="ow">and</span> <span class="n">pm_compliance</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pm_compliance</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">ad</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">pm_compliance</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"assessment_date"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">ad</span> <span class="ow">and</span> <span class="n">event_ts</span><span class="p">:</span>
+            <span class="n">days</span> <span class="o">=</span> <span class="p">(</span><span class="n">event_ts</span><span class="o">.</span><span class="n">date</span><span class="p">()</span> <span class="o">-</span> <span class="n">ad</span><span class="o">.</span><span class="n">date</span><span class="p">())</span><span class="o">.</span><span class="n">days</span>
+            <span class="k">if</span> <span class="n">days</span> <span class="o">&gt;</span> <span class="n">pm_staleness_threshold_days</span><span class="p">:</span>
+                <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"pm_compliance_possibly_stale"</span><span class="p">)</span>
+                <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"pm_compliance.assessment_date is </span><span class="si">{</span><span class="n">days</span><span class="si">}</span><span class="s2"> d before the event (threshold </span><span class="si">{</span><span class="n">pm_staleness_threshold_days</span><span class="si">}</span><span class="s2"> d) (SE §3.4 / NM1)."</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">days</span> <span class="o">&lt;</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"pm_compliance_assessment_after_event"</span><span class="p">)</span>
+                <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="s2">"pm_compliance.assessment_date is after the event time — check assessment_date semantics."</span>
+                <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">event_ts</span> <span class="ow">and</span> <span class="n">operational_context</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">operational_context</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="n">as_of</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">operational_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"as_of_timestamp"</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">as_of</span> <span class="ow">and</span> <span class="n">event_ts</span><span class="p">:</span>
+            <span class="n">delta</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">((</span><span class="n">event_ts</span> <span class="o">-</span> <span class="n">as_of</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="o">/</span> <span class="mf">3600.0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">delta</span> <span class="o">&gt;</span> <span class="nb">float</span><span class="p">(</span><span class="n">oc_staleness_threshold_hours</span><span class="p">):</span>
+                <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"operational_context_as_of_may_be_stale"</span><span class="p">)</span>
+                <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"operational_context.as_of_timestamp is </span><span class="si">{</span><span class="n">delta</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> h from the event (threshold </span><span class="si">{</span><span class="n">oc_staleness_threshold_hours</span><span class="si">}</span><span class="s2"> h) (SE §3.4 / NM1)."</span>
+                <span class="p">)</span>
+        <span class="k">if</span> <span class="n">eid</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">alarm</span> <span class="ow">in</span> <span class="p">(</span><span class="n">operational_context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"recent_alarms"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alarm</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                    <span class="n">oth</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span>
+                        <span class="n">alarm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"related_event_id"</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="n">alarm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"correlated_event_id"</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="n">alarm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"parent_event_id"</span><span class="p">)</span>
+                        <span class="ow">or</span> <span class="s2">""</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">oth</span> <span class="ow">and</span> <span class="n">oth</span> <span class="o">!=</span> <span class="n">eid</span><span class="p">:</span>
+                        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"possible_multi_event_overlap"</span><span class="p">)</span>
+                        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="s2">"recent_alarms references a different event id than the current analysis (SE §3.5 / NM2)."</span>
+                        <span class="p">)</span>
+                        <span class="k">break</span>
+                    <span class="n">txt</span> <span class="o">=</span> <span class="s2">" "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+                        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="n">alarm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"message"</span><span class="p">),</span> <span class="n">alarm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"description"</span><span class="p">),</span> <span class="n">alarm</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"text"</span><span class="p">))</span>
+                        <span class="k">if</span> <span class="n">x</span>
+                    <span class="p">)</span>
+                    <span class="k">if</span> <span class="n">eid</span> <span class="ow">in</span> <span class="n">txt</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span>
+                        <span class="n">k</span> <span class="ow">in</span> <span class="n">txt</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"related event"</span><span class="p">,</span> <span class="s2">"linked event"</span><span class="p">,</span> <span class="s2">"repeat"</span><span class="p">,</span> <span class="s2">"prior event"</span><span class="p">)</span>
+                    <span class="p">):</span>
+                        <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"possible_multi_event_overlap"</span><span class="p">)</span>
+                        <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="s2">"recent_alarms text may indicate multi-event / correlated sequence (SE §3.5 / NM2)."</span>
+                        <span class="p">)</span>
+                        <span class="k">break</span>
+                <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alarm</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">eid</span> <span class="ow">in</span> <span class="n">alarm</span><span class="p">:</span>
+                    <span class="n">flags</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"possible_multi_event_overlap"</span><span class="p">)</span>
+                    <span class="n">notes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">"Event id </span><span class="si">{</span><span class="n">eid</span><span class="si">!r}</span><span class="s2"> appears in a recent_alarms string (SE §3.5 / NM2)."</span>
+                    <span class="p">)</span>
+                    <span class="k">break</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">"flags"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">flags</span><span class="p">)),</span>
+        <span class="s2">"notes"</span><span class="p">:</span> <span class="nb">list</span><span class="p">(</span><span class="nb">dict</span><span class="o">.</span><span class="n">fromkeys</span><span class="p">(</span><span class="n">notes</span><span class="p">)),</span>
+    <span class="p">}</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright Copyright 2024, Battelle Energy Alliance, LLC  ALL RIGHTS RESERVED.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
