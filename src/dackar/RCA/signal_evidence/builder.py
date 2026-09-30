@@ -6,7 +6,7 @@ from statistics import mean, stdev
 from typing import Any, Dict, List, Optional, Set, Tuple
 from uuid import uuid4
 
-from orchestrators.temporal_relations import (
+from ..orchestrators.temporal_relations import (
     PRECEDES,
     OVERLAPS,
     allen_relation,
