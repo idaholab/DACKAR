@@ -25,20 +25,15 @@ Run:  pytest test_step35_signal_lessons_learned.py -v
 import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
              "langchain_community.vectorstores", "langchain_community.embeddings"):
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
-from orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
+from dackar.RCA.orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
 
 BUILD_SLL = RCAReasoningOrchestrator._build_signal_lessons_learned
 

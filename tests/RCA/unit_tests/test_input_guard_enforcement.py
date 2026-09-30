@@ -5,12 +5,7 @@ Run directly:   python test_input_guard_enforcement.py
 Or via pytest:  pytest test_input_guard_enforcement.py
 """
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 # Stub optional heavy dependencies imported by orchestrator module load.
 for _mod in (
@@ -24,7 +19,7 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
 
 def test_warn_only_mode_never_aborts():

@@ -20,20 +20,15 @@ Coverage (one section per fix):
 """
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from orchestrators.tskr_temporal_scorer import (
+from dackar.RCA.orchestrators.tskr_temporal_scorer import (
     TSKRTemporalScorerV1,
     TSKRTemporalScorerConfig,
     RecurrenceProfile,
     parse_dt,
 )
-from orchestrators.temporal_relations import OVERLAPS, CONTAINS, PRECEDES, DURING, FOLLOWS
+from dackar.RCA.orchestrators.temporal_relations import OVERLAPS, CONTAINS, PRECEDES, DURING, FOLLOWS
 
 # ── shared helpers ─────────────────────────────────────────────────────────────
 
@@ -420,7 +415,7 @@ def test_g3_attention_flag_escalated_to_rca_card():
         if _mod not in sys.modules:
             sys.modules[_mod] = MagicMock()
 
-    from orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
+    from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
     rca_card = {"executive_summary": {}}
     tskr_patterns = {
@@ -440,7 +435,7 @@ def test_g3_no_flag_in_rca_card_when_all_stable():
         if _mod not in sys.modules:
             sys.modules[_mod] = MagicMock()
 
-    from orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
+    from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
     rca_card = {"executive_summary": {}}
     tskr_patterns = {

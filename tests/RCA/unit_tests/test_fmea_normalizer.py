@@ -5,13 +5,7 @@ Run directly:   python test_fmea_normalizer.py
 Or via pytest:  pytest test_fmea_normalizer.py
 """
 import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from doc_parsers.fmea_normalizer import (
+from dackar.RCA.doc_parsers.fmea_normalizer import (
     normalize_fmea_records,
     FIELD_STATUS_DERIVED,
     FIELD_STATUS_MISSING_CRITICAL,

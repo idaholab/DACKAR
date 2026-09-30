@@ -21,13 +21,7 @@ Reinstatement logic (refine_with_evidence):
  10. Reinstated candidate has retained_as_review_alternative=True
 """
 import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32, CausalityEngineConfigV32
+from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32, CausalityEngineConfigV32
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

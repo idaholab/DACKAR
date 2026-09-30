@@ -9,13 +9,8 @@ Coverage:
     count, per-candidate summaries
 """
 import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in (
     "neo4j", "py2neo", "chromadb",
@@ -25,8 +20,8 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from cross_pattern.models import CandidateCrossPatternEvidence, CrossPatternLink
-from cross_pattern.summary import (
+from dackar.RCA.cross_pattern.models import CandidateCrossPatternEvidence, CrossPatternLink
+from dackar.RCA.cross_pattern.summary import (
     format_rca_card_cross_pattern_summary,
     build_manifest_cross_pattern_summary,
     get_cross_pattern_attention_flags,

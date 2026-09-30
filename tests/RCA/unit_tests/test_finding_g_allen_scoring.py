@@ -11,21 +11,16 @@ Covers:
 Run:  pytest test_finding_g_allen_scoring.py -v
 """
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 from typing import Optional
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
              "langchain_community.vectorstores", "langchain_community.embeddings"):
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32
-from orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
+from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
 ENGINE = RuleBasedCausalityEngineV32
 
@@ -345,7 +340,7 @@ def _make_evidence_bundle() -> dict:
 
 
 def test_refine_applies_allen_blend_when_map_provided():
-    from orchestrators.causality_engine_v32 import CausalityEngineConfigV32
+    from dackar.RCA.orchestrators.causality_engine_v32 import CausalityEngineConfigV32
     # Use a low evidence threshold so the candidate survives the refine pass
     # (with no retrieved docs, refined evidence = 0.30 × prior ≈ 0.12).
     engine = RuleBasedCausalityEngineV32(CausalityEngineConfigV32(
@@ -366,7 +361,7 @@ def test_refine_applies_allen_blend_when_map_provided():
 
 
 def test_refine_no_allen_map_leaves_blend_fields_false():
-    from orchestrators.causality_engine_v32 import CausalityEngineConfigV32
+    from dackar.RCA.orchestrators.causality_engine_v32 import CausalityEngineConfigV32
     engine = RuleBasedCausalityEngineV32(CausalityEngineConfigV32(
         minimum_evidence_threshold=0.05, minimum_composite_threshold=0.20))
     candidates = _make_candidates("COMP-A", temporal=0.50)
@@ -383,7 +378,7 @@ def test_refine_no_allen_map_leaves_blend_fields_false():
 def test_refine_allen_follows_blocks_candidate_via_timeline_gate():
     """Allen 'follows' relation sets temporal_contradiction, which the timeline gate
     detects and records in hard_gates and ruleout (preserved in compacted filtered candidate)."""
-    from orchestrators.causality_engine_v32 import CausalityEngineConfigV32
+    from dackar.RCA.orchestrators.causality_engine_v32 import CausalityEngineConfigV32
     engine = RuleBasedCausalityEngineV32(CausalityEngineConfigV32(
         minimum_evidence_threshold=0.05, minimum_composite_threshold=0.20))
     nodes = [_node("anomaly", "COMP-B", "follows", 0.10, causal_candidate=False)]

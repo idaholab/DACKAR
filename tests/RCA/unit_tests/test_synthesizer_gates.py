@@ -23,13 +23,7 @@ _passes_minimum_evidence_gate:
   7. Supporting evidence present → True
 """
 import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
+from dackar.RCA.synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
 
 
 # ── Stub LLM ──────────────────────────────────────────────────────────────────

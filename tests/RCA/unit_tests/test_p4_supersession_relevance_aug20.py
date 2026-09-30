@@ -12,12 +12,7 @@ Run:  pytest test_p4_supersession_relevance_aug20.py -v
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb",
              "langchain_community", "langchain_community.vectorstores",
@@ -25,7 +20,7 @@ for _mod in ("neo4j", "py2neo", "chromadb",
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.supersession import (  # noqa: E402
+from dackar.RCA.orchestrators.supersession import (  # noqa: E402
     resolve_supersession,
     _RELEVANCE_SUPERSEDE_MARGIN,
 )

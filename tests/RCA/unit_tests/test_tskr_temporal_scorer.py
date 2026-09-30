@@ -22,15 +22,8 @@ Coverage:
 Run directly:   python test_tskr_temporal_scorer.py
 Or via pytest:  pytest test_tskr_temporal_scorer.py
 """
-import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from orchestrators.temporal_relations import (
+from dackar.RCA.orchestrators.temporal_relations import (
     Interval,
     allen_relation,
     onset_lag_hours,
@@ -38,7 +31,7 @@ from orchestrators.temporal_relations import (
     RELATION_SCORE,
     PRECEDES, OVERLAPS, CONTAINS, DURING, FOLLOWS,
 )
-from orchestrators.tskr_temporal_scorer import (
+from dackar.RCA.orchestrators.tskr_temporal_scorer import (
     TSKRTemporalScorerV1,
     TSKRTemporalScorerConfig,
     RecurrenceProfile,
@@ -521,18 +514,35 @@ def test_normalized_weighted_sum_rescales_non_convex_weights():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def test_infer_operator_family_full():
-    result = sc()._infer_operator_family(h(0), h(10), [win(0, 1)])
+    # Real event end supplied (interval) + interval anomaly window.
+    result = sc()._infer_operator_family(
+        h(0), h(10), [win(0, 1)], event_end_supplied=True
+    )
     assert result == "interval_interval"
+
+
+def test_infer_operator_family_interval_point():
+    # Interval event + point anomaly window collapses to interval_point.
+    result = sc()._infer_operator_family(
+        h(0), h(10), [win(0, 0)], event_end_supplied=True
+    )
+    assert result == "interval_point"
+
+
+def test_infer_operator_family_point_point():
+    # No real event end (synthesized) + point anomaly window -> point_point.
+    result = sc()._infer_operator_family(h(0), h(0), [win(0, 0)])
+    assert result == "point_point"
 
 
 def test_infer_operator_family_no_anomalies():
     result = sc()._infer_operator_family(h(0), h(10), [])
-    assert result == "interval_only"
+    assert result is None
 
 
 def test_infer_operator_family_no_event_interval():
     result = sc()._infer_operator_family(None, None, [win(0, 1)])
-    assert result == "anomaly_only"
+    assert result is None
 
 
 def test_infer_operator_family_nothing():
