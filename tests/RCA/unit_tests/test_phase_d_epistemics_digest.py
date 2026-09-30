@@ -21,12 +21,7 @@ Covers:
 """
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in (
     "neo4j", "py2neo",
@@ -37,8 +32,8 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.epistemics_digest import build_epistemics_digests, build_epistemics_run_summary
-from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31 as RCASynthesizer
+from dackar.RCA.orchestrators.epistemics_digest import build_epistemics_digests, build_epistemics_run_summary
+from dackar.RCA.synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31 as RCASynthesizer
 
 
 # ---------------------------------------------------------------------------

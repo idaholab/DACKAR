@@ -21,12 +21,7 @@ Run:  pytest test_n5_causal_negation_aug20.py -v
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb",
              "langchain_community", "langchain_community.vectorstores",
@@ -34,11 +29,11 @@ for _mod in ("neo4j", "py2neo", "chromadb",
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.evidence_retriever import (  # noqa: E402
+from dackar.RCA.orchestrators.evidence_retriever import (  # noqa: E402
     ChromaEvidenceRetriever,
     EvidenceRetrieverConfig,
 )
-from ner.causal_condition_adapter import (  # noqa: E402
+from dackar.RCA.ner.causal_condition_adapter import (  # noqa: E402
     _tuple_to_causal_dict,
     _build_causal_statement,
     _route_negated_statements,

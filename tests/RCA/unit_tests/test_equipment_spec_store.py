@@ -6,15 +6,9 @@ load_collection() before querying, so a disk-backed store queried from a fresh
 process (which has performed no upsert and so has no in-memory collection state)
 still resolves Tier 3 instead of raising ValueError and silently returning [].
 """
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from equipment_similarity.equipment_spec_store import (
+from dackar.RCA.equipment_similarity.equipment_spec_store import (
     EQUIPMENT_SPECS_DOC_TYPE,
     EquipmentSpecStore,
 )

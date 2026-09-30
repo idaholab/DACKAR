@@ -11,13 +11,8 @@ Coverage:
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in (
     "neo4j", "py2neo", "chromadb",
@@ -27,9 +22,9 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from cross_pattern.config import CrossPatternConfig
-from cross_pattern.linker import CrossPatternLinker
-from cross_pattern.models import HistoricalDocExtraction
+from dackar.RCA.cross_pattern.config import CrossPatternConfig
+from dackar.RCA.cross_pattern.linker import CrossPatternLinker
+from dackar.RCA.cross_pattern.models import HistoricalDocExtraction
 
 
 # ---------------------------------------------------------------------------

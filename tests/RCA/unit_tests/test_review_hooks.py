@@ -27,12 +27,7 @@ _compute_review_hooks builds writeback_ready (8-condition AND gate) and next_ste
   outputs_ok default: missing output_validation → False (safe default)
 """
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 # Stub heavy optional dependencies that are not needed for unit-testing
 # _compute_review_hooks (which is a pure dict-manipulation method).
@@ -41,7 +36,7 @@ for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator, OrchestratorConfig
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator, OrchestratorConfig
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

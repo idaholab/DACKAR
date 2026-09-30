@@ -4,15 +4,9 @@ Contract checks for Stage B.5 -> Stage F evidence blending.
 Run:
   python test_stage_f_chain_evidence.py
 """
-import sys
-from pathlib import Path
 from typing import Any, Dict
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from orchestrators.causality_engine_v32 import CausalityEngineConfigV32, RuleBasedCausalityEngineV32
+from dackar.RCA.orchestrators.causality_engine_v32 import CausalityEngineConfigV32, RuleBasedCausalityEngineV32
 
 
 def _base_candidates() -> Dict[str, Any]:
