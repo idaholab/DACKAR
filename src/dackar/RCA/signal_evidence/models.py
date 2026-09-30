@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from orchestrators.temporal_relations import Interval
+from ..orchestrators.temporal_relations import Interval
 
 
 @dataclass

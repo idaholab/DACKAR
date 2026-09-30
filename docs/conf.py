@@ -41,7 +41,11 @@ extensions = [
     "sphinx.ext.autosummary",
 	"nbsphinx",  # <- For Jupyter Notebook support
 	"sphinx.ext.imgmath",
-	"sphinx.ext.viewcode",
+	# sphinx.ext.viewcode disabled: autoapi documents pydantic's synthetic dunder
+	# members (e.g. __pydantic_fields_set__ on outage_model.models) with source
+	# line numbers past EOF, which crashes viewcode.collect_pages. autoapi renders
+	# its own API pages without it; only the "[source]" links are lost.
+	# "sphinx.ext.viewcode",
 	'autoapi.extension',
     'sphinx_copybutton',
     'sphinx.ext.autodoc',
