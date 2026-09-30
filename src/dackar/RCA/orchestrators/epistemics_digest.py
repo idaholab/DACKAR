@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 # Borrow constants and helpers from the supersession module — same package,
 # no circular dependency risk.
-from orchestrators.supersession import (
+from .supersession import (
     _authority_rank,
     _epistemic_class_from_meta,
     _ANALYZES_CLASS,
