@@ -20,7 +20,7 @@ from .temporal_relations import (
     DURING,
     FOLLOWS,
 )
-from dackar.RCA._timeutils import parse_dt
+from .._timeutils import parse_dt
 
 JsonDict = Dict[str, Any]
 
