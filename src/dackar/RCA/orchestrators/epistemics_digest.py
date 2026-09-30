@@ -36,13 +36,34 @@ def _authority_level(meta: JsonDict) -> str:
 
 
 def _classification_resolution_level(meta: JsonDict) -> str:
-    """How the epistemic class was determined for this hit."""
+    """How the epistemic class was determined for this hit.
+
+    Prefers the explicit ``classification_resolution_level`` written upstream by
+    ``doc_extraction`` (``finding_status`` / ``authority_level`` / ``doc_type`` /
+    ``default``); only when that provenance is absent does it fall back to
+    inferring the level locally.
+    """
+    explicit = meta.get("classification_resolution_level")
+    if explicit:
+        return str(explicit)
     if meta.get("epistemic_class"):
         return "annotation"
     doc_type = str(meta.get("doc_type") or "").upper().strip()
     if doc_type:
         return "doc_type_fallback"
     return "default"
+
+
+def _is_degraded(meta: JsonDict) -> bool:
+    """Whether this hit's epistemic classification is degraded.
+
+    Prefers the explicit ``degraded_classification`` flag written upstream by
+    ``doc_extraction``; only when that flag is absent does it fall back to
+    treating a hit with no ``epistemic_class`` annotation as degraded.
+    """
+    if "degraded_classification" in meta:
+        return bool(meta["degraded_classification"])
+    return not meta.get("epistemic_class")
 
 
 def build_epistemics_digests(
@@ -81,7 +102,7 @@ def build_epistemics_digests(
         for hit in hits:
             meta = hit.get("metadata") or {}
             ep_class = _epistemic_class_from_meta(meta)
-            if not meta.get("epistemic_class"):
+            if _is_degraded(meta):
                 degraded_count += 1
 
             if ep_class == _ANALYZES_CLASS:
@@ -145,7 +166,7 @@ def build_epistemics_run_summary(
         res_level = _classification_resolution_level(meta)
         resolution_level_counts[res_level] = resolution_level_counts.get(res_level, 0) + 1
 
-        if not meta.get("epistemic_class"):
+        if _is_degraded(meta):
             doc_type = str(meta.get("doc_type") or "unknown").upper().strip()
             degraded_by_doc_type[doc_type] = degraded_by_doc_type.get(doc_type, 0) + 1
 
