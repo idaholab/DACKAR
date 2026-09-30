@@ -20,11 +20,9 @@ import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
 _SCENARIO_ROOT = Path(__file__).resolve().parents[1] / "scenario"
 _TESTS_SHARED = _SCENARIO_ROOT / "shared"
-for _p in (str(_RCA_ROOT), str(_TESTS_SHARED)):
+for _p in (str(_TESTS_SHARED),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -37,11 +35,11 @@ for _mod in (
 
 import pytest  # noqa: E402
 
-from orchestrators.causality_engine_v32 import (  # noqa: E402
+from dackar.RCA.orchestrators.causality_engine_v32 import (  # noqa: E402
     RuleBasedCausalityEngineV32,
     CausalityEngineConfigV32,
 )
-from orchestrators.kg_context_builder import (  # noqa: E402
+from dackar.RCA.orchestrators.kg_context_builder import (  # noqa: E402
     Neo4jKGContextBuilder,
     KGContextBuilderConfig,
 )

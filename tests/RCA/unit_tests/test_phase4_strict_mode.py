@@ -1,14 +1,11 @@
 """
 Phase 4 strict-mode validation tests.
 """
-import sys
 from pathlib import Path
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
-from validation.schema_validator import RCAArtifactValidator
+from dackar.RCA.validation.schema_validator import RCAArtifactValidator
 
 
 def _base_payload():

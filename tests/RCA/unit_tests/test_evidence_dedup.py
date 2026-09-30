@@ -15,13 +15,7 @@ Key invariants tested:
   7. All-context input → all unique snippets included
 """
 import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from orchestrators.evidence_retriever import (
+from dackar.RCA.orchestrators.evidence_retriever import (
     ChromaEvidenceRetriever,
     InMemoryEvidenceStore,
 )

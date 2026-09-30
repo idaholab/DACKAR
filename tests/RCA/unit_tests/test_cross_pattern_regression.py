@@ -21,8 +21,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, call, patch
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in (
     "neo4j", "py2neo", "chromadb",
@@ -32,12 +30,12 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.tskr_temporal_scorer import (
+from dackar.RCA.orchestrators.tskr_temporal_scorer import (
     TSKRTemporalScorerV1,
     TSKRTemporalScorerConfig,
     RecurrenceProfile,
 )
-from cross_pattern.models import CandidateCrossPatternEvidence, CrossPatternLink
+from dackar.RCA.cross_pattern.models import CandidateCrossPatternEvidence, CrossPatternLink
 
 
 # ---------------------------------------------------------------------------
@@ -143,8 +141,8 @@ def test_rca_card_cross_pattern_summary_does_not_contain_composite_score():
     # We use importlib to load only the file-level constants/functions we need.
     # Build a minimal cross_pattern_evidence dict and call format_rca_card_cross_pattern_summary
     # (the same logic used by _build_rca_card_cross_pattern_summary) to check no composite_score
-    from cross_pattern.models import CandidateCrossPatternEvidence
-    from cross_pattern.summary import format_rca_card_cross_pattern_summary
+    from dackar.RCA.cross_pattern.models import CandidateCrossPatternEvidence
+    from dackar.RCA.cross_pattern.summary import format_rca_card_cross_pattern_summary
 
     evidences = [
         CandidateCrossPatternEvidence(

@@ -27,13 +27,7 @@ _temporal_posture:
   otherwise                                 → "weak"
 """
 import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32
+from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

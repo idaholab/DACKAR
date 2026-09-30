@@ -17,28 +17,25 @@ The review-fix classes use ``_rf_``-prefixed fixtures so they do not shadow the
 baseline fixtures above them.
 """
 import json
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
-from cmms_integration.cmms_adapter import (
+from dackar.RCA.cmms_integration.cmms_adapter import (
     MockCMMSAdapter,
     NoOpCMMSAdapter,
     normalize_cmms_status,
 )
-from cmms_integration.cmms_context_builder import (
+from dackar.RCA.cmms_integration.cmms_context_builder import (
     _CR_SCHEMA_KEYS,
     CMMSContextBuilder,
     CMMSContextBuilderConfig,
 )
-from cmms_integration.maximo_cmms_adapter import MaximoCMMSAdapter
-from cmms_integration.sap_pm_cmms_adapter import SAPPMCMMSAdapter
+from dackar.RCA.cmms_integration.maximo_cmms_adapter import MaximoCMMSAdapter
+from dackar.RCA.cmms_integration.sap_pm_cmms_adapter import SAPPMCMMSAdapter
 
 
 # ---------------------------------------------------------------------------

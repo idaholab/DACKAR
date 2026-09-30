@@ -6,16 +6,11 @@ Run directly:
 """
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from signal_evidence.builder import build_signal_evidence
-from signal_evidence.historian_adapter import HistorianAdapter, NullHistorianAdapter
-from signal_evidence.models import AnomalyRecord
+from dackar.RCA.signal_evidence.builder import build_signal_evidence
+from dackar.RCA.signal_evidence.historian_adapter import HistorianAdapter, NullHistorianAdapter
+from dackar.RCA.signal_evidence.models import AnomalyRecord
 
 
 class _FakeNeo4j:
