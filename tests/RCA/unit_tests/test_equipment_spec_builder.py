@@ -1,14 +1,7 @@
 """
 Unit tests for equipment_similarity.equipment_spec_builder.
 """
-import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from equipment_similarity.equipment_spec_builder import EquipmentSpecBuilder
+from dackar.RCA.equipment_similarity.equipment_spec_builder import EquipmentSpecBuilder
 
 
 def test_identity_line_uses_name_and_component_id():

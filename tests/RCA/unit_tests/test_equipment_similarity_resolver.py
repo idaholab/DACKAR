@@ -4,18 +4,12 @@ and SisterComponent.
 
 Uses a MockEquipmentSpecStore (no live Chroma or Neo4j required).
 """
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
 import pytest
-from equipment_similarity.equipment_similarity_resolver import (
+from dackar.RCA.equipment_similarity.equipment_similarity_resolver import (
     NON_EMBEDDING_DISTANCE,
     EquipmentSimilarityConfig,
     EquipmentSimilarityResolver,
