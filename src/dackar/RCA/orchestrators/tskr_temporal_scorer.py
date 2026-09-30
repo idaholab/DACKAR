@@ -8,7 +8,7 @@ import math
 
 logger = logging.getLogger(__name__)
 
-from orchestrators.temporal_relations import (
+from .temporal_relations import (
     Interval,
     allen_relation,
     onset_lag_hours,
@@ -139,7 +139,8 @@ class TSKRTemporalScorerV1:
         event_id = event.get("event_id") or event.get("id")
         asset_id = event.get("asset_id")
         event_start = parse_dt(event.get("timestamp_start"))
-        event_end   = parse_dt(event.get("timestamp_end")) or event_start
+        event_end_supplied = parse_dt(event.get("timestamp_end"))
+        event_end   = event_end_supplied or event_start
 
         telemetry_windows = (
             self._extract_anomaly_windows_from_signal_evidence(signal_evidence)
@@ -158,7 +159,10 @@ class TSKRTemporalScorerV1:
         signal_ids           = self._extract_signal_ids(telemetry_summary)
         telemetry_support    = self._telemetry_support_score(telemetry_windows)
         tone_summary         = self._summarize_tones(all_windows)
-        operator_family      = self._infer_operator_family(event_start, event_end, all_windows)
+        operator_family      = self._infer_operator_family(
+            event_start, event_end, all_windows,
+            event_end_supplied=event_end_supplied is not None,
+        )
 
         past_events = self._normalize_past_events(kg_context.get("past_events") or [])
         stage_b_allen_by_component = self._stage_b_allen_relation_by_component(kg_context)
@@ -700,14 +704,33 @@ class TSKRTemporalScorerV1:
         event_start: Optional[datetime],
         event_end: Optional[datetime],
         anomaly_windows: List[Dict[str, Any]],
+        event_end_supplied: bool = False,
     ) -> Optional[str]:
-        if event_start and event_end and anomaly_windows:
+        """Classify the temporal-operator family from the event and anomaly shapes.
+
+        Emits only the TSKR schema vocabulary: ``interval_interval``,
+        ``interval_point``, ``point_point``, or ``None``. The event counts as an
+        interval only when a real ``timestamp_end`` was supplied and it is strictly
+        after ``timestamp_start``; the ``score()`` fallback that copies the start
+        into a missing end does not turn a point event into an interval. An anomaly
+        side is an interval when any window has an end strictly after its start
+        (SOE records, unacknowledged alarms, and end-less telemetry anomalies are
+        points). With no event start or no anomaly windows there is no operator
+        pairing, so the family is ``None``.
+        """
+        if event_start is None or not anomaly_windows:
+            return None
+        event_is_interval = bool(
+            event_end_supplied and event_end is not None and event_end > event_start
+        )
+        anomaly_is_interval = any(
+            w.get("end") and w["end"] > w["start"] for w in anomaly_windows
+        )
+        if event_is_interval and anomaly_is_interval:
             return "interval_interval"
-        if event_start and event_end:
-            return "interval_only"
-        if anomaly_windows:
-            return "anomaly_only"
-        return None
+        if event_is_interval or anomaly_is_interval:
+            return "interval_point"
+        return "point_point"
 
     # ------------------------------------------------------------------ #
     # Allen-relation scoring                                                #
