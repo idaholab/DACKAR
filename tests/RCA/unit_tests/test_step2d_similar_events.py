@@ -15,23 +15,18 @@ Run:  pytest test_step2d_similar_events.py -v
 """
 import sys
 from copy import deepcopy
-from pathlib import Path
 from typing import Dict, List, Optional
 from unittest.mock import MagicMock, patch
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
              "langchain_community.vectorstores", "langchain_community.embeddings"):
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
-from adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS
-from adapters.llm_oe_adapter import LLMOEAdapter
-from synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
+from dackar.RCA.adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS
+from dackar.RCA.adapters.llm_oe_adapter import LLMOEAdapter
+from dackar.RCA.synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -424,7 +419,7 @@ def test_oe_annotation_no_match_no_injection():
 # ===========================================================================
 
 def _make_synth() -> RuleValidatedRCASynthesizerV31:
-    from synthesis.rca_synthesizer_v31 import RCASynthesizerConfig
+    from dackar.RCA.synthesis.rca_synthesizer_v31 import RCASynthesizerConfig
     cfg = RCASynthesizerConfig(allow_fallback_template_fill=True)
     return RuleValidatedRCASynthesizerV31(config=cfg, llm_client=MagicMock())
 

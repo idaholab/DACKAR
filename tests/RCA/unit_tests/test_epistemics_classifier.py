@@ -19,7 +19,6 @@ Covers:
 
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 from unittest.mock import MagicMock
 
@@ -27,9 +26,6 @@ import pytest
 
 # Stub heavy optional dependencies so the orchestrator module can be imported
 # in a test environment that lacks kg, neo4j, py2neo, and chroma.
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in (
     "neo4j", "py2neo",

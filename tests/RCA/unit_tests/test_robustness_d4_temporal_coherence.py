@@ -29,11 +29,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
 _SCENARIO_ROOT = Path(__file__).resolve().parents[1] / "scenario"
 _TESTS_SHARED = _SCENARIO_ROOT / "shared"
 
-for _p in (str(_RCA_ROOT), str(_TESTS_SHARED)):
+for _p in (str(_TESTS_SHARED),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -49,8 +48,7 @@ import pytest  # noqa: E402
 pytest.importorskip("run_helpers", reason="scenario shared helpers (tests/RCA/scenario/shared) arrive in MR #12")
 from run_helpers import build_fixture_orchestrator, load_fixtures, run_rca  # noqa: E402
 
-sys.path.insert(0, str(_RCA_ROOT / "orchestrators"))
-from causality_engine_v32 import RuleBasedCausalityEngineV32  # noqa: E402
+from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32  # noqa: E402
 
 _TC2_FIXTURES = _SCENARIO_ROOT / "test_case_2" / "fixtures"
 _TC3_FIXTURES = _SCENARIO_ROOT / "test_case_3" / "fixtures"

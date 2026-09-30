@@ -15,11 +15,7 @@ import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
 _SCENARIO_ROOT = Path(__file__).resolve().parents[1] / "scenario"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
              "langchain_community.vectorstores", "langchain_community.embeddings"):
@@ -29,7 +25,7 @@ for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
 import pytest
 pytest.importorskip("demos.kg_population_helpers", reason="RCA demos package arrives in MR #14")
 from demos.kg_population_helpers import assign_causal_category
-from orchestrators.causality_engine_v32 import (
+from dackar.RCA.orchestrators.causality_engine_v32 import (
     RuleBasedCausalityEngineV32,
     CausalityEngineConfigV32,
 )

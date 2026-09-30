@@ -3,16 +3,11 @@ Unit tests for CAPAdapter, FileDropCAPAdapter, NoOpCAPAdapter,
 and CAPSubmissionReceipt.
 """
 import json
-import sys
 import tempfile
 from pathlib import Path
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
 import pytest
-from cap_integration.cap_adapter import (
+from dackar.RCA.cap_integration.cap_adapter import (
     CAPSubmissionReceipt,
     FileDropCAPAdapter,
     NoOpCAPAdapter,

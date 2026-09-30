@@ -25,13 +25,8 @@ Coverage:
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 # Stub heavy optional dependencies unavailable in the unit-test environment
 for _mod in (
@@ -42,12 +37,12 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.tskr_temporal_scorer import (
+from dackar.RCA.orchestrators.tskr_temporal_scorer import (
     TSKRTemporalScorerV1,
     TSKRTemporalScorerConfig,
     RecurrenceProfile,
 )
-from orchestrators.rca_reasoning_orchestrator import (
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import (
     OrchestratorConfig,
     RCAReasoningOrchestrator,
 )
