@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from signal_evidence.builder import build_signal_evidence
-from signal_evidence.historian_adapter import HistorianAdapter
+from ..signal_evidence.builder import build_signal_evidence
+from ..signal_evidence.historian_adapter import HistorianAdapter
 
 JsonDict = Dict[str, Any]
 

@@ -15,29 +15,29 @@ LOGGER = logging.getLogger(__name__)
 
 from dackar.knowledge_graph.py2neo import Py2Neo
 
-from orchestrators.causality_engine_v31 import (
+from .causality_engine_v31 import (
     CausalityEngineConfig,
     RuleBasedCausalityEngineV31,
 )
 
-from orchestrators.causality_engine_v32 import (
+from .causality_engine_v32 import (
     CausalityEngineConfigV32,
     RuleBasedCausalityEngineV32,
 )
 
-from orchestrators.evidence_retriever import (
+from .evidence_retriever import (
     ChromaEvidenceRetriever,
     EvidenceRetrieverConfig,
     InMemoryEvidenceStore,
 )
-from synthesis.rca_synthesizer_v31 import (
+from ..synthesis.rca_synthesizer_v31 import (
     RCASynthesizerConfig,
     RuleValidatedRCASynthesizerV31,
 )
 
-from validation.schema_validator import RCAArtifactValidator
-from orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
-from orchestrators.temporal_relations import (
+from ..validation.schema_validator import RCAArtifactValidator
+from .tskr_temporal_scorer import TSKRTemporalScorerV1
+from .temporal_relations import (
     Interval,
     allen_relation,
     RELATION_SCORE,
@@ -45,15 +45,15 @@ from orchestrators.temporal_relations import (
     OVERLAPS,
     CONTAINS,
 )
-from orchestrators.artifact_store import FileArtifactStore, NoOpSchemaValidator
-from orchestrators.input_guards import assert_output_dir_writable, build_input_guards
-from orchestrators.llm_clients import LLMClient, DummyLLMClient, OllamaLLMClient
-from orchestrators.ishikawa_evaluator import HeuristicIshikawaEvaluatorV1
-from orchestrators.kg_context_builder import KGContextBuilderConfig, Neo4jKGContextBuilder
-from orchestrators.signal_evidence_builder import SignalEvidenceBuilder
-from adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS  # TIER_CONFIDENCE_MULTIPLIERS re-exported for backward compat
-from pm_compliance import PMComplianceConfig, build_pm_compliance
-from signal_evidence.historian_adapter import (
+from .artifact_store import FileArtifactStore, NoOpSchemaValidator
+from .input_guards import assert_output_dir_writable, build_input_guards
+from .llm_clients import LLMClient, DummyLLMClient, OllamaLLMClient
+from .ishikawa_evaluator import HeuristicIshikawaEvaluatorV1
+from .kg_context_builder import KGContextBuilderConfig, Neo4jKGContextBuilder
+from .signal_evidence_builder import SignalEvidenceBuilder
+from ..adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS  # TIER_CONFIDENCE_MULTIPLIERS re-exported for backward compat
+from ..pm_compliance import PMComplianceConfig, build_pm_compliance
+from ..signal_evidence.historian_adapter import (
     InfileHistorianAdapter,
     NullHistorianAdapter,
 )
@@ -277,7 +277,7 @@ class RCAReasoningOrchestrator:
         (set by Phase C) is already present on each candidate.
         """
         try:
-            from orchestrators.epistemics_digest import build_epistemics_digests
+            from .epistemics_digest import build_epistemics_digests
             digests = build_epistemics_digests(
                 causality_candidates=causality_candidates,
                 results=evidence_bundle.get("results") or [],
@@ -296,7 +296,7 @@ class RCAReasoningOrchestrator:
         on the supersession module when Phase C is not active.
         """
         try:
-            from orchestrators.supersession import resolve_supersession
+            from .supersession import resolve_supersession
             policy_version = getattr(self.config, "epistemics_policy_version", None)
             return resolve_supersession(evidence_bundle, epistemics_policy_version=policy_version)
         except Exception:
@@ -2782,7 +2782,7 @@ class RCAReasoningOrchestrator:
         # Phase D — epistemics run summary for manifest
         epistemics_summary: JsonDict = {}
         try:
-            from orchestrators.epistemics_digest import build_epistemics_run_summary
+            from .epistemics_digest import build_epistemics_run_summary
             epistemics_summary = build_epistemics_run_summary(
                 causality_candidates=causality_candidates,
                 results=evidence_bundle.get("results") or [],
@@ -6381,7 +6381,7 @@ class RCAReasoningOrchestrator:
         ValueError
             If the override_input fails validation.
         """
-        from synthesis.analyst_override_processor import AnalystOverrideProcessor
+        from ..synthesis.analyst_override_processor import AnalystOverrideProcessor
 
         run_context: JsonDict = {
             "run_id": run_id,
@@ -6448,9 +6448,9 @@ class RCAReasoningOrchestrator:
         RuntimeError
             If no CAPAdapter is configured.
         """
-        from cap_integration.cap_adapter import NoOpCAPAdapter
-        from cap_integration.cap_config import CAPExportConfig
-        from cap_integration.cap_export_serializer import CAPExportSerializer
+        from ..cap_integration.cap_adapter import NoOpCAPAdapter
+        from ..cap_integration.cap_config import CAPExportConfig
+        from ..cap_integration.cap_export_serializer import CAPExportSerializer
 
         adapter = self.cap_adapter
         if adapter is None:
@@ -6510,7 +6510,7 @@ class RCAReasoningOrchestrator:
         if self.cmms_adapter is None:
             return None
 
-        from cmms_integration.cmms_context_builder import (
+        from ..cmms_integration.cmms_context_builder import (
             CMMSContextBuilder,
             CMMSContextBuilderConfig,
         )
