@@ -111,39 +111,39 @@ def build_fixture_orchestrator(
     """
     # Lazy imports — kept inside the function so ``run_helpers`` can be
     # imported even when sys.path has not yet been extended.
-    from orchestrators.rca_reasoning_orchestrator import (
+    from dackar.RCA.orchestrators.rca_reasoning_orchestrator import (
         OrchestratorConfig,
         RCAReasoningOrchestrator,
     )
-    from orchestrators.artifact_store import FileArtifactStore, NoOpSchemaValidator
-    from orchestrators.causality_engine_v32 import (
+    from dackar.RCA.orchestrators.artifact_store import FileArtifactStore, NoOpSchemaValidator
+    from dackar.RCA.orchestrators.causality_engine_v32 import (
         RuleBasedCausalityEngineV32,
         CausalityEngineConfigV32,
     )
-    from orchestrators.causality_engine_v31 import (
+    from dackar.RCA.orchestrators.causality_engine_v31 import (
         RuleBasedCausalityEngineV31,
         CausalityEngineConfig,
     )
-    from orchestrators.evidence_retriever import (
+    from dackar.RCA.orchestrators.evidence_retriever import (
         ChromaEvidenceRetriever,
         EvidenceRetrieverConfig,
         InMemoryEvidenceStore,
     )
-    from orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
-    from orchestrators.ishikawa_evaluator import HeuristicIshikawaEvaluatorV1
-    from orchestrators.llm_clients import DummyLLMClient
-    from synthesis.rca_synthesizer_v31 import (
+    from dackar.RCA.orchestrators.tskr_temporal_scorer import TSKRTemporalScorerV1
+    from dackar.RCA.orchestrators.ishikawa_evaluator import HeuristicIshikawaEvaluatorV1
+    from dackar.RCA.orchestrators.llm_clients import DummyLLMClient
+    from dackar.RCA.synthesis.rca_synthesizer_v31 import (
         RuleValidatedRCASynthesizerV31,
         RCASynthesizerConfig,
     )
-    from validation.schema_validator import RCAArtifactValidator
+    from dackar.RCA.validation.schema_validator import RCAArtifactValidator
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- Schema validator ------------------------------------------------
     if schema_dir is None:
-        import orchestrators.rca_reasoning_orchestrator as _orch_mod
+        import dackar.RCA.orchestrators.rca_reasoning_orchestrator as _orch_mod
         _candidate = Path(_orch_mod.__file__).resolve().parents[1] / "schemas"
         if _candidate.exists():
             schema_dir = _candidate
