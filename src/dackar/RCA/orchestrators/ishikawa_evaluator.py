@@ -48,6 +48,34 @@ class HeuristicIshikawaEvaluatorV1:
         pm_compliance: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        """Build the Ishikawa contributing-factor matrix for an event.
+
+        Assembles category-grouped rows from the causal candidates (each cited
+        with its *own* supporting evidence — see
+        :meth:`_supporting_evidence_by_candidate`), telemetry/TSKR measurement
+        signals, maintenance and operating-context factors, process evidence,
+        and KG-context factors.
+
+        Parameters
+        ----------
+        event, telemetry_summary, kg_context:
+            Target event (must carry ``event_id`` or ``id``), its telemetry
+            summary, and the KG neighbourhood.
+        tskr_patterns:
+            TSKR chain-position patterns, or None.
+        causality_candidates, evidence_bundle:
+            Ranked candidate hypotheses and their retrieved evidence.
+        operational_context, pm_compliance:
+            Optional supporting artifacts, or None.
+        run_context:
+            Orchestrator run context (``run_id``).
+
+        Returns
+        -------
+        JsonDict
+            An Ishikawa matrix conforming to ``schemas/ishikawa_matrix.json``
+            (categories, rows, and a summary of top candidates).
+        """
         event_id = event.get("event_id") or event["id"]
         asset_id = event.get("asset_id")
         rows: List[JsonDict] = []
@@ -91,11 +119,7 @@ class HeuristicIshikawaEvaluatorV1:
         }
 
     def _candidate_rows(self, causality_candidates: JsonDict, evidence_bundle: JsonDict) -> List[JsonDict]:
-        evidence_ids = [
-            r.get("snippet_id") or r.get("evidence_id") or r.get("source_id")
-            for r in (evidence_bundle.get("results") or [])
-            if isinstance(r, dict)
-        ]
+        evidence_by_candidate = self._supporting_evidence_by_candidate(evidence_bundle)
         rows: List[JsonDict] = []
         for c in causality_candidates.get("candidates", []) or []:
             if not isinstance(c, dict):
@@ -113,7 +137,7 @@ class HeuristicIshikawaEvaluatorV1:
                 "label": c.get("cause_label") or c.get("candidate_id"),
                 "source_artifact": "causality_candidates",
                 "linked_candidate_ids": [c.get("candidate_id")],
-                "supporting_evidence_ids": [eid for eid in evidence_ids if eid][:3],
+                "supporting_evidence_ids": evidence_by_candidate.get(c.get("candidate_id"), []),
                 "strength": c.get("composite_score"),
                 "notes": c.get("score_rationale", {}),
                 "temporal_relation": (c.get("temporal_evidence") or {}).get("relation"),
@@ -121,6 +145,51 @@ class HeuristicIshikawaEvaluatorV1:
                 "category": category,
             })
         return rows
+
+    def _supporting_evidence_by_candidate(self, evidence_bundle: JsonDict) -> Dict[str, List[str]]:
+        """Index the evidence bundle by the candidate each hit supports.
+
+        Groups the bundle's ``results`` by their ``metadata.linked_candidate_id``
+        (falling back to ``metadata.candidate_id``), keeping only non-superseded,
+        ``support_role == "supporting"`` hits, so that each Ishikawa row cites the
+        evidence retrieved for *its own* candidate rather than the first three
+        snippet ids in the bundle.
+
+        Parameters
+        ----------
+        evidence_bundle : JsonDict
+            Evidence bundle whose ``results`` list holds normalized retrieval
+            hits (top-level ``snippet_id`` / ``support_score`` / ``superseded``,
+            with ``support_role`` and candidate linkage under ``metadata``).
+
+        Returns
+        -------
+        Dict[str, List[str]]
+            Maps ``candidate_id`` to its supporting snippet ids, highest
+            ``support_score`` first and capped at three. Candidates with no
+            supporting evidence are absent (callers default to ``[]``).
+        """
+        scored: Dict[str, List[tuple]] = {}
+        for r in (evidence_bundle.get("results") or []):
+            if not isinstance(r, dict) or r.get("superseded"):
+                continue
+            meta = r.get("metadata") or {}
+            if meta.get("support_role") != "supporting":
+                continue
+            candidate_id = meta.get("linked_candidate_id") or meta.get("candidate_id")
+            if not candidate_id:
+                continue
+            snippet_id = r.get("snippet_id") or r.get("evidence_id") or r.get("source_id")
+            if not snippet_id:
+                continue
+            scored.setdefault(candidate_id, []).append(
+                (float(r.get("support_score") or 0.0), snippet_id)
+            )
+        result: Dict[str, List[str]] = {}
+        for candidate_id, pairs in scored.items():
+            pairs.sort(key=lambda p: p[0], reverse=True)
+            result[candidate_id] = [sid for _, sid in pairs][:3]
+        return result
 
     def _measurement_rows(self, telemetry_summary: JsonDict, tskr_patterns: Optional[JsonDict]) -> List[JsonDict]:
         rows: List[JsonDict] = []

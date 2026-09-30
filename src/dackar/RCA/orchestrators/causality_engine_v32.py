@@ -233,6 +233,34 @@ class RuleBasedCausalityEngineV32:
         pm_compliance: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        """Generate ranked causal candidate hypotheses for the event.
+
+        Combines failure-mode candidates (from the KG neighbourhood, scored on
+        temporal/logical/documentary streams) with historical event analogs,
+        assigns cause categories, and ranks them by composite score.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event.
+        telemetry_summary:
+            Telemetry anomaly summary for the event window.
+        kg_context:
+            KG neighbourhood (components, failure modes, past events).
+        tskr_patterns:
+            TSKR chain-position patterns keyed by target, or None.
+        operational_context, pm_compliance:
+            Optional supporting artifacts, or None.
+        run_context:
+            Orchestrator run context.
+
+        Returns
+        -------
+        JsonDict
+            Candidate hypotheses conforming to
+            ``schemas/causality_candidates.json`` (each with scores, a cause
+            category, and temporal evidence).
+        """
         event_time = self._event_time(event)
         tskr_index = self._index_tskr_patterns(tskr_patterns)
         past_event_index = self._build_past_event_index(kg_context)
@@ -1025,6 +1053,39 @@ class RuleBasedCausalityEngineV32:
         allen_relation_map: Optional[JsonDict] = None,
         protection_logic_context: Optional[JsonDict] = None,
     ) -> JsonDict:
+        """Re-score candidates with retrieved evidence and auxiliary signals.
+
+        Folds each candidate's supporting/contradicting evidence, signal-episode
+        chain scores, Allen temporal relations, and protection-logic barrier
+        state into an updated composite score and evidence posture, returning a
+        new candidates payload (the input is not mutated).
+
+        Parameters
+        ----------
+        causality_candidates:
+            Candidate hypotheses from :meth:`generate`.
+        evidence_bundle:
+            Retrieved evidence whose per-candidate summary drives re-scoring.
+        kg_context:
+            Optional KG neighbourhood supplying failure modes for entity
+            normalization, or None.
+        signal_evidence:
+            Optional per-candidate signal-episode chain scores, or None.
+        entity_normalizer_cfg:
+            Optional entity-normalizer configuration overrides, or None.
+        coverage_summary:
+            Optional evidence-coverage summary shaping the coverage factor.
+        allen_relation_map:
+            Optional Allen temporal-relation map between components, or None.
+        protection_logic_context:
+            Optional protection-logic (barrier) context, or None.
+
+        Returns
+        -------
+        JsonDict
+            A refined candidates payload conforming to
+            ``schemas/causality_candidates.json``.
+        """
         payload = dict(causality_candidates)
         candidates = [dict(c) for c in (payload.get("candidates") or [])]
         summary_lookup = self._candidate_summary_lookup(evidence_bundle)
