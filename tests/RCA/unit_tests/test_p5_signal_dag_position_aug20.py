@@ -19,30 +19,25 @@ Run:  pytest test_p5_signal_dag_position_aug20.py -v
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 from typing import Any, Dict, List, Optional, Tuple
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
              "langchain_community.vectorstores", "langchain_community.embeddings"):
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from signal_evidence.builder import (  # noqa: E402
+from dackar.RCA.signal_evidence.builder import (  # noqa: E402
     build_signal_evidence,
     _COTEMPORAL_INITIATOR_FACTOR,
 )
-from signal_evidence.historian_adapter import NullHistorianAdapter  # noqa: E402
-from orchestrators.causality_engine_v32 import (  # noqa: E402
+from dackar.RCA.signal_evidence.historian_adapter import NullHistorianAdapter  # noqa: E402
+from dackar.RCA.orchestrators.causality_engine_v32 import (  # noqa: E402
     CausalityEngineConfigV32,
     RuleBasedCausalityEngineV32,
 )
-from orchestrators.llm_clients import DummyLLMClient  # noqa: E402
-from synthesis.rca_synthesizer_v31 import (  # noqa: E402
+from dackar.RCA.orchestrators.llm_clients import DummyLLMClient  # noqa: E402
+from dackar.RCA.synthesis.rca_synthesizer_v31 import (  # noqa: E402
     RuleValidatedRCASynthesizerV31,
     RCASynthesizerConfig,
 )

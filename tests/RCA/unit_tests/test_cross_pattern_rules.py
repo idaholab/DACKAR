@@ -11,13 +11,8 @@ Coverage:
 """
 import sys
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 # Stub heavy optional dependencies
 for _mod in (
@@ -28,7 +23,7 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from cross_pattern.rules import (
+from dackar.RCA.cross_pattern.rules import (
     compute_link_confidence,
     compute_time_overlap_hours,
     apply_stale_confidence_cap,
@@ -36,7 +31,7 @@ from cross_pattern.rules import (
     classify_support_posture,
     classify_linkage_outcome,
 )
-from cross_pattern.models import CrossPatternLink, HistoricalDocExtraction
+from dackar.RCA.cross_pattern.models import CrossPatternLink, HistoricalDocExtraction
 
 
 # ---------------------------------------------------------------------------

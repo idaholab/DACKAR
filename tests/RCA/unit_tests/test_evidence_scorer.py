@@ -6,14 +6,9 @@ Run directly:   python test_evidence_scorer.py
 Or via pytest:  pytest test_evidence_scorer.py
 """
 import sys
-from pathlib import Path
-
 # Make orchestrators/ importable without going through the dackar package
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
-from orchestrators.evidence_retriever import (
+from dackar.RCA.orchestrators.evidence_retriever import (
     ChromaEvidenceRetriever,
     EvidenceRetrieverConfig,
     InMemoryEvidenceStore,

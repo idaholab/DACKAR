@@ -1,16 +1,9 @@
 """
 Unit tests for CAPExportSerializer and CAPExportConfig.
 """
-import sys
-from pathlib import Path
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
 import pytest
-from cap_integration.cap_config import CAPExportConfig
-from cap_integration.cap_export_serializer import CAPExportSerializer
+from dackar.RCA.cap_integration.cap_config import CAPExportConfig
+from dackar.RCA.cap_integration.cap_export_serializer import CAPExportSerializer
 
 
 # ---------------------------------------------------------------------------

@@ -8,10 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
-from equipment_similarity.kg_equipment_poller import _SPEC_QUERY, KGEquipmentPoller
+from dackar.RCA.equipment_similarity.kg_equipment_poller import _SPEC_QUERY, KGEquipmentPoller
 
 
 class _FakeClient:

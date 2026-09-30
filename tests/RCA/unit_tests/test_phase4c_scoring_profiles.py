@@ -9,12 +9,7 @@ Tests:
   TestProfileWeightsInComposite  (4 tests) — G/I/L profiles actually affect composite score
 """
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
              "langchain_community.vectorstores", "langchain_community.embeddings"):
@@ -22,7 +17,7 @@ for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
         sys.modules[_mod] = MagicMock()
 
 import pytest
-from orchestrators.causality_engine_v32 import (
+from dackar.RCA.orchestrators.causality_engine_v32 import (
     RuleBasedCausalityEngineV32,
     CausalityEngineConfigV32,
     _DEFAULT_SCORING_PROFILES,

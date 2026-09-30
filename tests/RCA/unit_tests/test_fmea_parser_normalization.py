@@ -5,11 +5,7 @@ import sys
 from pathlib import Path
 import tempfile
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
-from doc_parsers.fmeaParser import parse_fmea_file, parse_fmea_files
+from dackar.RCA.doc_parsers.fmeaParser import parse_fmea_file, parse_fmea_files
 
 
 def test_parse_csv_with_normalization_metadata():

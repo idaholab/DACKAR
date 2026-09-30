@@ -19,12 +19,7 @@ Covers:
 """
 
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock
-
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
 
 for _mod in (
     "neo4j", "py2neo",
@@ -35,14 +30,14 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from orchestrators.supersession import (
+from dackar.RCA.orchestrators.supersession import (
     resolve_supersession,
     _is_analyzes_class,
     _authority_rank,
     _recency_dt,
     _patch_candidate_summary,
 )
-from orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32
+from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32
 
 
 # ---------------------------------------------------------------------------

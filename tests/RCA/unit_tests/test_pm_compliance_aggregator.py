@@ -6,17 +6,13 @@ import json
 import sys
 from pathlib import Path
 
-_RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-if str(_RCA_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RCA_ROOT))
-
 from jsonschema import Draft7Validator, FormatChecker  # type: ignore[import]
 
-from pm_compliance import PMComplianceConfig, build_pm_compliance
-from orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32, CausalityEngineConfigV32
+from dackar.RCA.pm_compliance import PMComplianceConfig, build_pm_compliance
+from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32, CausalityEngineConfigV32
 
-from pm_compliance.aggregator import _rollup_risk
-from pm_compliance.execution_verifier import PMExecutionVerifier
+from dackar.RCA.pm_compliance.aggregator import _rollup_risk
+from dackar.RCA.pm_compliance.execution_verifier import PMExecutionVerifier
 
 
 def _schema_validator():
@@ -263,14 +259,14 @@ def _make_vocab_dir(tmp_path, neg_terms, pos_terms):
 
 def test_analyze_degradation_uses_vocabulary_csv(tmp_path):
     """Vocabulary-driven matching must classify wear, leak, corrosion as degrading."""
-    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    from dackar.RCA.pm_compliance.vocabulary_loader import PMVocabularyLoader
     PMVocabularyLoader.clear_cache()
     data_dir = _make_vocab_dir(
         tmp_path,
         neg_terms=["wear", "leak", "corrosion", "crack", "vibration"],
         pos_terms=["acceptable", "normal"],
     )
-    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    from dackar.RCA.pm_compliance.effectiveness_analyzer import analyze_degradation
     assert analyze_degradation(["bearing wear observed"], data_dir=data_dir) == "degrading"
     assert analyze_degradation(["leak found at seal"], data_dir=data_dir) == "degrading"
     assert analyze_degradation(["corrosion on casing"], data_dir=data_dir) == "degrading"
@@ -281,10 +277,10 @@ def test_analyze_degradation_uses_vocabulary_csv(tmp_path):
 
 def test_analyze_degradation_improving_not_shadowed_by_degrading(tmp_path):
     """Improving beats stable but must NOT override an explicit degrading signal."""
-    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    from dackar.RCA.pm_compliance.vocabulary_loader import PMVocabularyLoader
     PMVocabularyLoader.clear_cache()
     data_dir = _make_vocab_dir(tmp_path, neg_terms=["leak"], pos_terms=["acceptable"])
-    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    from dackar.RCA.pm_compliance.effectiveness_analyzer import analyze_degradation
     # Improving with no degrading → improving
     assert analyze_degradation(["found acceptable"], data_dir=data_dir) == "improving"
     # Both improving and degrading → degrading wins
@@ -294,7 +290,7 @@ def test_analyze_degradation_improving_not_shadowed_by_degrading(tmp_path):
 
 def test_analyze_degradation_fallback_when_no_data_dir():
     """Without data_dir, hardcoded fallback stems still work."""
-    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    from dackar.RCA.pm_compliance.effectiveness_analyzer import analyze_degradation
     assert analyze_degradation(["pump degraded significantly"]) == "degrading"
     assert analyze_degradation(["no defect found"]) == "improving"
     assert analyze_degradation(["pump running normally"]) == "improving"
@@ -304,7 +300,7 @@ def test_word_boundary_prefix_matching():
     """Prefix boundary matching: 'leak' matches 'leakage'; 'crack' matches 'cracks'.
     A term must start at a word boundary — it must not match in the middle of a word.
     """
-    from pm_compliance.vocabulary_loader import PMVocabularyLoader, matches_any
+    from dackar.RCA.pm_compliance.vocabulary_loader import PMVocabularyLoader, matches_any
     PMVocabularyLoader.clear_cache()
     degrading_terms = frozenset({"leak", "crack"})
     # Prefix of word — intentional matches
@@ -317,7 +313,7 @@ def test_word_boundary_prefix_matching():
 
 def test_pm_found_defect_rate_computed_correctly(tmp_path):
     """pm_found_defect_rate must equal defect_rows / total_rows_with_asf."""
-    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    from dackar.RCA.pm_compliance.vocabulary_loader import PMVocabularyLoader
     PMVocabularyLoader.clear_cache()
     data_dir = _make_vocab_dir(tmp_path, neg_terms=["degraded", "leak"], pos_terms=["acceptable"])
     art = build_pm_compliance(
@@ -351,7 +347,7 @@ def test_pm_found_defect_rate_absent_when_no_asf_data():
 
 def test_schema_validates_artifact_with_pm_found_defect_rate(tmp_path):
     """Schema must accept pm_found_defect_rate in summary."""
-    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    from dackar.RCA.pm_compliance.vocabulary_loader import PMVocabularyLoader
     PMVocabularyLoader.clear_cache()
     data_dir = _make_vocab_dir(tmp_path, neg_terms=["degraded"], pos_terms=["acceptable"])
     art = build_pm_compliance(
@@ -373,9 +369,9 @@ def test_real_data_dir_classifies_domain_texts():
     data_dir = Path(__file__).resolve().parents[3] / "data"
     if not data_dir.exists():
         pytest.skip("DACKAR data directory not found")
-    from pm_compliance.vocabulary_loader import PMVocabularyLoader
+    from dackar.RCA.pm_compliance.vocabulary_loader import PMVocabularyLoader
     PMVocabularyLoader.clear_cache()
-    from pm_compliance.effectiveness_analyzer import analyze_degradation
+    from dackar.RCA.pm_compliance.effectiveness_analyzer import analyze_degradation
     # From raw_text.txt / comp_testing_examples.txt observed conditions
     assert analyze_degradation(["Rupture of pump bearings caused pump shaft degradation"], data_dir=data_dir) == "degrading"
     assert analyze_degradation(["Several cracks on pump shaft were observed"], data_dir=data_dir) == "degrading"
@@ -535,7 +531,7 @@ def test_dq_note_emitted_when_primary_fm_id_given_but_no_kg_linkage():
 
 def test_effectiveness_lookback_cycles_limits_rows_used():
     """§3.1 fix: effectiveness_lookback_cycles must cap the as-found rows analysed."""
-    from pm_compliance import PMComplianceConfig
+    from dackar.RCA.pm_compliance import PMComplianceConfig
     rows = [
         {"check_id": f"PM-{i}", "check_type": "inspection", "compliance_status": "compliant",
          "completed_date": f"2024-0{i}-01T00:00:00+00:00",
