@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
-from ner.entity_normalizer import EntityNormalizer
+from ..ner.entity_normalizer import EntityNormalizer
 from dackar.RCA._timeutils import parse_dt, utcnow_iso
 
 JsonDict = Dict[str, Any]
