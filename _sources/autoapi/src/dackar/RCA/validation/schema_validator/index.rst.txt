@@ -1,0 +1,296 @@
+src.dackar.RCA.validation.schema_validator
+==========================================
+
+.. py:module:: src.dackar.RCA.validation.schema_validator
+
+
+Attributes
+----------
+
+.. autoapisummary::
+
+   src.dackar.RCA.validation.schema_validator.JsonDict
+   src.dackar.RCA.validation.schema_validator.Severity
+
+
+Classes
+-------
+
+.. autoapisummary::
+
+   src.dackar.RCA.validation.schema_validator.ValidationIssue
+   src.dackar.RCA.validation.schema_validator.ValidationReport
+   src.dackar.RCA.validation.schema_validator.RCAArtifactValidator
+
+
+Module Contents
+---------------
+
+.. py:data:: JsonDict
+
+.. py:data:: Severity
+
+.. py:class:: ValidationIssue
+
+   A single validation finding against one artifact.
+
+   .. attribute:: artifact
+
+      The artifact type the issue was raised against (e.g. ``"event"``).
+
+   .. attribute:: severity
+
+      ``"error"`` or ``"warning"``. In ``warn_only`` mode the validator
+      emits every finding as ``"warning"``.
+
+   .. attribute:: code
+
+      A stable machine-readable identifier for the issue (e.g.
+      ``"schema_validation_error"``, ``"event_time_order_invalid"``).
+
+   .. attribute:: message
+
+      Human-readable description of the problem.
+
+   .. attribute:: path
+
+      JSON path (as string segments) to the offending field, or an empty
+      list for artifact-level issues.
+
+
+   .. py:attribute:: artifact
+      :type:  str
+
+
+   .. py:attribute:: severity
+      :type:  Severity
+
+
+   .. py:attribute:: code
+      :type:  str
+
+
+   .. py:attribute:: message
+      :type:  str
+
+
+   .. py:attribute:: path
+      :type:  List[str]
+      :value: []
+
+
+
+   .. py:method:: to_dict()
+
+
+.. py:class:: ValidationReport
+
+   Aggregate result of validating one artifact or a run bundle.
+
+   .. attribute:: ok
+
+      ``True`` when the report contains no ``"error"``-severity issues.
+      Callers should treat this as authoritative only after the report is
+      fully populated; :meth:`recompute_ok` refreshes it from ``issues``.
+
+   .. attribute:: issues
+
+      All findings collected during validation, both errors and warnings.
+
+   .. attribute:: The :attr:`errors` and :attr:`warnings` properties partition ``issues`` by
+
+
+
+   .. attribute:: severity. In ``warn_only`` mode every finding is a warning, so ``ok`` stays
+
+
+
+   .. attribute:: ``True`` regardless of the problems found.
+
+
+
+
+   .. py:attribute:: ok
+      :type:  bool
+
+
+   .. py:attribute:: issues
+      :type:  List[ValidationIssue]
+      :value: []
+
+
+
+   .. py:property:: errors
+      :type: List[ValidationIssue]
+
+
+
+   .. py:property:: warnings
+      :type: List[ValidationIssue]
+
+
+
+   .. py:method:: add(issue)
+
+
+   .. py:method:: extend(issues)
+
+
+   .. py:method:: recompute_ok()
+
+
+   .. py:method:: to_dict()
+
+
+.. py:class:: RCAArtifactValidator(schema_dir, *, mode = 'compat')
+
+   Two-layer validator:
+     1) per-artifact Draft7 JSON Schema validation
+     2) cross-artifact semantic consistency checks
+
+   Modes:
+     - strict: no legacy field aliases; schema mismatches are errors
+     - compat: normalize common legacy aliases before validation
+     - warn_only: same checks, but schema/semantic failures downgraded to warnings
+
+
+   .. py:attribute:: CORE_ARTIFACTS
+
+
+   .. py:attribute:: schema_dir
+
+
+   .. py:attribute:: mode
+      :value: 'compat'
+
+
+
+   .. py:attribute:: schemas
+      :type:  Dict[str, Dict[str, Any]]
+
+
+   .. py:attribute:: validators
+      :type:  Dict[str, jsonschema.Draft7Validator]
+
+
+   .. py:method:: validate_artifact(artifact_type, payload)
+
+      Validate a single artifact payload against its schema and semantics.
+
+      The payload is first normalized (a deep copy — the caller's ``payload``
+      is never mutated) and validated against its Draft 7 schema. Semantic
+      consistency checks run **only when schema validation passes**: those
+      checks assume schema-valid object types, so running them on malformed
+      input could raise instead of reporting an issue.
+
+      :param artifact_type: One of :attr:`CORE_ARTIFACTS`. Whitespace and case are normalized.
+      :param payload: The artifact object to validate.
+
+      :returns: All findings for this artifact. An unknown ``artifact_type`` yields
+                a single ``schema_missing`` issue. This method does not raise on
+                invalid payloads — every problem is returned as a
+                :class:`ValidationIssue`.
+      :rtype: ValidationReport
+
+
+
+   .. py:method:: validate_run_bundle(*, event = None, telemetry_summary = None, kg_context = None, signal_evidence = None, tskr_patterns = None, causality_candidates = None, evidence_bundle = None, ishikawa_matrix = None, barrier_analysis = None, rca_card = None, operational_context = None, pm_compliance = None, cmms_context = None)
+
+      Validate a run bundle: each member individually, then cross-artifact.
+
+      Every supplied member is validated on its own via
+      :meth:`validate_artifact`, then the schema-valid members are checked for
+      cross-artifact consistency (shared ``event_id`` / ``asset_id``, evidence
+      and candidate cross-references, full-mode RCA-card requirements, etc.).
+
+      :param event: Keyword-only bundle members. Each is optional; a member left as
+                    ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param telemetry_summary: Keyword-only bundle members. Each is optional; a member left as
+                                ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param kg_context: Keyword-only bundle members. Each is optional; a member left as
+                         ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param signal_evidence: Keyword-only bundle members. Each is optional; a member left as
+                              ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param tskr_patterns: Keyword-only bundle members. Each is optional; a member left as
+                            ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param causality_candidates: Keyword-only bundle members. Each is optional; a member left as
+                                   ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param evidence_bundle: Keyword-only bundle members. Each is optional; a member left as
+                              ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param ishikawa_matrix: Keyword-only bundle members. Each is optional; a member left as
+                              ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param barrier_analysis: Keyword-only bundle members. Each is optional; a member left as
+                               ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param rca_card: Keyword-only bundle members. Each is optional; a member left as
+                       ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param operational_context: Keyword-only bundle members. Each is optional; a member left as
+                                  ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param pm_compliance: Keyword-only bundle members. Each is optional; a member left as
+                            ``None`` is skipped entirely. Caller payloads are never mutated.
+      :param cmms_context: Keyword-only bundle members. Each is optional; a member left as
+                           ``None`` is skipped entirely. Caller payloads are never mutated.
+
+      :returns: Aggregate of every member's issues plus the cross-artifact findings.
+                Members that fail their own schema validation are excluded from the
+                cross-artifact checks so malformed input is reported, not raised on.
+      :rtype: ValidationReport
+
+
+
+   .. py:method:: _load_schemas()
+
+
+   .. py:method:: _load_json(path)
+      :staticmethod:
+
+
+
+   .. py:method:: _normalize_payload(artifact_type, payload)
+
+
+   .. py:method:: _semantic_checks_single(artifact_type, payload)
+
+
+   .. py:method:: _semantic_checks_bundle(bundle)
+
+
+   .. py:method:: _norm_artifact_type(artifact_type)
+
+
+   .. py:method:: _parse_instant(value)
+      :staticmethod:
+
+
+      Parse an ISO-8601 date-time string into a timezone-aware datetime.
+
+      Returns ``None`` when the value is not a parseable string, so callers
+      skip the comparison rather than raising. A naive datetime (no offset)
+      is assumed to be UTC, so two timestamps are always compared as instants
+      and offsets like ``+01:00`` vs ``Z`` order chronologically, not
+      lexicographically.
+
+
+
+   .. py:method:: _sev(base)
+
+
+   .. py:method:: _issue(*, artifact, severity, code, message, path = None)
+      :staticmethod:
+
+
+
+   .. py:method:: _semantic_checks_rca_card(payload)
+
+
+   .. py:method:: _semantic_checks_run_manifest(payload)
+
+
+   .. py:method:: _semantic_checks_run_context(payload)
+
+
+   .. py:method:: _semantic_checks_causality_candidates(payload)
+
+
+   .. py:method:: _bundle_checks_rca_card_consistency(rca_card, evidence, candidates, kg_context = None)
+
+
