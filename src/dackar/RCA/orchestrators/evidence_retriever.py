@@ -279,6 +279,34 @@ class ChromaEvidenceRetriever:
         operational_context: Optional[JsonDict],
         run_context: JsonDict,
     ) -> JsonDict:
+        """Retrieve and rank documentary evidence for the causal candidates.
+
+        Builds per-candidate queries from the KG context, runs them against the
+        Chroma store, normalizes and de-duplicates the hits, assesses each hit's
+        support role against its candidate, and summarizes the evidence per
+        candidate.
+
+        Parameters
+        ----------
+        event:
+            Target abnormal event (supplies ``asset_id`` and query terms).
+        kg_context:
+            KG neighbourhood providing documents and components to query over.
+        causality_candidates:
+            Candidate hypotheses whose cause labels seed the queries.
+        operational_context:
+            Optional operating-state input influencing query planning, or None.
+        run_context:
+            Orchestrator run context.
+
+        Returns
+        -------
+        JsonDict
+            Evidence bundle conforming to ``schemas/evidence_bundle.json``. Each
+            entry in ``results`` carries top-level ``snippet_id`` /
+            ``support_score`` and, under ``metadata``, ``support_role`` and the
+            ``linked_candidate_id`` used by downstream stages.
+        """
         # Reset embedding cache so per-session cached vectors don't bleed across calls.
         self._emb_cache = {}
 

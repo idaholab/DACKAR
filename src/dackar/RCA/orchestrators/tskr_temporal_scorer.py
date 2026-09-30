@@ -20,17 +20,9 @@ from .temporal_relations import (
     DURING,
     FOLLOWS,
 )
+from dackar.RCA._timeutils import parse_dt
 
 JsonDict = Dict[str, Any]
-
-
-def parse_dt(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
-        return None
 
 
 def clamp01(x: float) -> float:
@@ -1115,8 +1107,11 @@ class TSKRTemporalScorerV1:
             and self.config.enable_semantic_recurrence
         ):
             fm_name = fm.get("name") or fm.get("label") or ""
-            fm_symptoms = fm.get("expected_symptoms") or ""
-            query_text = " | ".join(t for t in (fm_name, fm_symptoms) if t)
+            fm_symptoms = fm.get("expected_symptoms") or []
+            if isinstance(fm_symptoms, str):
+                fm_symptoms = [fm_symptoms]
+            fm_symptoms_text = " ".join(s for s in fm_symptoms if isinstance(s, str))
+            query_text = " | ".join(t for t in (fm_name, fm_symptoms_text) if t)
             if query_text.strip():
                 try:
                     sem_matches, sem_near = self.doc_extraction_store.query(

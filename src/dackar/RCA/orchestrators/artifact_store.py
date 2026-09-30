@@ -16,11 +16,20 @@ JsonDict = Dict[str, Any]
 
 
 class NoOpSchemaValidator:
+    """Permissive :class:`SchemaValidator` that only enforces JSON-object shape.
+
+    Implements all three validator styles but performs no schema checks — useful
+    as a default when schema validation is not wired. Every artifact is reported
+    as valid provided it is a JSON object.
+    """
+
     def validate(self, artifact_name: str, payload: JsonDict) -> None:
+        """Legacy style: raise ``TypeError`` unless *payload* is a JSON object."""
         if not isinstance(payload, dict):
             raise TypeError(f"{artifact_name} must be a JSON object")
 
     def validate_artifact(self, artifact_name: str, payload: JsonDict) -> JsonDict:
+        """Per-artifact style: shape-check *payload* and return an ``ok`` report."""
         self.validate(artifact_name, payload)
         return {
             "ok": True,
@@ -30,6 +39,7 @@ class NoOpSchemaValidator:
         }
 
     def validate_run_bundle(self, **kwargs: Any) -> JsonDict:
+        """Bundle style: shape-check each non-None keyword artifact and return ``ok``."""
         for artifact_name, payload in kwargs.items():
             if payload is None:
                 continue
@@ -43,13 +53,21 @@ class NoOpSchemaValidator:
 
 
 class FileArtifactStore:
+    """:class:`ArtifactStore` that persists artifacts as JSON files on disk.
+
+    Each artifact is written atomically to ``<root_dir>/<run_id>/<name>.json``
+    so a reader never observes a partial write.
+    """
+
     def __init__(self, root_dir: str | Path):
         self.root_dir = Path(root_dir)
 
     def save(self, run_id: str, artifact_name: str, payload: JsonDict) -> str:
+        """Persist a single-object artifact and return its file path."""
         return self._write_atomic(run_id, artifact_name, payload)
 
     def save_list(self, run_id: str, artifact_name: str, payload: List[JsonDict]) -> str:
+        """Persist a list-valued artifact and return its file path."""
         return self._write_atomic(run_id, artifact_name, payload)
 
     def load(self, run_id: str, artifact_name: str) -> Any:
