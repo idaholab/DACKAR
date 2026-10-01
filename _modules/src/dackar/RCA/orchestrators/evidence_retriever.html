@@ -85,7 +85,7 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Protocol</span><span class="p">,</span> <span class="n">Sequence</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Protocol</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span>
 
 <div class="viewcode-block" id="LOGGER">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/evidence_retriever/index.html#src.dackar.RCA.orchestrators.evidence_retriever.LOGGER">[docs]</a>
@@ -193,12 +193,20 @@
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/evidence_retriever/index.html#src.dackar.RCA.orchestrators.evidence_retriever._NEGATION_SCOPE_TOKENS">[docs]</a>
 <span class="n">_NEGATION_SCOPE_TOKENS</span> <span class="o">=</span> <span class="mi">3</span></div>
 
+<span class="c1"># Trailing/postfix refutation triggers: the degradation state precedes the trigger,</span>
+<span class="c1"># e.g. "fouling was ruled out". These also license a short *backward* scan. Kept</span>
+<span class="c1"># deliberately narrow — generic "no"/"not" stay forward-only so an absence-as-cause</span>
+<span class="c1"># phrase ("no lubrication led to wear") is not misread as refuting the state.</span>
+<div class="viewcode-block" id="_NEGATION_TRAILING_TRIGGERS">
+<a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/evidence_retriever/index.html#src.dackar.RCA.orchestrators.evidence_retriever._NEGATION_TRAILING_TRIGGERS">[docs]</a>
+<span class="n">_NEGATION_TRAILING_TRIGGERS</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"ruled out"</span><span class="p">})</span></div>
+
 
 
 <div class="viewcode-block" id="_negation_refutation_hit">
 <a class="viewcode-back" href="../../../../../autoapi/src/dackar/RCA/orchestrators/evidence_retriever/index.html#src.dackar.RCA.orchestrators.evidence_retriever._negation_refutation_hit">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">_negation_refutation_hit</span><span class="p">(</span><span class="n">snippet</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">target_terms</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Return True when a negation trigger is followed, within a short window, by a</span>
+<span class="w">    </span><span class="sd">"""Return True when a negation trigger is adjacent, within a short window, to a</span>
 <span class="sd">    degradation/failure-state term — i.e. the snippet refutes a degradation claim.</span>
 
 <span class="sd">    Deterministic and high-precision by design (short scope window; state-term targets</span>
@@ -211,20 +219,28 @@
     <span class="k">if</span> <span class="n">n</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">False</span>
 
-    <span class="n">trigger_end_positions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">tok</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="k">if</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">_NEGATION_SINGLE_TRIGGERS</span>
+    <span class="c1"># Each trigger span is (start, end, trailing): forward scan runs after ``end`` for</span>
+    <span class="c1"># every trigger; ``trailing`` triggers additionally scan backward before ``start``</span>
+    <span class="c1"># so "&lt;state&gt; was ruled out" is detected, not only "ruled out &lt;state&gt;".</span>
+    <span class="n">trigger_spans</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">bool</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">tok</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="k">if</span> <span class="n">tok</span> <span class="ow">in</span> <span class="n">_NEGATION_SINGLE_TRIGGERS</span>
     <span class="p">]</span>
     <span class="k">for</span> <span class="n">phrase</span> <span class="ow">in</span> <span class="n">_NEGATION_MULTIWORD_TRIGGERS</span><span class="p">:</span>
         <span class="n">parts</span> <span class="o">=</span> <span class="n">phrase</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
         <span class="n">plen</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span>
+        <span class="n">trailing</span> <span class="o">=</span> <span class="n">phrase</span> <span class="ow">in</span> <span class="n">_NEGATION_TRAILING_TRIGGERS</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="n">plen</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
             <span class="k">if</span> <span class="n">tokens</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">plen</span><span class="p">]</span> <span class="o">==</span> <span class="n">parts</span><span class="p">:</span>
-                <span class="n">trigger_end_positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">i</span> <span class="o">+</span> <span class="n">plen</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">trigger_spans</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span> <span class="o">+</span> <span class="n">plen</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">trailing</span><span class="p">))</span>
 
-    <span class="k">for</span> <span class="n">pos</span> <span class="ow">in</span> <span class="n">trigger_end_positions</span><span class="p">:</span>
-        <span class="n">window</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[</span><span class="n">pos</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span> <span class="n">pos</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">_NEGATION_SCOPE_TOKENS</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">trailing</span> <span class="ow">in</span> <span class="n">trigger_spans</span><span class="p">:</span>
+        <span class="n">window</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[</span><span class="n">end</span> <span class="o">+</span> <span class="mi">1</span><span class="p">:</span> <span class="n">end</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="n">_NEGATION_SCOPE_TOKENS</span><span class="p">]</span>
         <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">w</span> <span class="ow">in</span> <span class="n">target_terms</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">window</span><span class="p">):</span>
             <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">trailing</span><span class="p">:</span>
+            <span class="n">back</span> <span class="o">=</span> <span class="n">tokens</span><span class="p">[</span><span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">start</span> <span class="o">-</span> <span class="n">_NEGATION_SCOPE_TOKENS</span><span class="p">):</span> <span class="n">start</span><span class="p">]</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">w</span> <span class="ow">in</span> <span class="n">target_terms</span> <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">back</span><span class="p">):</span>
+                <span class="k">return</span> <span class="kc">True</span>
     <span class="k">return</span> <span class="kc">False</span></div>
 
 

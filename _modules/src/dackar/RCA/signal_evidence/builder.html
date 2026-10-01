@@ -242,7 +242,10 @@
                     <span class="n">timestamp_start</span><span class="o">=</span><span class="n">ts_start</span><span class="p">,</span>
                     <span class="n">timestamp_end</span><span class="o">=</span><span class="n">ts_end</span><span class="p">,</span>
                     <span class="n">pattern</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"pattern"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"unknown"</span><span class="p">),</span>
-                    <span class="n">severity</span><span class="o">=</span><span class="n">clamp01</span><span class="p">(</span><span class="n">_to_float</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">)),</span>
+                    <span class="c1"># Canonical telemetry_summary anomalies carry ``severity_score``</span>
+                    <span class="c1"># (schemas/telemetry_summary.json). Fall back to the legacy</span>
+                    <span class="c1"># ``severity`` key only when the canonical field is absent.</span>
+                    <span class="n">severity</span><span class="o">=</span><span class="n">clamp01</span><span class="p">(</span><span class="n">_to_float</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity_score"</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)),</span> <span class="mf">0.0</span><span class="p">)),</span>
                     <span class="n">source</span><span class="o">=</span><span class="s2">"telemetry_summary"</span><span class="p">,</span>
                     <span class="n">raw_value_start</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_value_start"</span><span class="p">),</span>
                     <span class="n">raw_value_peak</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"raw_value_peak"</span><span class="p">),</span>
@@ -264,10 +267,14 @@
     <span class="n">merged</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">baseline</span><span class="p">)</span>
     <span class="n">tol_s</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">dedup_tolerance_min</span><span class="p">)</span> <span class="o">*</span> <span class="mf">60.0</span>
     <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="n">historian</span><span class="p">:</span>
+        <span class="c1"># Deduplicate against everything accepted so far (baseline plus</span>
+        <span class="c1"># already-merged historian rows), not just the baseline — otherwise two</span>
+        <span class="c1"># same-sensor historian records within tolerance both survive when no</span>
+        <span class="c1"># baseline match exists, inflating the anomaly count.</span>
         <span class="n">dup</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span>
             <span class="n">a</span><span class="o">.</span><span class="n">sensor_id</span> <span class="o">==</span> <span class="n">h</span><span class="o">.</span><span class="n">sensor_id</span>
             <span class="ow">and</span> <span class="nb">abs</span><span class="p">((</span><span class="n">a</span><span class="o">.</span><span class="n">timestamp_start</span> <span class="o">-</span> <span class="n">h</span><span class="o">.</span><span class="n">timestamp_start</span><span class="p">)</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">())</span> <span class="o">&lt;</span> <span class="n">tol_s</span>
-            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">baseline</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">merged</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">dup</span><span class="p">:</span>
             <span class="n">merged</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>

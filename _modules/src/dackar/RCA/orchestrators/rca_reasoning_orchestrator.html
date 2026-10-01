@@ -1224,6 +1224,29 @@
         <span class="n">evidence_bundle</span> <span class="o">=</span> <span class="n">reentry_execution</span><span class="p">[</span><span class="s2">"evidence_bundle"</span><span class="p">]</span>
         <span class="n">reentry_hook</span> <span class="o">=</span> <span class="n">reentry_execution</span><span class="p">[</span><span class="s2">"reentry_hook"</span><span class="p">]</span>
         <span class="n">kg_governance</span> <span class="o">=</span> <span class="n">reentry_execution</span><span class="p">[</span><span class="s2">"kg_governance"</span><span class="p">]</span>
+
+        <span class="c1"># Finding I4: auto re-entry regenerates the candidate set from scratch</span>
+        <span class="c1"># (generate + refine_with_evidence), so a component outside the analyst-</span>
+        <span class="c1"># approved scope boundary can be reintroduced after the one-time filter</span>
+        <span class="c1"># applied at generation time. Reapply the boundary to the post-re-entry</span>
+        <span class="c1"># candidate set so the approved scope still holds in synthesis/manifest.</span>
+        <span class="k">if</span> <span class="n">_scope_boundary</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="nb">int</span><span class="p">(</span><span class="n">reentry_execution</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"attempt_count"</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">causality_candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_apply_scope_boundary_filter</span><span class="p">(</span>
+                <span class="n">causality_candidates</span><span class="p">,</span> <span class="n">_scope_boundary</span><span class="p">,</span> <span class="n">_scope_version</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"causality_candidates"</span><span class="p">,</span> <span class="n">causality_candidates</span><span class="p">)</span>
+            <span class="n">_scope_filter_meta</span> <span class="o">=</span> <span class="n">run_context</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">"pipeline_runtime"</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span>
+                <span class="s2">"scope_filter"</span><span class="p">,</span> <span class="p">{}</span>
+            <span class="p">)</span>
+            <span class="n">_cumulative_scope_filtered</span> <span class="o">=</span> <span class="p">[</span>
+                <span class="n">rc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">rc</span> <span class="ow">in</span> <span class="p">(</span><span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"ruled_out"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rc</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">rc</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"reason_code"</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"scope_filtered"</span>
+            <span class="p">]</span>
+            <span class="n">_scope_filter_meta</span><span class="p">[</span><span class="s2">"filtered_component_ids"</span><span class="p">]</span> <span class="o">=</span> <span class="n">_cumulative_scope_filtered</span>
+            <span class="n">_scope_filter_meta</span><span class="p">[</span><span class="s2">"filtered_count"</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">_cumulative_scope_filtered</span><span class="p">)</span>
+            <span class="n">_scope_filter_meta</span><span class="p">[</span><span class="s2">"reapplied_after_reentry"</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
         <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_persist</span><span class="p">(</span><span class="n">run_id</span><span class="p">,</span> <span class="s2">"reentry_execution"</span><span class="p">,</span> <span class="n">reentry_execution</span><span class="p">)</span>
 
         <span class="n">ishikawa_matrix</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
@@ -2974,18 +2997,27 @@
             <span class="n">current_snapshot</span> <span class="o">=</span> <span class="n">base_snapshot</span>
 
         <span class="c1"># When accepting, merge added/removed component IDs into the snapshot.</span>
+        <span class="c1"># Membership and removal are compared case-insensitively (matching the</span>
+        <span class="c1"># downstream _apply_scope_boundary_filter normalization, str(cid).strip().lower())</span>
+        <span class="c1"># so a differently cased addition does not duplicate a stored id and a</span>
+        <span class="c1"># differently cased removal still deletes it. The first-seen display casing</span>
+        <span class="c1"># is preserved in component_ids.</span>
         <span class="k">if</span> <span class="n">analyst_decision</span> <span class="o">==</span> <span class="s2">"accepted"</span><span class="p">:</span>
+            <span class="k">def</span><span class="w"> </span><span class="nf">_norm_cid</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+                <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">x</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
             <span class="n">existing_cids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">current_snapshot</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
-            <span class="n">existing_set</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="kc">None</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">existing_cids</span><span class="p">}</span>  <span class="c1"># ordered dedup</span>
+            <span class="n">existing_norm</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">_norm_cid</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">existing_cids</span><span class="p">}</span>  <span class="c1"># case-insensitive dedup</span>
 
             <span class="k">for</span> <span class="n">cid</span> <span class="ow">in</span> <span class="p">(</span><span class="n">changed_boundary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"added_component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
-                <span class="k">if</span> <span class="n">cid</span> <span class="ow">and</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">existing_set</span><span class="p">:</span>
+                <span class="n">key</span> <span class="o">=</span> <span class="n">_norm_cid</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">key</span> <span class="ow">and</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">existing_norm</span><span class="p">:</span>
                     <span class="n">existing_cids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
-                    <span class="n">existing_set</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+                    <span class="n">existing_norm</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
 
-            <span class="n">removed_set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">changed_boundary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"removed_component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
-            <span class="k">if</span> <span class="n">removed_set</span><span class="p">:</span>
-                <span class="n">existing_cids</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">existing_cids</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">removed_set</span><span class="p">]</span>
+            <span class="n">removed_norm</span> <span class="o">=</span> <span class="p">{</span><span class="n">_norm_cid</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">changed_boundary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"removed_component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])}</span>
+            <span class="k">if</span> <span class="n">removed_norm</span><span class="p">:</span>
+                <span class="n">existing_cids</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">existing_cids</span> <span class="k">if</span> <span class="n">_norm_cid</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">removed_norm</span><span class="p">]</span>
 
             <span class="n">current_snapshot</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">current_snapshot</span><span class="p">)</span>
             <span class="n">current_snapshot</span><span class="p">[</span><span class="s2">"component_ids"</span><span class="p">]</span> <span class="o">=</span> <span class="n">existing_cids</span>
@@ -4005,12 +4037,21 @@
             <span class="p">(</span><span class="n">causality_candidates</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
         <span class="p">)</span>
         <span class="n">top_fm_ids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">current_component_ids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="n">_ev_cid</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">_ev_cid</span><span class="p">:</span>
+            <span class="n">current_component_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">_ev_cid</span><span class="p">))</span>
         <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cand_list</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>
             <span class="n">fmid</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
                 <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"canonical_tuple"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"failure_mode"</span><span class="p">)</span>
             <span class="p">)</span>
             <span class="k">if</span> <span class="n">fmid</span><span class="p">:</span>
                 <span class="n">top_fm_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">fmid</span><span class="p">))</span>
+            <span class="n">ccid</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"canonical_tuple"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component"</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">ccid</span><span class="p">:</span>
+                <span class="n">current_component_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">ccid</span><span class="p">))</span>
 
         <span class="n">current_event_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
         <span class="n">current_actuation_type</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"actuation_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
@@ -4038,10 +4079,14 @@
         <span class="k">for</span> <span class="n">pe</span> <span class="ow">in</span> <span class="n">past_events</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">pe</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                 <span class="k">continue</span>
-            <span class="n">matched_cids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
+            <span class="n">matched_cids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_component_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]))</span>
             <span class="n">matched_fms</span><span class="p">:</span>  <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"matched_failure_mode_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
 
-            <span class="n">dim_component</span>  <span class="o">=</span> <span class="n">SCORE_COMPONENT</span>  <span class="k">if</span> <span class="n">matched_cids</span> <span class="k">else</span> <span class="mf">0.0</span>
+            <span class="c1"># Only award the component boost when the past event's components</span>
+            <span class="c1"># actually intersect the current event/candidate components — a</span>
+            <span class="c1"># past event merely *having* components (e.g. a VALVE-only event)</span>
+            <span class="c1"># must not earn a match against a PUMP investigation.</span>
+            <span class="n">dim_component</span>  <span class="o">=</span> <span class="n">SCORE_COMPONENT</span>  <span class="k">if</span> <span class="p">(</span><span class="n">current_component_ids</span> <span class="o">&amp;</span> <span class="n">matched_cids</span><span class="p">)</span> <span class="k">else</span> <span class="mf">0.0</span>
             <span class="n">dim_fm</span>         <span class="o">=</span> <span class="n">SCORE_FM</span>         <span class="k">if</span> <span class="p">(</span><span class="n">top_fm_ids</span> <span class="o">&amp;</span> <span class="n">matched_fms</span><span class="p">)</span> <span class="k">else</span> <span class="mf">0.0</span>
             <span class="n">dim_event_type</span> <span class="o">=</span> <span class="n">SCORE_EVENT_TYPE</span> <span class="k">if</span> <span class="p">(</span>
                 <span class="n">current_event_type</span> <span class="ow">and</span> <span class="nb">str</span><span class="p">(</span><span class="n">pe</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_type"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span> <span class="o">==</span> <span class="n">current_event_type</span>
@@ -4278,16 +4323,22 @@
         <span class="n">event_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">tskr_patterns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"event_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
         <span class="n">patterns</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="n">tskr_patterns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"patterns"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]</span>
 
-        <span class="c1"># Count input window sources from summary</span>
+        <span class="c1"># Count input window sources from summary. Use the telemetry-only count:</span>
+        <span class="c1"># anomaly_point_count folds in alarm/SOE windows, so reading it here would</span>
+        <span class="c1"># label an alarm-only run as having telemetry and count the alarm twice.</span>
+        <span class="c1"># Fall back to anomaly_point_count only for legacy summaries lacking the field.</span>
         <span class="n">summary_in</span> <span class="o">=</span> <span class="n">tskr_patterns</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
-        <span class="n">n_anomaly</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">summary_in</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_point_count"</span><span class="p">)</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">n_telemetry</span> <span class="o">=</span> <span class="n">summary_in</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"telemetry_anomaly_count"</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">n_telemetry</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">n_telemetry</span> <span class="o">=</span> <span class="n">summary_in</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_point_count"</span><span class="p">)</span>
+        <span class="n">n_telemetry</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">n_telemetry</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span>
 
         <span class="c1"># Count alarm + SOE windows from logs</span>
         <span class="n">n_alarm</span> <span class="o">=</span> <span class="nb">len</span><span class="p">((</span><span class="n">alarm_log</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"alarms"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alarm_log</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="mi">0</span>
         <span class="n">n_soe</span> <span class="o">=</span> <span class="nb">len</span><span class="p">((</span><span class="n">soe_log</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"records"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">soe_log</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="mi">0</span>
 
         <span class="n">input_sources</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">if</span> <span class="n">n_anomaly</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">n_telemetry</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">input_sources</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"telemetry"</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">n_alarm</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">input_sources</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">"alarm_log"</span><span class="p">)</span>
@@ -4351,7 +4402,7 @@
                 <span class="s2">"n_novel_patterns"</span><span class="p">:</span> <span class="nb">len</span><span class="p">(</span><span class="n">novel</span><span class="p">),</span>
                 <span class="s2">"n_alarm_windows"</span><span class="p">:</span> <span class="n">n_alarm</span><span class="p">,</span>
                 <span class="s2">"n_soe_windows"</span><span class="p">:</span> <span class="n">n_soe</span><span class="p">,</span>
-                <span class="s2">"n_anomaly_windows"</span><span class="p">:</span> <span class="n">n_anomaly</span><span class="p">,</span>
+                <span class="s2">"n_anomaly_windows"</span><span class="p">:</span> <span class="n">n_telemetry</span><span class="p">,</span>
                 <span class="s2">"input_sources"</span><span class="p">:</span> <span class="n">input_sources</span><span class="p">,</span>
             <span class="p">},</span>
             <span class="s2">"matched_patterns"</span><span class="p">:</span> <span class="n">matched</span><span class="p">,</span>
@@ -4824,40 +4875,45 @@
 
         <span class="n">nodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="c1"># ── 3. Anomaly nodes (from telemetry_summary) ───────────────────────</span>
+        <span class="c1"># ── 3. Anomaly nodes (from telemetry_summary signals[].anomalies[]) ──</span>
+        <span class="c1"># Canonical telemetry stores one or more anomalies per signal, each with</span>
+        <span class="c1"># its own timestamp_start/timestamp_end — emit one node per anomaly.</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">telemetry_summary</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
             <span class="k">for</span> <span class="n">sig</span> <span class="ow">in</span> <span class="p">(</span><span class="n">telemetry_summary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
                 <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sig</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
                     <span class="k">continue</span>
                 <span class="n">sensor_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signal_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span>
                 <span class="n">component_id</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"component_id"</span><span class="p">)</span>
-                <span class="n">aw</span> <span class="o">=</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_window"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
-                <span class="n">ano_start</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">aw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"start"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_start"</span><span class="p">))</span>
-                <span class="n">ano_end_raw</span> <span class="o">=</span> <span class="n">aw</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"end"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_end"</span><span class="p">)</span>
-                <span class="n">ano_end</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">ano_end_raw</span><span class="p">)</span> <span class="k">if</span> <span class="n">ano_end_raw</span> <span class="k">else</span> <span class="n">ano_start</span>
-                <span class="k">if</span> <span class="n">ano_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="k">continue</span>
-                <span class="k">if</span> <span class="n">ano_end</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                    <span class="n">ano_end</span> <span class="o">=</span> <span class="n">ano_start</span>
-                <span class="n">a_itvl</span> <span class="o">=</span> <span class="n">Interval</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="n">ano_start</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">ano_end</span><span class="p">)</span>
-                <span class="n">rel</span><span class="p">,</span> <span class="n">score</span> <span class="o">=</span> <span class="n">allen_relation</span><span class="p">(</span><span class="n">a_itvl</span><span class="p">,</span> <span class="n">event_interval</span><span class="p">,</span> <span class="n">epsilon_hours</span><span class="o">=</span><span class="n">epsilon_hours</span><span class="p">)</span>
-                <span class="n">nodes</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
-                    <span class="s2">"node_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"anomaly::</span><span class="si">{</span><span class="n">sensor_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
-                    <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"anomaly"</span><span class="p">,</span>
-                    <span class="s2">"source_id"</span><span class="p">:</span> <span class="n">sensor_id</span><span class="p">,</span>
-                    <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
-                    <span class="s2">"interval_start"</span><span class="p">:</span> <span class="n">ano_start</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
-                    <span class="s2">"interval_end"</span><span class="p">:</span> <span class="n">ano_end</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="k">if</span> <span class="n">ano_end</span> <span class="o">!=</span> <span class="n">ano_start</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="s2">"is_point_event"</span><span class="p">:</span> <span class="p">(</span><span class="n">ano_start</span> <span class="o">==</span> <span class="n">ano_end</span><span class="p">),</span>
-                    <span class="s2">"allen_relation_to_event"</span><span class="p">:</span> <span class="n">rel</span><span class="p">,</span>
-                    <span class="s2">"allen_base_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
-                    <span class="s2">"causal_candidate"</span><span class="p">:</span> <span class="n">rel</span> <span class="ow">in</span> <span class="p">{</span><span class="n">PRECEDES</span><span class="p">,</span> <span class="n">OVERLAPS</span><span class="p">,</span> <span class="n">CONTAINS</span><span class="p">},</span>
-                    <span class="s2">"severity"</span><span class="p">:</span> <span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">),</span>
-                    <span class="s2">"priority"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="s2">"transition"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="s2">"is_protection_signal"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="s2">"system"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
-                <span class="p">})</span>
+                <span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">anomaly</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">sig</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">anomaly</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                        <span class="k">continue</span>
+                    <span class="n">ano_start</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">anomaly</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
+                    <span class="n">ano_end_raw</span> <span class="o">=</span> <span class="n">anomaly</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_end"</span><span class="p">)</span>
+                    <span class="n">ano_end</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">ano_end_raw</span><span class="p">)</span> <span class="k">if</span> <span class="n">ano_end_raw</span> <span class="k">else</span> <span class="n">ano_start</span>
+                    <span class="k">if</span> <span class="n">ano_start</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">continue</span>
+                    <span class="k">if</span> <span class="n">ano_end</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">ano_end</span> <span class="o">=</span> <span class="n">ano_start</span>
+                    <span class="n">a_itvl</span> <span class="o">=</span> <span class="n">Interval</span><span class="p">(</span><span class="n">start</span><span class="o">=</span><span class="n">ano_start</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="n">ano_end</span><span class="p">)</span>
+                    <span class="n">rel</span><span class="p">,</span> <span class="n">score</span> <span class="o">=</span> <span class="n">allen_relation</span><span class="p">(</span><span class="n">a_itvl</span><span class="p">,</span> <span class="n">event_interval</span><span class="p">,</span> <span class="n">epsilon_hours</span><span class="o">=</span><span class="n">epsilon_hours</span><span class="p">)</span>
+                    <span class="n">anomaly_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">anomaly</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomaly_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="n">idx</span><span class="p">)</span>
+                    <span class="n">nodes</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                        <span class="s2">"node_id"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"anomaly::</span><span class="si">{</span><span class="n">sensor_id</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">anomaly_id</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+                        <span class="s2">"node_type"</span><span class="p">:</span> <span class="s2">"anomaly"</span><span class="p">,</span>
+                        <span class="s2">"source_id"</span><span class="p">:</span> <span class="n">sensor_id</span><span class="p">,</span>
+                        <span class="s2">"component_id"</span><span class="p">:</span> <span class="n">component_id</span><span class="p">,</span>
+                        <span class="s2">"interval_start"</span><span class="p">:</span> <span class="n">ano_start</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                        <span class="s2">"interval_end"</span><span class="p">:</span> <span class="n">ano_end</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span> <span class="k">if</span> <span class="n">ano_end</span> <span class="o">!=</span> <span class="n">ano_start</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">"is_point_event"</span><span class="p">:</span> <span class="p">(</span><span class="n">ano_start</span> <span class="o">==</span> <span class="n">ano_end</span><span class="p">),</span>
+                        <span class="s2">"allen_relation_to_event"</span><span class="p">:</span> <span class="n">rel</span><span class="p">,</span>
+                        <span class="s2">"allen_base_score"</span><span class="p">:</span> <span class="nb">round</span><span class="p">(</span><span class="n">score</span><span class="p">,</span> <span class="mi">4</span><span class="p">),</span>
+                        <span class="s2">"causal_candidate"</span><span class="p">:</span> <span class="n">rel</span> <span class="ow">in</span> <span class="p">{</span><span class="n">PRECEDES</span><span class="p">,</span> <span class="n">OVERLAPS</span><span class="p">,</span> <span class="n">CONTAINS</span><span class="p">},</span>
+                        <span class="s2">"severity"</span><span class="p">:</span> <span class="n">anomaly</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity_score"</span><span class="p">,</span> <span class="n">anomaly</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"severity"</span><span class="p">)),</span>
+                        <span class="s2">"priority"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">"transition"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">"is_protection_signal"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                        <span class="s2">"system"</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                    <span class="p">})</span>
 
         <span class="c1"># ── 4. Alarm nodes ───────────────────────────────────────────────────</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">alarm_log</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>

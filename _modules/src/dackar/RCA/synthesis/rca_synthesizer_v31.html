@@ -476,6 +476,7 @@
                 <span class="n">causality_candidates</span><span class="o">=</span><span class="n">causality_candidates</span><span class="p">,</span>
                 <span class="n">pm_compliance</span><span class="o">=</span><span class="n">pm_compliance</span><span class="p">,</span>
                 <span class="n">telemetry_summary</span><span class="o">=</span><span class="n">telemetry_summary</span><span class="p">,</span>
+                <span class="n">event</span><span class="o">=</span><span class="n">event</span><span class="p">,</span>
             <span class="p">)</span>
 
         <span class="c1"># N-4 — state, on every card, that composite_score is a non-probabilistic ordinal</span>
@@ -634,6 +635,7 @@
 
         <span class="n">node_ids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="p">{</span><span class="n">event_node_id</span><span class="p">}</span>
         <span class="n">chain_pos</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">eliminated_ids</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
             <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">cid</span> <span class="ow">or</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">node_ids</span><span class="p">:</span>
@@ -641,10 +643,14 @@
             <span class="n">eliminated</span> <span class="o">=</span> <span class="nb">bool</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_eliminating_gates_for</span><span class="p">(</span><span class="n">c</span><span class="p">))</span> <span class="ow">or</span> <span class="nb">str</span><span class="p">(</span>
                 <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_eligibility"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span>
             <span class="p">)</span> <span class="o">==</span> <span class="s2">"blocked"</span>
-            <span class="k">if</span> <span class="n">cid</span> <span class="o">==</span> <span class="n">primary_id</span><span class="p">:</span>
-                <span class="n">role</span> <span class="o">=</span> <span class="s2">"primary"</span>
-            <span class="k">elif</span> <span class="n">eliminated</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">eliminated</span><span class="p">:</span>
+                <span class="c1"># Elimination outranks the selected-primary label: a candidate whose</span>
+                <span class="c1"># hard gate failed must not be drawn as the primary cause, even if the</span>
+                <span class="c1"># card still names it (and even when only ``hard_gates`` marks it).</span>
                 <span class="n">role</span> <span class="o">=</span> <span class="s2">"eliminated"</span>
+                <span class="n">eliminated_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">cid</span> <span class="o">==</span> <span class="n">primary_id</span><span class="p">:</span>
+                <span class="n">role</span> <span class="o">=</span> <span class="s2">"primary"</span>
             <span class="k">elif</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">contributing_ids</span><span class="p">:</span>
                 <span class="n">role</span> <span class="o">=</span> <span class="s2">"contributing"</span>
             <span class="k">else</span><span class="p">:</span>
@@ -687,7 +693,7 @@
             <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
             <span class="k">if</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">node_ids</span> <span class="ow">or</span> <span class="n">cid</span> <span class="o">==</span> <span class="n">event_node_id</span><span class="p">:</span>
                 <span class="k">continue</span>
-            <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_eligibility"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span> <span class="o">==</span> <span class="s2">"blocked"</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">eliminated_ids</span><span class="p">:</span>
                 <span class="k">continue</span>  <span class="c1"># eliminated candidates are shown as nodes, not causal edges</span>
             <span class="n">cp</span> <span class="o">=</span> <span class="n">chain_pos</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cid</span><span class="p">,</span> <span class="s2">""</span><span class="p">)</span>
             <span class="n">rel</span> <span class="o">=</span> <span class="nb">str</span><span class="p">((</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"temporal_evidence"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"relation"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
@@ -715,10 +721,12 @@
         <span class="n">ccs</span> <span class="o">=</span> <span class="n">causality_candidates</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"common_cause_summary"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ccs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">and</span> <span class="n">ccs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"suspected_common_cause"</span><span class="p">):</span>
             <span class="n">top_cc</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">ccs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"top_common_cause_candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">top_cc</span> <span class="ow">in</span> <span class="n">node_ids</span><span class="p">:</span>
+            <span class="c1"># Eliminated candidates are shown as nodes, not causal edges: neither the</span>
+            <span class="c1"># shared-cause source nor an explained-away co-symptom may be eliminated.</span>
+            <span class="k">if</span> <span class="n">top_cc</span> <span class="ow">in</span> <span class="n">node_ids</span> <span class="ow">and</span> <span class="n">top_cc</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">eliminated_ids</span><span class="p">:</span>
                 <span class="k">for</span> <span class="n">eid</span> <span class="ow">in</span> <span class="n">ccs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"explained_away_candidate_ids"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
                     <span class="n">eid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">eid</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-                    <span class="k">if</span> <span class="n">eid</span> <span class="ow">and</span> <span class="n">eid</span> <span class="ow">in</span> <span class="n">node_ids</span> <span class="ow">and</span> <span class="n">eid</span> <span class="o">!=</span> <span class="n">top_cc</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="n">eid</span> <span class="ow">and</span> <span class="n">eid</span> <span class="ow">in</span> <span class="n">node_ids</span> <span class="ow">and</span> <span class="n">eid</span> <span class="o">!=</span> <span class="n">top_cc</span> <span class="ow">and</span> <span class="n">eid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">eliminated_ids</span><span class="p">:</span>
                         <span class="n">edges</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
                             <span class="s2">"from"</span><span class="p">:</span> <span class="n">top_cc</span><span class="p">,</span>
                             <span class="s2">"to"</span><span class="p">:</span> <span class="n">eid</span><span class="p">,</span>
@@ -732,11 +740,11 @@
         <span class="n">seen_pairs</span><span class="p">:</span> <span class="nb">set</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
         <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
             <span class="n">cid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-            <span class="k">if</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">node_ids</span><span class="p">:</span>
-                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">node_ids</span> <span class="ow">or</span> <span class="n">cid</span> <span class="ow">in</span> <span class="n">eliminated_ids</span><span class="p">:</span>
+                <span class="k">continue</span>  <span class="c1"># eliminated candidates are shown as nodes, not causal edges</span>
             <span class="k">for</span> <span class="n">peer</span> <span class="ow">in</span> <span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"near_tie_with"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
                 <span class="n">peer</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">peer</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">peer</span> <span class="ow">or</span> <span class="n">peer</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">node_ids</span> <span class="ow">or</span> <span class="n">peer</span> <span class="o">==</span> <span class="n">cid</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">peer</span> <span class="ow">or</span> <span class="n">peer</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">node_ids</span> <span class="ow">or</span> <span class="n">peer</span> <span class="o">==</span> <span class="n">cid</span> <span class="ow">or</span> <span class="n">peer</span> <span class="ow">in</span> <span class="n">eliminated_ids</span><span class="p">:</span>
                     <span class="k">continue</span>
                 <span class="n">pair</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">sorted</span><span class="p">((</span><span class="n">cid</span><span class="p">,</span> <span class="n">peer</span><span class="p">)))</span>
                 <span class="k">if</span> <span class="n">pair</span> <span class="ow">in</span> <span class="n">seen_pairs</span><span class="p">:</span>
@@ -3287,6 +3295,7 @@
         <span class="n">causality_candidates</span><span class="p">:</span> <span class="n">JsonDict</span><span class="p">,</span>
         <span class="n">pm_compliance</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
         <span class="n">telemetry_summary</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">],</span>
+        <span class="n">event</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">JsonDict</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">JsonDict</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""F-3 — deterministic 'why was it not prevented?' defense-in-depth assessment.</span>
 
@@ -3308,6 +3317,8 @@
 <span class="sd">        Honest by construction: any layer without inputs is ``not_evaluated`` rather than</span>
 <span class="sd">        being asserted as a failure. Additive card block; ranking untouched.</span>
 <span class="sd">        """</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.._timeutils</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_dt</span>  <span class="c1"># shared ISO parser (naive → UTC-aware)</span>
+
         <span class="n">primary</span> <span class="o">=</span> <span class="n">card</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"primary_hypothesis"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="n">primary_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">primary</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidate_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 
@@ -3339,6 +3350,7 @@
         <span class="c1"># 1) Preventive maintenance / surveillance barrier.</span>
         <span class="n">checks</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">((</span><span class="n">pm_compliance</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"checks"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">c</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)]</span>
         <span class="n">failed_checks</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"fail"</span><span class="p">]</span>
+        <span class="n">passed_checks</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">checks</span> <span class="k">if</span> <span class="nb">str</span><span class="p">(</span><span class="n">c</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"status"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">""</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="o">==</span> <span class="s2">"pass"</span><span class="p">]</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">checks</span><span class="p">:</span>
             <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
                 <span class="s2">"barrier_type"</span><span class="p">:</span> <span class="s2">"preventive_maintenance"</span><span class="p">,</span>
@@ -3353,33 +3365,84 @@
                 <span class="s2">"basis"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">failed_checks</span><span class="p">)</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span><span class="si">}</span><span class="s2"> PM/surveillance compliance checks failed."</span><span class="p">,</span>
                 <span class="s2">"detail"</span><span class="p">:</span> <span class="s2">"Failed checks: "</span> <span class="o">+</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">names</span><span class="p">[:</span><span class="mi">5</span><span class="p">]),</span>
             <span class="p">})</span>
-        <span class="k">else</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">passed_checks</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">checks</span><span class="p">):</span>
             <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
                 <span class="s2">"barrier_type"</span><span class="p">:</span> <span class="s2">"preventive_maintenance"</span><span class="p">,</span>
                 <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"held"</span><span class="p">,</span>
                 <span class="s2">"basis"</span><span class="p">:</span> <span class="sa">f</span><span class="s2">"All </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span><span class="si">}</span><span class="s2"> PM/surveillance compliance checks passed; PM was not the prevention gap."</span><span class="p">,</span>
             <span class="p">})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># No failures, but some checks are neither pass nor fail (unknown /</span>
+            <span class="c1"># not_assessed). A barrier only *holds* on explicit passes — unknown</span>
+            <span class="c1"># status cannot be read as confirmation that PM was effective.</span>
+            <span class="n">unknown</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">passed_checks</span><span class="p">)</span>
+            <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"barrier_type"</span><span class="p">:</span> <span class="s2">"preventive_maintenance"</span><span class="p">,</span>
+                <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"not_evaluated"</span><span class="p">,</span>
+                <span class="s2">"basis"</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">unknown</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">checks</span><span class="p">)</span><span class="si">}</span><span class="s2"> PM/surveillance checks have an unknown status "</span>
+                    <span class="s2">"(not an explicit pass); PM effectiveness could not be confirmed."</span>
+                <span class="p">),</span>
+            <span class="p">})</span>
 
         <span class="c1"># 2) Condition monitoring / detection barrier.</span>
+        <span class="c1">#</span>
+        <span class="c1"># Condition monitoring only *holds* if it surfaced a genuine precursor —</span>
+        <span class="c1"># an anomaly whose onset preceded the event. A coincident or post-event</span>
+        <span class="c1"># anomaly is a consequence, not early warning, and must not be presented</span>
+        <span class="c1"># as prevention evidence. When the event onset (or anomaly timing) is</span>
+        <span class="c1"># unavailable we cannot establish precursor timing, so we report</span>
+        <span class="c1"># not_evaluated rather than claiming the barrier held.</span>
+        <span class="n">event_onset</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">((</span><span class="n">event</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
         <span class="n">signals</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">((</span><span class="n">telemetry_summary</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"signals"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)]</span>
         <span class="n">anomaly_signal_ids</span> <span class="o">=</span> <span class="p">[</span>
             <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"?"</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">signals</span> <span class="k">if</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])</span>
         <span class="p">]</span>
+        <span class="n">precursor_signal_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">event_onset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">signals</span><span class="p">:</span>
+                <span class="n">sid</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"sensor_id"</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">"?"</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"anomalies"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]):</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+                        <span class="k">continue</span>
+                    <span class="n">a_start</span> <span class="o">=</span> <span class="n">parse_dt</span><span class="p">(</span><span class="n">a</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"timestamp_start"</span><span class="p">))</span>
+                    <span class="k">if</span> <span class="n">a_start</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">a_start</span> <span class="o">&lt;</span> <span class="n">event_onset</span><span class="p">:</span>
+                        <span class="n">precursor_signal_ids</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sid</span><span class="p">)</span>
+                        <span class="k">break</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="n">signals</span><span class="p">:</span>
             <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
                 <span class="s2">"barrier_type"</span><span class="p">:</span> <span class="s2">"condition_monitoring"</span><span class="p">,</span>
                 <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"not_evaluated"</span><span class="p">,</span>
                 <span class="s2">"basis"</span><span class="p">:</span> <span class="s2">"No telemetry/condition-monitoring inputs were available for this event."</span><span class="p">,</span>
             <span class="p">})</span>
-        <span class="k">elif</span> <span class="n">anomaly_signal_ids</span><span class="p">:</span>
+        <span class="k">elif</span> <span class="n">precursor_signal_ids</span><span class="p">:</span>
             <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
                 <span class="s2">"barrier_type"</span><span class="p">:</span> <span class="s2">"condition_monitoring"</span><span class="p">,</span>
                 <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"held"</span><span class="p">,</span>
                 <span class="s2">"basis"</span><span class="p">:</span> <span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">anomaly_signal_ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> monitored signal(s) reported anomalies — "</span>
-                    <span class="s2">"condition monitoring surfaced precursors."</span>
+                    <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">precursor_signal_ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> monitored signal(s) reported anomalies that preceded "</span>
+                    <span class="s2">"the event — condition monitoring surfaced precursors."</span>
                 <span class="p">),</span>
-                <span class="s2">"detail"</span><span class="p">:</span> <span class="s2">"Sensors with anomalies: "</span> <span class="o">+</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">anomaly_signal_ids</span><span class="p">[:</span><span class="mi">5</span><span class="p">]),</span>
+                <span class="s2">"detail"</span><span class="p">:</span> <span class="s2">"Sensors with pre-event anomalies: "</span> <span class="o">+</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">precursor_signal_ids</span><span class="p">[:</span><span class="mi">5</span><span class="p">]),</span>
+            <span class="p">})</span>
+        <span class="k">elif</span> <span class="n">event_onset</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">anomaly_signal_ids</span><span class="p">:</span>
+            <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"barrier_type"</span><span class="p">:</span> <span class="s2">"condition_monitoring"</span><span class="p">,</span>
+                <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"gap"</span><span class="p">,</span>
+                <span class="s2">"basis"</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Telemetry reported anomalies on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">anomaly_signal_ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> signal(s) but none "</span>
+                    <span class="s2">"preceded the event onset — they were coincident or post-event, not early-warning "</span>
+                    <span class="s2">"precursors."</span>
+                <span class="p">),</span>
+            <span class="p">})</span>
+        <span class="k">elif</span> <span class="n">anomaly_signal_ids</span><span class="p">:</span>
+            <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+                <span class="s2">"barrier_type"</span><span class="p">:</span> <span class="s2">"condition_monitoring"</span><span class="p">,</span>
+                <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"not_evaluated"</span><span class="p">,</span>
+                <span class="s2">"basis"</span><span class="p">:</span> <span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">"Telemetry reported anomalies on </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">anomaly_signal_ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> signal(s) but the event "</span>
+                    <span class="s2">"onset time is unavailable, so precursor timing could not be established."</span>
+                <span class="p">),</span>
             <span class="p">})</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">barriers</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>

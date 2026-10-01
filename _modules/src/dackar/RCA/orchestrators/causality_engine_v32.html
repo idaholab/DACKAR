@@ -111,6 +111,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">copy</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span>
@@ -1287,7 +1288,12 @@
 <span class="sd">            ``schemas/causality_candidates.json``.</span>
 <span class="sd">        """</span>
         <span class="n">payload</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">causality_candidates</span><span class="p">)</span>
-        <span class="n">candidates</span> <span class="o">=</span> <span class="p">[</span><span class="nb">dict</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])]</span>
+        <span class="c1"># Deep-copy each candidate: refinement mutates nested scores in place</span>
+        <span class="c1"># (e.g. scores["evidence"]), so a shallow dict(c) would share the scores</span>
+        <span class="c1"># dict with the caller and silently mutate the input, breaking the</span>
+        <span class="c1"># "input is not mutated" contract above and corrupting any re-use of the</span>
+        <span class="c1"># same candidates payload across calls.</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="p">[</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"candidates"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[])]</span>
         <span class="n">summary_lookup</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_candidate_summary_lookup</span><span class="p">(</span><span class="n">evidence_bundle</span><span class="p">)</span>
         <span class="n">signal_ev_index</span> <span class="o">=</span> <span class="p">(</span><span class="n">signal_evidence</span> <span class="ow">or</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"per_candidate_chain_score"</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="n">has_external_oe</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_has_external_oe_signal</span><span class="p">(</span><span class="n">summary_lookup</span><span class="p">)</span>
@@ -2563,23 +2569,26 @@
                 <span class="n">patched_summary</span><span class="p">:</span> <span class="n">JsonDict</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"source_families"</span><span class="p">:</span> <span class="n">patched_families</span><span class="p">}</span>
                 <span class="n">new_factor</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">RuleBasedCausalityEngineV32</span><span class="o">.</span><span class="n">_coverage_quality_profile</span><span class="p">(</span><span class="n">patched_summary</span><span class="p">)</span>
 
-                <span class="c1"># Upper-bound score estimate: rescale raw by new factor</span>
+                <span class="c1"># Upper-bound score estimate: rescale the CURRENT composite score</span>
+                <span class="c1"># by the ratio of the improved coverage factor to the current one.</span>
+                <span class="c1"># The current score already carries every independent quality</span>
+                <span class="c1"># penalty (quality_multiplier etc.); recomputing as</span>
+                <span class="c1"># composite_raw * new_factor would silently drop those penalties</span>
+                <span class="c1"># and overstate the achievable score.</span>
                 <span class="k">if</span> <span class="n">current_factor</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-                    <span class="n">estimated</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">raw_score</span> <span class="o">*</span> <span class="n">new_factor</span><span class="p">)</span>
+                    <span class="n">estimated</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">current_score</span> <span class="o">*</span> <span class="p">(</span><span class="n">new_factor</span> <span class="o">/</span> <span class="n">current_factor</span><span class="p">))</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">estimated</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">raw_score</span> <span class="o">*</span> <span class="n">new_factor</span><span class="p">)</span>
                 <span class="n">delta</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">estimated</span> <span class="o">-</span> <span class="n">current_score</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
 
-                <span class="c1"># Would it change ranking vs the next candidate?</span>
+                <span class="c1"># Would restoring this source lift the candidate above the one</span>
+                <span class="c1"># ranked immediately above it?  The top candidate has nobody</span>
+                <span class="c1"># above it; every lower-ranked candidate — including the last —</span>
+                <span class="c1"># must be evaluated (the old `rank_idx &lt; len` guard skipped it).</span>
                 <span class="n">would_change</span> <span class="o">=</span> <span class="kc">False</span>
-                <span class="k">if</span> <span class="n">rank_idx</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">top_candidates</span><span class="p">):</span>
-                    <span class="n">next_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">top_candidates</span><span class="p">[</span><span class="n">rank_idx</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
-                    <span class="c1"># Current top candidate vs second — check if order might flip</span>
-                    <span class="k">if</span> <span class="n">rank_idx</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">estimated</span> <span class="o">&gt;</span> <span class="n">next_score</span> <span class="o">+</span> <span class="mf">0.001</span><span class="p">:</span>
-                        <span class="n">would_change</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># already ranked first, stays first</span>
-                    <span class="k">elif</span> <span class="n">rank_idx</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-                        <span class="n">prev_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">top_candidates</span><span class="p">[</span><span class="n">rank_idx</span> <span class="o">-</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
-                        <span class="n">would_change</span> <span class="o">=</span> <span class="n">estimated</span> <span class="o">&gt;</span> <span class="n">prev_score</span>
+                <span class="k">if</span> <span class="n">rank_idx</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+                    <span class="n">prev_score</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">top_candidates</span><span class="p">[</span><span class="n">rank_idx</span> <span class="o">-</span> <span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">"composite_score"</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="ow">or</span> <span class="mf">0.0</span><span class="p">)</span>
+                    <span class="n">would_change</span> <span class="o">=</span> <span class="n">estimated</span> <span class="o">&gt;</span> <span class="n">prev_score</span> <span class="o">+</span> <span class="mf">0.001</span>
                 <span class="k">if</span> <span class="n">would_change</span><span class="p">:</span>
                     <span class="n">any_change</span> <span class="o">=</span> <span class="kc">True</span>
 
