@@ -173,6 +173,50 @@ def test_explain_away_edge_from_common_cause_summary():
     assert len(e) == 1 and e[0]["from"] == "FM::ROOT" and e[0]["directed"] is True
 
 
+def test_explain_away_source_eliminated_draws_no_edge():
+    # The top shared-cause candidate itself failed a hard gate. It is a node with
+    # role "eliminated" and must not be drawn as the source of an explained_away edge.
+    root_elim = _cand("FM::ROOT", "initiating",
+                      hard_gates={"barrier_logic": {"passed": False}})
+    block = _synth()._build_causal_graph(
+        card={"primary_hypothesis": {"candidate_id": "FM::SYMPTOM"}},
+        event=_EVENT,
+        causality_candidates={
+            "candidates": [root_elim, _cand("FM::SYMPTOM", "contributing")],
+            "common_cause_summary": {
+                "suspected_common_cause": True,
+                "top_common_cause_candidate_id": "FM::ROOT",
+                "explained_away_candidate_ids": ["FM::SYMPTOM"],
+            },
+        },
+    )
+    roles = {n["id"]: n["role"] for n in block["nodes"]}
+    assert roles["FM::ROOT"] == "eliminated"
+    assert _edges_between(block, "FM::ROOT", "FM::SYMPTOM", "explained_away") == []
+
+
+def test_explain_away_target_eliminated_draws_no_edge():
+    # The explained-away co-symptom failed a hard gate. It stays a node with role
+    # "eliminated" and must not be the target of an explained_away edge.
+    symptom_elim = _cand("FM::SYMPTOM", "contributing",
+                         hard_gates={"barrier_logic": {"passed": False}})
+    block = _synth()._build_causal_graph(
+        card={"primary_hypothesis": {"candidate_id": "FM::ROOT"}},
+        event=_EVENT,
+        causality_candidates={
+            "candidates": [_cand("FM::ROOT", "initiating"), symptom_elim],
+            "common_cause_summary": {
+                "suspected_common_cause": True,
+                "top_common_cause_candidate_id": "FM::ROOT",
+                "explained_away_candidate_ids": ["FM::SYMPTOM"],
+            },
+        },
+    )
+    roles = {n["id"]: n["role"] for n in block["nodes"]}
+    assert roles["FM::SYMPTOM"] == "eliminated"
+    assert _edges_between(block, "FM::ROOT", "FM::SYMPTOM", "explained_away") == []
+
+
 def test_near_tie_edge_is_undirected_and_deduped():
     block = _synth()._build_causal_graph(
         card={"primary_hypothesis": {"candidate_id": "FM::A"}},
@@ -185,6 +229,27 @@ def test_near_tie_edge_is_undirected_and_deduped():
     e = _edges_between(block, "FM::A", "FM::B", "near_tie")
     assert len(e) == 1  # deduped despite reciprocal near_tie_with
     assert e[0]["directed"] is False
+
+
+def test_near_tie_with_eliminated_candidate_draws_no_edge():
+    # A near-tie pairing can form before a candidate is blocked, so an eliminated
+    # candidate may still carry near_tie_with. It must not be drawn as a near-tie
+    # competitor — eliminated candidates are nodes, not causal edges.
+    b_elim = _cand("FM::B", "initiating", near_tie_with=["FM::A"],
+                   primary_eligibility="blocked",
+                   primary_block_reasons=["barrier_logic_gate_failed"],
+                   hard_gates={"barrier_logic": {"passed": False}})
+    block = _synth()._build_causal_graph(
+        card={"primary_hypothesis": {"candidate_id": "FM::A"}},
+        event=_EVENT,
+        causality_candidates={"candidates": [
+            _cand("FM::A", "initiating", near_tie_with=["FM::B"]),
+            b_elim,
+        ]},
+    )
+    roles = {n["id"]: n["role"] for n in block["nodes"]}
+    assert roles["FM::B"] == "eliminated"
+    assert _edges_between(block, "FM::A", "FM::B", "near_tie") == []
 
 
 def test_node_preserves_both_chain_position_views():

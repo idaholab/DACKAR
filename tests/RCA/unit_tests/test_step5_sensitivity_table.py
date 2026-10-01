@@ -223,6 +223,23 @@ def test_two_candidate_inversion_flags_would_change_for_last():
     assert result["summary"]["any_ranking_change_possible"] is True
 
 
+def test_rank_two_candidate_not_overtaking_flags_would_change_false():
+    """A lower-ranked candidate that IS evaluated (rank > 1) but whose restored-source
+    estimate stays below the candidate above it must report would_change_ranking False.
+    The sibling inversion test only asserts False for the *top* candidate, where it holds
+    trivially (nobody above it); this pins the evaluated-but-no-inversion branch, which a
+    regression reinstating the old `rank_idx < len` skip would also wrongly leave False (I7).
+    """
+    cov = _missing_kg_coverage()
+    c1 = _candidate("C1", score=0.95, composite_raw=0.99)
+    c2 = _candidate("C2", score=0.70, composite_raw=0.74)  # rank 2; coverage bump cannot overtake C1
+    by_id = {r["candidate_id"]: r for r in _build([c1, c2], cov)["rows"]}
+    assert by_id["C2"]["candidate_rank"] == 2
+    # C2 is evaluated against C1 (rank_idx > 1) yet its estimate stays well below C1.
+    assert by_id["C2"]["estimated_composite_if_available"] < 0.95
+    assert by_id["C2"]["would_change_ranking"] is False
+
+
 # ── 5. top_n cap ──────────────────────────────────────────────────────────────
 
 def test_top_n_cap_limits_candidates():

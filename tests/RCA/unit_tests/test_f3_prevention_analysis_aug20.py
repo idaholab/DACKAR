@@ -85,6 +85,12 @@ def test_pm_all_pass_holds():
         telemetry_summary=None,
     )
     assert _by_type(block, "preventive_maintenance")["status"] == "held"
+    # All-held path: the one assessable barrier held, nothing failed or missing, and
+    # the summary routes to the "every assessable barrier held" branch (not the
+    # "not prevented because" gap branch nor the "insufficient data" absent branch).
+    assert block["applicable"] is True
+    assert block["failed_or_missing_barriers"] == []
+    assert block["why_not_prevented"].startswith("Every assessable defense-in-depth barrier held")
 
 
 def test_pm_absent_not_evaluated():

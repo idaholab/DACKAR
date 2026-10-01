@@ -196,6 +196,26 @@ def test_plant_query_no_semantic_uses_original_weights():
     assert dims["component_match"] == 0.40
 
 
+def test_plant_query_component_match_keys_on_matched_ids_not_component_id():
+    """The component gate must intersect `matched_component_ids`, not the display
+    `component_id`. Here the past event's `component_id` matches the current side
+    (PUMP-1) while its `matched_component_ids` do not (VALVE-99), so no boost may
+    fire. The sibling mismatch test uses the same value in both fields and so
+    could not catch a regression that read `component_id` instead (I21)."""
+    pe = _past_event(
+        "CMMS::CR::CR-001",
+        component_id="PUMP-1",
+        matched_component_ids=["VALVE-99"],
+        in_precursor_window=False,
+    )
+    result = RCAReasoningOrchestrator._query_plant_past_events(
+        event=_event(),
+        kg_context=_kg_context([pe]),
+        causality_candidates=_cands("FM-001"),
+    )
+    assert result[0]["match_dimensions"]["component_match"] == 0.0
+
+
 def test_plant_query_no_semantic_output_has_semantic_fields_zero():
     """Even without semantic scores, output records carry the new fields at zero."""
     pe = _past_event("CMMS::CR::CR-001")

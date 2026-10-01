@@ -563,10 +563,12 @@ class RuleValidatedRCASynthesizerV31:
         ccs = causality_candidates.get("common_cause_summary") or {}
         if isinstance(ccs, dict) and ccs.get("suspected_common_cause"):
             top_cc = str(ccs.get("top_common_cause_candidate_id") or "").strip()
-            if top_cc in node_ids:
+            # Eliminated candidates are shown as nodes, not causal edges: neither the
+            # shared-cause source nor an explained-away co-symptom may be eliminated.
+            if top_cc in node_ids and top_cc not in eliminated_ids:
                 for eid in ccs.get("explained_away_candidate_ids") or []:
                     eid = str(eid or "").strip()
-                    if eid and eid in node_ids and eid != top_cc:
+                    if eid and eid in node_ids and eid != top_cc and eid not in eliminated_ids:
                         edges.append({
                             "from": top_cc,
                             "to": eid,
@@ -580,11 +582,11 @@ class RuleValidatedRCASynthesizerV31:
         seen_pairs: set = set()
         for c in candidates:
             cid = str(c.get("candidate_id") or "").strip()
-            if cid not in node_ids:
-                continue
+            if cid not in node_ids or cid in eliminated_ids:
+                continue  # eliminated candidates are shown as nodes, not causal edges
             for peer in c.get("near_tie_with") or []:
                 peer = str(peer or "").strip()
-                if not peer or peer not in node_ids or peer == cid:
+                if not peer or peer not in node_ids or peer == cid or peer in eliminated_ids:
                     continue
                 pair = tuple(sorted((cid, peer)))
                 if pair in seen_pairs:
