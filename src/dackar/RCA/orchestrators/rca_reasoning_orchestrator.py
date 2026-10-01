@@ -931,6 +931,29 @@ class RCAReasoningOrchestrator:
         evidence_bundle = reentry_execution["evidence_bundle"]
         reentry_hook = reentry_execution["reentry_hook"]
         kg_governance = reentry_execution["kg_governance"]
+
+        # Finding I4: auto re-entry regenerates the candidate set from scratch
+        # (generate + refine_with_evidence), so a component outside the analyst-
+        # approved scope boundary can be reintroduced after the one-time filter
+        # applied at generation time. Reapply the boundary to the post-re-entry
+        # candidate set so the approved scope still holds in synthesis/manifest.
+        if _scope_boundary is not None and int(reentry_execution.get("attempt_count", 0) or 0) > 0:
+            causality_candidates = self._apply_scope_boundary_filter(
+                causality_candidates, _scope_boundary, _scope_version
+            )
+            self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
+            _scope_filter_meta = run_context.setdefault("pipeline_runtime", {}).setdefault(
+                "scope_filter", {}
+            )
+            _cumulative_scope_filtered = [
+                rc.get("component_id")
+                for rc in (causality_candidates.get("ruled_out") or [])
+                if isinstance(rc, dict) and rc.get("reason_code") == "scope_filtered"
+            ]
+            _scope_filter_meta["filtered_component_ids"] = _cumulative_scope_filtered
+            _scope_filter_meta["filtered_count"] = len(_cumulative_scope_filtered)
+            _scope_filter_meta["reapplied_after_reentry"] = True
+
         self._validate_and_persist(run_id, "reentry_execution", reentry_execution)
 
         ishikawa_matrix: Optional[JsonDict] = None
