@@ -128,7 +128,10 @@ def _baseline_anomalies(
                     timestamp_start=ts_start,
                     timestamp_end=ts_end,
                     pattern=str(row.get("pattern") or "unknown"),
-                    severity=clamp01(_to_float(row.get("severity"), 0.0)),
+                    # Canonical telemetry_summary anomalies carry ``severity_score``
+                    # (schemas/telemetry_summary.json). Fall back to the legacy
+                    # ``severity`` key only when the canonical field is absent.
+                    severity=clamp01(_to_float(row.get("severity_score", row.get("severity")), 0.0)),
                     source="telemetry_summary",
                     raw_value_start=row.get("raw_value_start"),
                     raw_value_peak=row.get("raw_value_peak"),
@@ -147,10 +150,14 @@ def _merge_anomalies(
     merged = list(baseline)
     tol_s = max(0.0, dedup_tolerance_min) * 60.0
     for h in historian:
+        # Deduplicate against everything accepted so far (baseline plus
+        # already-merged historian rows), not just the baseline — otherwise two
+        # same-sensor historian records within tolerance both survive when no
+        # baseline match exists, inflating the anomaly count.
         dup = any(
             a.sensor_id == h.sensor_id
             and abs((a.timestamp_start - h.timestamp_start).total_seconds()) < tol_s
-            for a in baseline
+            for a in merged
         )
         if not dup:
             merged.append(h)

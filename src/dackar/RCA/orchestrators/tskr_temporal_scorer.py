@@ -210,6 +210,7 @@ class TSKRTemporalScorerV1:
                 "has_novel_patterns": novel_count > 0,
                 "operator_family": operator_family,
                 "anomaly_point_count": len(all_windows),
+                "telemetry_anomaly_count": len(telemetry_windows),
                 "signal_count": len(signal_ids),
                 "avg_confidence": round(avg_conf, 4),
                 "top_supported_targets": [

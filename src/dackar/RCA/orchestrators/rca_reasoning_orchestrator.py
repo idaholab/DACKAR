@@ -931,6 +931,29 @@ class RCAReasoningOrchestrator:
         evidence_bundle = reentry_execution["evidence_bundle"]
         reentry_hook = reentry_execution["reentry_hook"]
         kg_governance = reentry_execution["kg_governance"]
+
+        # Finding I4: auto re-entry regenerates the candidate set from scratch
+        # (generate + refine_with_evidence), so a component outside the analyst-
+        # approved scope boundary can be reintroduced after the one-time filter
+        # applied at generation time. Reapply the boundary to the post-re-entry
+        # candidate set so the approved scope still holds in synthesis/manifest.
+        if _scope_boundary is not None and int(reentry_execution.get("attempt_count", 0) or 0) > 0:
+            causality_candidates = self._apply_scope_boundary_filter(
+                causality_candidates, _scope_boundary, _scope_version
+            )
+            self._validate_and_persist(run_id, "causality_candidates", causality_candidates)
+            _scope_filter_meta = run_context.setdefault("pipeline_runtime", {}).setdefault(
+                "scope_filter", {}
+            )
+            _cumulative_scope_filtered = [
+                rc.get("component_id")
+                for rc in (causality_candidates.get("ruled_out") or [])
+                if isinstance(rc, dict) and rc.get("reason_code") == "scope_filtered"
+            ]
+            _scope_filter_meta["filtered_component_ids"] = _cumulative_scope_filtered
+            _scope_filter_meta["filtered_count"] = len(_cumulative_scope_filtered)
+            _scope_filter_meta["reapplied_after_reentry"] = True
+
         self._validate_and_persist(run_id, "reentry_execution", reentry_execution)
 
         ishikawa_matrix: Optional[JsonDict] = None
@@ -2600,18 +2623,27 @@ class RCAReasoningOrchestrator:
             current_snapshot = base_snapshot
 
         # When accepting, merge added/removed component IDs into the snapshot.
+        # Membership and removal are compared case-insensitively (matching the
+        # downstream _apply_scope_boundary_filter normalization, str(cid).strip().lower())
+        # so a differently cased addition does not duplicate a stored id and a
+        # differently cased removal still deletes it. The first-seen display casing
+        # is preserved in component_ids.
         if analyst_decision == "accepted":
+            def _norm_cid(x: Any) -> str:
+                return str(x or "").strip().lower()
+
             existing_cids: List[str] = list(current_snapshot.get("component_ids") or [])
-            existing_set: Dict[str, None] = {c: None for c in existing_cids}  # ordered dedup
+            existing_norm: Set[str] = {_norm_cid(c) for c in existing_cids}  # case-insensitive dedup
 
             for cid in (changed_boundary.get("added_component_ids") or []):
-                if cid and cid not in existing_set:
+                key = _norm_cid(cid)
+                if key and key not in existing_norm:
                     existing_cids.append(cid)
-                    existing_set[cid] = None
+                    existing_norm.add(key)
 
-            removed_set = set(changed_boundary.get("removed_component_ids") or [])
-            if removed_set:
-                existing_cids = [c for c in existing_cids if c not in removed_set]
+            removed_norm = {_norm_cid(c) for c in (changed_boundary.get("removed_component_ids") or [])}
+            if removed_norm:
+                existing_cids = [c for c in existing_cids if _norm_cid(c) not in removed_norm]
 
             current_snapshot = dict(current_snapshot)
             current_snapshot["component_ids"] = existing_cids
@@ -3595,12 +3627,21 @@ class RCAReasoningOrchestrator:
             (causality_candidates or {}).get("candidates") or []
         )
         top_fm_ids: set = set()
+        current_component_ids: set = set()
+        _ev_cid = event.get("component_id")
+        if _ev_cid:
+            current_component_ids.add(str(_ev_cid))
         for c in cand_list[:5]:
             fmid = c.get("failure_mode_id") or (
                 (c.get("canonical_tuple") or {}).get("failure_mode")
             )
             if fmid:
                 top_fm_ids.add(str(fmid))
+            ccid = c.get("component_id") or (
+                (c.get("canonical_tuple") or {}).get("component")
+            )
+            if ccid:
+                current_component_ids.add(str(ccid))
 
         current_event_type = str(event.get("event_type") or "")
         current_actuation_type = str(event.get("actuation_type") or "")
@@ -3628,10 +3669,14 @@ class RCAReasoningOrchestrator:
         for pe in past_events:
             if not isinstance(pe, dict):
                 continue
-            matched_cids: set = set(pe.get("matched_component_ids") or [])
+            matched_cids: set = set(str(c) for c in (pe.get("matched_component_ids") or []))
             matched_fms:  set = set(pe.get("matched_failure_mode_ids") or [])
 
-            dim_component  = SCORE_COMPONENT  if matched_cids else 0.0
+            # Only award the component boost when the past event's components
+            # actually intersect the current event/candidate components — a
+            # past event merely *having* components (e.g. a VALVE-only event)
+            # must not earn a match against a PUMP investigation.
+            dim_component  = SCORE_COMPONENT  if (current_component_ids & matched_cids) else 0.0
             dim_fm         = SCORE_FM         if (top_fm_ids & matched_fms) else 0.0
             dim_event_type = SCORE_EVENT_TYPE if (
                 current_event_type and str(pe.get("event_type") or "") == current_event_type
@@ -3862,16 +3907,22 @@ class RCAReasoningOrchestrator:
         event_id = str(tskr_patterns.get("event_id") or "")
         patterns: List[JsonDict] = tskr_patterns.get("patterns") or []
 
-        # Count input window sources from summary
+        # Count input window sources from summary. Use the telemetry-only count:
+        # anomaly_point_count folds in alarm/SOE windows, so reading it here would
+        # label an alarm-only run as having telemetry and count the alarm twice.
+        # Fall back to anomaly_point_count only for legacy summaries lacking the field.
         summary_in = tskr_patterns.get("summary") or {}
-        n_anomaly = int(summary_in.get("anomaly_point_count") or 0)
+        n_telemetry = summary_in.get("telemetry_anomaly_count")
+        if n_telemetry is None:
+            n_telemetry = summary_in.get("anomaly_point_count")
+        n_telemetry = int(n_telemetry or 0)
 
         # Count alarm + SOE windows from logs
         n_alarm = len((alarm_log or {}).get("alarms") or []) if isinstance(alarm_log, dict) else 0
         n_soe = len((soe_log or {}).get("records") or []) if isinstance(soe_log, dict) else 0
 
         input_sources: List[str] = []
-        if n_anomaly > 0:
+        if n_telemetry > 0:
             input_sources.append("telemetry")
         if n_alarm > 0:
             input_sources.append("alarm_log")
@@ -3935,7 +3986,7 @@ class RCAReasoningOrchestrator:
                 "n_novel_patterns": len(novel),
                 "n_alarm_windows": n_alarm,
                 "n_soe_windows": n_soe,
-                "n_anomaly_windows": n_anomaly,
+                "n_anomaly_windows": n_telemetry,
                 "input_sources": input_sources,
             },
             "matched_patterns": matched,
@@ -4390,40 +4441,45 @@ class RCAReasoningOrchestrator:
 
         nodes: List[JsonDict] = []
 
-        # ── 3. Anomaly nodes (from telemetry_summary) ───────────────────────
+        # ── 3. Anomaly nodes (from telemetry_summary signals[].anomalies[]) ──
+        # Canonical telemetry stores one or more anomalies per signal, each with
+        # its own timestamp_start/timestamp_end — emit one node per anomaly.
         if isinstance(telemetry_summary, dict):
             for sig in (telemetry_summary.get("signals") or []):
                 if not isinstance(sig, dict):
                     continue
                 sensor_id = str(sig.get("sensor_id") or sig.get("signal_id") or "")
                 component_id = sig.get("component_id")
-                aw = sig.get("anomaly_window") or {}
-                ano_start = parse_dt(aw.get("start") or sig.get("anomaly_start"))
-                ano_end_raw = aw.get("end") or sig.get("anomaly_end")
-                ano_end = parse_dt(ano_end_raw) if ano_end_raw else ano_start
-                if ano_start is None:
-                    continue
-                if ano_end is None:
-                    ano_end = ano_start
-                a_itvl = Interval(start=ano_start, end=ano_end)
-                rel, score = allen_relation(a_itvl, event_interval, epsilon_hours=epsilon_hours)
-                nodes.append({
-                    "node_id": f"anomaly::{sensor_id}",
-                    "node_type": "anomaly",
-                    "source_id": sensor_id,
-                    "component_id": component_id,
-                    "interval_start": ano_start.isoformat(),
-                    "interval_end": ano_end.isoformat() if ano_end != ano_start else None,
-                    "is_point_event": (ano_start == ano_end),
-                    "allen_relation_to_event": rel,
-                    "allen_base_score": round(score, 4),
-                    "causal_candidate": rel in {PRECEDES, OVERLAPS, CONTAINS},
-                    "severity": sig.get("severity"),
-                    "priority": None,
-                    "transition": None,
-                    "is_protection_signal": None,
-                    "system": None,
-                })
+                for idx, anomaly in enumerate(sig.get("anomalies") or []):
+                    if not isinstance(anomaly, dict):
+                        continue
+                    ano_start = parse_dt(anomaly.get("timestamp_start"))
+                    ano_end_raw = anomaly.get("timestamp_end")
+                    ano_end = parse_dt(ano_end_raw) if ano_end_raw else ano_start
+                    if ano_start is None:
+                        continue
+                    if ano_end is None:
+                        ano_end = ano_start
+                    a_itvl = Interval(start=ano_start, end=ano_end)
+                    rel, score = allen_relation(a_itvl, event_interval, epsilon_hours=epsilon_hours)
+                    anomaly_id = str(anomaly.get("anomaly_id") or idx)
+                    nodes.append({
+                        "node_id": f"anomaly::{sensor_id}::{anomaly_id}",
+                        "node_type": "anomaly",
+                        "source_id": sensor_id,
+                        "component_id": component_id,
+                        "interval_start": ano_start.isoformat(),
+                        "interval_end": ano_end.isoformat() if ano_end != ano_start else None,
+                        "is_point_event": (ano_start == ano_end),
+                        "allen_relation_to_event": rel,
+                        "allen_base_score": round(score, 4),
+                        "causal_candidate": rel in {PRECEDES, OVERLAPS, CONTAINS},
+                        "severity": anomaly.get("severity_score", anomaly.get("severity")),
+                        "priority": None,
+                        "transition": None,
+                        "is_protection_signal": None,
+                        "system": None,
+                    })
 
         # ── 4. Alarm nodes ───────────────────────────────────────────────────
         if isinstance(alarm_log, dict):
