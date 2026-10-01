@@ -12,23 +12,16 @@ Tests:
   TestTC6CuratedCategoryDispatch   ( 5 tests) — integration with TC-6 fixtures
 """
 import json
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock
-_SCENARIO_ROOT = Path(__file__).resolve().parents[1] / "scenario"
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 import pytest
-pytest.importorskip("demos.kg_population_helpers", reason="RCA demos package arrives in MR #14")
-from demos.kg_population_helpers import assign_causal_category
+
 from dackar.RCA.orchestrators.causality_engine_v32 import (
     RuleBasedCausalityEngineV32,
     CausalityEngineConfigV32,
 )
+
+_SCENARIO_ROOT = Path(__file__).resolve().parents[1] / "scenario"
 
 _TC6_KG_PATH = _SCENARIO_ROOT / "test_case_6" / "fixtures" / "kg_context.json"
 _TC3_KG_PATH = _SCENARIO_ROOT / "test_case_3" / "fixtures" / "kg_context.json"
@@ -39,6 +32,17 @@ ENGINE = RuleBasedCausalityEngineV32
 # ── TestAssignCausalCategory ──────────────────────────────────────────────────
 
 class TestAssignCausalCategory:
+
+    @pytest.fixture(autouse=True)
+    def _load_assign_causal_category(self):
+        # The ``demos`` package (which provides assign_causal_category) lands in
+        # MR #14; until then only this class's helper-dependent tests skip, while
+        # the engine/TC-6 tests below — which use dackar core only — still run.
+        mod = pytest.importorskip(
+            "demos.kg_population_helpers",
+            reason="RCA demos package arrives in MR #14",
+        )
+        globals()["assign_causal_category"] = mod.assign_causal_category
 
     def test_curated_valid_category_returned_as_curated(self):
         fm = {"causal_category": "G", "name": "operator error"}
