@@ -4422,40 +4422,45 @@ class RCAReasoningOrchestrator:
 
         nodes: List[JsonDict] = []
 
-        # ── 3. Anomaly nodes (from telemetry_summary) ───────────────────────
+        # ── 3. Anomaly nodes (from telemetry_summary signals[].anomalies[]) ──
+        # Canonical telemetry stores one or more anomalies per signal, each with
+        # its own timestamp_start/timestamp_end — emit one node per anomaly.
         if isinstance(telemetry_summary, dict):
             for sig in (telemetry_summary.get("signals") or []):
                 if not isinstance(sig, dict):
                     continue
                 sensor_id = str(sig.get("sensor_id") or sig.get("signal_id") or "")
                 component_id = sig.get("component_id")
-                aw = sig.get("anomaly_window") or {}
-                ano_start = parse_dt(aw.get("start") or sig.get("anomaly_start"))
-                ano_end_raw = aw.get("end") or sig.get("anomaly_end")
-                ano_end = parse_dt(ano_end_raw) if ano_end_raw else ano_start
-                if ano_start is None:
-                    continue
-                if ano_end is None:
-                    ano_end = ano_start
-                a_itvl = Interval(start=ano_start, end=ano_end)
-                rel, score = allen_relation(a_itvl, event_interval, epsilon_hours=epsilon_hours)
-                nodes.append({
-                    "node_id": f"anomaly::{sensor_id}",
-                    "node_type": "anomaly",
-                    "source_id": sensor_id,
-                    "component_id": component_id,
-                    "interval_start": ano_start.isoformat(),
-                    "interval_end": ano_end.isoformat() if ano_end != ano_start else None,
-                    "is_point_event": (ano_start == ano_end),
-                    "allen_relation_to_event": rel,
-                    "allen_base_score": round(score, 4),
-                    "causal_candidate": rel in {PRECEDES, OVERLAPS, CONTAINS},
-                    "severity": sig.get("severity"),
-                    "priority": None,
-                    "transition": None,
-                    "is_protection_signal": None,
-                    "system": None,
-                })
+                for idx, anomaly in enumerate(sig.get("anomalies") or []):
+                    if not isinstance(anomaly, dict):
+                        continue
+                    ano_start = parse_dt(anomaly.get("timestamp_start"))
+                    ano_end_raw = anomaly.get("timestamp_end")
+                    ano_end = parse_dt(ano_end_raw) if ano_end_raw else ano_start
+                    if ano_start is None:
+                        continue
+                    if ano_end is None:
+                        ano_end = ano_start
+                    a_itvl = Interval(start=ano_start, end=ano_end)
+                    rel, score = allen_relation(a_itvl, event_interval, epsilon_hours=epsilon_hours)
+                    anomaly_id = str(anomaly.get("anomaly_id") or idx)
+                    nodes.append({
+                        "node_id": f"anomaly::{sensor_id}::{anomaly_id}",
+                        "node_type": "anomaly",
+                        "source_id": sensor_id,
+                        "component_id": component_id,
+                        "interval_start": ano_start.isoformat(),
+                        "interval_end": ano_end.isoformat() if ano_end != ano_start else None,
+                        "is_point_event": (ano_start == ano_end),
+                        "allen_relation_to_event": rel,
+                        "allen_base_score": round(score, 4),
+                        "causal_candidate": rel in {PRECEDES, OVERLAPS, CONTAINS},
+                        "severity": anomaly.get("severity_score", anomaly.get("severity")),
+                        "priority": None,
+                        "transition": None,
+                        "is_protection_signal": None,
+                        "system": None,
+                    })
 
         # ── 4. Alarm nodes ───────────────────────────────────────────────────
         if isinstance(alarm_log, dict):
