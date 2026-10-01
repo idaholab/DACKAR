@@ -3627,12 +3627,21 @@ class RCAReasoningOrchestrator:
             (causality_candidates or {}).get("candidates") or []
         )
         top_fm_ids: set = set()
+        current_component_ids: set = set()
+        _ev_cid = event.get("component_id")
+        if _ev_cid:
+            current_component_ids.add(str(_ev_cid))
         for c in cand_list[:5]:
             fmid = c.get("failure_mode_id") or (
                 (c.get("canonical_tuple") or {}).get("failure_mode")
             )
             if fmid:
                 top_fm_ids.add(str(fmid))
+            ccid = c.get("component_id") or (
+                (c.get("canonical_tuple") or {}).get("component")
+            )
+            if ccid:
+                current_component_ids.add(str(ccid))
 
         current_event_type = str(event.get("event_type") or "")
         current_actuation_type = str(event.get("actuation_type") or "")
@@ -3660,10 +3669,14 @@ class RCAReasoningOrchestrator:
         for pe in past_events:
             if not isinstance(pe, dict):
                 continue
-            matched_cids: set = set(pe.get("matched_component_ids") or [])
+            matched_cids: set = set(str(c) for c in (pe.get("matched_component_ids") or []))
             matched_fms:  set = set(pe.get("matched_failure_mode_ids") or [])
 
-            dim_component  = SCORE_COMPONENT  if matched_cids else 0.0
+            # Only award the component boost when the past event's components
+            # actually intersect the current event/candidate components — a
+            # past event merely *having* components (e.g. a VALVE-only event)
+            # must not earn a match against a PUMP investigation.
+            dim_component  = SCORE_COMPONENT  if (current_component_ids & matched_cids) else 0.0
             dim_fm         = SCORE_FM         if (top_fm_ids & matched_fms) else 0.0
             dim_event_type = SCORE_EVENT_TYPE if (
                 current_event_type and str(pe.get("event_type") or "") == current_event_type
