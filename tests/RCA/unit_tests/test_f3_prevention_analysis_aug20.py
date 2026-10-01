@@ -14,13 +14,8 @@ Run:  pytest test_f3_prevention_analysis_aug20.py -v
 """
 from __future__ import annotations
 
-import sys
-from unittest.mock import MagicMock
+from datetime import datetime, timedelta, timezone
 
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.llm_clients import DummyLLMClient  # noqa: E402
 from dackar.RCA.synthesis.rca_synthesizer_v31 import (  # noqa: E402
@@ -31,6 +26,20 @@ from dackar.RCA.synthesis.rca_synthesizer_v31 import (  # noqa: E402
 
 def _synth() -> RuleValidatedRCASynthesizerV31:
     return RuleValidatedRCASynthesizerV31(llm_client=DummyLLMClient(), config=RCASynthesizerConfig())
+
+
+_EVENT_ONSET = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _event(onset: datetime = _EVENT_ONSET) -> dict:
+    return {"event_id": "EVT-1", "timestamp_start": onset.isoformat()}
+
+
+def _timed_signal(sensor_id: str, anomaly_at: datetime) -> dict:
+    return {
+        "sensor_id": sensor_id,
+        "anomalies": [{"pattern": "spike", "timestamp_start": anomaly_at.isoformat()}],
+    }
 
 
 def _card(primary_id="FM::P"):
@@ -76,6 +85,12 @@ def test_pm_all_pass_holds():
         telemetry_summary=None,
     )
     assert _by_type(block, "preventive_maintenance")["status"] == "held"
+    # All-held path: the one assessable barrier held, nothing failed or missing, and
+    # the summary routes to the "every assessable barrier held" branch (not the
+    # "not prevented because" gap branch nor the "insufficient data" absent branch).
+    assert block["applicable"] is True
+    assert block["failed_or_missing_barriers"] == []
+    assert block["why_not_prevented"].startswith("Every assessable defense-in-depth barrier held")
 
 
 def test_pm_absent_not_evaluated():
@@ -86,15 +101,70 @@ def test_pm_absent_not_evaluated():
     assert _by_type(block, "preventive_maintenance")["status"] == "not_evaluated"
 
 
+def test_pm_unknown_only_not_held():
+    """Unknown-status checks are not explicit passes — the barrier cannot be
+    reported as held on the strength of unknown PM data."""
+    s = _synth()
+    block = s._build_prevention_analysis(
+        card=_card(), causality_candidates=_cc(),
+        pm_compliance={"checks": [{"check_id": "PM-1", "status": "unknown"},
+                                  {"check_id": "PM-2", "status": "not_assessed"}]},
+        telemetry_summary=None,
+    )
+    assert _by_type(block, "preventive_maintenance")["status"] == "not_evaluated"
+
+
+def test_pm_mixed_pass_unknown_not_held():
+    """A mix of pass + unknown is not 'all passed' — reserve held for explicit passes."""
+    s = _synth()
+    block = s._build_prevention_analysis(
+        card=_card(), causality_candidates=_cc(),
+        pm_compliance={"checks": [{"check_id": "PM-1", "status": "pass"},
+                                  {"check_id": "PM-2", "status": "unknown"}]},
+        telemetry_summary=None,
+    )
+    pm = _by_type(block, "preventive_maintenance")
+    assert pm["status"] == "not_evaluated"
+    assert "preventive_maintenance" not in block["failed_or_missing_barriers"]
+
+
 # ── condition monitoring layer ──────────────────────────────────────────────
 
-def test_detection_holds_when_anomalies_present():
+def test_detection_holds_when_pre_event_anomaly_present():
+    """A genuine precursor (anomaly before the event onset) → monitoring held."""
+    s = _synth()
+    block = s._build_prevention_analysis(
+        card=_card(), causality_candidates=_cc(), pm_compliance=None,
+        telemetry_summary={"signals": [_timed_signal("S-1", _EVENT_ONSET - timedelta(hours=3))]},
+        event=_event(),
+    )
+    assert _by_type(block, "condition_monitoring")["status"] == "held"
+
+
+def test_detection_post_event_anomaly_is_not_held():
+    """A post-event anomaly is a consequence, not early warning — it must not be
+    reported as a held preventive barrier (regression: previously 'held')."""
+    s = _synth()
+    block = s._build_prevention_analysis(
+        card=_card(), causality_candidates=_cc(), pm_compliance=None,
+        telemetry_summary={"signals": [_timed_signal("S-1", _EVENT_ONSET + timedelta(hours=3))]},
+        event=_event(),
+    )
+    cm = _by_type(block, "condition_monitoring")
+    assert cm["status"] == "gap"
+    assert "condition_monitoring" in block["failed_or_missing_barriers"]
+
+
+def test_detection_anomaly_without_event_timing_not_evaluated():
+    """Anomalies present but no event onset → precursor timing cannot be
+    established, so the barrier is not_evaluated rather than claimed held."""
     s = _synth()
     block = s._build_prevention_analysis(
         card=_card(), causality_candidates=_cc(), pm_compliance=None,
         telemetry_summary={"signals": [{"sensor_id": "S-1", "anomalies": [{"pattern": "spike"}]}]},
+        event=None,
     )
-    assert _by_type(block, "condition_monitoring")["status"] == "held"
+    assert _by_type(block, "condition_monitoring")["status"] == "not_evaluated"
 
 
 def test_detection_gap_when_no_precursor():

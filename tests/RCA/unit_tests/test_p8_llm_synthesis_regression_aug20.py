@@ -291,9 +291,14 @@ def test_ollama_llm_semantic_regression():
     )
     card = _synthesize(s, _causality(primary))
 
-    # Whatever the LLM produced (or the fallback it forced), the emitted card must
-    # be semantically valid and structurally complete.
+    # The live-LLM card must be semantically valid, structurally complete, and —
+    # the point of this regression — produced on the LLM path itself. Accepting a
+    # template fallback (fallback_used=True, candidate_id "NONE") would let a
+    # silently broken LLM path pass, so require the real synthesis result.
     errors = s._validate_card_semantics(card)
     assert errors == [], f"live-LLM card failed semantic validation: {errors}"
-    assert card["primary_hypothesis"]["candidate_id"] in {"FM::AIR-INLEAK", "NONE"}
+    assert card["validation_status"]["fallback_used"] is False, (
+        "LLM path fell back to the template — regression not exercised"
+    )
+    assert card["primary_hypothesis"]["candidate_id"] == "FM::AIR-INLEAK"
     assert "human_performance_assessment" in card

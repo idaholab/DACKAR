@@ -18,9 +18,7 @@ Coverage (one section per fix):
     G4  contributing_event_ids populated in RecurrenceProfile and pattern output
     B6  unresolved_count aligned to matching set, not dated set
 """
-import sys
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
 
 from dackar.RCA.orchestrators.tskr_temporal_scorer import (
     TSKRTemporalScorerV1,
@@ -410,11 +408,6 @@ def test_g3_attention_flag_set_in_pattern_when_increasing():
 
 def test_g3_attention_flag_escalated_to_rca_card():
     """_apply_accelerating_recurrence_attention_flags must populate analyst_attention_flags."""
-    for _mod in ("neo4j", "py2neo", "chromadb", "langchain_chroma", "langchain_community",
-                 "langchain_community.vectorstores", "langchain_community.embeddings"):
-        if _mod not in sys.modules:
-            sys.modules[_mod] = MagicMock()
-
     from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
     rca_card = {"executive_summary": {}}
@@ -430,11 +423,6 @@ def test_g3_attention_flag_escalated_to_rca_card():
 
 
 def test_g3_no_flag_in_rca_card_when_all_stable():
-    for _mod in ("neo4j", "py2neo", "chromadb", "langchain_chroma", "langchain_community",
-                 "langchain_community.vectorstores", "langchain_community.embeddings"):
-        if _mod not in sys.modules:
-            sys.modules[_mod] = MagicMock()
-
     from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
     rca_card = {"executive_summary": {}}
@@ -674,3 +662,4 @@ if __name__ == "__main__":
             traceback.print_exc()
             failed += 1
     print(f"\n{passed} passed, {failed} failed out of {passed + failed} tests.")
+    raise SystemExit(1 if failed else 0)

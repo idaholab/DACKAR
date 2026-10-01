@@ -146,10 +146,18 @@ def test_not_eligible_when_other_is_none():
 
 
 def test_eligible_exact_gap_boundary():
-    """Gap exactly = 0.10 → eligible (boundary is inclusive on ≤)."""
+    """Gap exactly == threshold → eligible (production rejects only gap > threshold).
+
+    0.60 - 0.50 is 0.0999999999999999… in binary float, so it never actually
+    equals the default 0.10 and does not exercise the boundary. Use values that
+    are exactly representable: threshold 0.125 with a 0.625/0.5 gap gives
+    0.625 - 0.5 == 0.125 exactly, hitting the inclusive boundary cleanly.
+    """
     e = make_engine()
-    primary = make_candidate("FM::A", composite_score=0.60)
-    other = make_candidate("FM::B", composite_score=0.50)   # gap=0.10 exactly
+    e.config.review_alternative_gap = 0.125
+    primary = make_candidate("FM::A", composite_score=0.625)
+    other = make_candidate("FM::B", composite_score=0.5)
+    assert (0.625 - 0.5) == 0.125   # exact in IEEE-754 double
     assert e._eligible_review_alternative(primary, other) is True
     print("  PASS test_eligible_exact_gap_boundary")
 

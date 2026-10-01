@@ -8,17 +8,7 @@ Coverage:
   - build_manifest_cross_pattern_summary: precedence distribution, temporal_link_skipped
     count, per-candidate summaries
 """
-import sys
 from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock
-
-for _mod in (
-    "neo4j", "py2neo", "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.cross_pattern.models import CandidateCrossPatternEvidence, CrossPatternLink
 from dackar.RCA.cross_pattern.summary import (

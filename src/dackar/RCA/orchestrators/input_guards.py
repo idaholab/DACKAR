@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dackar.RCA._timeutils import parse_dt
+from .._timeutils import parse_dt
 
 JsonDict = Dict[str, Any]
 

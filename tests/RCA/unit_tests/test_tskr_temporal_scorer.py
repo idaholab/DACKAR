@@ -1016,8 +1016,28 @@ def test_pattern_temporal_contradiction_from_stage_b_relation():
     assert pattern["temporal_contradiction"] is True
 
 
-def test_pattern_confidence_clamped_at_one():
-    """Confidence must never exceed 1.0."""
+def test_pattern_confidence_saturates_at_one():
+    """Confidence reaches exactly 1.0 when every contributing sub-score is 1.0.
+
+    confidence is a normalized (convex) weighted sum of six sub-scores, so it
+    equals 1.0 only when all six are themselves 1.0. This drives each to its
+    ceiling and asserts the exact saturation value — a stronger claim than the
+    old ``<= 1.0``, which held vacuously for any input:
+      - anomaly term:   telemetry_support=1.0 (max(anomaly_score, telemetry))
+      - latency:        5 windows at onset-lag 3.0h inside bracket [2.0, 6.0]
+      - chain position: chain_position_score=1.0 (non-confluence type)
+      - history:        5 recurrences, increasing trend, one unresolved → 1.0
+      - anomaly count:  5 high-severity windows → effective count 4.5 ≥ 4 → 1.0
+      - lag consistency: identical windows → std_lag 0.0 ≤ 0.25 → 1.0
+    No temporal_contradiction, so no penalty is subtracted.
+    """
+    past_events = [
+        {"matched_failure_mode_ids": ["FM-01"], "component_id": None,
+         "timestamp_start": h(-24 * d).isoformat(),
+         "resolved": resolved, "time_distance_days": d}
+        for d, resolved in ((100, True), (60, True), (30, True),
+                            (15, False), (5, True))
+    ]
     pattern = sc()._score_failure_mode_pattern(
         event_id="E1", asset_id="A1",
         event_start=h(0), event_end=h(10),
@@ -1027,9 +1047,17 @@ def test_pattern_confidence_clamped_at_one():
         telemetry_support=1.0,
         operator_family="interval_interval",
         fm=_make_fm(latency_min=2.0, latency_max=6.0),
-        past_events=[],
+        past_events=past_events,
+        chain_position_score=1.0,
+        chain_position_type="root",
     )
-    assert pattern["confidence"] <= 1.0
+    # Every sub-score is at its ceiling, so the convex combination equals 1.0.
+    assert pattern["latency_alignment_score"] == 1.0
+    assert pattern["lag_consistency"] == 1.0
+    assert pattern["recurrence_support_score"] == 1.0
+    assert pattern["chain_position_score"] == 1.0
+    assert pattern["temporal_contradiction"] is False
+    assert pattern["confidence"] == 1.0
 
 
 def test_pattern_target_id_matches_fm_id():
@@ -1499,3 +1527,4 @@ if __name__ == "__main__":
             traceback.print_exc()
             failed += 1
     print(f"\n{passed} passed, {failed} failed out of {passed + failed} tests.")
+    raise SystemExit(1 if failed else 0)

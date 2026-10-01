@@ -1,16 +1,10 @@
 """
 Wave 1 metamodel compatibility tests.
 """
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 from dackar.RCA.validation.schema_validator import RCAArtifactValidator

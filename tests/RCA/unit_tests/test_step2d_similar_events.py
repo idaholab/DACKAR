@@ -13,15 +13,9 @@ Covers:
 
 Run:  pytest test_step2d_similar_events.py -v
 """
-import sys
 from copy import deepcopy
 from typing import Dict, List, Optional
 from unittest.mock import MagicMock, patch
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 from dackar.RCA.adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS
@@ -117,6 +111,20 @@ def test_plant_engine_component_match_scores_correctly():
     assert len(result) == 1
     dims = result[0]["match_dimensions"]
     assert dims["component_match"] == 0.40
+
+
+def test_plant_engine_component_mismatch_scores_zero():
+    """Control: a past event whose matched components do NOT intersect the
+    current event/candidate components earns no component_match boost."""
+    past = [_past_event("EVT-MISMATCH", component_id="VALVE-99",
+                        matched_component_ids=["VALVE-99"], in_precursor_window=False)]
+    result = RCAReasoningOrchestrator._query_plant_past_events(
+        event=_event(),  # current event component is PUMP-1
+        kg_context=_kg_context(past),
+        causality_candidates=_candidates_payload([_candidate("PUMP-1")]),
+    )
+    assert len(result) == 1
+    assert result[0]["match_dimensions"]["component_match"] == 0.0
 
 
 def test_plant_engine_fm_match_adds_score():

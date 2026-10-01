@@ -19,14 +19,7 @@ Run:  pytest test_p3_negation_refutation_aug20.py -v
 """
 from __future__ import annotations
 
-import sys
 from unittest.mock import MagicMock
-
-for _mod in ("neo4j", "py2neo", "chromadb",
-             "langchain_community", "langchain_community.vectorstores",
-             "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.evidence_retriever import (  # noqa: E402
     ChromaEvidenceRetriever,
@@ -56,7 +49,8 @@ def test_negation_positive_not_degraded():
 
 
 def test_negation_positive_ruled_out_fouling():
-    assert _neg("heat exchanger fouling was ruled out fouling by inspection") is True
+    # Natural phrasing: the state precedes "ruled out" (state-before-trigger).
+    assert _neg("heat exchanger fouling was ruled out by inspection") is True
 
 
 def test_negation_positive_no_signs_of_drift():

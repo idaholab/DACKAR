@@ -14,11 +14,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
-
 from dackar.RCA.orchestrators.artifact_store import FileArtifactStore
 from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
@@ -187,37 +182,139 @@ def test_scoring_evolution_candidate_absent_post_refine():
     print("  PASS test_scoring_evolution_candidate_absent_post_refine")
 
 
-def test_scoring_evolution_saved_as_dedicated_artifact():
-    """H3: scoring_evolution.json is persisted as a separate artifact when pre-refine exists."""
-    with tempfile.TemporaryDirectory() as tmp:
-        real_store = FileArtifactStore(root_dir=tmp)
-        o = make_orchestrator()
-        o.artifact_store = real_store
+# ── H3 — scoring_evolution persisted by the real run() (wiring regression) ────
+#
+# Driving the full orchestrator proves run() itself writes scoring_evolution.json
+# when refinement runs. The earlier version rebuilt the manifest condition in the
+# test and called store.save() directly, so it stayed green even if run() had
+# stopped persisting the artifact. These minimal stubs drive the real pipeline:
+# the engine exposes refine_with_evidence(), so run() captures a pre-refine
+# snapshot, builds the evolution rows, and persists them.
 
-        pre_refine = {"candidates": [make_candidate("C1", 0.55)]}
-        post_refine = {"candidates": [make_candidate("C1", 0.72)]}
+from dackar.RCA.orchestrators.artifact_store import NoOpSchemaValidator
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import OrchestratorConfig
 
-        scoring_evolution = o._build_scoring_evolution(pre_refine, post_refine)
-        assert scoring_evolution is not None
 
-        run_id = "RUN-H3-TEST"
-        run_manifest = {
-            "run_id": run_id,
-            "completed_at": "2026-04-21T12:00:00Z",
-            "pipeline_config": {"scoring_evolution": scoring_evolution},
+class _SEKGBuilder:
+    client = None
+    database = None
+
+    def build(self, event, telemetry_summary, operational_context, pm_compliance,
+              run_context, focus_component_ids=None):
+        return {
+            "event_id": event.get("event_id"),
+            "asset_id": event.get("asset_id"),
+            "subgraph_id": "KGCTX::SE",
+            "components": [{"component_id": "CMP-1"}],
+            "failure_modes": [{"fm_id": "FM-1", "component_id": "CMP-1"}],
+            "past_events": [],
+            "seed_context": {},
+            "documents": [],
         }
-        real_store.save(run_id, "run_manifest", run_manifest)
 
-        se = (run_manifest.get("pipeline_config") or {}).get("scoring_evolution")
-        if se is not None:
-            real_store.save(run_id, "scoring_evolution", {
-                "run_id": run_id,
-                "generated_at": run_manifest["completed_at"],
-                "rows": se,
-            })
+
+class _SEEvidenceRetriever:
+    store = object()
+
+    def retrieve(self, event, kg_context, causality_candidates, operational_context, run_context):
+        return {
+            "retrieval_scope": {"asset_id": event.get("asset_id")},
+            "results": [],
+            "candidate_evidence_summary": [],
+            "pipeline_health": {"status": "green", "issues": []},
+        }
+
+
+def _se_candidate(cid, score):
+    return {
+        "candidate_id": cid,
+        "component_id": "CMP-1",
+        "cause_node_id": "FM-1",
+        "composite_score": score,
+        "scores": {"structural": score, "evidence": 0.4},
+        "evidence_posture": "supported",
+        "confidence_label": "medium",
+        "temporal_evidence": {},
+    }
+
+
+class _SERefiningEngine:
+    """generate() + refine_with_evidence() so run() captures a pre-refine
+    snapshot and builds scoring_evolution (the score moves 0.55 → 0.72)."""
+
+    def generate(self, **kwargs):
+        return {"event_id": "EVT-SE",
+                "candidates": [_se_candidate("FM::CMP-1", 0.55)], "ruled_out": []}
+
+    def refine_with_evidence(self, causality_candidates, evidence_bundle,
+                             signal_evidence=None, **kwargs):
+        out = dict(causality_candidates)
+        out["candidates"] = [_se_candidate("FM::CMP-1", 0.72)]
+        return out
+
+
+class _SESynthesizer:
+    def synthesize(self, event, telemetry_summary, kg_context, tskr_patterns,
+                   causality_candidates, evidence_bundle, operational_context,
+                   pm_compliance, ishikawa_matrix, cmms_context, run_context, **kwargs):
+        return {
+            "event_id": event.get("event_id"),
+            "asset_id": event.get("asset_id"),
+            "executive_summary": {"decision_status": "candidate_ready", "analyst_attention_flags": []},
+            "primary_hypothesis": {"candidate_id": "FM::CMP-1", "cause_label": "wear",
+                                   "confidence_label": "medium"},
+            "validation_status": {"schema_valid": True, "all_claims_cited": True,
+                                  "passed_minimum_evidence_gate": True, "fallback_used": False},
+            "analyst_review": {"decision_required": False, "writeback_recommendation": "ready_if_accepted"},
+            "recommended_actions": [],
+            "contributing_causes": [],
+        }
+
+
+def _se_orchestrator(store):
+    cfg = OrchestratorConfig(
+        enable_ishikawa=False,
+        persist_intermediate_artifacts=False,
+        stop_on_validation_error=False,
+        extra={
+            "strict_red_state_governance": False,
+            "hard_abort_on_kg_red_state": False,
+            "enable_chroma_archive_stage": False,
+            "hard_fail_on_chroma_archive_error": False,
+            "causality_engine_version": "v32",
+            "enable_auto_reentry": False,
+        },
+    )
+    return RCAReasoningOrchestrator(
+        validator=NoOpSchemaValidator(),
+        artifact_store=store,
+        kg_context_builder=_SEKGBuilder(),
+        tskr_temporal_scorer=None,
+        causality_engine=_SERefiningEngine(),
+        evidence_retriever=_SEEvidenceRetriever(),
+        rca_synthesizer=_SESynthesizer(),
+        config=cfg,
+    )
+
+
+def test_scoring_evolution_saved_as_dedicated_artifact():
+    """H3: the real run() persists scoring_evolution.json when refinement runs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = FileArtifactStore(root_dir=tmp)
+        orch = _se_orchestrator(store)
+        result = orch.run(
+            event={"event_id": "EVT-SE", "asset_id": "ASSET-SE", "component_id": "CMP-1",
+                   "timestamp_start": "2026-01-01T12:00:00+00:00", "severity": "HIGH",
+                   "event_type": "FAILURE"},
+            telemetry_summary={"asset_id": "ASSET-SE", "signals": []},
+        )
+        run_id = result["run_context"]["run_id"]
 
         artifact_path = Path(tmp) / run_id / "scoring_evolution.json"
-        assert artifact_path.exists(), "scoring_evolution.json not written"
+        assert artifact_path.exists(), (
+            "run() did not persist scoring_evolution.json; wrote "
+            f"{sorted(p.name for p in (Path(tmp) / run_id).glob('*.json'))}"
+        )
         artifact = json.loads(artifact_path.read_text())
         assert artifact["run_id"] == run_id
         assert isinstance(artifact["rows"], list)

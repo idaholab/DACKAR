@@ -17,24 +17,10 @@ Covers:
 - Manifest epistemics summary counts degraded_classification correctly
 """
 
-import sys
 from dataclasses import dataclass, field
 from typing import Optional
-from unittest.mock import MagicMock
 
 import pytest
-
-# Stub heavy optional dependencies so the orchestrator module can be imported
-# in a test environment that lacks kg, neo4j, py2neo, and chroma.
-
-for _mod in (
-    "neo4j", "py2neo",
-    "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.doc_extraction.epistemics import (
     EpistemicAnnotation,

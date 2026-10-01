@@ -26,13 +26,6 @@ for _p in (str(_TESTS_SHARED),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-for _mod in (
-    "neo4j", "py2neo", "chromadb", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
-
 import pytest  # noqa: E402
 
 from dackar.RCA.orchestrators.causality_engine_v32 import (  # noqa: E402
@@ -43,9 +36,6 @@ from dackar.RCA.orchestrators.kg_context_builder import (  # noqa: E402
     Neo4jKGContextBuilder,
     KGContextBuilderConfig,
 )
-import pytest  # noqa: E402
-pytest.importorskip("run_helpers", reason="scenario shared helpers (tests/RCA/scenario/shared) arrive in MR #12")
-from run_helpers import build_fixture_orchestrator, load_fixtures, run_rca  # noqa: E402
 
 _TC8_FIXTURES = _SCENARIO_ROOT / "test_case_8" / "fixtures"
 
@@ -155,6 +145,12 @@ def test_p1_build_populates_provenance_expansion_and_truncation():
 # ═══════════════════════════════════════════════════════════════════════
 
 def test_p6_cmms_build_failure_recorded_in_pipeline_warnings():
+    pytest.importorskip(
+        "run_helpers",
+        reason="scenario shared helpers (tests/RCA/scenario/shared) arrive in MR #12",
+    )
+    from run_helpers import build_fixture_orchestrator, load_fixtures, run_rca
+
     if not _TC8_FIXTURES.exists():
         pytest.skip(f"TC-8 fixtures not found at {_TC8_FIXTURES}")
 

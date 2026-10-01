@@ -63,6 +63,8 @@ def _kg_context_basic() -> Dict[str, Any]:
 
 
 def _telemetry_summary_single() -> Dict[str, Any]:
+    # Schema-valid anomaly: anomaly_id / detection_method / severity_score per
+    # schemas/telemetry_summary.json (which sets additionalProperties: false).
     return {
         "asset_id": "ASSET-1",
         "signals": [
@@ -70,15 +72,34 @@ def _telemetry_summary_single() -> Dict[str, Any]:
                 "sensor_id": "S-A",
                 "anomalies": [
                     {
+                        "anomaly_id": "AN-A1",
+                        "detection_method": "matrix_profile",
                         "timestamp_start": "2026-01-01T10:00:00+00:00",
                         "timestamp_end": "2026-01-01T10:10:00+00:00",
                         "pattern": "step_change",
-                        "severity": 0.8,
+                        "severity_score": 0.8,
                     }
                 ],
             }
         ],
     }
+
+
+def test_baseline_severity_score_retained():
+    # The canonical severity field is ``severity_score``; the builder must carry
+    # it through rather than defaulting the severity to 0.0.
+    kg = _kg_context_basic()
+    out = build_signal_evidence(
+        run_id="RUN-SEV",
+        event={"timestamp_start": "2026-01-01T12:00:00+00:00"},
+        telemetry_summary=_telemetry_summary_single(),
+        kg_context=kg,
+        neo4j_client=_FakeNeo4j([]),
+        historian_adapter=NullHistorianAdapter(),
+    )
+    sev = {a["sensor_id"]: a["severity"] for a in out["augmented_anomaly_set"]}
+    assert sev["S-A"] == 0.8
+    print("  PASS test_baseline_severity_score_retained")
 
 
 def test_anomaly_merge_deduplication():
@@ -118,6 +139,47 @@ def test_anomaly_merge_deduplication():
     # duplicate S-A within 5 minutes should be dropped in merged set
     assert out["augmented_anomaly_count"] == 2
     print("  PASS test_anomaly_merge_deduplication")
+
+
+def test_historian_only_duplicate_collapses_to_one():
+    # Two historian S-C rows within the 5-minute tolerance and no baseline S-C.
+    # The second must deduplicate against the first already-merged historian row
+    # (not only against the baseline), so one S-C survives, not two.
+    kg = _kg_context_basic()
+    hist = _FixtureHistorian(
+        [
+            AnomalyRecord(
+                sensor_id="S-C",
+                component_id="C-C",
+                timestamp_start=datetime.fromisoformat("2026-01-01T11:00:00+00:00"),
+                timestamp_end=datetime.fromisoformat("2026-01-01T11:05:00+00:00"),
+                pattern="spike",
+                severity=0.5,
+                source="historian",
+            ),
+            AnomalyRecord(
+                sensor_id="S-C",
+                component_id="C-C",
+                timestamp_start=datetime.fromisoformat("2026-01-01T11:03:00+00:00"),
+                timestamp_end=datetime.fromisoformat("2026-01-01T11:08:00+00:00"),
+                pattern="spike",
+                severity=0.6,
+                source="historian",
+            ),
+        ]
+    )
+    out = build_signal_evidence(
+        run_id="RUN-DUP",
+        event={"timestamp_start": "2026-01-01T12:00:00+00:00"},
+        telemetry_summary=_telemetry_summary_single(),  # baseline S-A only
+        kg_context=kg,
+        neo4j_client=_FakeNeo4j([]),
+        historian_adapter=hist,
+    )
+    assert out["historian_anomaly_count"] == 2
+    # baseline S-A + one deduplicated historian S-C == 2 (not 3)
+    assert out["augmented_anomaly_count"] == 2
+    print("  PASS test_historian_only_duplicate_collapses_to_one")
 
 
 def test_dag_construction_simple_linear_chain():
@@ -268,7 +330,9 @@ def test_feedback_cascade_truncated_warning():
 
 
 ALL_TESTS = [
+    test_baseline_severity_score_retained,
     test_anomaly_merge_deduplication,
+    test_historian_only_duplicate_collapses_to_one,
     test_dag_construction_simple_linear_chain,
     test_graceful_degradation_no_historian,
     test_dag_convergence_marks_contributing_causes,

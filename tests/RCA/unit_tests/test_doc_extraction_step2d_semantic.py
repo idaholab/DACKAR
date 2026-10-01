@@ -23,18 +23,9 @@ Coverage:
   - _build_similar_event_list: semantic_scoring_applied in provenance
   - _build_similar_event_list: semantic disabled → provenance.semantic_scoring_applied=False
 """
-import sys
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, call
-
-for _mod in (
-    "neo4j", "py2neo", "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.rca_reasoning_orchestrator import (
     RCAReasoningOrchestrator,
@@ -192,14 +183,37 @@ def test_source_doc_id_partial_prefix_returns_none():
 def test_plant_query_no_semantic_uses_original_weights():
     """When doc_id_semantic_scores=None original weights are used (backward compat)."""
     pe = _past_event("CMMS::CR::CR-001", in_precursor_window=False)
+    # The candidate contributes component PUMP-1 so it intersects the past event's
+    # PUMP-1 and the component dimension actually fires — component_match now
+    # requires a genuine current-vs-past ID intersection (I21).
     result = RCAReasoningOrchestrator._query_plant_past_events(
         event=_event(),
         kg_context=_kg_context([pe]),
-        causality_candidates=_cands(),
+        causality_candidates=_cands("FM-001"),
     )
     assert len(result) == 1
     dims = result[0]["match_dimensions"]
     assert dims["component_match"] == 0.40
+
+
+def test_plant_query_component_match_keys_on_matched_ids_not_component_id():
+    """The component gate must intersect `matched_component_ids`, not the display
+    `component_id`. Here the past event's `component_id` matches the current side
+    (PUMP-1) while its `matched_component_ids` do not (VALVE-99), so no boost may
+    fire. The sibling mismatch test uses the same value in both fields and so
+    could not catch a regression that read `component_id` instead (I21)."""
+    pe = _past_event(
+        "CMMS::CR::CR-001",
+        component_id="PUMP-1",
+        matched_component_ids=["VALVE-99"],
+        in_precursor_window=False,
+    )
+    result = RCAReasoningOrchestrator._query_plant_past_events(
+        event=_event(),
+        kg_context=_kg_context([pe]),
+        causality_candidates=_cands("FM-001"),
+    )
+    assert result[0]["match_dimensions"]["component_match"] == 0.0
 
 
 def test_plant_query_no_semantic_output_has_semantic_fields_zero():
@@ -221,10 +235,12 @@ def test_plant_query_no_semantic_output_has_semantic_fields_zero():
 def test_plant_query_renormalized_component_weight():
     """When semantic scores dict is provided component weight becomes 0.36."""
     pe = _past_event("CMMS::CR::CR-001", in_precursor_window=False)
+    # Candidate contributes component PUMP-1 so the component dimension fires
+    # against the past event's PUMP-1 (I21: intersection required).
     result = RCAReasoningOrchestrator._query_plant_past_events(
         event=_event(),
         kg_context=_kg_context([pe]),
-        causality_candidates=_cands(),
+        causality_candidates=_cands("FM-001"),
         doc_id_semantic_scores={},
     )
     dims = result[0]["match_dimensions"]

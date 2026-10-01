@@ -17,15 +17,8 @@ Covers:
 
 Run:  pytest test_step2c_allen_relation_map.py -v
 """
-import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from unittest.mock import MagicMock
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 
@@ -54,18 +47,33 @@ EVENT_END   = T0 + timedelta(hours=2)
 EVENT       = _ev(EVENT_START, EVENT_END)
 
 
+def _anomaly(anomaly_id: str, ano_start: datetime, ano_end: Optional[datetime] = None,
+             severity_score: float = 0.8) -> dict:
+    """Schema-valid telemetry anomaly (signals[].anomalies[] shape)."""
+    a: dict = {
+        "anomaly_id": anomaly_id,
+        "detection_method": "matrix_profile",
+        "pattern": "spike",
+        "timestamp_start": _iso(ano_start),
+        "severity_score": severity_score,
+    }
+    if ano_end:
+        a["timestamp_end"] = _iso(ano_end)
+    return a
+
+
+def _signal(sensor_id: str, anomalies: list) -> dict:
+    return {
+        "sensor_id": sensor_id,
+        "component_id": f"COMP-{sensor_id}",
+        "anomalies": anomalies,
+    }
+
+
 def _telemetry(sensor_id: str, ano_start: datetime, ano_end: Optional[datetime] = None, severity: str = "HIGH") -> dict:
     return {
         "signals": [
-            {
-                "sensor_id": sensor_id,
-                "component_id": f"COMP-{sensor_id}",
-                "severity": severity,
-                "anomaly_window": {
-                    "start": _iso(ano_start),
-                    "end": _iso(ano_end) if ano_end else None,
-                },
-            }
+            _signal(sensor_id, [_anomaly(f"AN-{sensor_id}", ano_start, ano_end)]),
         ]
     }
 
@@ -272,8 +280,8 @@ def test_summary_dominant_causal_type():
     # 2 anomalies, 1 alarm (causal), 1 SOE (causal) → anomaly wins
     tel = {
         "signals": [
-            {"sensor_id": "S1", "anomaly_window": {"start": _iso(T_BEFORE), "end": _iso(T_BEFORE + timedelta(hours=1))}},
-            {"sensor_id": "S2", "anomaly_window": {"start": _iso(T_BEFORE - timedelta(hours=2)), "end": _iso(T_BEFORE)}},
+            _signal("S1", [_anomaly("AN-1", T_BEFORE, T_BEFORE + timedelta(hours=1))]),
+            _signal("S2", [_anomaly("AN-2", T_BEFORE - timedelta(hours=2), T_BEFORE)]),
         ]
     }
     alm = _alarm_log("ALM-01", T_BEFORE, T_BEFORE + timedelta(minutes=30))
@@ -287,14 +295,34 @@ def test_summary_earliest_causal_onset():
     very_early = T_BEFORE - timedelta(hours=2)
     tel = {
         "signals": [
-            {"sensor_id": "S1", "anomaly_window": {"start": _iso(T_BEFORE), "end": _iso(T_BEFORE + timedelta(hours=1))}},
-            {"sensor_id": "S2", "anomaly_window": {"start": _iso(very_early), "end": _iso(very_early + timedelta(hours=1))}},
+            _signal("S1", [_anomaly("AN-1", T_BEFORE, T_BEFORE + timedelta(hours=1))]),
+            _signal("S2", [_anomaly("AN-2", very_early, very_early + timedelta(hours=1))]),
         ]
     }
     result = BUILD(event=EVENT, telemetry_summary=tel)
     earliest = result["summary"]["earliest_causal_onset"]
     assert earliest is not None
     assert earliest.startswith("2024-01-01T03:00")  # T0 - 7h (10:00 - 5h = 05:00, then - 2h more = 03:00)
+
+
+def test_multiple_anomalies_in_one_signal_yield_one_node_each():
+    # Canonical telemetry: a single signal carrying two anomalies must produce
+    # two distinct anomaly nodes (one per anomaly), not one per signal.
+    tel = {
+        "signals": [
+            _signal("S1", [
+                _anomaly("AN-A", T_BEFORE, T_BEFORE + timedelta(hours=1)),   # precedes
+                _anomaly("AN-B", T_DURING, T_DURING + timedelta(minutes=30)),  # during
+            ]),
+        ]
+    }
+    result = BUILD(event=EVENT, telemetry_summary=tel)
+    anomaly_nodes = [n for n in result["nodes"] if n["node_type"] == "anomaly"]
+    assert len(anomaly_nodes) == 2
+    assert {n["node_id"] for n in anomaly_nodes} == {"anomaly::S1::AN-A", "anomaly::S1::AN-B"}
+    rels = {n["node_id"]: n["allen_relation_to_event"] for n in anomaly_nodes}
+    assert rels["anomaly::S1::AN-A"] == "precedes"
+    assert rels["anomaly::S1::AN-B"] == "during"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

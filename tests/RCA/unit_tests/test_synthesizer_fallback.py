@@ -201,11 +201,24 @@ def test_evidence_linked_to_out_of_card_candidate_stripped():
         prior_errors=[],
     )
 
-    # Verify validation passes (no unknown linked_candidate_id errors)
+    ev_by_src = {row["source_id"]: row for row in card["evidence"]}
+    # Both rows survive repair (the row is retained, not dropped).
+    assert set(ev_by_src) == {"SNIP-X", "SNIP-Y"}
+    # Out-of-card link stripped: production OMITS the key (does not set it to None),
+    # downgrades the role to contextual, and renumbers the row to EV-002.
+    stripped = ev_by_src["SNIP-X"]
+    assert stripped.get("linked_candidate_id") is None
+    assert "linked_candidate_id" not in stripped
+    assert stripped["support_role"] == "contextual"
+    assert stripped["evidence_id"] == "EV-002"
+    # In-card link preserved untouched.
+    assert ev_by_src["SNIP-Y"]["linked_candidate_id"] == "FM::PRIMARY"
+    assert ev_by_src["SNIP-Y"]["support_role"] == "supporting"
+    # Validation raises no "unknown" error for the stripped link. (It still reports
+    # 'primary_hypothesis.citations missing' here — unrelated to stripping — so this
+    # stays a targeted substring check, not errors == [].)
     errors = s._validate_card_semantics(card)
-    assert not any("linked_candidate_id unknown" in e for e in errors), (
-        f"linked_candidate_id stripping failed. Errors: {errors}"
-    )
+    assert not any("linked_candidate_id unknown" in e for e in errors), errors
     print("  PASS test_evidence_linked_to_out_of_card_candidate_stripped")
 
 
@@ -653,14 +666,23 @@ def test_fallback_card_includes_depth_gaps_and_monitoring_plan():
         run_context=make_run_context(),
         prior_errors=[],
     )
-    summary = card.get("executive_summary") or {}
-    depth = summary.get("causal_depth_summary") or {}
-    assert depth.get("proximate_cause")
-    assert isinstance(depth.get("contributing_causes"), list)
-    assert depth.get("root_cause")
-    assert isinstance(summary.get("unresolved_gaps"), list)
-    assert isinstance(summary.get("effectiveness_monitoring_plan"), list)
-    assert len(summary.get("effectiveness_monitoring_plan") or []) >= 1
+    summary = card["executive_summary"]
+    depth = summary["causal_depth_summary"]
+    # A -> proximate, G -> contributing, L -> root; all three layers resolved.
+    assert depth["proximate_cause"] == "Primary cause"
+    assert depth["contributing_causes"] == ["Contributing cause"]
+    assert depth["root_cause"] == "Systemic weakness"
+    assert depth["depth_complete"] is True
+    assert depth["proximate_covered"] is True
+    assert depth["contributing_covered"] is True
+    assert depth["root_cause_covered"] is True
+    assert "depth_incomplete_reason" not in depth
+    assert summary["unresolved_gaps"] == []
+    plan = summary["effectiveness_monitoring_plan"]
+    assert len(plan) == 1
+    assert plan[0]["linked_action_id"] == "ACT-001"
+    assert plan[0]["causal_depth_level"] == "proximate"
+    assert plan[0]["review_horizon"] == "90d"
     print("  PASS test_fallback_card_includes_depth_gaps_and_monitoring_plan")
 
 

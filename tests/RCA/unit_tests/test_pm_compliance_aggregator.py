@@ -59,8 +59,11 @@ def test_build_with_overdue_inspection_fails_governance_relevance():
     v.validate(art)
     assert any(c.get("status") == "fail" for c in art["checks"])
     assert art["summary"]["failed"] >= 1
-    if art.get("overdue_items"):
-        assert len(art["overdue_items"]) >= 1
+    overdue = art["overdue_items"]
+    assert len(overdue) == 1
+    assert overdue[0]["check_id"] == "PM-INSP-1"
+    assert overdue[0]["overdue_by_days"] == 31.5
+    assert art["summary"]["overdue_count"] == 1
 
 
 def test_schema_required_check_fields_present():

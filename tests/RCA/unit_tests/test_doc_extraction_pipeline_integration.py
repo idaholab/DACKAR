@@ -22,20 +22,10 @@ Coverage:
   - _apply_near_match_pattern_attention_flags: no flag when no near_match_pattern
   - _build_semantic_recurrence_provenance: summarises across patterns correctly
 """
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
-
-# Stub heavy optional dependencies unavailable in the unit-test environment
-for _mod in (
-    "neo4j", "py2neo", "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.tskr_temporal_scorer import (
     TSKRTemporalScorerV1,
@@ -384,14 +374,15 @@ def test_pattern_store_query_receives_correct_args():
     fm = {"fm_id": "FM-001", "component_id": "C-1", "name": "pump cavitation", "expected_symptoms": "noise vibration"}
     _run_pattern(scorer, fm=fm)
 
-    store.query.assert_called_once()
-    call_kwargs = store.query.call_args
-    query_text = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1].get("query_text", "")
-    # Query text should include FM name and symptoms
-    assert "pump cavitation" in query_text
-    assert "noise vibration" in query_text
-    # Threshold and params forwarded
-    assert call_kwargs[1].get("top_k") == 3 or (call_kwargs[0] and len(call_kwargs[0]) > 1)
+    # Full call contract: FM name + symptoms joined with ' | ', and every
+    # configured parameter forwarded positionally/by keyword exactly.
+    store.query.assert_called_once_with(
+        "pump cavitation | noise vibration",
+        top_k=3,
+        similarity_threshold=0.80,
+        near_match_window=0.05,
+        exact_doc_ids=set(),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

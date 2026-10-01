@@ -25,7 +25,6 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -35,18 +34,6 @@ _TESTS_SHARED = _SCENARIO_ROOT / "shared"
 for _p in (str(_TESTS_SHARED),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
-
-for _mod in (
-    "neo4j", "py2neo", "chromadb",
-    "langchain_community", "langchain_community.vectorstores",
-    "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
-
-import pytest  # noqa: E402
-pytest.importorskip("run_helpers", reason="scenario shared helpers (tests/RCA/scenario/shared) arrive in MR #12")
-from run_helpers import build_fixture_orchestrator, load_fixtures, run_rca  # noqa: E402
 
 from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32  # noqa: E402
 
@@ -58,6 +45,12 @@ _ALLEN_PRECEDES = _SCENARIO_ROOT / "fixtures_robustness" / "allen_precedes_fixtu
 
 
 def _run(fixture_dir: Path) -> Dict[str, Any]:
+    pytest.importorskip(
+        "run_helpers",
+        reason="scenario shared helpers (tests/RCA/scenario/shared) arrive in MR #12",
+    )
+    from run_helpers import build_fixture_orchestrator, load_fixtures, run_rca
+
     with tempfile.TemporaryDirectory() as tmp:
         orch = build_fixture_orchestrator(tmp)
         return run_rca(orch, load_fixtures(fixture_dir))

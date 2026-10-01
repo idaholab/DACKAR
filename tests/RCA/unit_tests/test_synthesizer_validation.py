@@ -169,9 +169,7 @@ def test_evidence_linked_to_alternative_is_valid():
         "linked_candidate_id": "FM::CAND-B",  # alternative — should be valid
     })
     errors = s._validate_card_semantics(card)
-    assert not any("E002" in e or "linked_candidate_id" in e for e in errors), (
-        f"Unexpected errors for valid alternative link: {errors}"
-    )
+    assert errors == [], f"Expected no errors for valid alternative link, got: {errors}"
     print("  PASS test_evidence_linked_to_alternative_is_valid")
 
 
@@ -247,6 +245,87 @@ def test_missing_contributing_causes_is_error():
     print("  PASS test_missing_contributing_causes_is_error")
 
 
+def test_evidence_missing_evidence_id():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    del card["evidence"][0]["evidence_id"]
+    errors = s._validate_card_semantics(card)
+    assert any(e == "evidence[0].evidence_id missing" for e in errors), errors
+    print("  PASS test_evidence_missing_evidence_id")
+
+
+def test_evidence_missing_source_type():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    del card["evidence"][0]["source_type"]
+    errors = s._validate_card_semantics(card)
+    assert any(e == "evidence[0].source_type missing" for e in errors), errors
+    print("  PASS test_evidence_missing_source_type")
+
+
+def test_action_missing_action_id():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    del card["recommended_actions"][0]["action_id"]
+    errors = s._validate_card_semantics(card)
+    assert any(e == "recommended_actions[0].action_id missing" for e in errors), errors
+    print("  PASS test_action_missing_action_id")
+
+
+def test_action_missing_action_type():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    del card["recommended_actions"][0]["action_type"]
+    errors = s._validate_card_semantics(card)
+    assert any(e == "recommended_actions[0].action_type missing" for e in errors), errors
+    print("  PASS test_action_missing_action_type")
+
+
+def test_action_missing_priority():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    del card["recommended_actions"][0]["priority"]
+    errors = s._validate_card_semantics(card)
+    assert any(e == "recommended_actions[0].priority missing" for e in errors), errors
+    print("  PASS test_action_missing_priority")
+
+
+def test_alternative_supports_not_a_list():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    card["alternatives"][0]["supports"] = "x"
+    errors = s._validate_card_semantics(card)
+    assert any(e == "alternatives[0].supports invalid" for e in errors), errors
+    print("  PASS test_alternative_supports_not_a_list")
+
+
+def test_alternative_supports_empty():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    card["alternatives"][0]["supports"] = []
+    errors = s._validate_card_semantics(card)
+    assert any(e == "alternatives[0].supports empty" for e in errors), errors
+    print("  PASS test_alternative_supports_empty")
+
+
+def test_alternative_weaknesses_not_a_list():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    card["alternatives"][0]["weaknesses"] = "x"
+    errors = s._validate_card_semantics(card)
+    assert any(e == "alternatives[0].weaknesses invalid" for e in errors), errors
+    print("  PASS test_alternative_weaknesses_not_a_list")
+
+
+def test_alternative_weaknesses_empty():
+    s = make_synthesizer()
+    card = minimal_valid_card()
+    card["alternatives"][0]["weaknesses"] = []
+    errors = s._validate_card_semantics(card)
+    assert any(e == "alternatives[0].weaknesses empty" for e in errors), errors
+    print("  PASS test_alternative_weaknesses_empty")
+
+
 # ── Main runner ───────────────────────────────────────────────────────────────
 
 ALL_TESTS = [
@@ -265,6 +344,15 @@ ALL_TESTS = [
     test_empty_evidence_list_is_error,
     test_empty_recommended_actions_is_error,
     test_missing_contributing_causes_is_error,
+    test_evidence_missing_evidence_id,
+    test_evidence_missing_source_type,
+    test_action_missing_action_id,
+    test_action_missing_action_type,
+    test_action_missing_priority,
+    test_alternative_supports_not_a_list,
+    test_alternative_supports_empty,
+    test_alternative_weaknesses_not_a_list,
+    test_alternative_weaknesses_empty,
 ]
 
 
