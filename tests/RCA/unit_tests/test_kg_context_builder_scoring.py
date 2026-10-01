@@ -8,13 +8,7 @@ while CR/WO/ECR documents still receive the bonus.
 Run directly:   python test_kg_context_builder_scoring.py
 Or via pytest:  pytest test_kg_context_builder_scoring.py
 """
-import sys
 from unittest.mock import MagicMock
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.kg_context_builder import Neo4jKGContextBuilder, KGContextBuilderConfig
 

@@ -6,13 +6,6 @@ Tests:
   TestApplyScoreConfidenceInterval (14 tests) — _apply_score_confidence_interval
   TestScoreConfidenceIntervalIntegration (3 tests) — field present after refine_with_evidence
 """
-import sys
-from unittest.mock import MagicMock
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.causality_engine_v32 import (
     RuleBasedCausalityEngineV32,

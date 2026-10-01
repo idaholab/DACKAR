@@ -6,19 +6,10 @@ embedder, so no Ollama, langchain-chroma, or chromadb installation is required.
 from __future__ import annotations
 
 import math
-import sys
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock
 
 import pytest
-
-# ---------------------------------------------------------------------------
-# Stub out Chroma / LangChain before any store import touches them
-# ---------------------------------------------------------------------------
-for _mod in ("langchain_chroma", "langchain_community", "langchain_community.embeddings",
-             "langchain_core", "langchain_core.documents"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.doc_extraction.schema import ConfidenceLevel, DocExtractionRecord
 from dackar.RCA.doc_extraction.store import (

@@ -13,15 +13,9 @@ Covers:
 
 Run:  pytest test_step2d_similar_events.py -v
 """
-import sys
 from copy import deepcopy
 from typing import Dict, List, Optional
 from unittest.mock import MagicMock, patch
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator
 from dackar.RCA.adapters.similar_event_adapter import SimilarEventAdapter, TIER_CONFIDENCE_MULTIPLIERS

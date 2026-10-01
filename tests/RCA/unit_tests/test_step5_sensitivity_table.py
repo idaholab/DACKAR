@@ -17,16 +17,9 @@ Covers:
 
 Run:  pytest test_step5_sensitivity_table.py -v
 """
-import sys
 from typing import Optional
-from unittest.mock import MagicMock
 
 import pytest
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32 as Engine  # noqa: E402
 

@@ -8,13 +8,6 @@ Tests:
   TestScoreProfileAppliedField   (6 tests) — score_profile_applied in generate() output
   TestProfileWeightsInComposite  (4 tests) — G/I/L profiles actually affect composite score
 """
-import sys
-from unittest.mock import MagicMock
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 import pytest
 from dackar.RCA.orchestrators.causality_engine_v32 import (

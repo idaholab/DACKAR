@@ -11,15 +11,8 @@ Covers:
 
 Run:  pytest test_finding_i_plc_gates.py -v
 """
-import sys
 from copy import deepcopy
-from unittest.mock import MagicMock
 from typing import Optional, Dict, List
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.causality_engine_v32 import (
     RuleBasedCausalityEngineV32,

@@ -22,20 +22,10 @@ Coverage:
   - _apply_near_match_pattern_attention_flags: no flag when no near_match_pattern
   - _build_semantic_recurrence_provenance: summarises across patterns correctly
 """
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
-
-# Stub heavy optional dependencies unavailable in the unit-test environment
-for _mod in (
-    "neo4j", "py2neo", "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.tskr_temporal_scorer import (
     TSKRTemporalScorerV1,

@@ -4,7 +4,6 @@ Integration-oriented tests for RCA pipeline alignment updates.
 Run directly:
   python test_pipeline_alignment_plan.py
 """
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -12,11 +11,6 @@ from unittest.mock import MagicMock
 from types import SimpleNamespace
 
 _RCA_ROOT = Path(__file__).resolve().parents[3] / "src" / "dackar" / "RCA"
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.artifact_store import NoOpSchemaValidator
 from dackar.RCA.orchestrators.rca_reasoning_orchestrator import (

@@ -12,14 +12,6 @@ Run:  pytest test_p2_common_cause_index_aug20.py -v
 """
 from __future__ import annotations
 
-import sys
-from unittest.mock import MagicMock
-
-for _mod in ("neo4j", "py2neo", "chromadb",
-             "langchain_community", "langchain_community.vectorstores",
-             "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32  # noqa: E402
 

@@ -13,13 +13,6 @@ Run:  pytest test_n4_score_interpretation_aug20.py -v
 """
 from __future__ import annotations
 
-import sys
-from unittest.mock import MagicMock
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.llm_clients import DummyLLMClient  # noqa: E402
 from dackar.RCA.synthesis.rca_synthesizer_v31 import (  # noqa: E402

@@ -9,19 +9,8 @@ Coverage:
   - classify_support_posture: all posture branches
   - classify_linkage_outcome: all outcome branches
 """
-import sys
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock
-
-# Stub heavy optional dependencies
-for _mod in (
-    "neo4j", "py2neo", "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.cross_pattern.rules import (
     compute_link_confidence,

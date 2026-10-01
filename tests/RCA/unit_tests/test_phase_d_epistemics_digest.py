@@ -20,17 +20,7 @@ Covers:
 - RCASynthesizer._apply_epistemics_postprocessing: no-op when no digest on candidate
 """
 
-import sys
 from unittest.mock import MagicMock
-
-for _mod in (
-    "neo4j", "py2neo",
-    "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.orchestrators.epistemics_digest import build_epistemics_digests, build_epistemics_run_summary
 from dackar.RCA.synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31 as RCASynthesizer

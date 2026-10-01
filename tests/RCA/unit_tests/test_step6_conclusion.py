@@ -35,16 +35,9 @@ WS4 — depth_incomplete_reason
 
 Run:  pytest test_step6_conclusion.py -v
 """
-import sys
 from typing import Optional, List
-from unittest.mock import MagicMock
 
 import pytest
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.synthesis.rca_synthesizer_v31 import RuleValidatedRCASynthesizerV31  # noqa: E402
 

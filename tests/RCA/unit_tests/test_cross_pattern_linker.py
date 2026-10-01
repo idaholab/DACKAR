@@ -8,19 +8,9 @@ Coverage:
   - Reinforcement strength: single, multiple_consistent, mixed
   - temporal_link_skipped propagated to link
 """
-import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock
-
-for _mod in (
-    "neo4j", "py2neo", "chromadb",
-    "langchain_chroma", "langchain_community",
-    "langchain_community.vectorstores", "langchain_community.embeddings",
-):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.cross_pattern.config import CrossPatternConfig
 from dackar.RCA.cross_pattern.linker import CrossPatternLinker

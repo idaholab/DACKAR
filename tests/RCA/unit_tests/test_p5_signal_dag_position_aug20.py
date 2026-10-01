@@ -18,14 +18,7 @@ Run:  pytest test_p5_signal_dag_position_aug20.py -v
 """
 from __future__ import annotations
 
-import sys
-from unittest.mock import MagicMock
 from typing import Any, Dict, List, Optional, Tuple
-
-for _mod in ("neo4j", "py2neo", "chromadb", "langchain_community",
-             "langchain_community.vectorstores", "langchain_community.embeddings"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
 
 from dackar.RCA.signal_evidence.builder import (  # noqa: E402
     build_signal_evidence,
