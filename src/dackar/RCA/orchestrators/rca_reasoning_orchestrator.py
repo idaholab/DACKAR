@@ -2600,18 +2600,27 @@ class RCAReasoningOrchestrator:
             current_snapshot = base_snapshot
 
         # When accepting, merge added/removed component IDs into the snapshot.
+        # Membership and removal are compared case-insensitively (matching the
+        # downstream _apply_scope_boundary_filter normalization, str(cid).strip().lower())
+        # so a differently cased addition does not duplicate a stored id and a
+        # differently cased removal still deletes it. The first-seen display casing
+        # is preserved in component_ids.
         if analyst_decision == "accepted":
+            def _norm_cid(x: Any) -> str:
+                return str(x or "").strip().lower()
+
             existing_cids: List[str] = list(current_snapshot.get("component_ids") or [])
-            existing_set: Dict[str, None] = {c: None for c in existing_cids}  # ordered dedup
+            existing_norm: Set[str] = {_norm_cid(c) for c in existing_cids}  # case-insensitive dedup
 
             for cid in (changed_boundary.get("added_component_ids") or []):
-                if cid and cid not in existing_set:
+                key = _norm_cid(cid)
+                if key and key not in existing_norm:
                     existing_cids.append(cid)
-                    existing_set[cid] = None
+                    existing_norm.add(key)
 
-            removed_set = set(changed_boundary.get("removed_component_ids") or [])
-            if removed_set:
-                existing_cids = [c for c in existing_cids if c not in removed_set]
+            removed_norm = {_norm_cid(c) for c in (changed_boundary.get("removed_component_ids") or [])}
+            if removed_norm:
+                existing_cids = [c for c in existing_cids if _norm_cid(c) not in removed_norm]
 
             current_snapshot = dict(current_snapshot)
             current_snapshot["component_ids"] = existing_cids

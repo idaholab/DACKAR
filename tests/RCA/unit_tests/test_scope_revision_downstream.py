@@ -271,6 +271,46 @@ def test_apply_scope_revision_removes_component_ids():
     assert "PUMP-1" in new_snap
 
 
+def test_apply_scope_revision_removes_component_ids_case_insensitively():
+    # Stored id "PUMP-1"; analyst removes "pump-1". Downstream boundary matching
+    # normalizes with .lower(), so the removal must delete the stored id despite
+    # the casing mismatch.
+    orch = _make_orchestrator()
+    ctx = _run_context_v0(["PUMP-1", "VALVE-OLD"])
+    updated = orch.apply_scope_revision(
+        run_id="R1",
+        run_context=ctx,
+        revision_input={
+            "trigger": "scope_contraction",
+            "analyst_decision": "accepted",
+            "changed_boundary": {"removed_component_ids": ["pump-1"]},
+        },
+        persist=False,
+    )
+    new_snap = updated["scope_management"]["scope_revisions"][-1]["scope_snapshot"]["component_ids"]
+    assert [c.lower() for c in new_snap] == ["valve-old"]
+
+
+def test_apply_scope_revision_added_id_does_not_duplicate_differently_cased_entry():
+    # Stored id "PUMP-1"; analyst adds "pump-1" — must not create a duplicate.
+    orch = _make_orchestrator()
+    ctx = _run_context_v0(["PUMP-1"])
+    updated = orch.apply_scope_revision(
+        run_id="R1",
+        run_context=ctx,
+        revision_input={
+            "trigger": "analyst_expand",
+            "analyst_decision": "accepted",
+            "changed_boundary": {"added_component_ids": ["pump-1", "VALVE-X"]},
+        },
+        persist=False,
+    )
+    new_snap = updated["scope_management"]["scope_revisions"][-1]["scope_snapshot"]["component_ids"]
+    normed = sorted(c.lower() for c in new_snap)
+    assert normed == ["pump-1", "valve-x"]  # no duplicate pump-1
+    assert "PUMP-1" in new_snap  # original display casing preserved
+
+
 def test_apply_scope_revision_no_explicit_snapshot_builds_from_prior():
     """When caller omits scope_snapshot, method auto-builds from latest accepted."""
     orch = _make_orchestrator()
