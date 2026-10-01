@@ -233,50 +233,64 @@ def test_d7c_citations_trace_tc8():
 # D7-D — Score rationale direction consistent with sub-score values
 # ---------------------------------------------------------------------------
 
+_SCORE_DIMENSIONS = ("structural", "temporal", "telemetry", "evidence", "governance")
+
+
 def _assert_d7d(result: Dict[str, Any], label: str) -> None:
+    """
+    D7-D: every scored sub-dimension must be traceable to a human-readable
+    rationale.  Production emits ``score_rationale`` as a mapping
+    ``{dimension: rationale_string}`` (see causality_engine_v32), so this
+    asserts the mapping contract: for each candidate that carries a numeric
+    sub-score, ``score_rationale`` is a dict holding a non-empty rationale
+    string for each of those scored dimensions.
+    """
     candidates: List[Dict[str, Any]] = (
         result.get("causality_candidates") or {}
     ).get("candidates", [])
+    if not candidates:
+        pytest.skip(f"D7-D [{label}]: no candidates to check score_rationale mapping")
 
-    violations = []
+    violations: List[str] = []
+    checked = 0
     for cand in candidates:
         cid = cand.get("candidate_id") or cand.get("failure_mode_id", "?")
-        rationale_list = cand.get("score_rationale") or []
-        if not rationale_list:
-            continue
-        rationale = {r.get("dimension"): r for r in rationale_list if isinstance(r, dict)}
         scores = cand.get("scores") or {}
+        scored_dims = [
+            dim for dim in _SCORE_DIMENSIONS
+            if isinstance(scores.get(dim), (int, float))
+        ]
+        if not scored_dims:
+            continue
 
-        for dim in ("temporal", "structural", "telemetry", "evidence", "governance"):
-            if dim not in rationale:
-                continue
-            level = (rationale[dim].get("level") or "").lower()
-            score = float(scores.get(dim) or 0.0)
+        rationale = cand.get("score_rationale")
+        if not isinstance(rationale, dict):
+            violations.append(
+                f"{cid}: score_rationale is {type(rationale).__name__}, "
+                "expected a {dimension: rationale} mapping"
+            )
+            continue
 
-            if "high" in level and score < 0.6:
+        checked += 1
+        for dim in scored_dims:
+            text = rationale.get(dim)
+            if not (isinstance(text, str) and text.strip()):
                 violations.append(
-                    f"{cid}.{dim}: rationale says 'high' but score={score:.3f} (<0.6)"
-                )
-            if "low" in level and score > 0.4:
-                violations.append(
-                    f"{cid}.{dim}: rationale says 'low' but score={score:.3f} (>0.4)"
+                    f"{cid}.{dim}: scored ({scores.get(dim)}) but no rationale string in mapping"
                 )
 
-    if not violations:
-        rated = sum(
-            1 for c in candidates
-            if c.get("score_rationale")
-        )
-        print(
-            f"  pass  D7-D [{label}]: score rationale consistent "
-            f"({rated}/{len(candidates)} candidates have rationale)"
-        )
-    else:
-        # Warn but do not fail — rationale wording is soft
-        print(
-            f"  warn  D7-D [{label}]: {len(violations)} rationale/score direction inconsistencies "
-            f"(treating as advisory):\n    " + "\n    ".join(violations[:5])
-        )
+    assert not violations, (
+        f"D7-D FAIL [{label}]: score_rationale mapping is incomplete:\n  "
+        + "\n  ".join(violations)
+    )
+    assert checked, (
+        f"D7-D [{label}]: no scored candidate carried a score_rationale mapping — "
+        "cannot verify the traceability contract (possible vacuous pass)."
+    )
+    print(
+        f"  pass  D7-D [{label}]: {checked} scored candidate(s) carry a complete "
+        "score_rationale mapping"
+    )
 
 
 def test_d7d_score_rationale_direction_tc4():

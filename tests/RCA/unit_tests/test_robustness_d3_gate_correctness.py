@@ -156,11 +156,14 @@ def test_d3b_held_barrier_eliminates_candidate():
     ]
 
     if not barrier_held_entries:
-        print(
-            "  warn  D3-B TC-5: no ruled_out entries with reason_code='barrier_held'. "
-            "Confirm that TC-5 fixture exercises the barrier-held gate path."
+        pytest.skip(
+            "D3-B: TC-5 produces no ruled_out entry with reason_code='barrier_held', "
+            "so the barrier-held elimination path is not exercised by this fixture. "
+            "Asserting its presence here would fail spuriously; a dedicated fixture "
+            "(a held safety function plus a candidate that requires it) is needed to "
+            "make this a live assertion — tracked for the scenario-tier follow-up. "
+            "Skipping rather than reporting a vacuous pass."
         )
-        return
 
     for entry in barrier_held_entries:
         cid = entry.get("candidate_id")

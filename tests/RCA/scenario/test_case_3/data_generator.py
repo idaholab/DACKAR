@@ -516,77 +516,77 @@ KG_CONTEXT: Dict[str, Any] = {
         # seed — primary event component
         {
             "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
-            "component_label": "Turbine Exhaust Duct Expansion Joint",
-            "component_type": "expansion_joint",
             "role": "pressure_boundary",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "seed",
+            "component_label": "Turbine Exhaust Duct Expansion Joint",
+            "component_type": "expansion_joint",
         },
         # telemetry seed — hotwell DO sensor maps here
         {
             "component_id": "U2-CND-HOTWELL",
-            "component_label": "Condenser Hotwell",
-            "component_type": "hotwell",
             "role": "condensate_collection",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "telemetry",
+            "component_label": "Condenser Hotwell",
+            "component_type": "hotwell",
         },
         {
             "component_id": "U2-CND-WATERBOX-A",
-            "component_label": "Condenser Waterbox A",
-            "component_type": "waterbox",
             "role": "heat_exchange",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "neighbor",
+            "component_label": "Condenser Waterbox A",
+            "component_type": "waterbox",
         },
         {
             "component_id": "U2-CND-WATERBOX-B",
-            "component_label": "Condenser Waterbox B",
-            "component_type": "waterbox",
             "role": "heat_exchange",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "neighbor",
+            "component_label": "Condenser Waterbox B",
+            "component_type": "waterbox",
         },
         {
             "component_id": "U2-CND-TUBE-BUNDLE-A",
-            "component_label": "Condenser Tube Bundle A",
-            "component_type": "heat_exchanger_tubes",
             "role": "heat_transfer_surface",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "neighbor",
+            "component_label": "Condenser Tube Bundle A",
+            "component_type": "heat_exchanger_tubes",
         },
         {
             "component_id": "U2-CND-TUBE-BUNDLE-B",
-            "component_label": "Condenser Tube Bundle B",
-            "component_type": "heat_exchanger_tubes",
             "role": "heat_transfer_surface",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "neighbor",
+            "component_label": "Condenser Tube Bundle B",
+            "component_type": "heat_exchanger_tubes",
         },
         {
             "component_id": "U2-AIR-EJECTOR-A",
-            "component_label": "Air Ejector Train A",
-            "component_type": "air_removal",
             "role": "non_condensable_gas_removal",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "neighbor",
+            "component_label": "Air Ejector Train A",
+            "component_type": "air_removal",
         },
         {
             "component_id": "U2-AIR-EJECTOR-B",
-            "component_label": "Air Ejector Train B",
-            "component_type": "air_removal",
             "role": "non_condensable_gas_removal",
             "asset_id": "U2-CONDENSER-MAIN",
             "seed_match_type": "neighbor",
+            "component_label": "Air Ejector Train B",
+            "component_type": "air_removal",
         },
         # ops_context — HVAC fan linked via nearby_maintenance and VIB telemetry
         {
             "component_id": "U2-HVAC-TURBINE-BAY-FAN-A",
-            "name": "Turbine Bay HVAC Fan Motor A",
-            "type": "hvac_fan",
             "role": "turbine_building_ventilation",
             "asset_id": "U2-HVAC-TURBINE-BAY",
             "seed_match_type": "ops_context",
+            "component_label": "Turbine Bay HVAC Fan Motor A",
+            "component_type": "hvac_fan",
         },
     ],
 
@@ -635,8 +635,12 @@ KG_CONTEXT: Dict[str, Any] = {
             "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
             "component_name": "Turbine Exhaust Duct Expansion Joint",
             "superclass": "pressure_boundary_failure",
+            "expected_latency_min_hours": 48.0,
+            "expected_latency_max_hours": 336.0,
             "expected_symptom_types": ["pressure", "chemistry"],
             "expected_anomaly_pattern": "gradual_drift",
+            "causal_category": "A",
+            "causal_category_source": "inferred",
         },
         # FM-2: RED HERRING — tube inspection passed (WO-2024-11847 as-found acceptable);
         # DO elevation contradicts fouling mechanism; tube outlet temps within limits.
@@ -646,8 +650,12 @@ KG_CONTEXT: Dict[str, Any] = {
             "component_id": "U2-CND-TUBE-BUNDLE-A",
             "component_name": "Condenser Tube Bundle A",
             "superclass": "heat_transfer_degradation",
+            "expected_latency_min_hours": 168.0,
+            "expected_latency_max_hours": 720.0,
             "expected_symptom_types": ["pressure", "temperature"],
             "expected_anomaly_pattern": "gradual_drift",
+            "causal_category": "A",
+            "causal_category_source": "inferred",
         },
         # FM-3: RULED OUT by conductivity (no anomaly) and helium test
         # (tube bundles tested, no tube leakage confirmed).
@@ -657,8 +665,12 @@ KG_CONTEXT: Dict[str, Any] = {
             "component_id": "U2-CND-TUBE-BUNDLE-A",
             "component_name": "Condenser Tube Bundle A",
             "superclass": "pressure_boundary_failure",
+            "expected_latency_min_hours": 2.0,
+            "expected_latency_max_hours": 48.0,
             "expected_symptom_types": ["chemistry", "pressure"],
             "expected_anomaly_pattern": "step_change",
+            "causal_category": "A",
+            "causal_category_source": "inferred",
         },
         # FM-4: CONTRIBUTING FACTOR ONLY — seasonal CW inlet rise 4.2 degF within
         # normal; operator CW flow increase yielded only 0.04 inHg effect.
@@ -668,8 +680,12 @@ KG_CONTEXT: Dict[str, Any] = {
             "component_id": "U2-CND-WATERBOX-A",
             "component_name": "Condenser Waterbox A",
             "superclass": "thermal_performance_degradation",
+            "expected_latency_min_hours": 0.0,
+            "expected_latency_max_hours": 720.0,
             "expected_symptom_types": ["pressure", "temperature"],
             "expected_anomaly_pattern": "gradual_drift",
+            "causal_category": "B",
+            "causal_category_source": "curated",
         },
         # FM-5: CONTRIBUTING CAUSE — HVAC PM overdue 60 days; fan trip Day 4
         # triggers pit ambient rise (gradual_drift Day 4 onset, U2-TE-5501).
@@ -679,8 +695,12 @@ KG_CONTEXT: Dict[str, Any] = {
             "component_id": "U2-HVAC-TURBINE-BAY-FAN-A",
             "component_name": "Turbine Bay HVAC Fan Motor A",
             "superclass": "auxiliary_system_degradation",
+            "expected_latency_min_hours": 24.0,
+            "expected_latency_max_hours": 120.0,
             "expected_symptom_types": ["vibration", "temperature"],
             "expected_anomaly_pattern": "step_change",
+            "causal_category": "B",
+            "causal_category_source": "curated",
         },
     ],
 
@@ -793,7 +813,6 @@ KG_CONTEXT: Dict[str, Any] = {
             "matched_asset_ids": ["U2-CONDENSER-MAIN"],
             "matched_component_ids": ["U2-CND-EXPANSION-JOINT-EXHAUST", "U2-CND-HOTWELL"],
             "priority_score": 70.0,
-            "time_distance_days": None,
         },
         {
             "doc_id": "SOP-U2-CHE-041",
@@ -803,7 +822,6 @@ KG_CONTEXT: Dict[str, Any] = {
             "matched_asset_ids": ["U2-CONDENSER-MAIN"],
             "matched_component_ids": ["U2-CND-HOTWELL"],
             "priority_score": 65.0,
-            "time_distance_days": None,
         },
         {
             "doc_id": "ECA-2022-1103",
@@ -817,7 +835,7 @@ KG_CONTEXT: Dict[str, Any] = {
         },
         {
             "doc_id": "OE-INPO-2023-CND-047",
-            "doc_type": "BULLETIN",
+            "doc_type": "OE",
             "title": "Industry OE: Condenser backpressure rise — air in-leakage misidentified as CW temperature",
             "created_at": "2023-06-15T00:00:00Z",
             "matched_asset_ids": ["U2-CONDENSER-MAIN"],
@@ -837,7 +855,6 @@ KG_CONTEXT: Dict[str, Any] = {
                 "U2-CND-HOTWELL",
             ],
             "priority_score": 80.0,
-            "time_distance_days": None,
         },
     ],
 
@@ -1130,6 +1147,7 @@ PM_COMPLIANCE: Dict[str, Any] = {
         {
             "check_id": "PM-U2-CND-EXPJOINT-INSP-A",
             "check_type": "inspection",
+            "component_id": "U2-CONDENSER-MAIN",
             "scheduled_date": "2024-04-01T00:00:00Z",
             "overdue_by_days": 104.0,
             "source_ref": "SOP-U2-CND-001 §4.3",
@@ -1137,6 +1155,7 @@ PM_COMPLIANCE: Dict[str, Any] = {
         {
             "check_id": "PM-U2-AIR-EJECTOR-SURV-Q",
             "check_type": "surveillance_test",
+            "component_id": "U2-CONDENSER-MAIN",
             "scheduled_date": "2024-07-02T00:00:00Z",
             "overdue_by_days": 12.0,
             "source_ref": "TECH-SPEC-3.7.2",
@@ -1144,6 +1163,7 @@ PM_COMPLIANCE: Dict[str, Any] = {
         {
             "check_id": "PM-U2-HVAC-PM-A",
             "check_type": "scheduled_pm",
+            "component_id": "U2-HVAC-TURBINE-BAY-FAN-A",
             "scheduled_date": "2024-05-15T00:00:00Z",
             "overdue_by_days": 60.0,
             "source_ref": "PM-TASK-HVAC-BAY-MTR",
@@ -1474,7 +1494,7 @@ EVIDENCE_STORE_ROWS: List[Dict[str, Any]] = [
         ),
         "metadata": {
             "asset_id": "U2-CONDENSER-MAIN",
-            "doc_type": "BULLETIN",
+            "doc_type": "OE",
             "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
             "authority_level": "guidance",
             "extraction_quality": 0.90,
@@ -1615,7 +1635,7 @@ ALARM_LOG: Dict[str, Any] = {
             "description": "Condenser backpressure high — 2.51 inHg above 2.50 inHg high setpoint; engineering evaluation threshold",
             "priority": "medium",
             "state": "active",
-            "component_id": "CONDENSER_TRAIN_A",
+            "component_id": "U2-CND-EXPANSION-JOINT-EXHAUST",
             "system": "secondary-side-condenser",
             "setpoint": 2.5,
             "actual_value": 2.51,
@@ -1640,7 +1660,7 @@ ALARM_LOG: Dict[str, Any] = {
         {
             "alarm_id": "ALM-U2-TRB-RUNBACK",
             "timestamp": "2024-07-14T03:22:10Z",
-            "description": "Turbine automatic load runback initiated — backpressure setpoint exceeded; power reduced 97% → 85%",
+            "description": "Turbine automatic load runback initiated — backpressure setpoint exceeded; power reduced 97% to 85%",
             "priority": "critical",
             "state": "cleared",
             "component_id": None,
@@ -1763,8 +1783,8 @@ ENVIRONMENTAL_MONITORING: Dict[str, Any] = {
             "duration_seconds": 1209600,  # 14 days
             "description": (
                 "4.2 degF seasonal CW inlet temperature rise over 14-day window "
-                "(71.2 degF baseline → 75.4 degF observed). Within expected summer range "
-                "for this site (73–78 degF). Operator increased CW pump speed from 85% to 100% "
+                "(71.2 degF baseline to 75.4 degF observed). Within expected summer range "
+                "for this site (73 to 78 degF). Operator increased CW pump speed from 85% to 100% "
                 "on 2024-07-12 — only 0.04 inHg backpressure reduction observed. "
                 "CW temperature elevation alone is insufficient to explain the 1.2 inHg "
                 "backpressure increase. Environmental factor: not causal."
@@ -1785,8 +1805,8 @@ ENVIRONMENTAL_MONITORING: Dict[str, Any] = {
                 "Condenser pit ambient temperature rose from 82.1 degF baseline to 97.6 degF peak "
                 "(15.5 degF above baseline) over 10 days. Rise onset coincides within 1 hour of "
                 "HVAC turbine bay fan A trip on high vibration (2024-07-04T09:10). "
-                "Causal sequence: HVAC fan bearing failure → reduced turbine bay ventilation "
-                "→ elevated pit ambient temperature → accelerated thermal fatigue of condenser "
+                "Causal sequence: HVAC fan bearing failure — reduced turbine bay ventilation "
+                "— elevated pit ambient temperature — accelerated thermal fatigue of condenser "
                 "expansion joint seal material. "
                 "15.5 degF above baseline is abnormal and exceeds seasonal variation by 11 degF. "
                 "This environmental record directly links HVAC PM deferral to the primary causal chain."
@@ -1813,7 +1833,15 @@ ENVIRONMENTAL_MONITORING: Dict[str, Any] = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def dump_fixture_files(fixture_dir: Path) -> None:
-    """Write all fixture files to *fixture_dir*."""
+    """Write all fixture files to *fixture_dir*.
+
+    Serialization contract (enforced by the regeneration guard in
+    ``tests/RCA/scenario/test_case_3/test_tc3_fixture_regeneration.py``): the
+    nine pretty-printed JSON fixtures are emitted with ``indent=2`` and
+    ``json.dumps`` defaults (``ensure_ascii=True``, no trailing newline), so
+    every committed JSON fixture is byte-identical to a fresh run.
+    ``processed_records.jsonl`` keeps the compact one-object-per-line JSONL form.
+    """
     fixture_dir.mkdir(parents=True, exist_ok=True)
 
     json_fixtures: Dict[str, Any] = {
@@ -1840,6 +1868,16 @@ def dump_fixture_files(fixture_dir: Path) -> None:
 
 
 def main() -> int:
+    """Regenerate the committed TC-3 fixtures and report where they were written.
+
+    Writes every fixture into the ``fixtures`` directory beside this module and
+    returns a process exit code.
+
+    Returns
+    -------
+    int
+        ``0`` on success (used as the ``SystemExit`` code when run as a script).
+    """
     fixture_dir = Path(__file__).parent / "fixtures"
     dump_fixture_files(fixture_dir)
     print(f"\nFixtures written to: {fixture_dir}")

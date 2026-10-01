@@ -14,12 +14,31 @@ FIXTURES_DIR.mkdir(exist_ok=True)
 
 
 def write(name: str, data: dict) -> None:
+    """
+    Serialise *data* to ``fixtures/<name>`` as indented JSON.
+
+    Parameters
+    ----------
+    name:
+        Fixture file name (e.g. ``"event.json"``), written under the
+        ``test_case_8/fixtures/`` directory.
+    data:
+        JSON-serialisable fixture payload.
+    """
     path = FIXTURES_DIR / name
     path.write_text(json.dumps(data, indent=2))
     print(f"  wrote {path.relative_to(pathlib.Path(__file__).parent)}")
 
 
 def build_event() -> dict:
+    """
+    Build the TC-8 event record (SW check-valve surveillance leakthrough).
+
+    Returns
+    -------
+    dict
+        The ``event.json`` fixture payload.
+    """
     return {
         "event_id": "EVT-U1B-2025-0312",
         "asset_id": "CHK-SW-HX-07A",
@@ -61,6 +80,14 @@ def build_event() -> dict:
 
 
 def build_operational_context() -> dict:
+    """
+    Build the operational context (steady full-power surveillance window).
+
+    Returns
+    -------
+    dict
+        The ``operational_context.json`` fixture payload.
+    """
     return {
         "asset_id": "CHK-SW-HX-07A",
         "window": {
@@ -99,6 +126,15 @@ def build_operational_context() -> dict:
 
 
 def build_telemetry_summary() -> dict:
+    """
+    Build the telemetry summary (nominal pressure; one surveillance-detected
+    flow leakthrough anomaly).
+
+    Returns
+    -------
+    dict
+        The ``telemetry_summary.json`` fixture payload.
+    """
     return {
         "event_id": "EVT-U1B-2025-0312",
         "asset_id": "CHK-SW-HX-07A",
@@ -171,6 +207,14 @@ def build_telemetry_summary() -> dict:
 
 
 def build_soe_log() -> dict:
+    """
+    Build the sequence-of-events log (sparse surveillance sequence).
+
+    Returns
+    -------
+    dict
+        The ``soe_log.json`` fixture payload.
+    """
     return {
         "soe_id": "SOE-EVT-U1B-2025-0312",
         "event_id": "EVT-U1B-2025-0312",
@@ -262,6 +306,15 @@ def build_soe_log() -> dict:
 
 
 def build_kg_context() -> dict:
+    """
+    Build the knowledge-graph context subgraph (components, upstream paths,
+    failure modes, past events, maintenance tasks, and documents).
+
+    Returns
+    -------
+    dict
+        The ``kg_context.json`` fixture payload.
+    """
     return {
         "event_id": "EVT-U1B-2025-0312",
         "asset_id": "CHK-SW-HX-07A",
@@ -350,6 +403,15 @@ def build_kg_context() -> dict:
 
 
 def build_pm_compliance() -> dict:
+    """
+    Build the PM-compliance assessment (inspection-interval nonconformance
+    against the vendor specification).
+
+    Returns
+    -------
+    dict
+        The ``pm_compliance.json`` fixture payload.
+    """
     return {
         "asset_id": "CHK-SW-HX-07A",
         "event_id": "EVT-U1B-2025-0312",
@@ -444,6 +506,14 @@ def build_pm_compliance() -> dict:
 
 
 def build_tskr_patterns() -> dict:
+    """
+    Build the TSKR temporal patterns (episode-recurrence mode).
+
+    Returns
+    -------
+    dict
+        The ``tskr_patterns.json`` fixture payload.
+    """
     base = {
         "event_id": "EVT-U1B-2025-0312",
         "asset_id": "CHK-SW-HX-07A",
@@ -483,6 +553,15 @@ def build_tskr_patterns() -> dict:
 
 
 def build_evidence_bundle() -> dict:
+    """
+    Build the retrieved evidence bundle (document snippets plus the
+    per-candidate evidence summary).
+
+    Returns
+    -------
+    dict
+        The ``evidence_bundle.json`` fixture payload.
+    """
     return {
         "event_id": "EVT-U1B-2025-0312",
         "bundle_id": "BUNDLE-EVT-U1B-2025-0312",

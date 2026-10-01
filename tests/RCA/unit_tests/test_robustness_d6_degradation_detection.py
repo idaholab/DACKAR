@@ -236,21 +236,41 @@ def test_d6a_missing_optional_inputs_not_assessed():
         .get("coverage_summary") or {}
     ).get("source_families") or {}
 
+    assert coverage, (
+        "D6-A FAIL: no data-coverage summary found in run_manifest (expected "
+        "run_manifest.artifacts.data_coverage_summary or "
+        "run_manifest.coverage_summary.source_families). Cannot verify that "
+        "stripped optional inputs are tracked."
+    )
+
+    # A deliberately-removed optional input must be *explicitly* accounted for
+    # with a degraded status. Silently omitting it from the coverage summary
+    # (entry is None) hides the gap from the analyst, so an absent entry must
+    # fail rather than skip. For a stripped input only the degraded statuses
+    # ('not_assessed'/'data_limited') are acceptable — 'present'/'partial'
+    # would contradict the removal.
     problematic = []
     for src in ("vendor_supply_chain_records", "training_records", "environmental_monitoring"):
         entry = coverage.get(src)
         if entry is None:
+            problematic.append(
+                f"{src}: absent from coverage summary "
+                "(expected explicit 'not_assessed'/'data_limited')"
+            )
             continue
         status = entry.get("status") if isinstance(entry, dict) else str(entry)
-        if status not in ("not_assessed", "data_limited", "partial", "present"):
-            problematic.append(f"{src}: unexpected status '{status}'")
+        if status not in ("not_assessed", "data_limited"):
+            problematic.append(
+                f"{src}: status '{status}' "
+                "(expected 'not_assessed'/'data_limited' for a stripped input)"
+            )
 
     assert not problematic, (
-        "D6-A FAIL: optional inputs produced unexpected coverage status:\n  "
+        "D6-A FAIL: stripped optional inputs are not explicitly marked degraded:\n  "
         + "\n  ".join(problematic)
     )
     print(
-        "  pass  D6-A: stripped optional inputs produce acceptable coverage status."
+        "  pass  D6-A: stripped optional inputs explicitly marked not_assessed/data_limited."
     )
 
 

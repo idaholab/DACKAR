@@ -109,6 +109,7 @@ BACKGROUND_ALARMS = [
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _jitter(n: int, spread: float) -> np.ndarray:
+    """Return ``n`` Gaussian offsets (mean 0, std ``spread``) for timestamp noise."""
     return RNG.normal(0, spread, n)
 
 
@@ -177,6 +178,11 @@ def _make_cluster_events(
 
 
 def _make_background(start, end, n=150):
+    """Build ``n`` low-signal background alarm rows spread uniformly over the window.
+
+    These populate the historian with routine noise so the episode detector has
+    to separate real clusters from ordinary plant chatter.
+    """
     rows = []
     total_s = (end - start).total_seconds()
     for i in range(n):
@@ -383,6 +389,11 @@ print(f"\nIndex built: {len(index)} episodes")
 
 # --- Inject known_rca labels by matching episode window date ---
 def _inject_rca_labels(episodes_df, rca_labels):
+    """Attach a ``known_rca`` column to the episode table from dated RCA labels.
+
+    Each episode is matched to a label by its ``window_start`` date, exact first
+    and then within a two-day window. Episodes with no match get ``None``.
+    """
     def _lookup(window_start):
         date_str = pd.Timestamp(window_start).date().isoformat()
         # Try exact date; if not found try within ±2 days
@@ -481,6 +492,7 @@ plt.rcParams.update({
 plot_images = {}
 
 def _fig_to_b64(fig):
+    """Render a Matplotlib figure to a base64-encoded PNG string for notebook embedding."""
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight")
     buf.seek(0)
