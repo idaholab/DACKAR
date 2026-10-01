@@ -330,6 +330,7 @@ class RuleValidatedRCASynthesizerV31:
                 causality_candidates=causality_candidates,
                 pm_compliance=pm_compliance,
                 telemetry_summary=telemetry_summary,
+                event=event,
             )
 
         # N-4 — state, on every card, that composite_score is a non-probabilistic ordinal
@@ -2939,6 +2940,7 @@ analyst_review = {
         causality_candidates: JsonDict,
         pm_compliance: Optional[JsonDict],
         telemetry_summary: Optional[JsonDict],
+        event: Optional[JsonDict] = None,
     ) -> JsonDict:
         """F-3 — deterministic 'why was it not prevented?' defense-in-depth assessment.
 
@@ -2960,6 +2962,8 @@ analyst_review = {
         Honest by construction: any layer without inputs is ``not_evaluated`` rather than
         being asserted as a failure. Additive card block; ranking untouched.
         """
+        from .._timeutils import parse_dt  # shared ISO parser (naive → UTC-aware)
+
         primary = card.get("primary_hypothesis") or {}
         primary_id = str(primary.get("candidate_id") or "").strip()
 
@@ -2991,6 +2995,7 @@ analyst_review = {
         # 1) Preventive maintenance / surveillance barrier.
         checks = [c for c in ((pm_compliance or {}).get("checks") or []) if isinstance(c, dict)]
         failed_checks = [c for c in checks if str(c.get("status") or "").strip().lower() == "fail"]
+        passed_checks = [c for c in checks if str(c.get("status") or "").strip().lower() == "pass"]
         if not checks:
             barriers.append({
                 "barrier_type": "preventive_maintenance",
@@ -3005,33 +3010,84 @@ analyst_review = {
                 "basis": f"{len(failed_checks)} of {len(checks)} PM/surveillance compliance checks failed.",
                 "detail": "Failed checks: " + ", ".join(names[:5]),
             })
-        else:
+        elif len(passed_checks) == len(checks):
             barriers.append({
                 "barrier_type": "preventive_maintenance",
                 "status": "held",
                 "basis": f"All {len(checks)} PM/surveillance compliance checks passed; PM was not the prevention gap.",
             })
+        else:
+            # No failures, but some checks are neither pass nor fail (unknown /
+            # not_assessed). A barrier only *holds* on explicit passes — unknown
+            # status cannot be read as confirmation that PM was effective.
+            unknown = len(checks) - len(passed_checks)
+            barriers.append({
+                "barrier_type": "preventive_maintenance",
+                "status": "not_evaluated",
+                "basis": (
+                    f"{unknown} of {len(checks)} PM/surveillance checks have an unknown status "
+                    "(not an explicit pass); PM effectiveness could not be confirmed."
+                ),
+            })
 
         # 2) Condition monitoring / detection barrier.
+        #
+        # Condition monitoring only *holds* if it surfaced a genuine precursor —
+        # an anomaly whose onset preceded the event. A coincident or post-event
+        # anomaly is a consequence, not early warning, and must not be presented
+        # as prevention evidence. When the event onset (or anomaly timing) is
+        # unavailable we cannot establish precursor timing, so we report
+        # not_evaluated rather than claiming the barrier held.
+        event_onset = parse_dt((event or {}).get("timestamp_start"))
         signals = [s for s in ((telemetry_summary or {}).get("signals") or []) if isinstance(s, dict)]
         anomaly_signal_ids = [
             str(s.get("sensor_id") or "?") for s in signals if (s.get("anomalies") or [])
         ]
+        precursor_signal_ids: List[str] = []
+        if event_onset is not None:
+            for s in signals:
+                sid = str(s.get("sensor_id") or "?")
+                for a in (s.get("anomalies") or []):
+                    if not isinstance(a, dict):
+                        continue
+                    a_start = parse_dt(a.get("timestamp_start"))
+                    if a_start is not None and a_start < event_onset:
+                        precursor_signal_ids.append(sid)
+                        break
         if not signals:
             barriers.append({
                 "barrier_type": "condition_monitoring",
                 "status": "not_evaluated",
                 "basis": "No telemetry/condition-monitoring inputs were available for this event.",
             })
-        elif anomaly_signal_ids:
+        elif precursor_signal_ids:
             barriers.append({
                 "barrier_type": "condition_monitoring",
                 "status": "held",
                 "basis": (
-                    f"{len(anomaly_signal_ids)} monitored signal(s) reported anomalies — "
-                    "condition monitoring surfaced precursors."
+                    f"{len(precursor_signal_ids)} monitored signal(s) reported anomalies that preceded "
+                    "the event — condition monitoring surfaced precursors."
                 ),
-                "detail": "Sensors with anomalies: " + ", ".join(anomaly_signal_ids[:5]),
+                "detail": "Sensors with pre-event anomalies: " + ", ".join(precursor_signal_ids[:5]),
+            })
+        elif event_onset is not None and anomaly_signal_ids:
+            barriers.append({
+                "barrier_type": "condition_monitoring",
+                "status": "gap",
+                "basis": (
+                    f"Telemetry reported anomalies on {len(anomaly_signal_ids)} signal(s) but none "
+                    "preceded the event onset — they were coincident or post-event, not early-warning "
+                    "precursors."
+                ),
+            })
+        elif anomaly_signal_ids:
+            barriers.append({
+                "barrier_type": "condition_monitoring",
+                "status": "not_evaluated",
+                "basis": (
+                    f"Telemetry reported anomalies on {len(anomaly_signal_ids)} signal(s) but the event "
+                    "onset time is unavailable, so precursor timing could not be established."
+                ),
             })
         else:
             barriers.append({
