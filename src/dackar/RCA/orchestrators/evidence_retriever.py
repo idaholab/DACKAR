@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Protocol, Sequence
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 LOGGER = logging.getLogger(__name__)
 
@@ -78,10 +78,15 @@ _NEGATABLE_STATE_TERMS = frozenset({
     "defect", "defects", "defective",
 })
 _NEGATION_SCOPE_TOKENS = 3
+# Trailing/postfix refutation triggers: the degradation state precedes the trigger,
+# e.g. "fouling was ruled out". These also license a short *backward* scan. Kept
+# deliberately narrow — generic "no"/"not" stay forward-only so an absence-as-cause
+# phrase ("no lubrication led to wear") is not misread as refuting the state.
+_NEGATION_TRAILING_TRIGGERS = frozenset({"ruled out"})
 
 
 def _negation_refutation_hit(snippet: str, target_terms: frozenset) -> bool:
-    """Return True when a negation trigger is followed, within a short window, by a
+    """Return True when a negation trigger is adjacent, within a short window, to a
     degradation/failure-state term — i.e. the snippet refutes a degradation claim.
 
     Deterministic and high-precision by design (short scope window; state-term targets
@@ -94,20 +99,28 @@ def _negation_refutation_hit(snippet: str, target_terms: frozenset) -> bool:
     if n == 0:
         return False
 
-    trigger_end_positions: List[int] = [
-        i for i, tok in enumerate(tokens) if tok in _NEGATION_SINGLE_TRIGGERS
+    # Each trigger span is (start, end, trailing): forward scan runs after ``end`` for
+    # every trigger; ``trailing`` triggers additionally scan backward before ``start``
+    # so "<state> was ruled out" is detected, not only "ruled out <state>".
+    trigger_spans: List[Tuple[int, int, bool]] = [
+        (i, i, False) for i, tok in enumerate(tokens) if tok in _NEGATION_SINGLE_TRIGGERS
     ]
     for phrase in _NEGATION_MULTIWORD_TRIGGERS:
         parts = phrase.split()
         plen = len(parts)
+        trailing = phrase in _NEGATION_TRAILING_TRIGGERS
         for i in range(0, n - plen + 1):
             if tokens[i:i + plen] == parts:
-                trigger_end_positions.append(i + plen - 1)
+                trigger_spans.append((i, i + plen - 1, trailing))
 
-    for pos in trigger_end_positions:
-        window = tokens[pos + 1: pos + 1 + _NEGATION_SCOPE_TOKENS]
+    for start, end, trailing in trigger_spans:
+        window = tokens[end + 1: end + 1 + _NEGATION_SCOPE_TOKENS]
         if any(w in target_terms for w in window):
             return True
+        if trailing:
+            back = tokens[max(0, start - _NEGATION_SCOPE_TOKENS): start]
+            if any(w in target_terms for w in back):
+                return True
     return False
 
 

@@ -49,7 +49,8 @@ def test_negation_positive_not_degraded():
 
 
 def test_negation_positive_ruled_out_fouling():
-    assert _neg("heat exchanger fouling was ruled out fouling by inspection") is True
+    # Natural phrasing: the state precedes "ruled out" (state-before-trigger).
+    assert _neg("heat exchanger fouling was ruled out by inspection") is True
 
 
 def test_negation_positive_no_signs_of_drift():
