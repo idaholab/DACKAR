@@ -255,6 +255,47 @@ def test_input_sources_alarm_and_soe_when_logs_provided():
     assert result["summary"]["n_soe_windows"] == 1
 
 
+def _score_event(alarm_log: Optional[dict] = None, soe_log: Optional[dict] = None) -> dict:
+    """Run the real TSKR scorer with zero telemetry anomalies, optionally with
+    alarm/SOE logs, so the producer→consumer contract is exercised end-to-end."""
+    event = {"event_id": "EV-001", "asset_id": "A", "timestamp_start": _iso(T0)}
+    telemetry = {"asset_id": "A", "signals": []}  # no telemetry anomalies
+    kg_context = {"failure_modes": [{"fm_id": "FM-01", "component_id": "C-1"}], "past_events": []}
+    return TSKRTemporalScorerV1().score(
+        event=event, telemetry_summary=telemetry, kg_context=kg_context,
+        operational_context=None, run_context={"run_id": "R"},
+        alarm_log=alarm_log, soe_log=soe_log,
+    )
+
+
+def test_alarm_only_run_not_labeled_telemetry_end_to_end():
+    """An alarm-only run (no telemetry anomalies) must not report telemetry as an
+    input source, and the alarm must not be double-counted as a telemetry anomaly."""
+    alarm = _alarm_log(T_BEFORE)
+    tskr = _score_event(alarm_log=alarm)
+    assert tskr["summary"]["telemetry_anomaly_count"] == 0
+    result = BUILD_SLL(tskr_patterns=tskr, alarm_log=alarm)
+    sources = result["summary"]["input_sources"]
+    assert "telemetry" not in sources
+    assert "alarm_log" in sources
+    assert result["summary"]["n_anomaly_windows"] == 0
+    assert result["summary"]["n_alarm_windows"] == 1
+
+
+def test_soe_only_run_not_labeled_telemetry_end_to_end():
+    """A SOE-only run (no telemetry anomalies) must not report telemetry as an
+    input source, and the SOE record must not be double-counted as telemetry."""
+    soe = _soe_log(T_BEFORE)
+    tskr = _score_event(soe_log=soe)
+    assert tskr["summary"]["telemetry_anomaly_count"] == 0
+    result = BUILD_SLL(tskr_patterns=tskr, soe_log=soe)
+    sources = result["summary"]["input_sources"]
+    assert "telemetry" not in sources
+    assert "soe_log" in sources
+    assert result["summary"]["n_anomaly_windows"] == 0
+    assert result["summary"]["n_soe_windows"] == 1
+
+
 def test_empty_patterns_returns_zero_matched_and_no_novel():
     t = _tskr([])
     result = BUILD_SLL(tskr_patterns=t)

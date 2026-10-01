@@ -3907,16 +3907,22 @@ class RCAReasoningOrchestrator:
         event_id = str(tskr_patterns.get("event_id") or "")
         patterns: List[JsonDict] = tskr_patterns.get("patterns") or []
 
-        # Count input window sources from summary
+        # Count input window sources from summary. Use the telemetry-only count:
+        # anomaly_point_count folds in alarm/SOE windows, so reading it here would
+        # label an alarm-only run as having telemetry and count the alarm twice.
+        # Fall back to anomaly_point_count only for legacy summaries lacking the field.
         summary_in = tskr_patterns.get("summary") or {}
-        n_anomaly = int(summary_in.get("anomaly_point_count") or 0)
+        n_telemetry = summary_in.get("telemetry_anomaly_count")
+        if n_telemetry is None:
+            n_telemetry = summary_in.get("anomaly_point_count")
+        n_telemetry = int(n_telemetry or 0)
 
         # Count alarm + SOE windows from logs
         n_alarm = len((alarm_log or {}).get("alarms") or []) if isinstance(alarm_log, dict) else 0
         n_soe = len((soe_log or {}).get("records") or []) if isinstance(soe_log, dict) else 0
 
         input_sources: List[str] = []
-        if n_anomaly > 0:
+        if n_telemetry > 0:
             input_sources.append("telemetry")
         if n_alarm > 0:
             input_sources.append("alarm_log")
@@ -3980,7 +3986,7 @@ class RCAReasoningOrchestrator:
                 "n_novel_patterns": len(novel),
                 "n_alarm_windows": n_alarm,
                 "n_soe_windows": n_soe,
-                "n_anomaly_windows": n_anomaly,
+                "n_anomaly_windows": n_telemetry,
                 "input_sources": input_sources,
             },
             "matched_patterns": matched,
