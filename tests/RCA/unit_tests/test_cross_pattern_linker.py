@@ -106,11 +106,13 @@ def test_only_fm_matching_candidates_linked():
     result = _linker().run(episodes, [doc], candidates)
     ev_by_id = {ev["candidate_id"]: ev for ev in result["candidate_evidence"]}
 
-    # FM-001 candidate should have a link
+    # FM-001 candidate: doc.fm_id_candidate == FM-001 matches, similarity 0.80
+    # clears the threshold → exactly one 'linked' evidence path to DOC-001.
     ev_001 = ev_by_id["CAND-001"]
-    assert ev_001["linkage_outcome"] in ("linked", "below_threshold", "no_match")
-    # A link was built (doc.fm_id_candidate == FM-001 matches candidate FM-001)
-    assert len(ev_001["evidence_paths"]) >= 0  # above threshold
+    assert ev_001["linkage_outcome"] == "linked"
+    assert len(ev_001["evidence_paths"]) == 1
+    assert ev_001["evidence_paths"][0]["doc_id"] == "DOC-001"
+    assert ev_001["evidence_paths"][0]["link_confidence"] == 0.88
 
     # FM-999 candidate — doc has fm_id_candidate="FM-001", not FM-999
     ev_999 = ev_by_id["CAND-002"]

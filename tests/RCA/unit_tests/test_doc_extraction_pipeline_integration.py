@@ -374,14 +374,15 @@ def test_pattern_store_query_receives_correct_args():
     fm = {"fm_id": "FM-001", "component_id": "C-1", "name": "pump cavitation", "expected_symptoms": "noise vibration"}
     _run_pattern(scorer, fm=fm)
 
-    store.query.assert_called_once()
-    call_kwargs = store.query.call_args
-    query_text = call_kwargs[0][0] if call_kwargs[0] else call_kwargs[1].get("query_text", "")
-    # Query text should include FM name and symptoms
-    assert "pump cavitation" in query_text
-    assert "noise vibration" in query_text
-    # Threshold and params forwarded
-    assert call_kwargs[1].get("top_k") == 3 or (call_kwargs[0] and len(call_kwargs[0]) > 1)
+    # Full call contract: FM name + symptoms joined with ' | ', and every
+    # configured parameter forwarded positionally/by keyword exactly.
+    store.query.assert_called_once_with(
+        "pump cavitation | noise vibration",
+        top_k=3,
+        similarity_threshold=0.80,
+        near_match_window=0.05,
+        exact_doc_ids=set(),
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

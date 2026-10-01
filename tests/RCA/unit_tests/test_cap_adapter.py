@@ -112,9 +112,11 @@ class TestNoOpCAPAdapter:
         receipt = NoOpCAPAdapter().submit(_make_package())
         assert "NOOP" in receipt.receipt_id
 
-    def test_no_file_written(self, tmp_path):
+    def test_no_file_written(self, tmp_path, monkeypatch):
+        # Run from an empty cwd so a stray relative-path write would land in
+        # tmp_path and be caught; NoOpCAPAdapter.submit must write nothing.
+        monkeypatch.chdir(tmp_path)
         NoOpCAPAdapter().submit(_make_package())
-        # no files should have been created in tmp_path (just baseline check)
         assert list(tmp_path.iterdir()) == []
 
     def test_missing_export_id_falls_back(self):
