@@ -29,6 +29,7 @@ argument of ``RCAReasoningOrchestrator`` for production runs, and
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -1087,7 +1088,12 @@ class RuleBasedCausalityEngineV32:
             ``schemas/causality_candidates.json``.
         """
         payload = dict(causality_candidates)
-        candidates = [dict(c) for c in (payload.get("candidates") or [])]
+        # Deep-copy each candidate: refinement mutates nested scores in place
+        # (e.g. scores["evidence"]), so a shallow dict(c) would share the scores
+        # dict with the caller and silently mutate the input, breaking the
+        # "input is not mutated" contract above and corrupting any re-use of the
+        # same candidates payload across calls.
+        candidates = [copy.deepcopy(c) for c in (payload.get("candidates") or [])]
         summary_lookup = self._candidate_summary_lookup(evidence_bundle)
         signal_ev_index = (signal_evidence or {}).get("per_candidate_chain_score") or {}
         has_external_oe = self._has_external_oe_signal(summary_lookup)

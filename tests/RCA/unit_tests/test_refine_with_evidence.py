@@ -589,6 +589,13 @@ def test_coverage_quality_flags_reduce_quality_multiplier_and_surface_in_uncerta
         causality_candidates=candidates,
         evidence_bundle=evidence,
     )
+    # The input must not be mutated: refine deep-copies each candidate, so the
+    # caller's nested scores dict is untouched even though refinement rewrites
+    # scores["evidence"] on its own copy. Reusing `candidates` for the second
+    # call below only tests the degraded path honestly if this holds.
+    assert candidates["candidates"][0]["scores"]["evidence"] == 0.80, (
+        "refine_with_evidence mutated the caller's candidate scores"
+    )
     degraded = e.refine_with_evidence(
         causality_candidates=candidates,
         evidence_bundle=evidence,
@@ -601,15 +608,23 @@ def test_coverage_quality_flags_reduce_quality_multiplier_and_surface_in_uncerta
             },
         },
     )
+    assert candidates["candidates"][0]["scores"]["evidence"] == 0.80  # still pristine
     c_base = get_candidate(baseline, "CAND-COV")
     c_deg = get_candidate(degraded, "CAND-COV")
     assert c_base is not None and c_deg is not None
-    assert float(c_deg.get("quality_multiplier", 1.0)) < float(c_base.get("quality_multiplier", 1.0))
-    assert float((c_deg.get("scores") or {}).get("coverage_quality_factor", 1.0)) < 1.0
-    assert "upstream_anomaly_inputs" in ((c_deg.get("scores") or {}).get("coverage_quality_flags") or [])
+    # Exact refined values (not just inequalities): a complete-coverage run keeps
+    # coverage_quality_factor at 1.0, while the partial/missing run drops it to
+    # 0.922667, pulling the quality_multiplier down with it.
+    assert c_base["scores"]["evidence"] == 0.735
+    assert c_base["scores"]["coverage_quality_factor"] == 1.0
+    assert round(c_base["quality_multiplier"], 6) == 0.713
+    assert c_deg["scores"]["coverage_quality_factor"] == 0.922667
+    assert round(c_deg["quality_multiplier"], 6) == 0.657861
+    assert float(c_deg["quality_multiplier"]) < float(c_base["quality_multiplier"])
+    assert c_deg["scores"]["coverage_quality_flags"] == ["kg_context", "upstream_anomaly_inputs"]
     us = degraded.get("uncertainty_summary") or {}
-    assert float(us.get("average_coverage_quality_factor", 1.0)) < 1.0
-    assert int(us.get("coverage_degraded_candidate_count", 0)) >= 1
+    assert us["average_coverage_quality_factor"] == 0.922667
+    assert us["coverage_degraded_candidate_count"] == 1
     print("  PASS test_coverage_quality_flags_reduce_quality_multiplier_and_surface_in_uncertainty_summary")
 
 
