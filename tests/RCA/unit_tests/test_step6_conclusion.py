@@ -274,14 +274,32 @@ def test_gaps_novel_pattern_flag():
 
 
 def test_gaps_capped_at_8():
-    attention = [f"flag_{i}" for i in range(20)]
+    # Flags now contain the production keyword "missing" so they genuinely qualify.
+    # With all eight base-condition gaps also present, the base gaps fill the cap and
+    # every qualifying attention flag is truncated away — so the result is exactly 8
+    # and contains none of the 20 flags.
+    attention = [f"missing data stream {i}" for i in range(20)]
     gaps = _gaps(
         no_support=True, contradicting=2, temporal_contradiction=True,
         data_limited=True, contrib_list=[], root="unresolved",
         sensitivity_any_change=True, novel_pattern_flag=True,
         attention_flags=attention,
     )
-    assert len(gaps) <= 8
+    assert len(gaps) == 8
+    assert all("missing data stream" not in g for g in gaps)
+
+
+def test_gaps_attention_flags_truncated_to_cap():
+    # With no base-condition gaps, all eight cap slots come from qualifying attention
+    # flags, in order; the remaining twelve are dropped by the gaps[:8] cap.
+    attention = [f"missing data stream {i}" for i in range(20)]
+    gaps = _gaps(
+        no_support=False, contradicting=0, temporal_contradiction=False,
+        data_limited=False, contrib_list=["c1"], root="systemic_pm_programme_failure",
+        sensitivity_any_change=False, novel_pattern_flag=False,
+        attention_flags=attention,
+    )
+    assert gaps == [f"missing data stream {i}" for i in range(8)]
 
 
 def test_gaps_attention_flag_with_missing_keyword_included():
@@ -388,8 +406,8 @@ def test_cds_depth_incomplete_reason_absent_when_complete():
         {"primary_causal_category": "L", "cause_label": "programme weakness"},
     ]
     result = BUILD_CDS(primary_candidate=primary, selected_candidates=selected)
-    if result["depth_complete"]:
-        assert "depth_incomplete_reason" not in result
+    assert result["depth_complete"] is True
+    assert "depth_incomplete_reason" not in result
 
 
 def test_cds_depth_incomplete_reason_present_when_incomplete():

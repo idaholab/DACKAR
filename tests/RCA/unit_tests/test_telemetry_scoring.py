@@ -161,15 +161,16 @@ def test_telemetry_pattern_mismatch_applies_penalty():
 
 
 def test_telemetry_capped_at_1():
-    """Many high anomalies cannot exceed 1.0."""
+    """10 high anomalies saturate the base at exactly 1.0:
+    base = min(1.0, 0.35 + 0.12*10 + 0.08*10.0) = min(1.0, 2.35) = 1.0.
+    No seed/pattern bonus applies (fm has no expected_anomaly_pattern)."""
     e = make_engine()
     ts = make_telemetry(signals=[
         make_signal("S1", [make_anomaly(severity="high")] * 5),
         make_signal("S2", [make_anomaly(severity="high")] * 5),
     ])
     score = e._telemetry_score_for_fm(ts, make_fm(), None, {})
-    assert score <= 1.0
-    assert score > 0.35
+    assert score == 1.0
     print("  PASS test_telemetry_capped_at_1")
 
 
@@ -240,6 +241,8 @@ def test_temporal_follows_relation_low_precedence():
     tskr_idx = make_tskr_index("FM-001", confidence=0.0, relation="follows")
     result = e._temporal_score_for_fm(make_fm("FM-001"), make_telemetry(), None, tskr_idx)
     assert result["temporal_precedence"] == 0.20
+    # Only the precedence term contributes: 0.25 weight × 0.20 precedence = 0.05.
+    assert_approx(result["temporal"], 0.05, label="follows temporal")
     print("  PASS test_temporal_follows_relation_low_precedence")
 
 
@@ -273,10 +276,23 @@ def test_posture_weak():
 
 
 def test_posture_supported_requires_all_three_thresholds():
-    """High temporal_score but low precedence → falls to 'partial' not 'supported'."""
+    """'supported' requires ALL of temporal_score>=0.65, precedence>=0.70,
+    latency>=0.60; dropping any single input below its threshold falls back to
+    'partial'. Each case holds the other two at/above threshold so the failing
+    dimension is isolated."""
     e = make_engine()
-    result = e._temporal_posture(0.70, 0.50, 0.65, temporal_contradiction=False)
-    assert result != "supported", f"Should not be supported with low precedence; got {result}"
+    cases = [
+        (0.70, 0.75, 0.65, "supported"),   # all three thresholds met
+        (0.60, 0.75, 0.65, "partial"),     # temporal_score below 0.65
+        (0.70, 0.50, 0.65, "partial"),     # precedence below 0.70
+        (0.70, 0.75, 0.50, "partial"),     # latency below 0.60
+    ]
+    for temporal_score, precedence, latency, expected in cases:
+        result = e._temporal_posture(temporal_score, precedence, latency,
+                                     temporal_contradiction=False)
+        assert result == expected, (
+            f"posture({temporal_score}, {precedence}, {latency}) → {result}, expected {expected}"
+        )
     print("  PASS test_posture_supported_requires_all_three_thresholds")
 
 

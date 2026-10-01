@@ -238,7 +238,10 @@ def test_operational_context_query_added_with_alarm():
     ops_plans = plans_of_type(plans, "operational_context")
     assert len(ops_plans) == 1
     assert ops_plans[0]["weight"] == 0.80
-    assert "ALM-0341" in ops_plans[0]["query_text"] or "normal_power" in ops_plans[0]["query_text"]
+    text = ops_plans[0]["query_text"]
+    assert text == "ASSET-001 normal_power ALM-0341"
+    assert "ALM-0341" in text       # alarm term — the field under test, now unconditional
+    assert "normal_power" in text   # operating_mode — separate contract, its own assertion
     print("  PASS test_operational_context_query_added_with_alarm")
 
 

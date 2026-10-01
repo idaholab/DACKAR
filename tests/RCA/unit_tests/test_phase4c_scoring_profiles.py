@@ -193,30 +193,46 @@ class TestScoreProfileAppliedField:
         assert scores["score_profile_applied"] == "equipment_origin"
 
     def test_human_performance_profile_for_operator_error(self):
+        # The G (human-performance) candidate must actually be generated for an
+        # operator-error phrase and carry the matching profile weights. Guarding
+        # the assertion behind ``if g_cands`` let a run that produced no G
+        # candidate pass vacuously, so assert the candidate set first.
         result = _run_generate(_minimal_kg("operator error human procedure not followed"))
         all_cands = (result.get("candidates") or []) + (result.get("filtered_out_candidates") or [])
-        g_cands = [c for c in all_cands
-                   if c.get("primary_causal_category") == "G"]
-        if g_cands:
-            assert g_cands[0]["scores"]["score_profile_applied"] == "human_performance"
+        g_cands = [c for c in all_cands if c.get("primary_causal_category") == "G"]
+        assert len(g_cands) == 1, (
+            "expected exactly one G candidate, got categories "
+            f"{[c.get('primary_causal_category') for c in all_cands]}"
+        )
+        scores = g_cands[0]["scores"]
+        assert scores["score_profile_applied"] == "human_performance"
+        assert scores["scoring_profile_weights"] == _DEFAULT_SCORING_PROFILES["G"]
+        assert abs(scores["governance_weight"] - scores["scoring_profile_weights"]["governance"]) < 1e-9
 
     def test_organizational_profile_for_systemic_issue(self):
         result = _run_generate(_minimal_kg("systemic latent safety culture recurrence"))
         all_cands = (result.get("candidates") or []) + (result.get("filtered_out_candidates") or [])
-        l_cands = [c for c in all_cands
-                   if c.get("primary_causal_category") == "L"]
-        if l_cands:
-            assert l_cands[0]["scores"]["score_profile_applied"] == "organizational"
+        l_cands = [c for c in all_cands if c.get("primary_causal_category") == "L"]
+        assert len(l_cands) == 1, (
+            "expected exactly one L candidate, got categories "
+            f"{[c.get('primary_causal_category') for c in all_cands]}"
+        )
+        scores = l_cands[0]["scores"]
+        assert scores["score_profile_applied"] == "organizational"
+        assert scores["scoring_profile_weights"] == _DEFAULT_SCORING_PROFILES["L"]
+        assert abs(scores["governance_weight"] - scores["scoring_profile_weights"]["governance"]) < 1e-9
 
     def test_governance_weight_stored_matches_profile(self):
         result = _run_generate(_minimal_kg("bearing failure"))
         all_cands = (result.get("candidates") or []) + (result.get("filtered_out_candidates") or [])
+        assert len(all_cands) >= 1, "no candidates generated"
         for c in all_cands:
             scores = c.get("scores") or {}
-            profile_w = scores.get("scoring_profile_weights") or {}
-            stored_gov = scores.get("governance_weight")
-            if profile_w and stored_gov is not None:
-                assert abs(stored_gov - profile_w["governance"]) < 1e-9
+            # Both keys must be present on every candidate — the ``if`` guard
+            # previously let a dropped key skip the check silently.
+            profile_w = scores["scoring_profile_weights"]
+            stored_gov = scores["governance_weight"]
+            assert abs(stored_gov - profile_w["governance"]) < 1e-9
 
 
 # ── TestProfileWeightsInComposite ─────────────────────────────────────────────

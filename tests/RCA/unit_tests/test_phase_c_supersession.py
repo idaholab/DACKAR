@@ -26,7 +26,10 @@ from dackar.RCA.orchestrators.supersession import (
     _recency_dt,
     _patch_candidate_summary,
 )
-from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32
+from dackar.RCA.orchestrators.causality_engine_v32 import (
+    RuleBasedCausalityEngineV32,
+    CausalityEngineConfigV32,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -390,48 +393,43 @@ def test_allen_anomaly_and_alarm_same_component_only_anomaly_contributes():
 # observationally_ungrounded — via evidence summary flags
 # ---------------------------------------------------------------------------
 
-def test_observationally_ungrounded_false_when_analyzes_hit():
-    """has_analyzes_class_hit=True → observationally_ungrounded=False."""
-    # Build a minimal evidence summary with analyzes-class hit
-    summary_row = {
-        "candidate_id": "C1",
-        "best_support_score": 0.7,
-        "has_analyzes_class_hit": True,
-        "has_affects_class_hit": False,
-        "best_contradiction_score": 0.0,
-        "best_context_score": 0.0,
-        "hit_count": 1,
-        "mean_conjecture_fraction": 0.0,
-        "dominant_temporal_relation": None,
-        "best_lag_hours": None,
-        "lag_is_approximate": False,
-        "supporting_snippet_ids": [],
-        "contradicting_snippet_ids": [],
-        "contextual_snippet_ids": [],
-        "aggregated_mechanisms": [],
-        "aggregated_outcomes": [],
-        "best_source_tier": None,
+def _refine_grounding(*, analyzes: bool, affects: bool) -> dict:
+    """Drive the real engine through refine_with_evidence and return the C1
+    candidate so the test asserts production's observationally_ungrounded, not a
+    locally recomputed copy of the formula."""
+    e = RuleBasedCausalityEngineV32(CausalityEngineConfigV32(
+        minimum_evidence_threshold=0.0, minimum_pre_evidence_threshold=0.0,
+        minimum_composite_threshold=0.0, top_k_candidates=5))
+    cands = {"candidates": [{
+        "candidate_id": "C1", "cause_label": "cause C1", "composite_score": 0.50,
+        "meets_evidence_threshold": True,
+        "scores": {"structural": 0.60, "temporal": 0.50, "telemetry": 0.50,
+                   "evidence": 0.40, "governance": 0.50},
+    }]}
+    summary = {
+        "candidate_id": "C1", "best_support_score": 0.7, "best_contradiction_score": 0.0,
+        "best_context_score": 0.0, "best_source_tier": None, "hit_count": 1,
+        "has_analyzes_class_hit": analyzes, "has_affects_class_hit": affects,
+        "mean_conjecture_fraction": 0.0, "supporting_snippet_ids": [],
+        "contradicting_snippet_ids": [], "contextual_snippet_ids": [],
+        "dominant_temporal_relation": None, "best_lag_hours": None,
+        "lag_is_approximate": False, "aggregated_mechanisms": [], "aggregated_outcomes": [],
     }
-    ungrounded = not (
-        bool(summary_row.get("has_affects_class_hit", False))
-        or bool(summary_row.get("has_analyzes_class_hit", False))
-    )
-    assert ungrounded is False
+    res = e.refine_with_evidence(cands, {"candidate_evidence_summary": [summary]})
+    for pool in ("candidates", "filtered_out_candidates"):
+        for c in res.get(pool, []):
+            if c.get("candidate_id") == "C1":
+                return c
+    raise AssertionError("C1 not found in engine output")
+
+
+def test_observationally_ungrounded_false_when_analyzes_hit():
+    assert _refine_grounding(analyzes=True, affects=False)["observationally_ungrounded"] is False
 
 
 def test_observationally_ungrounded_false_when_affects_hit():
-    summary_row = {"has_analyzes_class_hit": False, "has_affects_class_hit": True}
-    ungrounded = not (
-        bool(summary_row.get("has_affects_class_hit", False))
-        or bool(summary_row.get("has_analyzes_class_hit", False))
-    )
-    assert ungrounded is False
+    assert _refine_grounding(analyzes=False, affects=True)["observationally_ungrounded"] is False
 
 
 def test_observationally_ungrounded_true_when_no_grounding_hits():
-    summary_row = {"has_analyzes_class_hit": False, "has_affects_class_hit": False}
-    ungrounded = not (
-        bool(summary_row.get("has_affects_class_hit", False))
-        or bool(summary_row.get("has_analyzes_class_hit", False))
-    )
-    assert ungrounded is True
+    assert _refine_grounding(analyzes=False, affects=False)["observationally_ungrounded"] is True

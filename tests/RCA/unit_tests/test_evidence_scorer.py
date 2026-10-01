@@ -486,18 +486,32 @@ def test_no_encoder_falls_back_to_lexical_overlap():
 
 
 def test_encoder_cache_cleared_between_retrieve_calls():
-    """_emb_cache is reset at the start of each retrieve() call."""
+    """A real retrieve() resets _emb_cache so stale embeddings never bleed across calls."""
     enc = _MockEncoder({"pump failure": _unit(np.array([1.0, 0.0, 0.0, 0.0]))})
     r = make_retriever_with_encoder(enc)
 
-    # Manually prime the cache as retrieve() would
-    r._emb_cache = {}
-    r._embed("pump failure")
-    assert "pump failure" in r._emb_cache
+    # Plant a stale entry that a prior retrieve() would have left behind.
+    sentinel = object()
+    r._emb_cache = {"stale cause label": sentinel}
 
-    # Simulate a new retrieve() resetting the cache
-    r._emb_cache = {}
-    assert len(r._emb_cache) == 0
+    # Drive the real retrieve() with minimal valid inputs over the empty store. It
+    # returns no hits, but it must still clear the cache up front — the previous
+    # version only reassigned the cache itself, so it never exercised retrieve().
+    r.retrieve(
+        event={"event_id": "EVT-1", "id": "EVT-1", "asset_id": "ASSET-1",
+               "description": "pump failure"},
+        kg_context={"subgraph_id": "SG-1", "components": [], "documents": [],
+                    "failure_modes": []},
+        causality_candidates={"candidates": [{
+            "candidate_id": "FM::1", "cause_label": "pump failure", "component_id": "C1",
+            "hypothesis_type": "failure_mode", "composite_score": 0.7, "scores": {},
+        }]},
+        operational_context=None,
+        run_context={"run_id": "RUN-1"},
+    )
+
+    # Removing the reset in retrieve() leaves the stale entry and fails here.
+    assert "stale cause label" not in r._emb_cache
     print("  PASS test_encoder_cache_cleared_between_retrieve_calls")
 
 

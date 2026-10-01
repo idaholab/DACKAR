@@ -18,10 +18,12 @@ Covers:
 Run:  pytest test_step5_sensitivity_table.py -v
 """
 from typing import Optional
+from unittest.mock import MagicMock
 
 import pytest
 
 from dackar.RCA.orchestrators.causality_engine_v32 import RuleBasedCausalityEngineV32 as Engine  # noqa: E402
+from dackar.RCA.orchestrators.rca_reasoning_orchestrator import RCAReasoningOrchestrator  # noqa: E402
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -292,72 +294,136 @@ def test_candidate_rank_starts_at_1():
     assert 1 in ranks
 
 
-# ── 8. Manifest wiring ────────────────────────────────────────────────────────
+# ── 8. Manifest wiring (real orchestrator, not a mock) ────────────────────────
+#
+# These exercise the actual _stage_g_finalize_manifest wiring: it builds the
+# coverage summary from the stage inputs, feeds it to _build_sensitivity_table,
+# surfaces the artifacts.sensitivity_table block, and appends the SENSITIVITY
+# analyst-attention flag (preserving pre-existing executive-summary flags) only
+# when any_ranking_change_possible is True. The previous version reimplemented
+# that flag logic inside the test, so it could not catch a regression in it.
 
-def _mock_manifest_with_sensitivity(any_change: bool, row_count: int) -> dict:
-    """Simulate the orchestrator manifest artifacts block."""
-    sensitivity = {
-        "summary": {
-            "any_ranking_change_possible": any_change,
-            "missing_sources_checked": ["kg_context"] if any_change else [],
-            "top_n_candidates": 2,
-        },
-        "rows": [{}] * row_count,
-        "provenance": {},
-    }
-    # Replicate the analyst_attention_flags logic from _stage_g_finalize_manifest
-    base_flags = ["existing_flag"]
-    flags = base_flags + (
-        ["SENSITIVITY: missing data could alter candidate ranking — review sensitivity_table"]
-        if bool((sensitivity.get("summary") or {}).get("any_ranking_change_possible", False))
-        else []
+def _orchestrator() -> RCAReasoningOrchestrator:
+    return RCAReasoningOrchestrator(
+        validator=MagicMock(),
+        artifact_store=MagicMock(),
+        kg_context_builder=MagicMock(),
+        tskr_temporal_scorer=None,
+        causality_engine=MagicMock(),
+        evidence_retriever=MagicMock(),
+        rca_synthesizer=MagicMock(),
     )
+
+
+def _rca_card() -> dict:
+    """Minimal valid card carrying one pre-existing analyst-attention flag."""
     return {
-        "sensitivity_table": sensitivity,
-        "analyst_attention_flags": flags,
-        "artifacts": {
-            "sensitivity_table": {
-                "present": True,
-                "any_ranking_change_possible": bool(
-                    (sensitivity.get("summary") or {}).get("any_ranking_change_possible", False)
-                ),
-                "missing_sources_checked": list(
-                    (sensitivity.get("summary") or {}).get("missing_sources_checked") or []
-                ),
-                "top_n_candidates": int(
-                    (sensitivity.get("summary") or {}).get("top_n_candidates", 0)
-                ),
-                "row_count": len(sensitivity.get("rows") or []),
-            },
-        },
+        "validation_status": {"schema_valid": True, "all_claims_cited": True,
+                              "passed_minimum_evidence_gate": True, "fallback_used": False},
+        "analyst_review": {"decision_required": False, "writeback_recommendation": "ready_if_accepted"},
+        "executive_summary": {"decision_status": "candidate_ready",
+                              "analyst_attention_flags": ["existing_flag"]},
+        "primary_hypothesis": {"candidate_id": "FM::CAND-A"},
+        "recommended_actions": [],
+        "contributing_causes": [],
     }
+
+
+def _real_manifest(any_change: bool) -> dict:
+    """Call the real _stage_g_finalize_manifest.
+
+    any_change=True: empty core families (kg/anomaly/chroma 'missing') with
+    candidates whose composite_raw exceeds composite_score, so restoring a
+    missing core source lifts the score past the 0.02 threshold →
+    any_ranking_change_possible is True.
+
+    any_change=False: fully populated core + optional families so every assessed
+    source is 'complete'; the only degraded families (protection_logic_context,
+    configuration_change_records) are 'not_assessed', whose restoration leaves the
+    quality factor unchanged → no positive delta → flag not injected.
+    """
+    o = _orchestrator()
+    if any_change:
+        kg = {"subgraph_id": "KGCTX::1", "components": [], "failure_modes": [], "past_events": []}
+        tskr = {"patterns": []}
+        evidence = {"results": []}
+        cands = {"candidates": [
+            {"candidate_id": "FM::CAND-A", "event_id": "EVT-1", "composite_score": 0.80,
+             "scores": {"composite_raw": 0.86}, "quality_multiplier": 0.93},
+            {"candidate_id": "FM::CAND-B", "event_id": "EVT-1", "composite_score": 0.76,
+             "scores": {"composite_raw": 0.82}, "quality_multiplier": 0.927},
+        ], "provenance": {}}
+        telemetry = soe = alarm = None
+    else:
+        kg = {"subgraph_id": "KGCTX::1",
+              "components": [{"component_id": "C1"}],
+              "failure_modes": [{"fm_id": "FM1"}],
+              "past_events": [{"event_id": "P1"}]}
+        tskr = {"patterns": [{"pattern_id": "T1"}]}
+        evidence = {"results": [{"r": 1}, {"r": 2}, {"r": 3}]}
+        cands = {"candidates": [
+            {"candidate_id": "FM::CAND-A", "event_id": "EVT-1", "composite_score": 0.80,
+             "scores": {"composite_raw": 0.80}, "quality_multiplier": 1.0},
+        ], "provenance": {}}
+        telemetry = {"signals": [{"tag_id": "S1", "data_quality": {"missing_fraction": 0.0}}]}
+        soe = {"quality": {"clock_sync_ok": True, "dropped_record_count": 0}, "records": [{"x": 1}]}
+        alarm = {"quality": {"clock_sync_ok": True, "missing_fraction": 0.0}, "alarms": [{"a": 1}]}
+
+    return o._stage_g_finalize_manifest(
+        run_context={"run_id": "RUN-1", "input_refs": {"event_id": "EVT-1", "asset_id": "ASSET-1"}},
+        kg_context=kg,
+        tskr_patterns=tskr,
+        causality_candidates=cands,
+        causality_candidates_pre_refine=None,
+        evidence_bundle=evidence,
+        ishikawa_matrix=None,
+        cmms_context=None,
+        rca_card=_rca_card(),
+        input_validation={"ok": True},
+        output_validation={"ok": True},
+        optional_artifact_failures=[],
+        kg_governance={"status": "green", "issues": [], "failure_mode_count": 0,
+                       "min_failure_modes_required": 0},
+        barrier_analysis={"barriers": [], "summary": {"overall_status": "green",
+                          "barrier_count": 0, "degraded_barrier_count": 0}},
+        reentry_execution={"auto_reentry_enabled": False, "attempt_count": 1,
+                           "attempts": [{"attempt_index": 1, "status": "completed"}],
+                           "reentry_hook": {"should_reenter": False, "reason": "no_rank_inversion"}},
+        reentry_hook={"should_reenter": False, "reason": "no_rank_inversion"},
+        telemetry_summary=telemetry,
+        soe_log=soe,
+        alarm_log=alarm,
+    )
 
 
 def test_manifest_sensitivity_table_key_present():
-    manifest = _mock_manifest_with_sensitivity(any_change=False, row_count=0)
+    manifest = _real_manifest(any_change=False)
     assert "sensitivity_table" in manifest
 
 
 def test_manifest_artifacts_sensitivity_present_flag():
-    manifest = _mock_manifest_with_sensitivity(any_change=False, row_count=0)
+    manifest = _real_manifest(any_change=False)
     assert manifest["artifacts"]["sensitivity_table"]["present"] is True
 
 
 def test_manifest_artifacts_row_count():
-    manifest = _mock_manifest_with_sensitivity(any_change=True, row_count=3)
-    assert manifest["artifacts"]["sensitivity_table"]["row_count"] == 3
+    """Two penalised candidates × eight degraded source families → 16 rows."""
+    manifest = _real_manifest(any_change=True)
+    assert manifest["artifacts"]["sensitivity_table"]["row_count"] == 16
 
 
 def test_analyst_attention_flag_injected_when_change_possible():
-    manifest = _mock_manifest_with_sensitivity(any_change=True, row_count=2)
+    manifest = _real_manifest(any_change=True)
+    assert manifest["artifacts"]["sensitivity_table"]["any_ranking_change_possible"] is True
     assert any("SENSITIVITY" in f for f in manifest["analyst_attention_flags"])
 
 
 def test_analyst_attention_flag_not_injected_when_no_change():
-    manifest = _mock_manifest_with_sensitivity(any_change=False, row_count=0)
+    manifest = _real_manifest(any_change=False)
+    assert manifest["artifacts"]["sensitivity_table"]["any_ranking_change_possible"] is False
     assert not any("SENSITIVITY" in f for f in manifest["analyst_attention_flags"])
 
 
 def test_analyst_attention_flag_appended_not_replacing():
-    manifest = _mock_manifest_with_sensitivity(any_change=True, row_count=2)
+    manifest = _real_manifest(any_change=True)
     assert "existing_flag" in manifest["analyst_attention_flags"]

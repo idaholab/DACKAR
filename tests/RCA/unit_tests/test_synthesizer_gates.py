@@ -253,6 +253,78 @@ def test_gate_composite_exactly_at_threshold():
     print("  PASS test_gate_composite_exactly_at_threshold")
 
 
+# ── _passes_minimum_evidence_gate — OR-rule branch coverage (I30) ─────────────
+# Gate rule: typed_primary_supporting_count >= 1 OR primary_supporting_count >= 2.
+# A row counts toward primary_supporting_count only if support_role=='supporting',
+# linked to the primary candidate, and source_id is truthy; it additionally counts
+# as typed only if source_type is truthy.
+
+def _gate_base_card(evidence):
+    """Minimal card exercising only the fields _passes_minimum_evidence_gate reads."""
+    return {
+        "primary_hypothesis": {
+            "candidate_id": "FM::CAND-A",
+            "composite_score": 0.82,
+            "citations": [{"source_id": "SNIP-1"}],
+        },
+        "evidence": evidence,
+    }
+
+
+def _untyped_supporting(source_id):
+    """Supporting row linked to the primary, with source_id but NO source_type."""
+    return {
+        "source_id": source_id,
+        "support_role": "supporting",
+        "linked_candidate_id": "FM::CAND-A",
+    }
+
+
+def test_gate_two_untyped_supporting_rows_pass():
+    """primary_supporting_count >= 2 branch: two untyped supporting rows → True."""
+    s = make_synthesizer()
+    card = _gate_base_card([_untyped_supporting("SNIP-1"), _untyped_supporting("SNIP-2")])
+    assert s._passes_minimum_evidence_gate(card) is True
+    print("  PASS test_gate_two_untyped_supporting_rows_pass")
+
+
+def test_gate_single_untyped_supporting_row_fails():
+    """One untyped supporting row: typed_count==0 and untyped_count==1 → neither
+    branch satisfied → False."""
+    s = make_synthesizer()
+    card = _gate_base_card([_untyped_supporting("SNIP-1")])
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_single_untyped_supporting_row_fails")
+
+
+def test_gate_supporting_rows_without_source_id_fail():
+    """Supporting rows with falsy source_id are not counted → False even with two."""
+    s = make_synthesizer()
+    no_source = {"support_role": "supporting", "linked_candidate_id": "FM::CAND-A"}
+    card = _gate_base_card([dict(no_source), dict(no_source)])
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_supporting_rows_without_source_id_fail")
+
+
+def test_gate_empty_candidate_id_fails():
+    """Empty primary candidate_id → guard returns False before evidence counts."""
+    s = make_synthesizer()
+    card = _gate_base_card([minimal_supporting_evidence("FM::CAND-A")])
+    card["primary_hypothesis"]["candidate_id"] = ""
+    assert s._passes_minimum_evidence_gate(card) is False
+    print("  PASS test_gate_empty_candidate_id_fails")
+
+
+def test_gate_single_typed_supporting_row_passes():
+    """typed_primary_supporting_count >= 1 branch: one typed supporting row → True.
+    Also the positive control proving _gate_base_card can pass (so the two
+    *_fail cases above are not failing vacuously)."""
+    s = make_synthesizer()
+    card = _gate_base_card([minimal_supporting_evidence("FM::CAND-A")])
+    assert s._passes_minimum_evidence_gate(card) is True
+    print("  PASS test_gate_single_typed_supporting_row_passes")
+
+
 # ── H6 — posture-aware recommended actions ───────────────────────────────────
 
 def test_recommended_actions_no_warning_when_supported():
@@ -370,22 +442,47 @@ def test_recommended_actions_priority_escalates_for_high_aliases():
 
 
 def test_recommended_actions_priority_boosts_for_multiple_degraded_barriers():
-    """§8.3 depth pass: multiple degraded barriers force high-priority actioning."""
+    """§8.3 depth pass: two degraded barriers raise priority exactly one tier via
+    the barrier count alone. Names/categories are safety-neutral (circulating
+    water matches no safety keyword), so the safety pass can only reach 'medium';
+    the step to 'high' is therefore attributable solely to degraded_count==2, not
+    to a safety-keyword match."""
     s = make_synthesizer()
     candidate = {
         "candidate_id": "CAND-A",
-        "cause_label": "multi-train degradation",
+        "cause_label": "multi-train circulating water degradation",
         "evidence_posture": "supported",
         "scores": {"barrier_signal": 0.7},
         "affected_safety_functions": [
-            {"sf_id": "SF::RHR-A", "sf_name": "RHR Train A", "sf_category": "residual_heat_removal"},
-            {"sf_id": "SF::RHR-B", "sf_name": "RHR Train B", "sf_category": "residual_heat_removal"},
+            {"sf_id": "SF::CW-A", "sf_name": "Circulating Water Pump A", "sf_category": "circulating_water"},
+            {"sf_id": "SF::CW-B", "sf_name": "Circulating Water Pump B", "sf_category": "circulating_water"},
         ],
     }
     actions = [{"action_type": "monitoring", "description": "Trend pump performance", "priority": "low"}]
     result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
-    assert result[0]["priority"] in {"high", "critical"}
+    assert result[0]["priority"] == "high"
     print("  PASS test_recommended_actions_priority_boosts_for_multiple_degraded_barriers")
+
+
+def test_recommended_actions_single_degraded_barrier_no_boost():
+    """§8.3 negative control: one safety-neutral barrier → degraded_count==1 → no
+    barrier boost. The safety pass still assigns 'medium' (categories non-empty),
+    so the result stays 'medium'. This isolates the barrier contribution: the only
+    difference from the two-barrier case is the barrier count."""
+    s = make_synthesizer()
+    candidate = {
+        "candidate_id": "CAND-A",
+        "cause_label": "single-train circulating water degradation",
+        "evidence_posture": "supported",
+        "scores": {"barrier_signal": 0.7},
+        "affected_safety_functions": [
+            {"sf_id": "SF::CW-A", "sf_name": "Circulating Water Pump A", "sf_category": "circulating_water"},
+        ],
+    }
+    actions = [{"action_type": "monitoring", "description": "Trend pump performance", "priority": "low"}]
+    result = s._normalize_recommended_actions(actions, primary_candidate=candidate)
+    assert result[0]["priority"] == "medium"
+    print("  PASS test_recommended_actions_single_degraded_barrier_no_boost")
 
 
 def test_recommended_actions_rationale_includes_barrier_weighting():
@@ -474,6 +571,11 @@ ALL_TESTS = [
     test_gate_supporting_evidence_wrong_candidate_fails,
     test_gate_passes_all_requirements,
     test_gate_composite_exactly_at_threshold,
+    test_gate_two_untyped_supporting_rows_pass,
+    test_gate_single_untyped_supporting_row_fails,
+    test_gate_supporting_rows_without_source_id_fail,
+    test_gate_empty_candidate_id_fails,
+    test_gate_single_typed_supporting_row_passes,
     test_recommended_actions_no_warning_when_supported,
     test_recommended_actions_warning_when_contradicted,
     test_recommended_actions_warning_when_no_data,
@@ -483,6 +585,7 @@ ALL_TESTS = [
     test_recommended_actions_priority_escalates_for_critical_aliases,
     test_recommended_actions_priority_escalates_for_high_aliases,
     test_recommended_actions_priority_boosts_for_multiple_degraded_barriers,
+    test_recommended_actions_single_degraded_barrier_no_boost,
     test_recommended_actions_rationale_includes_barrier_weighting,
     test_recommended_actions_priority_escalates_for_risk_scalar,
     test_recommended_actions_rationale_includes_risk_significance,
