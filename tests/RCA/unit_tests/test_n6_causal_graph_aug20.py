@@ -122,6 +122,40 @@ def test_gate_eliminated_candidate_is_eliminated_role_without_causal_edge():
     assert _edges_between(block, "FM::X", "EVENT::EVT-1") == []
 
 
+def test_eliminated_candidate_selected_as_primary_is_eliminated_not_primary():
+    # The card names the failed-gate candidate as primary, with redundant
+    # primary_eligibility="blocked". Elimination must outrank the primary label,
+    # and no causal-precedence edge may be drawn for it.
+    blocked = _cand("FM::X", "initiating", score=0.95,
+                    primary_eligibility="blocked",
+                    primary_block_reasons=["barrier_logic_gate_failed"],
+                    hard_gates={"barrier_logic": {"passed": False}})
+    block = _synth()._build_causal_graph(
+        card={"primary_hypothesis": {"candidate_id": "FM::X"}},
+        event=_EVENT,
+        causality_candidates={"candidates": [blocked, _cand("FM::A", "initiating")]},
+    )
+    roles = {n["id"]: n["role"] for n in block["nodes"]}
+    assert roles["FM::X"] == "eliminated"
+    assert _edges_between(block, "FM::X", "EVENT::EVT-1") == []
+
+
+def test_hard_gate_only_primary_is_eliminated_without_causal_edge():
+    # Only hard_gates marks the failure (no primary_eligibility field at all), and
+    # the candidate is the selected primary. It must still be role "eliminated"
+    # with no precedence edge — the edge guard keys off the same elimination test.
+    blocked = _cand("FM::X", "initiating", score=0.95,
+                    hard_gates={"barrier_logic": {"passed": False}})
+    block = _synth()._build_causal_graph(
+        card={"primary_hypothesis": {"candidate_id": "FM::X"}},
+        event=_EVENT,
+        causality_candidates={"candidates": [blocked, _cand("FM::A", "initiating")]},
+    )
+    roles = {n["id"]: n["role"] for n in block["nodes"]}
+    assert roles["FM::X"] == "eliminated"
+    assert _edges_between(block, "FM::X", "EVENT::EVT-1") == []
+
+
 def test_explain_away_edge_from_common_cause_summary():
     block = _synth()._build_causal_graph(
         card={"primary_hypothesis": {"candidate_id": "FM::SYMPTOM"}},

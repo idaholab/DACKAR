@@ -476,6 +476,7 @@ class RuleValidatedRCASynthesizerV31:
 
         node_ids: set = {event_node_id}
         chain_pos: Dict[str, str] = {}
+        eliminated_ids: set = set()
         for c in candidates:
             cid = str(c.get("candidate_id") or "").strip()
             if not cid or cid in node_ids:
@@ -483,10 +484,14 @@ class RuleValidatedRCASynthesizerV31:
             eliminated = bool(self._eliminating_gates_for(c)) or str(
                 c.get("primary_eligibility") or ""
             ) == "blocked"
-            if cid == primary_id:
-                role = "primary"
-            elif eliminated:
+            if eliminated:
+                # Elimination outranks the selected-primary label: a candidate whose
+                # hard gate failed must not be drawn as the primary cause, even if the
+                # card still names it (and even when only ``hard_gates`` marks it).
                 role = "eliminated"
+                eliminated_ids.add(cid)
+            elif cid == primary_id:
+                role = "primary"
             elif cid in contributing_ids:
                 role = "contributing"
             else:
@@ -529,7 +534,7 @@ class RuleValidatedRCASynthesizerV31:
             cid = str(c.get("candidate_id") or "").strip()
             if cid not in node_ids or cid == event_node_id:
                 continue
-            if str(c.get("primary_eligibility") or "") == "blocked":
+            if cid in eliminated_ids:
                 continue  # eliminated candidates are shown as nodes, not causal edges
             cp = chain_pos.get(cid, "")
             rel = str((c.get("temporal_evidence") or {}).get("relation") or "").strip()
