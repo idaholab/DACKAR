@@ -174,6 +174,53 @@ def test_partial_source_delta_smaller_than_missing():
     assert delta_partial < delta_missing
 
 
+# ── 4b. Ratio-based rescaling keeps independent quality penalties ─────────────
+
+def test_independent_quality_penalty_rescaled_by_ratio():
+    """A candidate carrying a quality penalty *beyond* the coverage factor must be
+    rescaled by new_factor/current_factor — preserving that penalty — not recomputed
+    as composite_raw * new_factor, which silently drops it and overstates the score.
+    """
+    cov = _missing_kg_coverage()
+    current_factor, _ = Engine._coverage_quality_profile(cov)
+    patched = {"source_families": dict(cov["source_families"], kg_context={"status": "complete"})}
+    new_factor, _ = Engine._coverage_quality_profile(patched)
+
+    raw = 0.90
+    # composite_score carries an extra, independent 0.5 penalty on top of coverage.
+    current = round(raw * current_factor * 0.5, 6)
+    cand = {
+        "candidate_id": "C1",
+        "event_id": "EVT-001",
+        "composite_score": current,
+        "scores": {"composite_raw": raw},
+        "quality_multiplier": round(current / raw, 6),
+    }
+    row = _build([cand], cov)["rows"][0]
+
+    expected = round(min(1.0, current * (new_factor / current_factor)), 6)
+    assert row["estimated_composite_if_available"] == expected
+    # The dropped-penalty (buggy) estimate would be raw * new_factor — far higher.
+    buggy = round(min(1.0, raw * new_factor), 6)
+    assert row["estimated_composite_if_available"] < buggy - 0.01
+
+
+def test_two_candidate_inversion_flags_would_change_for_last():
+    """The lower-ranked (and here last) candidate's would_change_ranking must be
+    evaluated: restoring kg_context lifts C2 above C1's current score.
+    """
+    cov = _missing_kg_coverage()
+    c1 = _candidate("C1", score=0.80, composite_raw=0.86)
+    c2 = _candidate("C2", score=0.76, composite_raw=0.82)  # ranks second, overtakes when kg restored
+    result = _build([c1, c2], cov)
+    by_id = {r["candidate_id"]: r for r in result["rows"]}
+    assert by_id["C1"]["candidate_rank"] == 1
+    assert by_id["C2"]["candidate_rank"] == 2
+    assert by_id["C1"]["would_change_ranking"] is False  # top candidate, nobody above
+    assert by_id["C2"]["would_change_ranking"] is True   # last candidate, now evaluated
+    assert result["summary"]["any_ranking_change_possible"] is True
+
+
 # ── 5. top_n cap ──────────────────────────────────────────────────────────────
 
 def test_top_n_cap_limits_candidates():
