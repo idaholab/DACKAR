@@ -183,10 +183,13 @@ def test_source_doc_id_partial_prefix_returns_none():
 def test_plant_query_no_semantic_uses_original_weights():
     """When doc_id_semantic_scores=None original weights are used (backward compat)."""
     pe = _past_event("CMMS::CR::CR-001", in_precursor_window=False)
+    # The candidate contributes component PUMP-1 so it intersects the past event's
+    # PUMP-1 and the component dimension actually fires — component_match now
+    # requires a genuine current-vs-past ID intersection (I21).
     result = RCAReasoningOrchestrator._query_plant_past_events(
         event=_event(),
         kg_context=_kg_context([pe]),
-        causality_candidates=_cands(),
+        causality_candidates=_cands("FM-001"),
     )
     assert len(result) == 1
     dims = result[0]["match_dimensions"]
@@ -212,10 +215,12 @@ def test_plant_query_no_semantic_output_has_semantic_fields_zero():
 def test_plant_query_renormalized_component_weight():
     """When semantic scores dict is provided component weight becomes 0.36."""
     pe = _past_event("CMMS::CR::CR-001", in_precursor_window=False)
+    # Candidate contributes component PUMP-1 so the component dimension fires
+    # against the past event's PUMP-1 (I21: intersection required).
     result = RCAReasoningOrchestrator._query_plant_past_events(
         event=_event(),
         kg_context=_kg_context([pe]),
-        causality_candidates=_cands(),
+        causality_candidates=_cands("FM-001"),
         doc_id_semantic_scores={},
     )
     dims = result[0]["match_dimensions"]
