@@ -299,9 +299,11 @@ def sanitize_props(props: Dict[str, Any]) -> Dict[str, Any]:
 def generate_ddl_from_schema(schema: Dict[str, Any]) -> List[str]:
     """Generate Neo4j DDL statements (constraints and indexes) from a merged schema.
 
-    For every node label a ``UNIQUE`` constraint on ``id`` is created.
-    Additionally, a ``CREATE INDEX`` statement is emitted for each property
-    that carries ``"indexed": true`` in its spec.
+    For every node label a ``UNIQUE`` constraint is created on that label's
+    primary-key property (as resolved by :func:`_node_primary_key`), so an
+    explicit ``primary_key`` such as ``document_id`` is enforced rather than a
+    hard-coded ``id``. Additionally, a ``CREATE INDEX`` statement is emitted for
+    each property that carries ``"indexed": true`` in its spec.
 
     Args:
         schema: Merged schema dict as returned by :func:`load_and_merge_schemas`.
@@ -318,7 +320,10 @@ def generate_ddl_from_schema(schema: Dict[str, Any]) -> List[str]:
         # Validate + backtick-quote interpolated identifiers to guard against
         # Cypher injection through schema-supplied labels / property names.
         safe_label = _safe_token(label, "label")
-        ddl.append(f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:`{safe_label}`) REQUIRE n.id IS UNIQUE")
+        safe_pk = _safe_token(_node_primary_key(spec), "primary key")
+        ddl.append(
+            f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:`{safe_label}`) REQUIRE n.`{safe_pk}` IS UNIQUE"
+        )
         for prop in _schema_props(spec):
             if prop.get("indexed"):
                 safe_prop = _safe_token(prop["name"], "property name")
@@ -369,6 +374,7 @@ class GraphBatch:
         self.nodes: Dict[str, Dict[str, Any]] = {}
         self.edges: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
         self.relation_map = relation_endpoint_map(self.schema)
+        self.primary_key_map = build_primary_key_map(self.schema)
 
     def add_node(self, node_id: str, label: str, attrs: Optional[Dict[str, Any]] = None) -> str:
         """Add or merge a node into the batch.
@@ -383,9 +389,21 @@ class GraphBatch:
 
         Returns:
             The *node_id* string, for convenience when chaining calls.
+
+        Notes:
+            *node_id* is the one canonical identity for the node: it is both the
+            ``id`` property and the value the edge builder stores as the edge
+            endpoint. When the label's schema declares a natural primary key
+            (e.g. ``document_id``), that property is populated with the same
+            *node_id* so the MERGE key the ingestion batch uses lines up with
+            the edge-endpoint match and Neo4j never merges on a null key. For
+            the default ``id`` key this is a no-op.
         """
         attrs = deepcopy(attrs or {})
         attrs["id"] = node_id
+        pk = self.primary_key_map.get(label, "id")
+        if pk != "id":
+            attrs[pk] = node_id
         clean = sanitize_props(attrs)
         if node_id in self.nodes:
             self.nodes[node_id]["attrs"].update(clean)
