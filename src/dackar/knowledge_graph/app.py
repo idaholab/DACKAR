@@ -16,13 +16,83 @@ import streamlit.components.v1 as components
 import pandas as pd
 import json
 import logging
+import tempfile
+import uuid
 from io import StringIO
 from datetime import datetime
+
+
+# -----------------------------
+# Helpers: per-session scratch space and path containment
+# -----------------------------
+def _session_dir():
+    """Return this Streamlit session's private scratch directory.
+
+    Streamlit reruns the whole script on every interaction but preserves
+    st.session_state across reruns, so a directory recorded there is stable for
+    the life of the browser session and isolated from other concurrent
+    sessions. All files the app writes (uploaded TOML schemas, generated
+    construction schemas, the interactive-graph HTML) live here, so no
+    client-controlled name can escape to a process-wide or shared path.
+
+    @ In, None
+    @ Out, path, string, absolute path of the per-session temporary directory
+    """
+    if "session_dir" not in st.session_state:
+        st.session_state.session_dir = tempfile.mkdtemp(prefix="dackar_kg_")
+    return st.session_state.session_dir
+
+
+def _is_contained(baseDir, path):
+    """Return True if *path* resolves to a location inside *baseDir*.
+
+    Resolves symlinks and ``..`` segments on both sides so a traversal or
+    absolute path cannot masquerade as a child of baseDir.
+
+    @ In, baseDir, string, directory that path must be contained in
+    @ In, path, string, candidate file path
+    @ Out, contained, bool, True if path is baseDir or lies beneath it
+    """
+    base = os.path.realpath(baseDir)
+    target = os.path.realpath(path)
+    return target == base or target.startswith(base + os.sep)
+
+
+def _safe_remove(baseDir, path):
+    """Delete *path* only if it is contained in *baseDir* (no traversal).
+
+    @ In, baseDir, string, directory the deletion is confined to
+    @ In, path, string, file to delete
+    @ Out, None
+    """
+    if _is_contained(baseDir, path) and os.path.exists(path):
+        os.remove(path)
 
 # -----------------------------
 # Helper: initialize KG from JSON
 # -----------------------------
 def initialize_kg_from_json(json_file):
+    """Build a KG instance from an uploaded initialization-parameters JSON file.
+
+    The uploaded JSON must be an object with five string keys describing the
+    Neo4j target and the schema paths::
+
+        {
+          "config_file_path":   "<path to neo4j.conf, used when rewriting it>",
+          "import_folder_path": "<Neo4j import folder, or null to skip conf rewrite>",
+          "uri":                "bolt://host:7687",
+          "user":               "neo4j",
+          "pwd":                "<password>"
+        }
+
+    Side effects: the returned KG opens a live Neo4j driver with the supplied
+    credentials and loads the entity-library spreadsheet, so this consumes
+    credentials and reads from the configured paths. Nothing is written to disk
+    here.
+
+    @ In, json_file, file-like, uploaded JSON file handle (or None)
+    @ Out, kg, KG, initialized KG instance, or None if no file was provided
+    """
     if json_file is None:
         st.error("Please upload the initialization parameters JSON file.")
         return None
@@ -40,6 +110,26 @@ def initialize_kg_from_json(json_file):
 # Main Streamlit app
 # -----------------------------
 def main():
+    """Render the Streamlit KG-construction interface.
+
+    Drives the full interactive workflow: initialize a KG from an uploaded
+    parameters JSON file, import user-provided or predefined graph schemas,
+    inspect the loaded schema set as an interactive graph, manage construction
+    schemas, and ingest a data file through the generic workflow.
+
+    Filesystem side effects: every file the app persists (uploaded ``.toml``
+    schemas, uploaded construction-schema ``.json`` files, and the generated
+    interactive-graph HTML) is written under a per-session temporary directory
+    (see :func:`_session_dir`), never a process-wide or client-named path, and
+    files are deleted only after a containment check.
+
+    Database side effects: importing schemas mutates the in-memory KG registry;
+    ``Import Data`` runs ``genericWorkflow`` which writes nodes and relations to
+    the Neo4j instance configured at initialization.
+
+    @ In, None
+    @ Out, None
+    """
     st.title("KG Graph Construction Interface")
 
     # Persist KG instance and loaded schemas across reruns
@@ -66,8 +156,11 @@ def main():
     schema_name = st.text_input("Enter Schema Name")
     if st.button("Import Schema"):
         if kg_instance and schema_file and schema_name:
-            # Save uploaded file to local disk so KG can read it deterministically
-            schema_path = f"./{schema_file.name}"
+            # Save the upload under a generated basename in this session's
+            # private directory. The client-supplied schema_file.name is never
+            # used as a path component, so a name such as "../target.toml"
+            # cannot escape the session directory or overwrite another file.
+            schema_path = os.path.join(_session_dir(), f"schema_{uuid.uuid4().hex}.toml")
             with open(schema_path, "wb") as f:
                 f.write(schema_file.getbuffer())
 
@@ -152,12 +245,12 @@ def main():
                         # If removal failed, do not alter table; continue to next row
                         continue
 
-                # 2) Optionally delete uploaded TOML from disk (predefined are left intact)
+                # 2) Optionally delete uploaded TOML from disk (predefined are left intact).
+                #    Deletion is confined to this session's directory, so even a
+                #    stale table entry cannot be used to delete an outside file.
                 try:
                     if entry["Source"] == "uploaded":
-                        file_path = entry["File"]
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
+                        _safe_remove(_session_dir(), entry["File"])
                 except Exception as e:
                     # Non-fatal; just notify
                     st.warning(f"Could not delete uploaded file '{entry['File']}': {e}")
@@ -190,16 +283,29 @@ def main():
             else:
                 st.success("No cross-schema warnings detected.")
 
-            # Generate and display interactive graph
+            # Generate and display interactive graph. Render into a uniquely
+            # named file inside this session's directory rather than a shared,
+            # process-wide "knowledge_graph_schema_interactive.html", so
+            # concurrent sessions cannot overwrite each other's output between
+            # the write and the read.
+            html_file = os.path.join(
+                _session_dir(), f"schema_graph_{uuid.uuid4().hex}.html"
+            )
             try:
-                kg_instance._createIteractivePlot()
-                html_file = "knowledge_graph_schema_interactive.html"
+                kg_instance._createIteractivePlot(output_file=html_file)
                 with open(html_file, "r", encoding="utf-8") as f:
                     html_content = f.read()
                 st.title("Interactive Knowledge Graph Schema")
                 components.html(html_content, height=900, scrolling=True)
             except FileNotFoundError:
                 st.error(f"Could not find '{html_file}'. Ensure _createIteractivePlot() generates this file.")
+            finally:
+                # The HTML has been read into memory; the on-disk copy is no
+                # longer needed and is confined to the session directory.
+                try:
+                    _safe_remove(_session_dir(), html_file)
+                except OSError:
+                    pass
     else:
         st.warning("KG instance is not initialized. Please initialize KG to check loaded schemas.")
 
@@ -215,17 +321,22 @@ def main():
     cs_file = st.file_uploader("Upload Construction Schema (JSON)", type=["json"])
     cs_name = st.text_input("Enter Construction Schema Name")
 
+    # Only the import mutation stays inside the button branch; the list and
+    # Remove controls are rendered unconditionally below so they persist across
+    # the rerun Streamlit triggers on every interaction.
     if st.button("Import Construction Schema"):
         if cs_file and cs_name:
-            # Ensure local folder exists
-            os.makedirs("construction_schemas", exist_ok=True)
-            cs_path = os.path.join("construction_schemas", f"{cs_name}.json")
+            # The display name (cs_name) is decoupled from the stored filename:
+            # the file is written under a generated basename in this session's
+            # directory, so a cs_name containing "../" or an absolute path
+            # cannot escape the base directory or overwrite an arbitrary file.
+            cs_path = os.path.join(_session_dir(), f"construction_{uuid.uuid4().hex}.json")
 
-            # Save uploaded file to deterministic path
+            # Save uploaded file to the generated path
             with open(cs_path, "wb") as f:
                 f.write(cs_file.getbuffer())
 
-            # Track in session (overwrite if name already exists)
+            # Track in session (overwrite if display name already exists)
             existing_idx = next((i for i, e in enumerate(st.session_state.construction_schemas)
                                 if e["Schema Name"] == cs_name), None)
             meta_entry = {
@@ -235,6 +346,11 @@ def main():
                 "Loaded At": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
             if existing_idx is not None:
+                # Replacing an entry: drop the old file so it does not leak.
+                try:
+                    _safe_remove(_session_dir(), st.session_state.construction_schemas[existing_idx]["File"])
+                except OSError:
+                    pass
                 st.session_state.construction_schemas[existing_idx] = meta_entry
                 st.info(f"Construction schema '{cs_name}' updated.")
             else:
@@ -243,34 +359,33 @@ def main():
         else:
             st.warning("Please provide both a JSON file and a schema name.")
 
-        # List & Remove construction schemas
-        st.subheader("Loaded Construction Schemas")
-        if st.session_state.construction_schemas:
-            df_cs = pd.DataFrame(st.session_state.construction_schemas)
-            st.dataframe(df_cs, use_container_width=True)
+    # List & Remove construction schemas (outside the import button branch so a
+    # Remove click on a later rerun is actually processed).
+    st.subheader("Loaded Construction Schemas")
+    if st.session_state.construction_schemas:
+        df_cs = pd.DataFrame(st.session_state.construction_schemas)
+        st.dataframe(df_cs, use_container_width=True)
 
-            st.divider()
-            st.subheader("Manage Construction Schemas")
-            for idx, entry in enumerate(st.session_state.construction_schemas):
-                cols = st.columns([3, 4, 2, 2])  # Name, File, Source, Remove
-                cols[0].write(f"**{entry['Schema Name']}**")
-                cols[1].write(entry["File"])
-                cols[2].write(entry["Source"])
+        st.divider()
+        st.subheader("Manage Construction Schemas")
+        for idx, entry in enumerate(st.session_state.construction_schemas):
+            cols = st.columns([3, 4, 2, 2])  # Name, File, Source, Remove
+            cols[0].write(f"**{entry['Schema Name']}**")
+            cols[1].write(entry["File"])
+            cols[2].write(entry["Source"])
 
-                if cols[3].button("Remove", key=f"remove_cs_{idx}"):
-                    # Delete file from disk (only our uploaded ones)
-                    try:
-                        file_path = entry["File"]
-                        if os.path.exists(file_path):
-                            os.remove(file_path)
-                    except Exception as e:
-                        st.warning(f"Could not delete file '{entry['File']}': {e}")
+            if cols[3].button("Remove", key=f"remove_cs_{idx}"):
+                # Delete file from disk, confined to the session directory.
+                try:
+                    _safe_remove(_session_dir(), entry["File"])
+                except Exception as e:
+                    st.warning(f"Could not delete file '{entry['File']}': {e}")
 
-                    # Remove from session and refresh UI
-                    st.session_state.construction_schemas.pop(idx)
-                    st.rerun()
-        else:
-            st.info("No construction schemas loaded yet.")
+                # Remove from session and refresh UI
+                st.session_state.construction_schemas.pop(idx)
+                st.rerun()
+    else:
+        st.info("No construction schemas loaded yet.")
 
 
 

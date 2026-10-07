@@ -247,6 +247,34 @@ class KG:
         """
         self.importGraphSchemas(self.predefinedGraphSchemas, crossCheck=True, replace=True)
 
+    def removeGraphSchema(self, graphSchemaName):
+        """
+        Method that removes a single schema from the session registry and
+        revalidates the cross-schema references among the schemas that remain,
+        so the registry is never left with a relation pointing at a node label
+        the removal just deleted. The removal is atomic and symmetric with the
+        import path: session state (self.graphSchemas) is replaced only after
+        the remaining set validates, so a removal that would strand a reference
+        raises and leaves the existing registry untouched.
+        @ In, graphSchemaName, string, name of the schema to remove
+        @ Out, None
+        """
+        if graphSchemaName not in self.graphSchemas:
+            message = 'Schema ' + str(graphSchemaName) + ' is not defined in the existing schemas'
+            logging.error(message)
+            raise ValueError(message)
+
+        candidate = dict(self.graphSchemas)
+        del candidate[graphSchemaName]
+
+        # A relation in another schema may have resolved only because the
+        # removed schema supplied its endpoint node label; revalidate the whole
+        # remaining set and reject the removal if it would strand such a
+        # reference, matching the whole-set integrity a full load enforces.
+        self._crossSchemasCheck(candidate)
+
+        self.graphSchemas = candidate
+
     def _checkSchemaDataTypes(self, schema):
         """
         Method that checks that the datatypes defined in the new schema are part of the allowed data
