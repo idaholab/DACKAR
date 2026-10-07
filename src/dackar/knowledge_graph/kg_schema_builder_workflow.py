@@ -80,9 +80,11 @@ def _schema_props(spec: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _node_primary_key(spec: Dict[str, Any]) -> str:
     """Determine the primary key property name for a node spec.
 
-    Selects the first non-optional property; falls back to ``"id"`` if present
-    in the property list, then to the first listed property name, and finally
-    to the hard-coded default ``"id"``.
+    Honours an explicit ``primary_key`` declaration on the node spec first
+    (the meta-schema's MERGE-key contract). Otherwise selects the first
+    non-optional property; falls back to ``"id"`` if present in the property
+    list, then to the first listed property name, and finally to the
+    hard-coded default ``"id"``.
 
     Args:
         spec: A single node entry from the merged schema.
@@ -90,6 +92,9 @@ def _node_primary_key(spec: Dict[str, Any]) -> str:
     Returns:
         The property name to use as the primary key.
     """
+    declared = spec.get("primary_key")
+    if declared:
+        return declared
     props = _schema_props(spec)
     for prop in props:
         if not prop.get("optional", True):
@@ -1051,11 +1056,29 @@ def build_graph_from_workflow_artifacts(
 # Ingest
 # ---------------------------------------------------------------------------
 
+def build_primary_key_map(schema: Dict[str, Any]) -> Dict[str, str]:
+    """Build a ``{node_label: primary_key}`` map from a (merged) TOML schema.
+
+    Resolves each node's merge key via :func:`_node_primary_key`, so an
+    explicit ``primary_key`` declaration is honoured and ``"id"`` is used as
+    the default. Suitable for passing as the ``primary_keys`` argument to
+    :meth:`Py2Neo.upsert_nodes_batch` / :meth:`Py2Neo.upsert_edges_batch`.
+
+    Args:
+        schema: A schema dict (or merged schema) with a ``"node"`` mapping.
+
+    Returns:
+        Mapping of node label to the property name used as its MERGE key.
+    """
+    return {label: _node_primary_key(spec) for label, spec in schema.get("node", {}).items()}
+
+
 def ingest_graph_toml(
     client: Py2Neo,
     nodes: List[Dict[str, Any]],
     edges: List[Dict[str, Any]],
     database: Optional[str] = None,
+    primary_keys: Optional[Dict[str, str]] = None,
 ) -> None:
     """Bulk-upsert a node list and edge list into Neo4j.
 
@@ -1068,8 +1091,10 @@ def ingest_graph_toml(
         nodes: List of node dicts as returned by :func:`build_graph_from_workflow_artifacts`.
         edges: List of edge dicts as returned by :func:`build_graph_from_workflow_artifacts`.
         database: Target database name; uses the driver default when ``None``.
+        primary_keys: Optional ``{label: key_name}`` merge-key map (e.g. from
+            :func:`build_primary_key_map`); defaults to ``"id"`` per label.
     """
     if nodes:
-        client.upsert_nodes_batch(nodes, db=database)
+        client.upsert_nodes_batch(nodes, db=database, primary_keys=primary_keys)
     if edges:
-        client.upsert_edges_batch(edges, db=database)
+        client.upsert_edges_batch(edges, db=database, primary_keys=primary_keys)

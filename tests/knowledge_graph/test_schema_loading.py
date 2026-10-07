@@ -94,6 +94,22 @@ def test_property_types_are_allowed(name):
             )
 
 
+@pytest.mark.parametrize("name", CURATED)
+def test_primary_key_contract(name):
+    """Every node's effective MERGE key (declared primary_key or 'id') must be
+    a non-optional property defined on that node."""
+    schema = _load_toml(name)
+    for label, node in schema.get("node", {}).items():
+        props = {p["name"]: p for p in node.get("node_properties", [])}
+        pk = node.get("primary_key", "id")
+        assert pk in props, (
+            f"{name}: node {label!r} primary key {pk!r} is not a defined property"
+        )
+        assert props[pk].get("optional", True) is False, (
+            f"{name}: node {label!r} primary key {pk!r} must be non-optional"
+        )
+
+
 def test_no_duplicate_node_labels(schemas):
     seen = {}
     for name, schema in schemas.items():
