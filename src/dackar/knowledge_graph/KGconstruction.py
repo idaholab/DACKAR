@@ -95,6 +95,8 @@ class KG:
                 'numericPerformanceSchema',
                 'supplyChainSchema',
                 'systemSimulationSchema',
+                'temporalRelationSchema',
+                'regulatorySchema',
             ]
         }
 

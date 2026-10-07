@@ -45,6 +45,8 @@ CURATED = [
     "numericPerformanceSchema",
     "supplyChainSchema",
     "systemSimulationSchema",
+    "temporalRelationSchema",
+    "regulatorySchema",
 ]
 
 # Allowed property data types (must match KGconstruction.datatypes).
