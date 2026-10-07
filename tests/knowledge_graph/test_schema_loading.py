@@ -146,3 +146,76 @@ def test_no_duplicate_relation_triples(schemas):
                 f"{seen[triple]} and {name}"
             )
             seen[triple] = name
+
+
+# ---------------------------------------------------------------------------
+# Production merger acceptance tests (load the curated paths through the actual
+# ingestion-path merger, not a reimplementation). The curated set reuses generic
+# relation verbs (caused_by, recommends_action, targets_element,
+# has_temporal_reference) for different endpoint pairs; the merger must accept
+# the whole set and preserve every endpoint pair.
+# ---------------------------------------------------------------------------
+
+CURATED_PATHS = [str(SCHEMA_DIR / f"{name}.toml") for name in CURATED]
+
+
+def test_curated_set_loads_through_production_merger():
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_and_merge_schemas
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    # Relation names are now list-valued (one spec per declared endpoint pair).
+    for name, specs in merged["relation"].items():
+        assert isinstance(specs, list) and specs, name
+
+
+def test_reused_relation_names_preserve_every_endpoint_pair():
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        load_and_merge_schemas,
+        relation_endpoint_map,
+    )
+
+    merged = load_and_merge_schemas(CURATED_PATHS)
+    rmap = relation_endpoint_map(merged)
+    # Each generic verb below is declared in two curated schemas with distinct
+    # endpoint pairs; both pairs must survive the merge.
+    reused = ("caused_by", "recommends_action", "targets_element", "has_temporal_reference")
+    for name in reused:
+        pairs = rmap.get(name, [])
+        assert len(pairs) >= 2, f"relation {name!r} lost an endpoint pair: {pairs}"
+        assert len(pairs) == len(set(pairs)), f"relation {name!r} has duplicate pairs: {pairs}"
+
+
+def test_merger_rejects_exact_duplicate_relation_triple(tmp_path):
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_and_merge_schemas
+
+    # File 1 defines the nodes and the relation; file 2 repeats only the same
+    # (name, from, to) triple, so the duplicate-triple check is what must fire
+    # (not the duplicate-node check).
+    nodes_and_rel = """
+title = "Dup A"
+version = "1.0"
+[node.a]
+node_description = "A"
+node_properties = [{ name = "id", type = "string", optional = false, description = "id" }]
+[node.b]
+node_description = "B"
+node_properties = [{ name = "id", type = "string", optional = false, description = "id" }]
+[relation.links]
+relation_description = "a links b"
+from_entity = "a"
+to_entity = "b"
+"""
+    rel_only = """
+title = "Dup B"
+version = "1.0"
+[relation.links]
+relation_description = "a links b again"
+from_entity = "a"
+to_entity = "b"
+"""
+    p1 = tmp_path / "s1.toml"
+    p2 = tmp_path / "s2.toml"
+    p1.write_text(nodes_and_rel, encoding="utf-8")
+    p2.write_text(rel_only, encoding="utf-8")
+    with pytest.raises(ValueError, match="Duplicate relation definition"):
+        load_and_merge_schemas([str(p1), str(p2)])

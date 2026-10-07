@@ -34,17 +34,25 @@ def load_toml_schema(path: Union[str, Path]) -> Dict[str, Any]:
 def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Path]]]) -> Dict[str, Any]:
     """Load one or more TOML schema files and merge them into a single schema dict.
 
-    The merged dict has top-level keys ``"node"`` and ``"relation"``.  Duplicate
-    keys across files raise an error to prevent silent overwrites.
+    The merged dict has top-level keys ``"node"`` and ``"relation"``. A node
+    label may be defined only once across the merged files, so a duplicate node
+    key raises. Relation identity, however, is the
+    ``(name, from_entity, to_entity)`` triple (matching
+    :meth:`KG._crossSchemasCheck`): a generic verb such as ``caused_by`` or
+    ``recommends_action`` may be reused across schemas as long as it connects a
+    different pair of node labels. Each relation name therefore maps to a
+    **list** of its spec dicts, preserving every distinct endpoint pair; only an
+    exact-duplicate triple raises.
 
     Args:
         schema_paths: A single path or an iterable of paths to ``.toml`` files.
 
     Returns:
-        A merged schema dict with ``{"node": {...}, "relation": {...}}``.
+        A merged schema dict ``{"node": {label: spec}, "relation": {name: [spec, ...]}}``.
 
     Raises:
-        ValueError: If the same node or relation key appears in more than one file.
+        ValueError: If the same node label, or the same relation
+            ``(name, from_entity, to_entity)`` triple, appears more than once.
     """
     if isinstance(schema_paths, (str, Path)):
         paths = [Path(schema_paths)]
@@ -52,13 +60,19 @@ def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Pa
         paths = [Path(p) for p in schema_paths]
 
     merged: Dict[str, Any] = {"node": {}, "relation": {}}
+    seen_relation_triples: set = set()
     for path in paths:
         schema = load_toml_schema(path)
-        for section in ("node", "relation"):
-            for key, value in (schema.get(section) or {}).items():
-                if key in merged[section]:
-                    raise ValueError(f"Duplicate schema key {section}.{key} in {path}")
-                merged[section][key] = value
+        for key, value in (schema.get("node") or {}).items():
+            if key in merged["node"]:
+                raise ValueError(f"Duplicate schema key node.{key} in {path}")
+            merged["node"][key] = value
+        for name, spec in (schema.get("relation") or {}).items():
+            triple = (name, spec.get("from_entity"), spec.get("to_entity"))
+            if triple in seen_relation_triples:
+                raise ValueError(f"Duplicate relation definition {triple} in {path}")
+            seen_relation_triples.add(triple)
+            merged["relation"].setdefault(name, []).append(spec)
     return merged
 
 
@@ -188,25 +202,37 @@ def resolve_node_label_strict(schema: Dict[str, Any], *candidates: str) -> str:
     )
 
 
-def relation_endpoint_map(schema: Dict[str, Any]) -> Dict[str, Tuple[str, str]]:
-    """Build a lookup from relation type name to its (from_entity, to_entity) pair.
+def relation_endpoint_map(schema: Dict[str, Any]) -> Dict[str, List[Tuple[str, str]]]:
+    """Build a lookup from relation type name to its declared endpoint pairs.
 
-    Only relations that declare both ``from_entity`` and ``to_entity`` in the
-    schema are included.
+    A relation name may be reused across schemas for different endpoint pairs
+    (relation identity is the ``(name, from_entity, to_entity)`` triple), so each
+    name maps to a **list** of ``(from_entity, to_entity)`` tuples, one per
+    declared definition. Only definitions that declare both ``from_entity`` and
+    ``to_entity`` are included; exact-duplicate pairs are collapsed.
+
+    Accepts both the list-valued ``"relation"`` section produced by
+    :func:`load_and_merge_schemas` and a single-schema dict whose relation values
+    are plain spec dicts.
 
     Args:
         schema: Merged schema dict (must contain a ``"relation"`` key).
 
     Returns:
-        Dict mapping each relation name to a ``(source_entity, target_entity)``
-        tuple of entity type strings.
+        Dict mapping each relation name to a list of ``(source_entity,
+        target_entity)`` tuples of entity type strings.
     """
-    out: Dict[str, Tuple[str, str]] = {}
-    for name, spec in (schema.get("relation") or {}).items():
-        from_entity = spec.get("from_entity")
-        to_entity = spec.get("to_entity")
-        if from_entity and to_entity:
-            out[name] = (from_entity, to_entity)
+    out: Dict[str, List[Tuple[str, str]]] = {}
+    for name, value in (schema.get("relation") or {}).items():
+        specs = value if isinstance(value, list) else [value]
+        for spec in specs:
+            from_entity = spec.get("from_entity")
+            to_entity = spec.get("to_entity")
+            if from_entity and to_entity:
+                pair = (from_entity, to_entity)
+                pairs = out.setdefault(name, [])
+                if pair not in pairs:
+                    pairs.append(pair)
     return out
 
 
@@ -400,14 +426,14 @@ class GraphBatch:
 
         src_label = self.nodes[src]["label"]
         dst_label = self.nodes[dst]["label"]
-        spec = self.relation_map.get(rel_type)
-        if spec:
+        pairs = self.relation_map.get(rel_type)
+        if pairs:
             _rel_resolve = resolve_node_label_strict if self.schema.get("node") else resolve_node_label
-            exp_src = _rel_resolve(self.schema, spec[0])
-            exp_dst = _rel_resolve(self.schema, spec[1])
-            if src_label != exp_src or dst_label != exp_dst:
+            expected = [(_rel_resolve(self.schema, p[0]), _rel_resolve(self.schema, p[1])) for p in pairs]
+            if (src_label, dst_label) not in expected:
+                allowed = ", ".join(f"({s} -> {d})" for s, d in expected)
                 raise ValueError(
-                    f"Relation {rel_type} expects ({exp_src} -> {exp_dst}), got ({src_label} -> {dst_label})"
+                    f"Relation {rel_type} expects {allowed}, got ({src_label} -> {dst_label})"
                 )
         elif not allow_untyped:
             raise ValueError(f"Relation {rel_type} is not declared in the TOML schema")
@@ -531,13 +557,14 @@ def _safe_ptr_entity_rel(
     dst_label = g.nodes[dst]["label"]
 
     def _relation_matches(rel_name: str) -> bool:
-        spec = g.relation_map.get(rel_name)
-        if not spec:
+        pairs = g.relation_map.get(rel_name)
+        if not pairs:
             return False
         _r = resolve_node_label_strict if g.schema.get("node") else resolve_node_label
-        exp_src = _r(g.schema, spec[0])
-        exp_dst = _r(g.schema, spec[1])
-        return src_label == exp_src and dst_label == exp_dst
+        for p in pairs:
+            if src_label == _r(g.schema, p[0]) and dst_label == _r(g.schema, p[1]):
+                return True
+        return False
 
     # Only use typed relations if they truly match PTR -> entity endpoints.
     for rel_name in ("targets_entity", "references_entity", "mentions"):
@@ -571,13 +598,14 @@ def _safe_ptr_failure_mode_rel(
     dst_label = g.nodes[dst]["label"]
 
     def _relation_matches(rel_name: str) -> bool:
-        spec = g.relation_map.get(rel_name)
-        if not spec:
+        pairs = g.relation_map.get(rel_name)
+        if not pairs:
             return False
         _r = resolve_node_label_strict if g.schema.get("node") else resolve_node_label
-        exp_src = _r(g.schema, spec[0])
-        exp_dst = _r(g.schema, spec[1])
-        return src_label == exp_src and dst_label == exp_dst
+        for p in pairs:
+            if src_label == _r(g.schema, p[0]) and dst_label == _r(g.schema, p[1]):
+                return True
+        return False
 
     for rel_name in ("supports_hypothesis", "references_failure_mode", "caused_by"):
         if _relation_matches(rel_name):
