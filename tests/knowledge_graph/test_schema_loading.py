@@ -188,9 +188,10 @@ def test_reused_relation_names_preserve_every_endpoint_pair():
 def test_merger_rejects_exact_duplicate_relation_triple(tmp_path):
     from dackar.knowledge_graph.kg_schema_builder_workflow import load_and_merge_schemas
 
-    # File 1 defines the nodes and the relation; file 2 repeats only the same
-    # (name, from, to) triple, so the duplicate-triple check is what must fire
-    # (not the duplicate-node check).
+    # File 1 defines the nodes and the relation; file 2 is itself base-valid
+    # (declares its own unique node, so no duplicate-node clash) and repeats the
+    # same (name, from, to) triple, so the duplicate-triple check is what must
+    # fire -- not the duplicate-node check or base-schema structural validation.
     nodes_and_rel = """
 title = "Dup A"
 version = "1.0"
@@ -208,6 +209,9 @@ to_entity = "b"
     rel_only = """
 title = "Dup B"
 version = "1.0"
+[node.c]
+node_description = "C"
+node_properties = [{ name = "id", type = "string", optional = false, description = "id" }]
 [relation.links]
 relation_description = "a links b again"
 from_entity = "a"
@@ -219,3 +223,90 @@ to_entity = "b"
     p2.write_text(rel_only, encoding="utf-8")
     with pytest.raises(ValueError, match="Duplicate relation definition"):
         load_and_merge_schemas([str(p1), str(p2)])
+
+
+# ---------------------------------------------------------------------------
+# Shared loader validation (the per-file checks KG.importGraphSchema runs, now
+# applied by the production loader so malformed production schemas fail at load
+# instead of at DDL/build/MERGE time).
+# ---------------------------------------------------------------------------
+
+def test_production_loader_validates_full_curated_set():
+    """The shipped curated set passes the shared loader validation unchanged."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import (
+        load_and_merge_schemas,
+        validate_schema_document,
+    )
+
+    load_and_merge_schemas(CURATED_PATHS)  # must not raise
+    for name in CURATED:
+        validate_schema_document(_load_toml(name), source=name)
+
+
+def test_loader_rejects_disallowed_property_type(tmp_path):
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_and_merge_schemas
+
+    bad = """
+title = "Bad Type"
+version = "1.0"
+[node.a]
+node_description = "A"
+node_properties = [{ name = "id", type = "uuid", optional = false, description = "id" }]
+"""
+    p = tmp_path / "bad.toml"
+    p.write_text(bad, encoding="utf-8")
+    with pytest.raises(Exception):  # ValidationError (type enum) before our ValueError
+        load_and_merge_schemas([str(p)])
+
+
+def test_loader_rejects_primary_key_not_a_declared_property(tmp_path):
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_and_merge_schemas
+
+    bad = """
+title = "Bad PK"
+version = "1.0"
+[node.a]
+node_description = "A"
+primary_key = "doc_id"
+node_properties = [{ name = "id", type = "string", optional = false, description = "id" }]
+"""
+    p = tmp_path / "bad_pk.toml"
+    p.write_text(bad, encoding="utf-8")
+    with pytest.raises(ValueError, match="primary key .* is not a declared property"):
+        load_and_merge_schemas([str(p)])
+
+
+def test_loader_rejects_optional_primary_key(tmp_path):
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_and_merge_schemas
+
+    bad = """
+title = "Optional PK"
+version = "1.0"
+[node.a]
+node_description = "A"
+primary_key = "doc_id"
+node_properties = [
+  { name = "id", type = "string", optional = false, description = "id" },
+  { name = "doc_id", type = "string", optional = true, description = "doc id" }
+]
+"""
+    p = tmp_path / "opt_pk.toml"
+    p.write_text(bad, encoding="utf-8")
+    with pytest.raises(ValueError, match="primary key .* must be non-optional"):
+        load_and_merge_schemas([str(p)])
+
+
+def test_loader_rejects_node_without_a_valid_default_key(tmp_path):
+    """A node with no properties has effective key 'id', which is absent."""
+    from dackar.knowledge_graph.kg_schema_builder_workflow import load_and_merge_schemas
+
+    bad = """
+title = "No Props"
+version = "1.0"
+[node.a]
+node_description = "A node with no declared properties."
+"""
+    p = tmp_path / "no_props.toml"
+    p.write_text(bad, encoding="utf-8")
+    with pytest.raises(ValueError, match="primary key 'id' is not a declared property"):
+        load_and_merge_schemas([str(p)])

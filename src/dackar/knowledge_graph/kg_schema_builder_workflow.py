@@ -9,9 +9,17 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
+from jsonschema import validate as _js_validate
+
 from dackar.knowledge_graph.py2neo import Py2Neo, _safe_token
+from dackar.knowledge_graph.schema_types import ALLOWED_SCHEMA_TYPES
 
 LOGGER = logging.getLogger(__name__)
+
+# Location of the meta-schema that governs every per-domain TOML schema. Kept
+# beside this module (the same file KG.importGraphSchema validates against) so
+# production ingestion and the interactive KG class share one contract.
+_BASE_SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "baseSchema.json"
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +39,72 @@ def load_toml_schema(path: Union[str, Path]) -> Dict[str, Any]:
         return tomllib.load(handle)
 
 
+def _load_base_schema() -> Dict[str, Any]:
+    """Load and return the knowledge-graph meta-schema (``baseSchema.json``)."""
+    with open(_BASE_SCHEMA_PATH, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def validate_schema_document(schema: Dict[str, Any], source: str = "<schema>") -> None:
+    """Validate a single parsed TOML schema the way ``KG.importGraphSchema`` does.
+
+    Runs the per-file checks that the interactive :class:`KG` loader applies on
+    import, so malformed *production* schemas fail at load time instead of much
+    later during DDL generation, graph building, or the batch MERGE:
+
+    1. Structural validation against the meta-schema ``baseSchema.json``.
+    2. Property data types restricted to :data:`ALLOWED_SCHEMA_TYPES`.
+    3. Each node's effective primary key (an explicit ``primary_key`` or the
+       ``"id"`` default) must name a property that is declared on that node and
+       is **non-optional** — otherwise the batch MERGE would later key on a null
+       value.
+
+    Cross-schema integrity (endpoint resolution, duplicate node labels /
+    relation triples) is intentionally **not** checked here: it is a whole-set
+    property, and partial sets (e.g. the FMEA CLI loading only ``fmeaSchema`` +
+    ``mbseSchema``) legitimately reference node labels defined in sibling
+    schemas. :func:`load_and_merge_schemas` enforces the whole-set duplicate
+    checks after merging.
+
+    Args:
+        schema: A single parsed TOML schema document.
+        source: Human-readable origin (path) used in error messages.
+
+    Raises:
+        jsonschema.ValidationError: If the document violates ``baseSchema.json``.
+        ValueError: If a property uses a disallowed type, or a node's effective
+            primary key is missing or optional.
+    """
+    _js_validate(instance=schema, schema=_load_base_schema())
+
+    for label, spec in (schema.get("node") or {}).items():
+        props = _schema_props(spec)
+        for prop in props:
+            if prop["type"] not in ALLOWED_SCHEMA_TYPES:
+                raise ValueError(
+                    f"{source}: node {label!r} property {prop['name']!r} uses "
+                    f"disallowed type {prop['type']!r}"
+                )
+        pk = _node_primary_key(spec)
+        by_name = {prop["name"]: prop for prop in props}
+        if pk not in by_name:
+            raise ValueError(
+                f"{source}: node {label!r} primary key {pk!r} is not a declared property"
+            )
+        if by_name[pk].get("optional", True) is not False:
+            raise ValueError(
+                f"{source}: node {label!r} primary key {pk!r} must be non-optional"
+            )
+
+    for name, spec in (schema.get("relation") or {}).items():
+        for prop in spec.get("relation_properties") or []:
+            if prop["type"] not in ALLOWED_SCHEMA_TYPES:
+                raise ValueError(
+                    f"{source}: relation {name!r} property {prop['name']!r} uses "
+                    f"disallowed type {prop['type']!r}"
+                )
+
+
 def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Path]]]) -> Dict[str, Any]:
     """Load one or more TOML schema files and merge them into a single schema dict.
 
@@ -44,6 +118,11 @@ def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Pa
     **list** of its spec dicts, preserving every distinct endpoint pair; only an
     exact-duplicate triple raises.
 
+    Each file is validated by :func:`validate_schema_document` as it is loaded
+    (structure against ``baseSchema.json``, allowed property types, and the
+    primary-key semantic check), so a malformed production schema fails here
+    rather than silently later during DDL/build/write.
+
     Args:
         schema_paths: A single path or an iterable of paths to ``.toml`` files.
 
@@ -51,8 +130,11 @@ def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Pa
         A merged schema dict ``{"node": {label: spec}, "relation": {name: [spec, ...]}}``.
 
     Raises:
-        ValueError: If the same node label, or the same relation
-            ``(name, from_entity, to_entity)`` triple, appears more than once.
+        jsonschema.ValidationError: If a file violates ``baseSchema.json``.
+        ValueError: If a file uses a disallowed property type or an invalid
+            primary key (see :func:`validate_schema_document`), or if the same
+            node label, or the same relation ``(name, from_entity, to_entity)``
+            triple, appears more than once across the merged files.
     """
     if isinstance(schema_paths, (str, Path)):
         paths = [Path(schema_paths)]
@@ -63,6 +145,7 @@ def load_and_merge_schemas(schema_paths: Union[str, Path, Iterable[Union[str, Pa
     seen_relation_triples: set = set()
     for path in paths:
         schema = load_toml_schema(path)
+        validate_schema_document(schema, source=str(path))
         for key, value in (schema.get("node") or {}).items():
             if key in merged["node"]:
                 raise ValueError(f"Duplicate schema key node.{key} in {path}")
