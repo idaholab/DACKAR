@@ -17,6 +17,8 @@ from datetime import datetime
 from dateutil.parser import parse
 from pandas.api.types import infer_dtype
 
+from dackar.knowledge_graph.schema_types import ALLOWED_SCHEMA_TYPES, isCompatibleDtype
+
 import logging
 
 currentDir = os.path.dirname(__file__)
@@ -46,11 +48,12 @@ class KG:
         if importFolderPath is not None:
             set_neo4j_import_folder(configFilePath, importFolderPath)
 
-        # Allowed property data types. 'floating' is retained as an accepted
-        # alias of 'float'. 'array' and 'json_string' support the document /
-        # RAG schema. Must stay in sync with schemas/baseSchema.json.
-        self.datatypes = ['string', 'integer', 'float', 'floating', 'boolean',
-                          'datetime', 'enum', 'array', 'json_string']
+        # Allowed property data types. Sourced from schema_types so the
+        # allowlist, the baseSchema.json type enum, and the dataframe dtype
+        # compatibility map share a single definition. 'floating' is retained
+        # as an alias of 'float'; 'array'/'json_string' support the document
+        # / RAG schema.
+        self.datatypes = list(ALLOWED_SCHEMA_TYPES)
 
         # Create python to neo4j driver
         self.py2neo = Py2Neo(uri=uri, user=user, pwd=pwd)
@@ -218,6 +221,13 @@ class KG:
             for prop in schema['node'][node].get('node_properties', []):
                 if prop['type'] not in self.datatypes:
                     message = 'Node ' + str(node) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
+                    logging.error(message)
+                    raise ValueError(message)
+
+        for rel in schema.get('relation', {}):
+            for prop in schema['relation'][rel].get('relation_properties', []):
+                if prop['type'] not in self.datatypes:
+                    message = 'Relation ' + str(rel) + ' - Property ' + str(prop['name']) + ' data type ' + str(prop['type']) + ' is not allowed'
                     logging.error(message)
                     raise ValueError(message)
 
@@ -407,8 +417,8 @@ class KG:
                 for prop in constructionSchema['nodes'][node]:
                     allowedDatatype = self._returnNodePropertyDatatype(node,prop)
                     dfDatatype = data[constructionSchema['nodes'][node][prop]]
-                    if allowedDatatype != infer_dtype(dfDatatype):
-                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(set(dfDatatype.map(type))) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
+                    if not isCompatibleDtype(allowedDatatype, infer_dtype(dfDatatype)):
+                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(infer_dtype(dfDatatype)) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
                         raise ValueError(message)
 
         # Check relations data types
@@ -417,8 +427,8 @@ class KG:
                 for prop in constructionSchema['relations'][rel]['properties']:
                     allowedDatatype = self._returnRelationPropertyDatatype(rel,prop)
                     dfDatatype = data[constructionSchema['relations'][rel]['properties'][prop]]
-                    if allowedDatatype != infer_dtype(dfDatatype):
-                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(dfDatatype) + ') does not match datatype defined in schema (' + str(dfDatatype) + ')'
+                    if not isCompatibleDtype(allowedDatatype, infer_dtype(dfDatatype)):
+                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(infer_dtype(dfDatatype)) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
                         raise ValueError(message)
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
