@@ -242,9 +242,12 @@ class KG:
         propdf = None
         for schema in self.graphSchemas:
             if nodeLabel in self.graphSchemas[schema]['node'].keys():
-                nodeProperties = self.graphSchemas[schema]['node'][nodeLabel]['node_properties']
-                propdf = pd.DataFrame(nodeProperties)
-                return propdf
+                nodeProperties = self.graphSchemas[schema]['node'][nodeLabel].get('node_properties', [])
+                # A node that declares no properties yields an empty frame that
+                # still carries the columns callers index ('name', 'optional'),
+                # so a propertyless-but-valid label does not KeyError downstream.
+                columns = None if nodeProperties else ['name', 'type', 'optional']
+                return pd.DataFrame(nodeProperties, columns=columns)
 
         if propdf is None:
             message = 'Node ' + str(nodeLabel) + ' does not have any property'
@@ -260,9 +263,12 @@ class KG:
         propdf = None
         for schema in self.graphSchemas:
             if relation in self.graphSchemas[schema]['relation']:
-                relationProperties = self.graphSchemas[schema]['relation'][relation]['relation_properties']
-                propdf = pd.DataFrame(relationProperties)
-                return propdf
+                relationProperties = self.graphSchemas[schema]['relation'][relation].get('relation_properties', [])
+                # Many curated relations omit relation_properties; an empty frame
+                # that still carries the columns callers index ('name', 'optional')
+                # keeps a propertyless-but-valid relation from raising KeyError.
+                columns = None if relationProperties else ['name', 'type', 'optional']
+                return pd.DataFrame(relationProperties, columns=columns)
 
         if propdf is None:
             message = 'Relation ' + str(relation) + ' does not have any property'
