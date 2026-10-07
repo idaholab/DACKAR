@@ -1,16 +1,27 @@
 """
 End-to-end round-trip test for KG.genericWorkflow against a live Neo4j.
 
-This is an integration test and is skipped unless a Neo4j instance is reachable
-(configured via NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD, defaulting to a local
-bolt endpoint). It constructs two nodes and one relation from a dataframe through
-the schema-governed workflow, then reads them back with an independent driver to
+This is an integration test that FAILS CLOSED: it is skipped unless the
+operator has explicitly designated a disposable test instance by setting
+``DACKAR_KG_NEO4J_TEST=1``. Without that opt-in the test never connects, so a
+developer whose ``NEO4J_URI`` happens to point at a shared or real database
+cannot have it wiped by simply running the suite.
+
+Even on the designated instance the test never issues a global
+``MATCH (n) DETACH DELETE n``; it cleans up only the ``widget`` / ``gadget``
+labels it creates (scoped cleanup), and if either label already has data it
+skips rather than touching it, so pre-existing graph content is never
+clobbered.
+
+It constructs two nodes and one relation from a dataframe through the
+schema-governed workflow, then reads them back with an independent driver to
 confirm the finalized schema set actually builds a graph.
 
 Spin up an ephemeral backend, e.g.:
     docker run --rm -d --name kg-neo4j -p 7687:7687 -p 7474:7474 \
         -e NEO4J_AUTH=neo4j/testpassword neo4j:5
-    NEO4J_PASSWORD=testpassword pytest tests/knowledge_graph/test_generic_workflow_neo4j.py
+    DACKAR_KG_NEO4J_TEST=1 NEO4J_PASSWORD=testpassword \
+        pytest tests/knowledge_graph/test_generic_workflow_neo4j.py
 """
 import os
 
@@ -23,6 +34,13 @@ from neo4j import GraphDatabase
 URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 USER = os.environ.get("NEO4J_USER", "neo4j")
 PWD = os.environ.get("NEO4J_PASSWORD", "testpassword")
+
+# Explicit opt-in that the configured instance is a disposable test target.
+# Absent this, the integration test is skipped and never mutates any database.
+TEST_OPT_IN = os.environ.get("DACKAR_KG_NEO4J_TEST", "").strip().lower() in ("1", "true", "yes")
+
+# The only labels this test introduces; cleanup is scoped to exactly these.
+TEST_LABELS = ("widget", "gadget")
 
 # Distinct identifier property names (wid/gid) on purpose: the relation loader
 # renames the source and target data columns to the node property names, so two
@@ -54,13 +72,43 @@ relation_properties = [
 """
 
 
+def _clean_test_labels(session):
+    """Delete only the nodes this test creates (scoped cleanup).
+
+    Never a global ``MATCH (n) DETACH DELETE n``: a label-scoped delete leaves
+    any unrelated graph content untouched.
+    """
+    for label in TEST_LABELS:
+        session.run(f"MATCH (n:`{label}`) DETACH DELETE n")
+
+
 @pytest.fixture(scope="module")
 def neo4j_driver():
+    if not TEST_OPT_IN:
+        pytest.skip(
+            "Set DACKAR_KG_NEO4J_TEST=1 to run against a disposable test Neo4j; "
+            "refusing to connect so a shared/real database is never mutated."
+        )
     try:
         driver = GraphDatabase.driver(URI, auth=(USER, PWD), connection_timeout=5)
         driver.verify_connectivity()
     except Exception as exc:  # ServiceUnavailable, AuthError, etc.
         pytest.skip(f"No reachable Neo4j at {URI}: {exc}")
+
+    # Pre-flight guard: refuse to run if the designated instance already holds
+    # data under the labels we use, so even an opted-in misconfiguration cannot
+    # clobber pre-existing content.
+    with driver.session() as session:
+        for label in TEST_LABELS:
+            existing = session.run(
+                f"MATCH (n:`{label}`) RETURN count(n) AS c"
+            ).single()["c"]
+            if existing:
+                driver.close()
+                pytest.skip(
+                    f"Designated test instance already has {existing} :{label} "
+                    "node(s); refusing to run so existing data is not deleted."
+                )
     yield driver
     driver.close()
 
@@ -75,7 +123,9 @@ def test_generic_workflow_round_trip(neo4j_driver, tmp_path):
     # importFolderPath=None skips neo4j.conf rewriting; configFilePath is then unused.
     kg = KG(None, None, URI, PWD, USER)
     try:
-        kg.resetGraph()
+        # Scoped cleanup instead of kg.resetGraph(): touch only our labels.
+        with neo4j_driver.session() as session:
+            _clean_test_labels(session)
         kg.importGraphSchema("roundTripSchema", str(schema_path))
 
         data = pd.DataFrame({
@@ -115,5 +165,6 @@ def test_generic_workflow_round_trip(neo4j_driver, tmp_path):
         assert gadgets == [{"gid": "g1"}]
         assert rels == [{"weight": 0.8}]
     finally:
-        kg.resetGraph()
+        with neo4j_driver.session() as session:
+            _clean_test_labels(session)
         kg.py2neo.close()
