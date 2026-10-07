@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from datetime import datetime, timezone
+
 from dackar.knowledge_graph.temporal_relations import ALLEN_RELATIONS, allen_relation
 
 SCHEMA = (
@@ -63,6 +65,36 @@ def test_iso_string_inputs():
 def test_invalid_interval_raises():
     with pytest.raises(ValueError):
         allen_relation(5, 1, 0, 3)
+
+
+def test_malformed_timestamp_string_raises_not_lexicographic():
+    # Finding 14: "9" vs "10" must NOT compare lexicographically to "after";
+    # a non-ISO string is rejected with a clear ValueError.
+    with pytest.raises(ValueError, match="malformed timestamp"):
+        allen_relation("9", None, "10", None)
+
+
+def test_mixed_aware_and_naive_timestamps_raise():
+    aware = "2024-01-01T00:00:00+00:00"
+    naive = "2024-01-02T00:00:00"
+    with pytest.raises(ValueError, match="aware and naive"):
+        allen_relation(aware, None, naive, None)
+
+
+def test_uniformly_aware_timestamps_compare():
+    assert allen_relation(
+        "2024-01-01T00:00:00+00:00", None, "2024-01-02T00:00:00+00:00", None
+    ) == "before"
+    # Equivalent with real tz-aware datetimes.
+    a = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    b = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    assert allen_relation(a, None, b, None) == "before"
+
+
+def test_incomparable_endpoint_kinds_raise_valueerror():
+    # A number against a datetime would otherwise surface as a bare TypeError.
+    with pytest.raises(ValueError, match="not mutually comparable"):
+        allen_relation(5, None, "2024-01-01T00:00:00", None)
 
 
 def test_outputs_are_valid_enum_members():
