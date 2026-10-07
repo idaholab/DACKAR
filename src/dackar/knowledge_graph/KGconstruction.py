@@ -108,17 +108,21 @@ class KG:
         """
         self.py2neo.reset()
 
-    def _crossSchemasCheck(self):
+    def _crossSchemasCheck(self, graphSchemas=None):
         """
         Method designed to perform a series of checks across the defined schemas
-        @ In, None
+        @ In, graphSchemas, dict, optional registry of schemas to check; defaults
+            to the committed session registry (self.graphSchemas)
         @ Out, None
         """
+        if graphSchemas is None:
+            graphSchemas = self.graphSchemas
+
         self.nodeList = []
         self.relationList = []
 
-        for schema in self.graphSchemas:
-            for node in self.graphSchemas[schema].get('node', {}):
+        for schema in graphSchemas:
+            for node in graphSchemas[schema].get('node', {}):
                 # check that the node is not duplicated
                 if node in self.nodeList:
                     message = 'Schema ' + str(schema) + ' - Node ' + str(node) + ' has been defined twice'
@@ -126,11 +130,11 @@ class KG:
                 else:
                     self.nodeList.append(node)
 
-        for schema in self.graphSchemas:
-            for rel in self.graphSchemas[schema].get('relation', {}):
+        for schema in graphSchemas:
+            for rel in graphSchemas[schema].get('relation', {}):
                 # check that the defined relations link nodes that have been defined
-                origin = self.graphSchemas[schema]['relation'][rel]['from_entity']
-                destin = self.graphSchemas[schema]['relation'][rel]['to_entity']
+                origin = graphSchemas[schema]['relation'][rel]['from_entity']
+                destin = graphSchemas[schema]['relation'][rel]['to_entity']
 
                 # A relation is keyed by the (name, from_entity, to_entity)
                 # triple, so the same generic verb (e.g. caused_by,
@@ -163,12 +167,12 @@ class KG:
             logging.error(f"TOML schema validation error: {e.message}")
             raise
 
-    def importGraphSchema(self, graphSchemaName, tomlFilename):
+    def _loadAndValidateSchemaFile(self, tomlFilename):
         """
-        Method that imports new schema contained in a .toml file
-        @ In, graphSchemaName, string, name of the schema to be imported
-        @ In, tomlFilename, string, .toml file contained the new schema
-        @ Out, None
+        Parse one TOML schema file and run the per-file checks (base-schema
+        structure and allowed data types). Does not mutate session state.
+        @ In, tomlFilename, string, .toml file containing the schema
+        @ Out, configData, dict, parsed and per-file-validated schema
         """
         fullPath = Path(tomlFilename)
 
@@ -184,33 +188,64 @@ class KG:
         #check data types against self.datatypes
         self._checkSchemaDataTypes(configData)
 
-        # check schema name is not used before
-        if graphSchemaName in list(self.graphSchemas.keys()):
-            message = 'Schema ' + str(graphSchemaName) + ' is already defined in the exisiting schemas'
-            logging.error(message)
-            raise ValueError(message)
+        return configData
 
-        self.graphSchemas[graphSchemaName] = configData
+    def importGraphSchemas(self, schemaFiles, crossCheck=True, replace=False):
+        """
+        Method that imports a batch of schemas atomically. Each file is parsed
+        and per-file-validated into a temporary candidate registry; the whole
+        candidate is cross-checked; session state (self.graphSchemas) is
+        replaced only once every check passes, so a failure anywhere leaves the
+        existing registry untouched (no partial load).
+        @ In, schemaFiles, dict, mapping {schemaName: tomlFilename}
+        @ In, crossCheck, bool, run whole-set cross-schema integrity (duplicate
+            nodes/relation-triples and endpoint resolution) on the candidate
+            before committing. Pass False for a known-partial batch whose
+            endpoints resolve in schemas loaded elsewhere (default True).
+        @ In, replace, bool, build the candidate from an empty registry rather
+            than layering on the committed set, so re-loading the same set is
+            idempotent instead of failing on existing names (default False).
+        @ Out, None
+        """
+        candidate = {} if replace else dict(self.graphSchemas)
+        for name, path in schemaFiles.items():
+            if name in candidate:
+                message = 'Schema ' + str(name) + ' is already defined in the exisiting schemas'
+                logging.error(message)
+                raise ValueError(message)
+            candidate[name] = self._loadAndValidateSchemaFile(path)
 
-        # NOTE: cross-schema integrity (duplicate node labels, duplicate
-        # relation triples, and relation endpoints resolving to defined nodes)
-        # is a whole-set property and is intentionally NOT checked per import.
-        # It tolerates circular cross-references between schemas (e.g. fmea
-        # references degradation_mechanism in causal, while causal references
-        # failure_mode in fmea), which per-import checking cannot. Call
-        # _crossSchemasCheck() (or loadPredefinedGraphSchemas) once all
-        # schemas that participate in the set have been imported.
+        if crossCheck:
+            self._crossSchemasCheck(candidate)
+
+        self.graphSchemas = candidate
+
+    def importGraphSchema(self, graphSchemaName, tomlFilename):
+        """
+        Method that imports new schema contained in a .toml file
+        @ In, graphSchemaName, string, name of the schema to be imported
+        @ In, tomlFilename, string, .toml file contained the new schema
+        @ Out, None
+        """
+        # Single imports do not force endpoint resolution: a schema may
+        # legitimately reference nodes defined in another not-yet-imported
+        # schema (e.g. fmea references degradation_mechanism in causal, while
+        # causal references failure_mode in fmea). Whole-set integrity is a
+        # property of the complete set; run importGraphSchemas(crossCheck=True)
+        # or loadPredefinedGraphSchemas once every participating schema is in.
+        self.importGraphSchemas({graphSchemaName: tomlFilename}, crossCheck=False)
 
     def loadPredefinedGraphSchemas(self):
         """
         Method that loads the full curated set of predefined DACKAR schemas and
-        validates cross-schema integrity once the whole set is in memory.
+        validates cross-schema integrity once the whole set is in memory. The
+        load is atomic (session state is replaced only after the whole set
+        validates) and idempotent (a repeat load rebuilds the same set rather
+        than failing on existing names).
         @ In, None
         @ Out, None
         """
-        for name, path in self.predefinedGraphSchemas.items():
-            self.importGraphSchema(name, path)
-        self._crossSchemasCheck()
+        self.importGraphSchemas(self.predefinedGraphSchemas, crossCheck=True, replace=True)
 
     def _checkSchemaDataTypes(self, schema):
         """
