@@ -17,7 +17,7 @@ from datetime import datetime
 from dateutil.parser import parse
 from pandas.api.types import infer_dtype
 
-from dackar.knowledge_graph.schema_types import ALLOWED_SCHEMA_TYPES, isCompatibleDtype
+from dackar.knowledge_graph.schema_types import ALLOWED_SCHEMA_TYPES, isCompatibleDtype, validateValueSemantics
 
 import logging
 
@@ -463,6 +463,10 @@ class KG:
                     if not isCompatibleDtype(allowedDatatype, infer_dtype(dfDatatype)):
                         message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(infer_dtype(dfDatatype)) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
                         raise ValueError(message)
+                    ok, bad = validateValueSemantics(allowedDatatype, dfDatatype, self._returnPropertyEnumValues(node, prop))
+                    if not ok:
+                        message = 'Node: ' + str(node) + '- Property: ' + str(prop) + '. Value ' + repr(bad) + ' does not satisfy schema type ' + str(allowedDatatype)
+                        raise ValueError(message)
 
         # Check relations data types
         if 'relations' in constructionSchema:
@@ -472,6 +476,10 @@ class KG:
                     dfDatatype = data[constructionSchema['relations'][rel]['properties'][prop]]
                     if not isCompatibleDtype(allowedDatatype, infer_dtype(dfDatatype)):
                         message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Dataframe datatype (' + str(infer_dtype(dfDatatype)) + ') does not match datatype defined in schema (' + str(allowedDatatype) + ')'
+                        raise ValueError(message)
+                    ok, bad = validateValueSemantics(allowedDatatype, dfDatatype, self._returnPropertyEnumValues(rel, prop, isRelation=True))
+                    if not ok:
+                        message = 'Relation: ' + str(rel) + '- Property: ' + str(prop) + '. Value ' + repr(bad) + ' does not satisfy schema type ' + str(allowedDatatype)
                         raise ValueError(message)
 
     def _returnNodePropertyDatatype(self, nodeID, propID):
@@ -509,6 +517,25 @@ class KG:
                             return allowedType
         if allowedType is None:
             ValueError('_returnRelationPropertyDatatype error')
+
+    def _returnPropertyEnumValues(self, labelID, propID, isRelation=False):
+        """
+        Method that returns the declared enum_values of a node/relation property,
+        used for enum-membership validation. Returns None when the property
+        declares none (membership then cannot be checked).
+        @ In, labelID, string, node label or relation name
+        @ In, propID, string, property name
+        @ In, isRelation, bool, look up a relation property when True, else a node property
+        @ Out, enumValues, list|None, declared allowed values, or None if absent
+        """
+        section = 'relation' if isRelation else 'node'
+        propsKey = 'relation_properties' if isRelation else 'node_properties'
+        for schema in self.graphSchemas:
+            if labelID in self.graphSchemas[schema].get(section, {}):
+                for prop in self.graphSchemas[schema][section][labelID].get(propsKey, []):
+                    if prop['name'] == propID:
+                        return prop.get('enum_values')
+        return None
 
     def _createIteractivePlot(self, output_file="knowledge_graph_schema_interactive.html"):
         """

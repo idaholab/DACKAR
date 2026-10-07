@@ -19,6 +19,7 @@ from dackar.knowledge_graph.schema_types import (
     ALLOWED_SCHEMA_TYPES,
     SCHEMA_TYPE_TO_PANDAS,
     isCompatibleDtype,
+    validateValueSemantics,
 )
 
 BASE_SCHEMA = (
@@ -59,6 +60,47 @@ def test_is_compatible_dtype(schema_type, inferred, expected):
 def test_unknown_type_falls_back_to_exact_match():
     assert isCompatibleDtype("mystery", "mystery") is True
     assert isCompatibleDtype("mystery", "string") is False
+
+
+# ---- per-value semantics (#17 json_string/enum, #18 array) -------------------
+
+def test_json_string_rejects_malformed_json():
+    ok, _ = validateValueSemantics("json_string", ['{"k": 1}', '{"k": 2}'])
+    assert ok
+    ok, bad = validateValueSemantics("json_string", ['{"k": 1}', "not json"])
+    assert not ok and bad == "not json"
+
+
+def test_enum_rejects_value_absent_from_enum_values():
+    allowed = ["open", "closed"]
+    ok, _ = validateValueSemantics("enum", ["open", "closed"], enumValues=allowed)
+    assert ok
+    ok, bad = validateValueSemantics("enum", ["open", "ajar"], enumValues=allowed)
+    assert not ok and bad == "ajar"
+
+
+def test_enum_without_declared_values_cannot_be_checked():
+    # No enum_values declared -> membership is unknowable, so it passes.
+    ok, _ = validateValueSemantics("enum", ["anything"], enumValues=None)
+    assert ok
+
+
+def test_array_rejects_heterogeneous_scalar_cells():
+    ok, _ = validateValueSemantics("array", [[1, 2], [3], []])
+    assert ok
+    # A 'mixed' scalar column (1 and "text") must NOT pass as an array.
+    ok, bad = validateValueSemantics("array", [1, "text"])
+    assert not ok and bad == 1
+
+
+def test_value_semantics_skips_nulls():
+    ok, _ = validateValueSemantics("json_string", ['{"k": 1}', None, float("nan")])
+    assert ok
+
+
+def test_non_value_validated_types_pass_through():
+    ok, _ = validateValueSemantics("string", ["anything", 123, None])
+    assert ok
 
 
 # ---- single source of truth (#2 / drift guard) ------------------------------
