@@ -310,5 +310,5 @@ code itself:
 
 They record choices and measurements as of their dates and are **not** maintained in lockstep
 with the code. Where they disagree with this file or with the source, the code and this
-`ARCHITECTURE.md` win. The two IAEA TECDOC PDFs under `devNotes/june_5/` (TECDOC-1112 / ASSET
+`ARCHITECTURE.md` win. The two IAEA TECDOC PDFs under `devNotes/ref_docs/` (TECDOC-1112 / ASSET
 and TECDOC-1756) are the external standards the reviews are grounded in.
