@@ -2,9 +2,9 @@
 
 This is the canonical, code-grounded description of the `dackar.RCA` subsystem. Every
 claim below was checked against the source in this package; where a line number is given
-it points at the current code. The dated working notes under
-[`devNotes/`](devNotes/) are historical and may contradict the code — this file is
-authoritative.
+it points at the current code. The curated topic docs under
+[`devNotes/`](devNotes/) record *why* choices were made and *what* reviews found; they
+may contradict the current code — this file is authoritative.
 
 ---
 
@@ -296,8 +296,19 @@ python -m pytest tests/RCA/unit_tests -q
 
 ## 10. Historical design notes
 
-The dated folders under [`devNotes/`](devNotes/) (`march_29/` … `aug_20/`) are the working
-record: design rationale, causal-soundness reviews, the PM-compliance module write-up, and
-the TSKR / orchestrator / v31-vs-v32 deep passes. They predate the current code and are
-**not** maintained in lockstep with it. Where they disagree with this file or with the
-source, the code and this `ARCHITECTURE.md` win.
+[`devNotes/`](devNotes/) holds seven curated topic docs distilled from the April–August 2026
+working notes — the design rationale and development results that are not derivable from the
+code itself:
+
+- [`METAMODEL.md`](devNotes/METAMODEL.md) — the 12-category causal taxonomy and its regulatory mapping.
+- [`DATA_MANAGEMENT.md`](devNotes/DATA_MANAGEMENT.md) — the data families and the degrade-don't-fail stance.
+- [`CAUSAL_EXTRACTION.md`](devNotes/CAUSAL_EXTRACTION.md) — document causal extraction and its evaluation.
+- [`EPISTEMICS.md`](devNotes/EPISTEMICS.md) — the epistemic-role classification and evidence routing.
+- [`PM_COMPLIANCE.md`](devNotes/PM_COMPLIANCE.md) — the PM-compliance module design and review.
+- [`PIPELINE_STAGES.md`](devNotes/PIPELINE_STAGES.md) — the staged workflow and the scoring arithmetic.
+- [`REVIEWS.md`](devNotes/REVIEWS.md) — the review chronology, findings and resolutions.
+
+They record choices and measurements as of their dates and are **not** maintained in lockstep
+with the code. Where they disagree with this file or with the source, the code and this
+`ARCHITECTURE.md` win. The two IAEA TECDOC PDFs under `devNotes/june_5/` (TECDOC-1112 / ASSET
+and TECDOC-1756) are the external standards the reviews are grounded in.
